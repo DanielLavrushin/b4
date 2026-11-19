@@ -173,9 +173,18 @@ func (t *destStateTracker) countCollected(readings []collectedReading, now time.
 	return completed
 }
 
-func (w *Worker) sweepCollectedHellos(cfg *config.Config, now time.Time) {
+func (w *Worker) endDueCollected(now time.Time) {
 	if w == nil || w.destState == nil {
 		return
+	}
+	for _, h := range w.destState.DueCollected(now, maxSilenceLookups) {
+		w.destState.EndWatch(h)
+	}
+}
+
+func (w *Worker) countDueCollected(cfg *config.Config, now time.Time) []helloWatch {
+	if w == nil || w.destState == nil {
+		return nil
 	}
 	var readings []collectedReading
 	for _, h := range w.destState.DueCollected(now, maxSilenceLookups) {
@@ -195,17 +204,9 @@ func (w *Worker) sweepCollectedHellos(cfg *config.Config, now time.Time) {
 		readings = append(readings, reading)
 	}
 	if len(readings) == 0 {
-		return
+		return nil
 	}
-	for _, h := range w.destState.countCollected(readings, now, cfg.System.IPHealth.RetestInterval()) {
-		w.collectSilentHello(h)
-	}
-}
-
-func (p *Pool) sweepCollectedHellos(now time.Time) {
-	if len(p.Workers) > 0 {
-		p.Workers[0].sweepCollectedHellos(p.GetFirstWorkerConfig(), now)
-	}
+	return w.destState.countCollected(readings, now, cfg.System.IPHealth.RetestInterval())
 }
 
 func (t *destStateTracker) resetCollectedTimer(timer *time.Timer) <-chan time.Time {

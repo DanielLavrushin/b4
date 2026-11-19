@@ -1,6 +1,7 @@
 package nfq
 
 import (
+	"cmp"
 	"context"
 	"encoding/binary"
 	"net"
@@ -77,50 +78,174 @@ func eligibleCollectedIP(ip net.IP) (netip.Addr, bool) {
 	return addr, ok && addr.IsGlobalUnicast() && !addr.IsPrivate() && !utils.IsPrivateIP(ip)
 }
 
-func (p *Pool) collectHello(h helloWatch, confirm func() bool) bool {
-	if p == nil || p.collectedCtx == nil || p.collectedCtx.Err() != nil {
-		return false
+type collectedEntry struct {
+	watch helloWatch
+	addr  netip.Addr
+	added bool
+}
+
+type collectedTarget struct {
+	addr  netip.Addr
+	port  uint16
+	added bool
+}
+
+func (p *Pool) SetCollectedPause(paused func() bool) {
+	p.configMu.Lock()
+	defer p.configMu.Unlock()
+	p.collectedPaused = paused
+}
+
+func (p *Pool) collectedPass(now time.Time) {
+	if p == nil || p.collectedCtx == nil || p.collectedCtx.Err() != nil || len(p.Workers) == 0 {
+		return
 	}
-	addr, ok := eligibleCollectedIP(h.dst)
-	if !ok {
-		return false
+	w := p.Workers[0]
+	p.configMu.Lock()
+	paused := p.collectedPaused
+	p.configMu.Unlock()
+	if paused != nil && paused() {
+		w.endDueCollected(now)
+		return
+	}
+	p.applyCollected(w, w.countDueCollected(w.getConfig(), now), now)
+}
+
+func (p *Pool) applyCollected(w *Worker, completed []helloWatch, now time.Time) {
+	p.configMu.Lock()
+	due := len(completed) > 0 || p.collectedDueLocked(now)
+	p.configMu.Unlock()
+	if !due {
+		return
 	}
 	unlock := config.LockWrites()
+	p.configMu.Lock()
+	batch := p.addCollectedLocked(w, completed)
+	if len(batch) == 0 && !p.collectedDueLocked(now) {
+		p.configMu.Unlock()
+		unlock()
+		return
+	}
+	before := p.publishedCollected()
+	if !p.publishCollectedViewLocked(false) {
+		p.dropCollectedLocked(w, batch)
+		if p.collectedDirty {
+			p.collectedRetryWait = min(max(2*p.collectedRetryWait, collectedRetryFirst), collectedRetryMax)
+			p.collectedRetryAt = now.Add(p.collectedRetryWait)
+		}
+		p.configMu.Unlock()
+		unlock()
+		return
+	}
+	p.collectedDirty = false
+	p.collectedRetryWait, p.collectedRetryAt = 0, time.Time{}
+	targets := p.collectedSettleTargetsLocked(before, batch)
+	p.configMu.Unlock()
+	unlock()
+	kept, gone := p.settleCollected(w, targets)
+	unlock = config.LockWrites()
 	defer unlock()
 	p.configMu.Lock()
 	defer p.configMu.Unlock()
-	if h.gen != 0 && p.state != nil && p.state.destState != nil {
-		t := p.state.destState
-		t.watchMu.RLock()
-		cur := t.watches[h.key]
-		valid := cur != nil && cur.gen == h.gen && !cur.closed
-		t.watchMu.RUnlock()
-		if !valid {
-			return false
+	p.takeBackCollectedLocked(gone)
+	for _, addr := range kept {
+		name := p.collected[addr].setID
+		if set := p.collectedBase.GetSetById(name); set != nil {
+			name = set.Name
 		}
+		log.Infof("Collected IP: candidate %s from set %q", addr, name)
+	}
+	p.updateCollectedMetricsLocked()
+}
+
+func collectedConsumerEnabled(cfg *config.Config) bool {
+	for _, set := range cfg.Sets {
+		if set.Enabled && set.Targets.UseCollectedIPs {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *Pool) addCollectedLocked(w *Worker, completed []helloWatch) []collectedEntry {
+	if len(completed) == 0 {
+		return nil
 	}
 	cfg := p.collectedBase
-	if cfg == nil || cfg.Queue.IsDiscovery || cfg.Queue.Mode == "tun" || cfg.System.Tables.SkipSetup {
-		return false
-	}
-	producer := cfg.GetSetById(h.setID)
-	if producer == nil || !producer.Enabled || !producer.TCP.IPBlockDetect.Collects() || producer.Targets.UseCollectedIPs {
-		return false
-	}
-	if p.collected == nil {
-		p.collected = make(map[netip.Addr]collectedCandidate)
-	}
-	_, existed := p.collected[addr]
-	if !existed {
-		if len(p.collected) >= maxCollectedIPs {
-			return false
+	usable := cfg != nil && p.collectedInstall != nil && !p.collectedEngineTUN && !cfg.Queue.IsDiscovery && cfg.Queue.Mode != "tun" && !cfg.System.Tables.SkipSetup && collectedConsumerEnabled(cfg)
+	var batch []collectedEntry
+	for _, h := range completed {
+		addr, eligible := eligibleCollectedIP(h.dst)
+		var producer *config.SetConfig
+		if usable {
+			producer = cfg.GetSetById(h.setID)
 		}
-		p.collected[addr] = collectedCandidate{setID: h.setID, host: h.host, port: h.port, at: time.Now()}
-	}
-	if !p.publishCollectedLocked() {
+		if !eligible || producer == nil || !producer.Enabled || !producer.TCP.IPBlockDetect.Collects() || producer.Targets.UseCollectedIPs {
+			w.destState.EndWatch(h)
+			continue
+		}
+		_, existed := p.collected[addr]
+		if !existed && len(p.collected) >= maxCollectedIPs {
+			w.destState.EndWatch(h)
+			continue
+		}
+		if !w.destState.parkCompletedCollected(h) {
+			continue
+		}
 		if !existed {
-			delete(p.collected, addr)
+			if p.collected == nil {
+				p.collected = make(map[netip.Addr]collectedCandidate)
+			}
+			p.collected[addr] = collectedCandidate{setID: h.setID, host: h.host, port: h.port, at: time.Now()}
 		}
+		batch = append(batch, collectedEntry{watch: h, addr: addr, added: !existed})
+	}
+	return batch
+}
+
+func (p *Pool) dropCollectedLocked(w *Worker, batch []collectedEntry) {
+	for _, e := range batch {
+		if e.added {
+			delete(p.collected, e.addr)
+		}
+		w.destState.EndWatch(e.watch)
+	}
+}
+
+func (p *Pool) publishedCollected() []string {
+	p.collectedMu.RLock()
+	defer p.collectedMu.RUnlock()
+	return p.collectedPublished
+}
+
+func (p *Pool) collectedSettleTargetsLocked(before []string, batch []collectedEntry) []collectedTarget {
+	was := make(map[string]bool, len(before))
+	for _, ip := range before {
+		was[ip] = true
+	}
+	var targets []collectedTarget
+	seen := make(map[netip.AddrPort]bool)
+	for _, ip := range p.publishedCollected() {
+		addr, err := netip.ParseAddr(ip)
+		candidate, pooled := p.collected[addr]
+		if was[ip] || err != nil || !pooled {
+			continue
+		}
+		seen[netip.AddrPortFrom(addr, candidate.port)] = true
+		targets = append(targets, collectedTarget{addr: addr, port: candidate.port, added: true})
+	}
+	for _, e := range batch {
+		key := netip.AddrPortFrom(e.addr, e.watch.port)
+		if !seen[key] {
+			seen[key] = true
+			targets = append(targets, collectedTarget{addr: e.addr, port: e.watch.port})
+		}
+	}
+	return targets
+}
+
+func (p *Pool) collectedOwned(h helloWatch) bool {
+	if len(p.Workers) == 0 {
 		return false
 	}
 	current := p.GetFirstWorkerConfig()
@@ -129,24 +254,45 @@ func (p *Pool) collectHello(h helloWatch, confirm func() bool) bool {
 		return set.Targets.UseCollectedIPs && set.MatchesTCPDPort(h.port) && collectedSourceAllowed(set, h.scope)
 	}
 	matched, consumer := matcher.MatchIPWithSource(h.dst, h.mac, keep)
-	accepted := matched && current.IPFamilyEnabled(h.ver == IPv6)
-	if accepted {
-		winner, selected := matcher.MatchIPWithSource(h.dst, h.mac, func(set *config.SetConfig) bool {
-			return set.MatchesTCPDPort(h.port) && collectedSourceAllowed(set, h.scope)
-		})
-		accepted = winner && selected.Id == consumer.Id && confirm != nil && confirm()
+	if !matched || current == nil || !current.IPFamilyEnabled(h.ver == IPv6) {
+		return false
 	}
-	if !accepted && !existed {
-		delete(p.collected, addr)
-		if !p.publishCollectedLocked() {
-			log.Warnf("Collected IPs: interrupted candidate rollback incomplete for %s", addr)
+	winner, selected := matcher.MatchIPWithSource(h.dst, h.mac, func(set *config.SetConfig) bool {
+		return set.MatchesTCPDPort(h.port) && collectedSourceAllowed(set, h.scope)
+	})
+	return winner && selected.Id == consumer.Id
+}
+
+func (p *Pool) settleCollected(w *Worker, targets []collectedTarget) (kept, gone []netip.Addr) {
+	for _, target := range targets {
+		dst := net.IP(target.addr.AsSlice())
+		resets := 0
+		if w.destState.collectRunOpen(dst, target.port) {
+			resets = w.resetParkedCollected(dst, target.port, p.collectedOwned)
+		}
+		switch {
+		case !target.added:
+		case resets == 0:
+			w.destState.endParkedCollected(dst, target.port)
+			gone = append(gone, target.addr)
+		default:
+			kept = append(kept, target.addr)
 		}
 	}
-	if accepted && !existed {
-		log.Infof("Collected IP: candidate %s from set %q", addr, producer.Name)
-		p.updateCollectedMetricsLocked()
+	return kept, gone
+}
+
+func (p *Pool) takeBackCollectedLocked(gone []netip.Addr) {
+	if len(gone) == 0 {
+		return
 	}
-	return accepted
+	for _, addr := range gone {
+		delete(p.collected, addr)
+	}
+	if !p.publishCollectedViewLocked(false) {
+		log.Warnf("Collected IPs: interrupted candidate rollback incomplete for %v", gone)
+		p.collectedDirty = true
+	}
 }
 
 func (p *Pool) publishCollectedLocked() bool {
@@ -232,33 +378,6 @@ func (p *Pool) collectedDueLocked(now time.Time) bool {
 		return false
 	}
 	return !now.Before(p.collectedRetryAt)
-}
-
-func (p *Pool) reconcileCollected(now time.Time) {
-	if p == nil || p.collectedCtx == nil || p.collectedCtx.Err() != nil {
-		return
-	}
-	p.configMu.Lock()
-	due := p.collectedDueLocked(now)
-	p.configMu.Unlock()
-	if !due {
-		return
-	}
-	unlock := config.LockWrites()
-	defer unlock()
-	p.configMu.Lock()
-	defer p.configMu.Unlock()
-	if !p.collectedDueLocked(now) {
-		return
-	}
-	if !p.publishCollectedViewLocked(false) {
-		p.collectedRetryWait = min(max(2*p.collectedRetryWait, collectedRetryFirst), collectedRetryMax)
-		p.collectedRetryAt = now.Add(p.collectedRetryWait)
-		return
-	}
-	p.collectedDirty = false
-	p.collectedRetryWait, p.collectedRetryAt = 0, time.Time{}
-	p.updateCollectedMetricsLocked()
 }
 
 func collectedFlow(h helloWatch) (ctnl.Flow, bool) {
@@ -364,6 +483,38 @@ func (t *destStateTracker) parkedCollected(dst net.IP, port uint16, limit int) [
 	return parked
 }
 
+func (t *destStateTracker) parkCompletedCollected(h helloWatch) bool {
+	t.watchMu.Lock()
+	defer t.watchMu.Unlock()
+	cur := t.watches[h.key]
+	if cur == nil || cur.gen != h.gen || cur.closed {
+		return false
+	}
+	if !cur.parked {
+		cur.probing, cur.parked = false, true
+		cur.deadline = cur.deadline.Add(helloWatchTTL)
+		t.addCollectedDeadlineLocked(cur)
+	}
+	return true
+}
+
+func (t *destStateTracker) collectRunOpen(dst net.IP, port uint16) bool {
+	t.watchMu.RLock()
+	defer t.watchMu.RUnlock()
+	_, open := t.collectRuns[iphealth.BanKey(dst, int(port))]
+	return open
+}
+
+func (t *destStateTracker) endParkedCollected(dst net.IP, port uint16) {
+	t.watchMu.Lock()
+	defer t.watchMu.Unlock()
+	for key, h := range t.watches {
+		if h.collect && h.parked && h.isTo(dst, port) {
+			t.unwatchLocked(key)
+		}
+	}
+}
+
 func (t *destStateTracker) takeParkedCollected(parked []helloWatch, flows []ctnl.Flow, found []bool) []helloWatch {
 	t.watchMu.Lock()
 	defer t.watchMu.Unlock()
@@ -390,43 +541,26 @@ func (w *Worker) resetCollectedClient(h helloWatch) {
 	log.LogConnection("TCP", h.sniSet, h.host, h.client.String(), h.cport, h.ipSet, h.dst.String(), h.port, h.mac, config.TLSVersionString(h.tls), "ipblock-collected")
 }
 
-func (w *Worker) resetParkedCollected(h helloWatch) {
-	parked := w.destState.parkedCollected(h.dst, h.port, maxSilenceLookups)
-	if len(parked) == 0 {
-		return
-	}
-	flows, found := make([]ctnl.Flow, len(parked)), make([]bool, len(parked))
-	for i, p := range parked {
-		flows[i], found[i] = collectedFlow(p)
-	}
-	for _, p := range w.destState.takeParkedCollected(parked, flows, found) {
-		w.resetCollectedClient(p)
-	}
-}
-
-func (w *Worker) collectSilentHello(h helloWatch) {
-	if w.pool == nil {
-		w.destState.EndWatch(h)
-		return
-	}
-	accepted := w.pool.collectHello(h, func() bool {
-		flow, ok := collectedFlow(h)
-		w.destState.watchMu.Lock()
-		cur := w.destState.watches[h.key]
-		if cur == nil || cur.gen != h.gen || cur.closed || !ok || !collectedFlowSilent(&h, cur, flow) {
-			w.destState.watchMu.Unlock()
-			return false
+func (w *Worker) resetParkedCollected(dst net.IP, port uint16, owned func(helloWatch) bool) int {
+	var parked []helloWatch
+	for _, h := range w.destState.parkedCollected(dst, port, maxSilenceLookups) {
+		if owned(h) {
+			parked = append(parked, h)
 		}
-		w.destState.unwatchLocked(h.key)
-		w.destState.watchMu.Unlock()
-		w.resetCollectedClient(h)
-		return true
-	})
-	if !accepted {
-		w.destState.EndWatch(h)
-		return
 	}
-	w.resetParkedCollected(h)
+	if len(parked) == 0 {
+		return 0
+	}
+	slices.SortFunc(parked, func(a, b helloWatch) int { return cmp.Compare(a.gen, b.gen) })
+	flows, found := make([]ctnl.Flow, len(parked)), make([]bool, len(parked))
+	for i, h := range parked {
+		flows[i], found[i] = collectedFlow(h)
+	}
+	silent := w.destState.takeParkedCollected(parked, flows, found)
+	for _, h := range silent {
+		w.resetCollectedClient(h)
+	}
+	return len(silent)
 }
 
 func collectedSourceAllowed(set *config.SetConfig, scope *ingressScope) bool {

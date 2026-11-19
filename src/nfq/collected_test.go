@@ -203,13 +203,19 @@ func TestCollectedBoundsAndAddressEligibility(t *testing.T) {
 			t.Fatalf("ineligible candidate %s", raw)
 		}
 	}
-	w, p, _ := collectedRig(t, func(context.Context, *config.Config) error { return nil })
+	installs := 0
+	w, p, sent := collectedRig(t, func(context.Context, *config.Config) error { installs++; return nil })
 	p.collected = make(map[netip.Addr]collectedCandidate)
 	for i := 0; i < maxCollectedIPs; i++ {
 		p.collected[netip.AddrFrom4([4]byte{8, 1, byte(i >> 8), byte(i)})] = collectedCandidate{}
 	}
-	if p.collectHello(helloWatch{dst: net.ParseIP("1.2.3.4"), setID: w.getConfig().Sets[1].Id}, func() bool { return true }) || len(p.collected) != maxCollectedIPs {
-		t.Fatal("pool bound exceeded")
+	w.ProcessPacket(silentHelloFrom(42000))
+	if !w.destState.Watching() {
+		t.Fatal("missing TLS watch, so this test proves nothing")
+	}
+	sweepAcknowledgedCollectedHellos(w, time.Now().Add(4*time.Second))
+	if _, added := p.collected[netip.MustParseAddr("1.2.3.4")]; added || len(p.collected) != maxCollectedIPs || installs != 0 || len(resetsTo(sent())) != 0 {
+		t.Fatalf("pool bound exceeded: added=%v candidates=%d installs=%d resets=%v", added, len(p.collected), installs, resetsTo(sent()))
 	}
 }
 

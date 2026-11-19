@@ -21,7 +21,7 @@ func sweepAcknowledgedCollectedHellos(w *Worker, now time.Time) {
 		}
 	}
 	w.destState.watchMu.Unlock()
-	w.sweepCollectedHellos(w.getConfig(), now)
+	w.pool.collectedPass(now)
 }
 
 func collectedReply(sport uint16, ack uint32, flags byte, payload []byte) []byte {
@@ -74,7 +74,7 @@ func TestCollectedACKGate(t *testing.T) {
 			if name == "client-close" {
 				w.ProcessPacket(clientPacket(42000, afterHello(), 0x11, nil))
 			}
-			w.sweepCollectedHellos(w.getConfig(), time.Now().Add(4*time.Second))
+			w.pool.collectedPass(time.Now().Add(4 * time.Second))
 			want := name == "complete" || name == "with-client-tail"
 			if got := len(p.collected) == 1; got != want {
 				t.Fatalf("candidate=%v want=%v", got, want)
@@ -105,7 +105,7 @@ func TestCollectedACKSplitOriginalHello(t *testing.T) {
 			flow.ReplyPackets++
 			flow.ReplyBytes += uint64(len(raw))
 			w.ProcessPacket(raw)
-			w.sweepCollectedHellos(w.getConfig(), time.Now().Add(4*time.Second))
+			w.pool.collectedPass(time.Now().Add(4 * time.Second))
 			if got := len(p.collected) == 1; got != complete {
 				t.Fatalf("split candidate=%v want=%v", got, complete)
 			}
@@ -132,7 +132,7 @@ func TestCollectedACKWraparound(t *testing.T) {
 			flow.ReplyPackets++
 			flow.ReplyBytes += uint64(len(raw))
 			w.ProcessPacket(raw)
-			w.sweepCollectedHellos(w.getConfig(), time.Now().Add(4*time.Second))
+			w.pool.collectedPass(time.Now().Add(4 * time.Second))
 			if got := len(p.collected) == 1; got != complete {
 				t.Fatalf("wrapped candidate=%v want=%v", got, complete)
 			}
@@ -156,7 +156,7 @@ func TestCollectedACKTracksOriginalSentEnd(t *testing.T) {
 	flow.ReplyPackets++
 	flow.ReplyBytes += uint64(len(raw))
 	w.ProcessPacket(raw)
-	w.sweepCollectedHellos(w.getConfig(), time.Now().Add(4*time.Second))
+	w.pool.collectedPass(time.Now().Add(4 * time.Second))
 	if len(p.collected) != 1 {
 		t.Fatal("complete ACK after original tail was ignored")
 	}
@@ -242,7 +242,7 @@ func TestCollectedACKIPv6(t *testing.T) {
 			flow.ReplyPackets++
 			flow.ReplyBytes += uint64(len(reply))
 			w.ProcessPacket(reply)
-			w.sweepCollectedHellos(w.getConfig(), time.Now().Add(4*time.Second))
+			w.pool.collectedPass(time.Now().Add(4 * time.Second))
 			if got := len(p.collected) == 1; got != complete {
 				t.Fatalf("IPv6 candidate=%v want=%v", got, complete)
 			}
@@ -256,13 +256,13 @@ func TestCollectedACKLateReplyDoesNotRearm(t *testing.T) {
 	flow.ID = 71
 	lookupFlow = func(ctnl.Tuple, ctnl.Direction) (ctnl.Flow, bool, error) { return flow, true, nil }
 	w.ProcessPacket(silentHelloFrom(42000))
-	w.sweepCollectedHellos(w.getConfig(), time.Now().Add(4*time.Second))
+	w.pool.collectedPass(time.Now().Add(4 * time.Second))
 	reply := collectedReply(42000, afterHello(), 0x10, nil)
 	flow.ReplyPackets++
 	flow.ReplyBytes += uint64(len(reply))
 	w.ProcessPacket(reply)
 	w.ProcessPacket(silentHelloFrom(42000))
-	w.sweepCollectedHellos(w.getConfig(), time.Now().Add(5*time.Second))
+	w.pool.collectedPass(time.Now().Add(5 * time.Second))
 	if len(p.collected) != 0 || len(resetsTo(sent())) != 0 || w.destState.Watching() {
 		t.Fatal("late ACK revived a rejected observation")
 	}
@@ -273,7 +273,7 @@ func TestCollectedACKUnknownMultiRecordExtent(t *testing.T) {
 	hello := helloWithEarlySNI("i.ytimg.com")
 	records, _ := twoRecordHello(hello, len(hello)-5-16)
 	w.ProcessPacket(clientPacket(42000, silentHelloSeq, 0x18, records))
-	w.sweepCollectedHellos(w.getConfig(), time.Now().Add(4*time.Second))
+	w.pool.collectedPass(time.Now().Add(4 * time.Second))
 	if len(p.collected) != 0 || w.destState.Watching() {
 		t.Fatal("unknown multi-record extent became a Collect watch")
 	}

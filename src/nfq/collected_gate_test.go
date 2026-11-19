@@ -61,7 +61,7 @@ func TestASaveWithoutCollectedSetsRunsNoCollectedInstall(t *testing.T) {
 				t.Fatal(err)
 			}
 			before := w.getMatcher()
-			p.reconcileCollected(time.Now())
+			p.collectedPass(time.Now())
 			if calls != tc.want {
 				t.Fatalf("installer calls=%d want %d, matcher kept=%v", calls, tc.want, w.getMatcher() == before)
 			}
@@ -85,7 +85,7 @@ func TestATUNEngineNeverReconcilesCollected(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := w.getMatcher()
-	p.reconcileCollected(time.Now())
+	p.collectedPass(time.Now())
 	if calls != 0 || w.getMatcher() != before {
 		t.Fatalf("a TUN engine reconciled collected IPs after a save to nfqueue: installer calls=%d, matcher kept=%v", calls, w.getMatcher() == before)
 	}
@@ -152,7 +152,7 @@ func TestAnUnchangedCollectedReconcileKeepsTheMatcher(t *testing.T) {
 		t.Fatal("setup: UpdateConfig rebuilt the matcher, so the save did not keep the sets")
 	}
 	installs := calls
-	p.reconcileCollected(time.Now())
+	p.collectedPass(time.Now())
 	d, _ := w.tlsCache.Decision(key)
 	if calls != installs+1 || w.getMatcher() != m || d.collectedPinned {
 		t.Fatalf("installer calls %d->%d, matcher kept=%v, decision pinned=%v", installs, calls, w.getMatcher() == m, d.collectedPinned)
@@ -176,16 +176,16 @@ func TestAFailedCollectedReconcileIsRetried(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	p.reconcileCollected(now)
+	p.collectedPass(now)
 	if calls != 1 || !p.collectedDirty {
 		t.Fatalf("the failed reconcile: installer calls=%d, still dirty=%v", calls, p.collectedDirty)
 	}
-	p.reconcileCollected(now.Add(time.Second))
+	p.collectedPass(now.Add(time.Second))
 	if calls != 1 {
 		t.Fatalf("the reconcile was retried before its delay passed: installer calls=%d", calls)
 	}
 	fail = false
-	p.reconcileCollected(now.Add(collectedRetryFirst + time.Second))
+	p.collectedPass(now.Add(collectedRetryFirst + time.Second))
 	if calls != 2 || p.collectedDirty {
 		t.Fatalf("the reconcile was not retried once its delay passed: installer calls=%d, still dirty=%v", calls, p.collectedDirty)
 	}

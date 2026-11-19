@@ -95,7 +95,7 @@ func (r *collectCountRig) silent(t *testing.T, sport uint16) {
 }
 
 func (r *collectCountRig) sweep(after time.Duration) {
-	r.w.sweepCollectedHellos(r.w.getConfig(), r.start.Add(after))
+	r.p.collectedPass(r.start.Add(after))
 }
 
 func (r *collectCountRig) collected() int {

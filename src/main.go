@@ -238,9 +238,6 @@ func runB4(cmd *cobra.Command, args []string) error {
 	runtimeConfig := func(c *config.Config) *config.Config {
 		return collectedView.Load().(func(*config.Config) *config.Config)(c)
 	}
-	waitTables := func(ctx context.Context) error {
-		return waitDiscoveryIdle(ctx, discoveryRT.IsActive)
-	}
 	refreshTables := func() error {
 		c := runtimeConfig(cfgPtr.Load())
 		if c.System.Tables.SkipSetup {
@@ -339,16 +336,17 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	pool := nfq.NewPool(&cfg)
 	collectedView.Store((func(*config.Config) *config.Config)(pool.CollectedConfig))
+	pool.SetCollectedPause(discoveryRT.IsActive)
 	pool.SetCollectedTargetsInstaller(collectedTargetsInstaller(tproxyMgr, collectedInstallSteps{
 		refused: func(c *config.Config) error {
 			return collectedInstallRefusal(c, engineDown.Load(), isTUN || tunEngineRef.Load() != nil)
 		},
-		wait:    waitTables,
-		refresh: tables.RefreshCollectedRules,
-		capture: tables.SyncCollectedCaptureSets,
-		routing: tables.RoutingSyncConfig,
-		dscp:    tables.SyncDSCP,
-		ready:   tables.CollectedTargetsReady,
+		discovery: discoveryRT.IsActive,
+		refresh:   tables.RefreshCollectedRules,
+		capture:   tables.SyncCollectedCaptureSets,
+		routing:   tables.RoutingSyncConfig,
+		dscp:      tables.SyncDSCP,
+		ready:     tables.CollectedTargetsReady,
 	}), tproxyResolver.Set)
 	tproxyMgr.SetWarmTupleFlows(pool.WarmTupleFlows())
 	tables.DNSQueryCopyOpenFunc = pool.OpenDNSQueryCopy
@@ -1127,14 +1125,16 @@ func collectedInstallRefusal(c *config.Config, engineDown, tun bool) error {
 	return nil
 }
 
+var errCollectedDiscoveryRunning = errors.New("discovery is running")
+
 type collectedInstallSteps struct {
-	refused func(*config.Config) error
-	wait    func(context.Context) error
-	refresh func(*config.Config) error
-	capture func(*config.Config) error
-	routing func(*config.Config)
-	dscp    func(*config.Config)
-	ready   func(*config.Config) error
+	refused   func(*config.Config) error
+	discovery func() bool
+	refresh   func(*config.Config) error
+	capture   func(*config.Config) error
+	routing   func(*config.Config)
+	dscp      func(*config.Config)
+	ready     func(*config.Config) error
 }
 
 func collectedTargetsInstaller(mgr *tproxy.Manager, steps collectedInstallSteps) func(context.Context, *config.Config) error {
@@ -1142,7 +1142,10 @@ func collectedTargetsInstaller(mgr *tproxy.Manager, steps collectedInstallSteps)
 		if err := steps.refused(c); err != nil {
 			return err
 		}
-		if err := steps.wait(ctx); err != nil {
+		if steps.discovery() {
+			return errCollectedDiscoveryRunning
+		}
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if err := steps.refresh(c); err != nil {

@@ -199,7 +199,7 @@ func TestCollectedRecordedReplyPatterns(t *testing.T) {
 				}
 			}
 			if fixture.name == "capture-2" {
-				w.sweepCollectedHellos(w.getConfig(), time.Now().Add(4*time.Second))
+				w.pool.collectedPass(time.Now().Add(4 * time.Second))
 			} else {
 				sweepAcknowledgedCollectedHellos(w, time.Now().Add(4*time.Second))
 			}

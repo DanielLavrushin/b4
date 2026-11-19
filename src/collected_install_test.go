@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/tproxy"
@@ -58,18 +59,18 @@ func TestCollectedInstallerClearsTheLastAddressOfACollectedOnlyConsumer(t *testi
 			var ran []string
 			step := func(name string) { ran = append(ran, name) }
 			install := collectedTargetsInstaller(mgr, collectedInstallSteps{
-				refused: func(*config.Config) error { step("refused"); return nil },
-				wait:    func(context.Context) error { step("wait"); return nil },
-				refresh: func(*config.Config) error { step("refresh"); return nil },
-				capture: func(*config.Config) error { step("capture"); return nil },
-				routing: func(*config.Config) { step("routing") },
-				dscp:    func(*config.Config) { step("dscp") },
-				ready:   func(*config.Config) error { step("ready"); return nil },
+				refused:   func(*config.Config) error { step("refused"); return nil },
+				discovery: func() bool { step("discovery"); return false },
+				refresh:   func(*config.Config) error { step("refresh"); return nil },
+				capture:   func(*config.Config) error { step("capture"); return nil },
+				routing:   func(*config.Config) { step("routing") },
+				dscp:      func(*config.Config) { step("dscp") },
+				ready:     func(*config.Config) error { step("ready"); return nil },
 			})
 			if err := install(context.Background(), view); err != nil {
 				t.Fatalf("clearing the last collected address of a collected-only consumer was refused: %v", err)
 			}
-			if got := strings.Join(ran, ","); got != "refused,wait,refresh,capture,routing,dscp,ready" {
+			if got := strings.Join(ran, ","); got != "refused,discovery,refresh,capture,routing,dscp,ready" {
 				t.Fatalf("installer steps ran as %s", got)
 			}
 			if status := mgr.ListenerStatus("consumer", 0); status.V4 || status.V6 {
@@ -90,13 +91,13 @@ func TestCollectedInstallerRefusesWhileAConsumerListenerIsDown(t *testing.T) {
 			mgr := tproxy.NewManager(nil)
 			t.Cleanup(mgr.Stop)
 			install := collectedTargetsInstaller(mgr, collectedInstallSteps{
-				refused: func(*config.Config) error { return nil },
-				wait:    func(context.Context) error { return nil },
-				refresh: func(*config.Config) error { return nil },
-				capture: func(*config.Config) error { return nil },
-				routing: func(*config.Config) {},
-				dscp:    func(*config.Config) {},
-				ready:   func(*config.Config) error { return nil },
+				refused:   func(*config.Config) error { return nil },
+				discovery: func() bool { return false },
+				refresh:   func(*config.Config) error { return nil },
+				capture:   func(*config.Config) error { return nil },
+				routing:   func(*config.Config) {},
+				dscp:      func(*config.Config) {},
+				ready:     func(*config.Config) error { return nil },
 			})
 			err := install(context.Background(), view)
 			if status := mgr.ListenerStatus("consumer", 0); status.V4 {
@@ -117,18 +118,65 @@ func TestCollectedInstallerFailsWhileTheCaptureSetsLagThePool(t *testing.T) {
 	step := func(name string) { ran = append(ran, name) }
 	refused := errors.New("collected capture sets: b4_mss_0_v4c kept 198.51.100.7")
 	install := collectedTargetsInstaller(mgr, collectedInstallSteps{
-		refused: func(*config.Config) error { step("refused"); return nil },
-		wait:    func(context.Context) error { step("wait"); return nil },
-		refresh: func(*config.Config) error { step("refresh"); return nil },
-		capture: func(*config.Config) error { step("capture"); return refused },
-		routing: func(*config.Config) { step("routing") },
-		dscp:    func(*config.Config) { step("dscp") },
-		ready:   func(*config.Config) error { step("ready"); return nil },
+		refused:   func(*config.Config) error { step("refused"); return nil },
+		discovery: func() bool { step("discovery"); return false },
+		refresh:   func(*config.Config) error { step("refresh"); return nil },
+		capture:   func(*config.Config) error { step("capture"); return refused },
+		routing:   func(*config.Config) { step("routing") },
+		dscp:      func(*config.Config) { step("dscp") },
+		ready:     func(*config.Config) error { step("ready"); return nil },
 	})
 	if err := install(context.Background(), view); !errors.Is(err, refused) {
 		t.Fatalf("a capture-set sync the kernel refused must fail the install so that it is retried, got %v", err)
 	}
-	if got := strings.Join(ran, ","); got != "refused,wait,refresh,capture" {
+	if got := strings.Join(ran, ","); got != "refused,discovery,refresh,capture" {
 		t.Fatalf("installer steps ran as %s", got)
+	}
+}
+
+func recordingInstallSteps(ran *[]string, discovery bool) collectedInstallSteps {
+	step := func(name string) { *ran = append(*ran, name) }
+	return collectedInstallSteps{
+		refused:   func(*config.Config) error { step("refused"); return nil },
+		discovery: func() bool { step("discovery"); return discovery },
+		refresh:   func(*config.Config) error { step("refresh"); return nil },
+		capture:   func(*config.Config) error { step("capture"); return nil },
+		routing:   func(*config.Config) { step("routing") },
+		dscp:      func(*config.Config) { step("dscp") },
+		ready:     func(*config.Config) error { step("ready"); return nil },
+	}
+}
+
+func TestTheCollectedInstallerFailsAtOnceWhileDiscoveryRuns(t *testing.T) {
+	view := collectedOnlyConsumer(t, config.RoutingModeProxy).WithCollectedIPs([]string{"198.51.100.7"})
+	mgr := tproxy.NewManager(nil)
+	t.Cleanup(mgr.Stop)
+	var ran []string
+	install := collectedTargetsInstaller(mgr, recordingInstallSteps(&ran, true))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	start := time.Now()
+	err := install(ctx, view)
+	if took := time.Since(start); err == nil || took > time.Second {
+		t.Fatalf("a collected install while Discovery runs must fail at once, got err %v after %v", err, took)
+	}
+	if got := strings.Join(ran, ","); got != "refused,discovery" {
+		t.Fatalf("installer steps ran as %s while Discovery runs", got)
+	}
+}
+
+func TestACancelledCollectedInstallChangesNothing(t *testing.T) {
+	view := collectedOnlyConsumer(t, config.RoutingModeProxy).WithCollectedIPs([]string{"198.51.100.7"})
+	mgr := tproxy.NewManager(nil)
+	t.Cleanup(mgr.Stop)
+	var ran []string
+	install := collectedTargetsInstaller(mgr, recordingInstallSteps(&ran, false))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := install(ctx, view); !errors.Is(err, context.Canceled) {
+		t.Fatalf("a cancelled install must fail with its context, got %v", err)
+	}
+	if got := strings.Join(ran, ","); got != "refused,discovery" {
+		t.Fatalf("a cancelled install ran the steps %s", got)
 	}
 }

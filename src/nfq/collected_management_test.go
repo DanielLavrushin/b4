@@ -127,7 +127,8 @@ func TestCollectedManagementRemovalRejectsAnAlreadyQueuedWatch(t *testing.T) {
 	}
 	calls := 0
 	p.collectedInstall = func(context.Context, *config.Config) error { calls++; return nil }
-	if p.collectHello(stale, func() bool { t.Fatal("removed watch reached reset"); return true }) || calls != 0 {
+	p.applyCollected(p.Workers[0], []helloWatch{stale}, time.Now())
+	if _, back := p.collected[netip.MustParseAddr("1.2.3.4")]; back || calls != 0 {
 		t.Fatal("queued old watch republished a removed IP", calls)
 	}
 }

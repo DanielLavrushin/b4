@@ -30,6 +30,7 @@ type Pool struct {
 	collectedPublished []string
 	collectedInstall   func(context.Context, *config.Config) error
 	collectedChanged   func(*sni.SuffixSet)
+	collectedPaused    func() bool
 	collectedCtx       context.Context
 	collectedCancel    context.CancelFunc
 	collectedDirty     bool

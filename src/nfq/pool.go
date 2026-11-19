@@ -170,7 +170,7 @@ func NewPool(cfg *config.Config) *Pool {
 			select {
 			case <-collectedWake:
 			case <-collectedDue:
-				pool.sweepCollectedHellos(time.Now())
+				pool.collectedPass(time.Now())
 			case <-cleanupTicker.C:
 				retest := pool.retestInterval()
 				pool.state.connState.Cleanup()
@@ -190,7 +190,7 @@ func NewPool(cfg *config.Config) *Pool {
 			case <-escalationTicker.C:
 				pool.state.pendingHello.Cleanup()
 				pool.state.wssize.cleanup(time.Now())
-				pool.reconcileCollected(time.Now())
+				pool.collectedPass(time.Now())
 				pool.sweepSilentHellos(time.Now())
 				pool.state.destState.cleanupCollectedHistory()
 				pool.publishEscalations()
