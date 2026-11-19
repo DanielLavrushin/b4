@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"net"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -70,6 +72,35 @@ func TestCollectedInstallerClearsTheLastAddressOfACollectedOnlyConsumer(t *testi
 			}
 			if status := mgr.ListenerStatus("consumer", 0); status.V4 || status.V6 {
 				t.Fatalf("a consumer with no target left kept a listener: %+v", status)
+			}
+		})
+	}
+}
+
+func TestCollectedInstallerRefusesWhileAConsumerListenerIsDown(t *testing.T) {
+	for _, mode := range []string{config.RoutingModeWSReuse, config.RoutingModeProxy} {
+		t.Run(mode, func(t *testing.T) {
+			view := collectedOnlyConsumer(t, mode).WithCollectedIPs([]string{"198.51.100.7"})
+			port := tproxy.PortFor(tproxy.MarkForConfig(view, view.Sets[0]))
+			if taken, err := net.Listen("tcp4", net.JoinHostPort("0.0.0.0", strconv.Itoa(port))); err == nil {
+				t.Cleanup(func() { taken.Close() })
+			}
+			mgr := tproxy.NewManager(nil)
+			t.Cleanup(mgr.Stop)
+			install := collectedTargetsInstaller(mgr, collectedInstallSteps{
+				refused: func(*config.Config) error { return nil },
+				wait:    func(context.Context) error { return nil },
+				refresh: func(*config.Config) error { return nil },
+				routing: func(*config.Config) {},
+				dscp:    func(*config.Config) {},
+				ready:   func(*config.Config) error { return nil },
+			})
+			err := install(context.Background(), view)
+			if status := mgr.ListenerStatus("consumer", 0); status.V4 {
+				t.Skipf("the consumer listener started on port %d, so this host cannot show a listener that is down", port)
+			}
+			if err == nil || !strings.Contains(err.Error(), "listener") {
+				t.Fatalf("the install of a collected IPv4 address was accepted while the consumer had no IPv4 listener to take its connections (err %v); the firewall then diverts them to a port nothing listens on", err)
 			}
 		})
 	}
