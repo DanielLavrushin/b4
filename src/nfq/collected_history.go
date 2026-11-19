@@ -40,6 +40,18 @@ func (t *destStateTracker) rememberCollectedLocked(h *helloWatch) bool {
 	return true
 }
 
+func (t *destStateTracker) forgetCollectedHistoryLocked(h *helloWatch) {
+	if !h.collect || h.flowID == 0 {
+		return
+	}
+	entry := t.collectHistory.flows[h.key]
+	if entry == nil || entry.Value.(*helloWatch).flowID != h.flowID {
+		return
+	}
+	t.collectHistory.order.Remove(entry)
+	delete(t.collectHistory.flows, h.key)
+}
+
 func (t *destStateTracker) cleanupCollectedHistory() {
 	type pending struct {
 		original *helloWatch

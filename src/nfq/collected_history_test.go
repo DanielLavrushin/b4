@@ -165,3 +165,111 @@ func TestCollectedHistoryLookupErrorStopsBatch(t *testing.T) {
 		t.Fatalf("failed conntrack retried or lost evidence: calls=%d records=%d", calls, len(tracker.collectHistory.flows))
 	}
 }
+
+func historyRecorded(t *destStateTracker, key string) bool {
+	t.watchMu.RLock()
+	defer t.watchMu.RUnlock()
+	return t.collectHistory.flows[key] != nil
+}
+
+func TestAnAnsweredFlowLeavesTheCollectHistory(t *testing.T) {
+	for name, answer := range map[string]func(*testing.T, *collectCountRig){
+		"the server sent data the queue saw": func(t *testing.T, r *collectCountRig) {
+			r.hello(t, 42000)
+			r.serverSends(t, 42000, 0x18, []byte{0x16, 3, 3, 0, 1, 2})
+		},
+		"the client acknowledged server bytes": func(t *testing.T, r *collectCountRig) {
+			r.silent(t, 42000)
+			r.w.ProcessPacket(clientPacketAcking(42000, afterHello(), silentServerAck+1400, 0x10, nil))
+		},
+		"conntrack shows server bytes the queue did not see": func(t *testing.T, r *collectCountRig) {
+			r.silent(t, 42000)
+			f := r.flow(t, 42000)
+			f.ReplyPackets++
+			f.ReplyBytes += 1400
+			r.sweep(5 * time.Second)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newCollectCountRig(t)
+			r.silent(t, 42001)
+			r.sweep(4 * time.Second)
+			answer(t, r)
+			r.sweep(6 * time.Second)
+			answered, waiting := fmt.Sprintf(connKeyFormat, "10.0.0.1", 42000, "1.2.3.4", 443), fmt.Sprintf(connKeyFormat, "10.0.0.1", 42001, "1.2.3.4", 443)
+			if r.watched(42000) {
+				t.Fatal("setup: the answered connection must stop being watched")
+			}
+			if historyRecorded(r.w.destState, answered) {
+				t.Fatal("a connection its server answered still holds a history slot, until a conntrack cleanup reaches it")
+			}
+			if !r.watched(42001) || !historyRecorded(r.w.destState, waiting) {
+				t.Fatal("a silent connection that waits for the second one must keep its record, or a second watch could count it twice")
+			}
+		})
+	}
+}
+
+func TestAFullHistoryFreesSpaceAsServersAnswer(t *testing.T) {
+	tracker := &destStateTracker{}
+	tcp := make([]byte, TCPHeaderMinLen)
+	tcp[12], tcp[13] = 0x50, 0x18
+	for i := range maxHelloWatches {
+		tracker.WatchHello(historyWatch(fmt.Sprint(i), uint32(i+1)))
+	}
+	if len(tracker.watches) != maxHelloWatches || tracker.collectHistory.order.Len() != maxHelloWatches {
+		t.Fatalf("setup: %d watches and %d records, want %d of each", len(tracker.watches), tracker.collectHistory.order.Len(), maxHelloWatches)
+	}
+	for i := range maxHelloWatches {
+		tracker.NoteCollectedServerPacket(fmt.Sprint(i), tcp, 10, TCPHeaderMinLen+10)
+	}
+	if tracker.Watching() {
+		t.Fatal("setup: every answered connection must stop being watched")
+	}
+	tracker.WatchHello(historyWatch("new", 100000))
+	if !tracker.Watching() {
+		t.Fatalf("a new connection of a Collect set is refused while the history holds %d answered connections", tracker.collectHistory.order.Len())
+	}
+}
+
+func TestAHelloRetryIsWatchedAndCountedAtMostOnce(t *testing.T) {
+	r := newCollectCountRig(t)
+	retry := silentHello()
+	hrr := []byte{0x16, 3, 3, 0, 4, 2, 0, 0, 0}
+	key := fmt.Sprintf(connKeyFormat, "10.0.0.1", 42000, "1.2.3.4", 443)
+	acks := func(seq uint32, flags byte) {
+		raw := collectedReply(42000, seq, flags, nil)
+		f := r.flow(t, 42000)
+		f.ReplyPackets++
+		f.ReplyBytes += uint64(len(raw))
+		r.w.ProcessPacket(raw)
+	}
+
+	r.hello(t, 42000)
+	r.serverSends(t, 42000, 0x18, hrr)
+	if r.watched(42000) {
+		t.Fatal("setup: the HelloRetryRequest must end the watch of the first ClientHello")
+	}
+	second := afterHello()
+	r.w.ProcessPacket(clientPacketAcking(42000, second, silentServerAck+uint32(len(hrr)), 0x18, retry))
+	if !r.watched(42000) {
+		t.Fatal("the second ClientHello after a HelloRetryRequest must be watched once more")
+	}
+	watched := r.watchOf(t, 42000)
+	acks(second+uint32(len(retry)), 0x10)
+	count := func() int {
+		r.w.destState.watchMu.RLock()
+		defer r.w.destState.watchMu.RUnlock()
+		return r.w.destState.collectRuns["1.2.3.4:443"].count
+	}
+	r.sweep(4 * time.Second)
+	if n := count(); n != 1 || r.collected() != 0 {
+		t.Fatalf("the silent second ClientHello must count once, as the first of two: count=%d candidates=%d", n, r.collected())
+	}
+	if h := r.watchOf(t, 42000); h.gen != watched.gen || !h.parked {
+		t.Fatal("the counted second ClientHello must wait for a second silent connection")
+	}
+	if !historyRecorded(r.w.destState, key) {
+		t.Fatal("the silent connection lost its history record, so a further ClientHello on it could be counted again")
+	}
+}

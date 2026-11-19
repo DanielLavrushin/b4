@@ -45,9 +45,12 @@ func TestCollectedResidualRearmAfterAnsweredHello(t *testing.T) {
 	candidates := len(p.collected)
 	published := len(p.collectedPublished)
 	resets := len(resetsTo(sent()))
-	t.Logf("server_payload=%d reply_bytes=%d reply_packets=%d advanced_client_ack=%d rearmed=%v candidates=%d published=%d resets=%d", len(payload), flow.ReplyBytes, flow.ReplyPackets, ack, rearmed, candidates, published, resets)
-	if rearmed || candidates != 0 || published != 0 || resets != 0 {
-		t.Fatalf("answered flow must stay out of Collect: rearmed=%v candidates=%d published=%d resets=%d", rearmed, candidates, published, resets)
+	w.destState.watchMu.RLock()
+	count := w.destState.collectRuns["1.2.3.4:443"].count
+	w.destState.watchMu.RUnlock()
+	t.Logf("server_payload=%d reply_bytes=%d reply_packets=%d advanced_client_ack=%d rearmed=%v count=%d candidates=%d published=%d resets=%d", len(payload), flow.ReplyBytes, flow.ReplyPackets, ack, rearmed, count, candidates, published, resets)
+	if count != 1 || candidates != 0 || published != 0 || resets != 0 {
+		t.Fatalf("the answer must start the count over, so a later ClientHello on the answered flow counts as the first of two and the flow stays out of Collect: count=%d candidates=%d published=%d resets=%d", count, candidates, published, resets)
 	}
 }
 

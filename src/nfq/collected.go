@@ -840,6 +840,7 @@ func (t *destStateTracker) forgetCollectRunLocked(h *helloWatch) {
 	if h.consumer {
 		return
 	}
+	t.forgetCollectedHistoryLocked(h)
 	key := iphealth.BanKey(h.dst, int(h.port))
 	if len(t.collectRuns) > 0 {
 		delete(t.collectRuns, key)
