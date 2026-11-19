@@ -1054,3 +1054,57 @@ func TestNetnsUDPToACollectedAddressStaysOnTheUpstream(t *testing.T) {
 func TestNetnsUDPToACollectedAddressStaysOnTheUpstreamNft(t *testing.T) {
 	netnsUDPToACollectedAddressStaysOnTheUpstream(t, backendNFTables)
 }
+
+const netnsConntrackAcct = "net/netfilter/nf_conntrack_acct"
+
+func netnsReadSysctl(t *testing.T, key string) string {
+	t.Helper()
+	b, err := os.ReadFile("/proc/sys/" + key)
+	if err != nil {
+		t.Fatalf("read %s: %v", key, err)
+	}
+	return strings.TrimSpace(string(b))
+}
+
+func netnsClearingRulesLeavesKernelForcedAccountingOn(t *testing.T, engine string) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+	netnsRequireEngine(t, engine)
+	if _, err := os.Stat("/proc/sys/" + netnsConntrackAcct); err != nil {
+		t.Skipf("no %s in this namespace: %v", netnsConntrackAcct, err)
+	}
+	prevSnap := sysctlSnapPath
+	sysctlSnapPath = filepath.Join(t.TempDir(), "sysctl.json")
+	t.Cleanup(func() { sysctlSnapPath = prevSnap })
+	gwKeepSysctl(t, netnsConntrackAcct, "0")
+
+	routeEngine = nil
+	cfg := netnsConfig(engine)
+	cfg.Sets[0].TCP.IPBlockDetect.Enabled = true
+	cfg.Sets[0].TCP.IPBlockDetect.Action = "collect"
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	t.Cleanup(func() {
+		RoutingClearAll()
+		_ = ClearRules(cfg)
+		routeEngine = nil
+	})
+	if got := netnsReadSysctl(t, netnsConntrackAcct); got != "1" {
+		t.Fatalf("after b4 loaded its rules for a Collect producer, nf_conntrack_acct reads %s, want 1", got)
+	}
+	if err := ClearRules(cfg); err != nil {
+		t.Fatalf("ClearRules: %v", err)
+	}
+	if got := netnsReadSysctl(t, netnsConntrackAcct); got != "1" {
+		t.Errorf("clearing the rules set nf_conntrack_acct to %s; the kernel turned it on itself when b4's counter rules loaded, so b4 never owned the 0 it saved before them and must not write it back", got)
+	}
+}
+
+func TestNetnsClearingRulesLeavesKernelForcedAccountingOn(t *testing.T) {
+	netnsClearingRulesLeavesKernelForcedAccountingOn(t, backendIPTables)
+}
+
+func TestNetnsClearingRulesLeavesKernelForcedAccountingOnNft(t *testing.T) {
+	netnsClearingRulesLeavesKernelForcedAccountingOn(t, backendNFTables)
+}

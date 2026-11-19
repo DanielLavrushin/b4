@@ -2227,3 +2227,45 @@ func TestRefreshThrottleStaysBoundedUnderABurst(t *testing.T) {
 		t.Fatalf("%d throttle entries after a burst of fresh addresses, the limit is %d", len(routeRefreshedAt), routeRefreshedMax)
 	}
 }
+
+func TestCollectedAccountingLeavesAnAcctAlreadyOnAlone(t *testing.T) {
+	prevSnap := sysctlSnapPath
+	sysctlSnapPath = filepath.Join(t.TempDir(), "sysctl.json")
+	t.Cleanup(func() { sysctlSnapPath = prevSnap })
+
+	cfg := config.NewConfig()
+	producer := config.NewSetConfig()
+	producer.Enabled = true
+	producer.TCP.IPBlockDetect.Enabled = true
+	producer.TCP.IPBlockDetect.Action = "collect"
+	cfg.Sets = []*config.SetConfig{&producer}
+
+	for _, c := range []struct {
+		cur       string
+		wantSnap  bool
+		wantWrite []string
+	}{
+		{"1", false, nil},
+		{"0", true, []string{collectedAccounting.Name + "=1"}},
+	} {
+		t.Run("acct="+c.cur, func(t *testing.T) {
+			_ = os.Remove(sysctlSnapPath)
+			var wrote []string
+			prevGet, prevSet := getSysctl, setSysctl
+			getSysctl = func(name string) string {
+				if name == collectedAccounting.Name {
+					return c.cur
+				}
+				return ""
+			}
+			setSysctl = func(name, val string) { wrote = append(wrote, name+"="+val) }
+			t.Cleanup(func() { getSysctl, setSysctl = prevGet, prevSet })
+
+			applyCollectedAccounting(&cfg)
+			_, saved := loadSysctlSnapshot()[collectedAccounting.Name]
+			if saved != c.wantSnap || strings.Join(wrote, ",") != strings.Join(c.wantWrite, ",") {
+				t.Errorf("with nf_conntrack_acct at %s, a Collect producer saved it=%v (want %v) and wrote %v (want %v); b4 did not turn an acct that already reads 1 on, so it owns no value to save or put back when its rules are cleared", c.cur, saved, c.wantSnap, wrote, c.wantWrite)
+			}
+		})
+	}
+}

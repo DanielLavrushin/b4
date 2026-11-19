@@ -81,7 +81,6 @@ func addRules(cfg *config.Config) error {
 	if cfg.System.Tables.SkipSetup {
 		return nil
 	}
-	applyCollectedAccounting(cfg)
 	discoveryDSCPRewritten(cfg)
 	rulesAppliedCfg = cfg
 
@@ -95,6 +94,7 @@ func addRules(cfg *config.Config) error {
 	if backend == backendNFTables {
 		nft := NewNFTablesManager(cfg)
 		err := nft.Apply()
+		applyCollectedAccounting(cfg)
 		applyDSCPLogged(cfg, backend)
 		reapplyDiscoverySteering()
 		return err
@@ -103,6 +103,7 @@ func addRules(cfg *config.Config) error {
 	ipt := NewIPTablesManager(cfg, backend == backendIPTablesLegacy)
 
 	err := ipt.Apply()
+	applyCollectedAccounting(cfg)
 	RoutingEnsureJumpPrecedence(cfg)
 	applyDSCPLogged(cfg, backend)
 	reapplyDiscoverySteering()

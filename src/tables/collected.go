@@ -359,6 +359,9 @@ var collectedAccounting = SysctlSetting{Name: "net.netfilter.nf_conntrack_acct",
 func applyCollectedAccounting(cfg *config.Config) {
 	for _, set := range cfg.Sets {
 		if set != nil && set.Enabled && set.TCP.IPBlockDetect.Collects() && !cfg.Queue.IsDiscovery && cfg.Queue.Mode != "tun" {
+			if _, saved := loadSysctlSnapshot()[collectedAccounting.Name]; !saved && getSysctl(collectedAccounting.Name) == "1" {
+				return
+			}
 			collectedAccounting.Apply()
 			return
 		}
