@@ -758,10 +758,7 @@ func reuseWireSegment(pkt []byte) (netnsWireSegment, bool) {
 }
 
 func reuseTCPChecksumValid(pkt []byte) bool {
-	if pkt[0]>>4 == 6 {
-		return sock.TCPChecksumValidV6(pkt)
-	}
-	return sock.TCPChecksumValid(pkt)
+	return rfc1071TCPChecksumValid(pkt)
 }
 
 func nextReuseRecord(t *testing.T, records <-chan warmTestRead) warmTestRead {
