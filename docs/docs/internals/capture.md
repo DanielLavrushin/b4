@@ -23,7 +23,7 @@ Only the start of each connection is queued. **TCP Connection Packets Limit** an
 
 The TCP rules select packets by conntrack direction. In `postrouting`, `forward` and `output` they take the packets in the direction of a connection's first packet, in `prerouting` the replies. b4 takes the direction of a TCP packet from the hook it was queued at. Where the kernel cannot select by direction, see [When b4 tells the direction by port](#direction-by-port).
 
-Packets whose mark has every bit of b4's queue mark and no other bit outside `0x73027fff` pass without being queued. On kernels 3.14 and later, b4 also releases from the queue unchanged a packet that a socket on the router sent with every bit of the queue mark. The queue mark is described under [Packet marks](../guides/marks.md#the-queue-mark).
+Packets whose mark has every bit of b4's queue mark and no other bit outside `0x77067fff` pass without being queued. On kernels 3.14 and later, b4 also releases from the queue unchanged a packet that a socket on the router sent with every bit of the queue mark. The queue mark is described under [Packet marks](../guides/marks.md#the-queue-mark).
 
 With iptables, an address family whose iptables lacks the `NFQUEUE` target or the `connbytes` match gets no capture rules. When neither IPv4 nor IPv6 can take them, the engine does not start.
 
