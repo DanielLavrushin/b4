@@ -1513,7 +1513,7 @@ func TestMCPWriteAcceptsEverySNIMutationModeThePacketPathImplements(t *testing.T
 	srv, api := newMCPTestServerAPI(t, writableCfg(t))
 	session, ctx := connectMCP(t, srv)
 
-	implemented := []string{"off", "duplicate", "grease", "padding", "reorder", "full", "advanced"}
+	implemented := []string{"duplicate", "grease", "padding", "reorder", "full", "advanced", "off"}
 	for _, mode := range implemented {
 		res := callSetValue(t, session, ctx, "sets[video].faking.sni_mutation.mode", strings.ToUpper(mode))
 		if res.IsError {
