@@ -69,6 +69,7 @@ type MTProtoBridge interface {
 	FailOpenViaWorker(client net.Conn, origIP net.IP, origPort int) bool
 	FailOpenOrder(origIP net.IP, origPort int) (directFirst, workerFallback bool)
 	NoteFailOpenDirect(origIP net.IP, dialed bool, received int64)
+	Track(client net.Conn) func()
 }
 
 const (
@@ -384,6 +385,8 @@ func (l *Listener) serve(client net.Conn, given *sniffResult) {
 			return
 		}
 		client = rest
+		untrack := l.Bridge.Track(client)
+		defer untrack()
 		directFirst, workerFallback := l.Bridge.FailOpenOrder(origIP, origPort)
 		if directFirst {
 			timeout := failOpenDirectTimeout

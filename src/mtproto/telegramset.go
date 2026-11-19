@@ -2,6 +2,8 @@ package mtproto
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
@@ -134,8 +136,13 @@ func telegramSetKey(cfg *config.Config) string {
 	if mode == config.RoutingModeInterface {
 		v4, v6 = cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled
 	}
-	return fmt.Sprintf("%s|%s|%s|%s|%s|%t|%d|%d|%s|%d|%t|%t|%t|%t", set.Id, mode, r.EgressInterface, r.EgressIP, r.EgressGateway, r.KillSwitch,
-		r.FWMark, r.Table, r.Upstream.Host, r.Upstream.Port, r.Upstream.UseDomain, r.Upstream.FailOpen, v4, v6)
+	auth := ""
+	if mode == config.RoutingModeProxy {
+		sum := sha256.Sum256([]byte(r.Upstream.Username + "\x00" + r.Upstream.Password))
+		auth = hex.EncodeToString(sum[:8])
+	}
+	return fmt.Sprintf("%s|%s|%s|%s|%s|%t|%d|%d|%s|%d|%t|%t|%t|%t|%s", set.Id, mode, r.EgressInterface, r.EgressIP, r.EgressGateway, r.KillSwitch,
+		r.FWMark, r.Table, r.Upstream.Host, r.Upstream.Port, r.Upstream.UseDomain, r.Upstream.FailOpen, v4, v6, auth)
 }
 
 func telegramSetChanged(old, next *config.Config) bool {

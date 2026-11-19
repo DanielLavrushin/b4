@@ -110,13 +110,17 @@ func (b *TransparentBridge) closeSessions() int {
 	return len(all)
 }
 
+func (b *TransparentBridge) Track(client net.Conn) func() {
+	return b.trackSession(client)
+}
+
 func closeBridgeSessions() {
 	b := liveBridge.Load()
 	if b == nil {
 		return
 	}
 	if n := b.closeSessions(); n > 0 {
-		log.Infof("%s closed %d Telegram over WebSocket session(s) so they reconnect on the new path of b4's own Telegram connections", tg(""), n)
+		log.Infof("%s closed %d Telegram over WebSocket connection(s) so they reconnect on the new path of b4's own Telegram connections", tg(""), n)
 	}
 }
 

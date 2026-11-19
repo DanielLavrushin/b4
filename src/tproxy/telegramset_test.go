@@ -102,6 +102,8 @@ func (b *handleCounter) FailOpenOrder(net.IP, int) (bool, bool) { return false, 
 
 func (b *handleCounter) NoteFailOpenDirect(net.IP, bool, int64) {}
 
+func (b *handleCounter) Track(net.Conn) func() { return func() {} }
+
 func listenLoopback(t *testing.T) net.Listener {
 	t.Helper()
 	ln, err := net.Listen("tcp4", "127.0.0.1:0")

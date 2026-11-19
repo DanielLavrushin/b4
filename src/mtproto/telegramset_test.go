@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -620,7 +621,7 @@ func TestADialThroughTheProxySetIsBoundByTheRaceDeadline(t *testing.T) {
 	server := via.served[0]
 	via.mu.Unlock()
 	_ = server.SetReadDeadline(time.Now().Add(time.Second))
-	if _, err := server.Read(make([]byte, 1)); err == nil {
+	if _, err := server.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
 		t.Fatal("the connection that arrived after the deadline must be closed, not leaked")
 	}
 }
@@ -670,7 +671,7 @@ func TestADialThroughTheProxySetStopsWhenItsCallerGivesUp(t *testing.T) {
 	server := via.served[0]
 	via.mu.Unlock()
 	_ = server.SetReadDeadline(time.Now().Add(time.Second))
-	if _, err := server.Read(make([]byte, 1)); err == nil {
+	if _, err := server.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
 		t.Fatal("the connection that arrived after the caller gave up must be closed, not leaked")
 	}
 
@@ -829,7 +830,7 @@ func TestAChangeOfTheTelegramSetClosesTheOpenTelegramSessions(t *testing.T) {
 		session := &closeRecordConn{}
 		srv.trackConn((*srv.secrets.Load())[0], session)
 		client := &closeRecordConn{}
-		bridge.trackSession(client)
+		bridge.Track(client)
 		return session, client
 	}
 
@@ -845,6 +846,40 @@ func TestAChangeOfTheTelegramSetClosesTheOpenTelegramSessions(t *testing.T) {
 	}
 	if !client.closed.Load() {
 		t.Error("a Telegram over WebSocket session opened before the Telegram set was chosen stayed open on the old path")
+	}
+}
+
+func TestAChangeOfTheProxyTelegramSetsCredentialsRestartsAndRebuilds(t *testing.T) {
+	withCredentials := func(mode, user, pass string) *config.Config {
+		cfg := routedTelegramConfig(mode)
+		cfg.Sets[0].Routing.Upstream.Username, cfg.Sets[0].Routing.Upstream.Password = user, pass
+		return cfg
+	}
+	old := withCredentials(config.RoutingModeProxy, "alice", "s3cret-one")
+	for name, next := range map[string]*config.Config{
+		"password": withCredentials(config.RoutingModeProxy, "alice", "s3cret-two"),
+		"username": withCredentials(config.RoutingModeProxy, "bob", "s3cret-one"),
+	} {
+		if !mtprotoNeedsRestart(old, next) {
+			t.Errorf("a new upstream %s kept the proxy's sessions and pools on the old account", name)
+		}
+	}
+	if key := telegramSetKey(old); strings.Contains(key, "s3cret") || strings.Contains(key, "alice") {
+		t.Errorf("the key carries the credentials in plain text: %q", key)
+	}
+	if mtprotoNeedsRestart(withCredentials(config.RoutingModeInterface, "alice", "s3cret-one"), withCredentials(config.RoutingModeInterface, "alice", "s3cret-two")) {
+		t.Error("an interface set's unused upstream credentials restarted the proxy")
+	}
+
+	b := NewTransparentBridge(old)
+	t.Cleanup(func() {
+		b.Close()
+		setTelegramSet(nil)
+	})
+	before := b.getWSPool()
+	b.UpdateConfig(withCredentials(config.RoutingModeProxy, "alice", "s3cret-two"))
+	if after := b.getWSPool(); after == before {
+		t.Error("the bridge kept its WebSocket pool after the upstream password changed")
 	}
 }
 
