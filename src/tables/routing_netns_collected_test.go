@@ -244,6 +244,9 @@ func (d *netnsDevice) holdAcross(t *testing.T, host string, change func()) strin
 
 func netnsTurnOffEarlyDemux(t *testing.T) {
 	t.Helper()
+	if _, err := os.Stat("/proc/sys/net/ipv4/ip_early_demux"); err != nil {
+		t.Skipf("this kernel has no early demux switch inside a network namespace (%v), so a run that needs early demux off cannot be set up here", err)
+	}
 	gwKeepSysctl(t, "net/ipv4/ip_early_demux", "0")
 	if _, err := os.Stat("/proc/sys/net/ipv4/tcp_early_demux"); err == nil {
 		gwKeepSysctl(t, "net/ipv4/tcp_early_demux", "0")
@@ -517,4 +520,94 @@ func TestNetnsAHeldCollectedConnectionStillGetsTheKernelsReset(t *testing.T) {
 
 func TestNetnsAHeldCollectedConnectionStillGetsTheKernelsResetNft(t *testing.T) {
 	netnsAHeldCollectedConnectionStillGetsTheKernelsReset(t, backendNFTables)
+}
+
+const (
+	netnsForeignCTMark    = "0x10c3d"
+	netnsCTRewriteNftable = "b4t_ctrewrite"
+)
+
+func netnsRewriteConnmark(t *testing.T, engine, hook, state string) func() int {
+	t.Helper()
+	if engine == backendNFTables {
+		prio := "0"
+		if hook == "prerouting" {
+			prio = "-190"
+		}
+		_, _ = run("nft", "delete", "table", "inet", netnsCTRewriteNftable)
+		netnsRun(t, "nft", "add", "table", "inet", netnsCTRewriteNftable)
+		t.Cleanup(func() { _, _ = run("nft", "delete", "table", "inet", netnsCTRewriteNftable) })
+		netnsRun(t, "nft", "add", "chain", "inet", netnsCTRewriteNftable, "rewrite", "{", "type", "filter", "hook", hook, "priority", prio, ";", "policy", "accept", ";", "}")
+		netnsRun(t, "nft", "add", "rule", "inet", netnsCTRewriteNftable, "rewrite", "ip", "daddr", netnsDevInet, "tcp", "dport", "443", "ct", "state", state, "counter", "ct", "mark", "set", netnsForeignCTMark)
+		return func() int {
+			out, _ := run("nft", "list", "table", "inet", netnsCTRewriteNftable)
+			return gwNftPackets(out)
+		}
+	}
+	chain := strings.ToUpper(hook)
+	spec := func(action string, at ...string) []string {
+		args := append([]string{engine, "-w", "-t", "mangle", action, chain}, at...)
+		return append(args, "-d", netnsDevInet, "-p", "tcp", "--dport", "443", "-m", "conntrack", "--ctstate", strings.ToUpper(state), "-j", "CONNMARK", "--set-xmark", netnsForeignCTMark+"/0xffffffff")
+	}
+	netnsRun(t, spec("-I", "1")...)
+	t.Cleanup(func() { _, _ = run(spec("-D")...) })
+	return func() int {
+		out, _ := run(engine, "-w", "-t", "mangle", "-L", chain, "-v", "-x", "-n")
+		for _, line := range strings.Split(out, "\n") {
+			f := strings.Fields(line)
+			if len(f) < 9 || f[2] != "CONNMARK" || f[8] != netnsDevInet {
+				continue
+			}
+			if n, err := strconv.Atoi(f[0]); err == nil {
+				return n
+			}
+		}
+		return 0
+	}
+}
+
+func netnsAProxiedCollectedConnectionSurvivesAConnectionMarkRewrite(t *testing.T, engine string) {
+	for _, c := range []struct {
+		name, hook, state string
+		late              bool
+	}{
+		{"at the SYN", "input", "new", false},
+		{"late without early demux", "prerouting", "established", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dev, base, st := netnsCollectedProxySetUp(t, engine)
+			RoutingSyncConfig(base.WithCollectedIPs([]string{netnsDevInet}))
+			var rewritten func() int
+			change := func() {}
+			if c.late {
+				netnsTurnOffEarlyDemux(t)
+				change = func() { rewritten = netnsRewriteConnmark(t, engine, c.hook, c.state) }
+			} else {
+				rewritten = netnsRewriteConnmark(t, engine, c.hook, c.state)
+			}
+			got := dev.holdAcross(t, netnsDevInet, change)
+			if rewritten == nil || rewritten() == 0 {
+				t.Fatalf("the connection-mark rewrite never matched a packet, so this run proves nothing; the device saw %q", got)
+			}
+			if want := fmt.Sprintf("ok=%d of %d", netnsCollectedHoldN, netnsCollectedHoldN); got != want {
+				netnsLogState(t, engine)
+				if engine == backendNFTables {
+					out, _ := run("nft", "list", "chain", "inet", routeNftTable, st.chainPre)
+					t.Logf("%s:\n%s", st.chainPre, out)
+				} else {
+					out, _ := run(engine, "-w", "-t", "mangle", "-L", st.chainPre, "-v", "-x", "-n")
+					t.Logf("%s:\n%s", st.chainPre, out)
+				}
+				t.Errorf("a connection the transparent listener holds for the collected address %s broke once something else rewrote its connection mark (%s): %q, want %q; the divert must take the listener's own connections before the collected guard returns a connection whose mark is not the set's", netnsDevInet, c.name, got, want)
+			}
+		})
+	}
+}
+
+func TestNetnsAProxiedCollectedConnectionSurvivesAConnectionMarkRewrite(t *testing.T) {
+	netnsAProxiedCollectedConnectionSurvivesAConnectionMarkRewrite(t, backendIPTables)
+}
+
+func TestNetnsAProxiedCollectedConnectionSurvivesAConnectionMarkRewriteNft(t *testing.T) {
+	netnsAProxiedCollectedConnectionSurvivesAConnectionMarkRewrite(t, backendNFTables)
 }

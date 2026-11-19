@@ -378,9 +378,6 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	be.addClaimedBypassRule(st.chainPre, st.mark)
 	routeAddBlacklistGate(be, "mangle", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
 	routeAddLocalDestinationGuard(be, st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
-	if err := routeCollectedGuard(be, cfg, set, st, st.chainPre); err != nil {
-		return err
-	}
 	if !sourceScoped {
 		routeSelfDialBypass(be, cfg, st.chainOut)
 		if err := routeCollectedGuard(be, cfg, set, st, st.chainOut); err != nil {
@@ -400,6 +397,14 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	case backendNFTables:
 		if byAddress && cfg.Queue.IPv4Enabled {
 			addProxyDivertRuleNft(st.chainPre, false, st.setV4, st.mark, proxyModePorts(st.mode)...)
+		}
+		if byAddress && cfg.Queue.IPv6Enabled {
+			addProxyDivertRuleNft(st.chainPre, true, st.setV6, st.mark, proxyModePorts(st.mode)...)
+		}
+		if err := routeCollectedGuard(be, cfg, set, st, st.chainPre); err != nil {
+			return err
+		}
+		if byAddress && cfg.Queue.IPv4Enabled {
 			addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources, "tcp", proxyModePorts(st.mode)...)
 			if st.quicReject {
 				addQUICPassRuleNft(st.chainPre, false, st.setV4, sources)
@@ -409,7 +414,6 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 			}
 		}
 		if byAddress && cfg.Queue.IPv6Enabled {
-			addProxyDivertRuleNft(st.chainPre, true, st.setV6, st.mark, proxyModePorts(st.mode)...)
 			addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "tcp", proxyModePorts(st.mode)...)
 			if st.quicReject {
 				addQUICPassRuleNft(st.chainPre, true, st.setV6, sources)
@@ -425,6 +429,14 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		proxyIptPreflight(legacy)
 		if byAddress && cfg.Queue.IPv4Enabled {
 			addProxyDivertRuleIpt(false, st.chainPre, st.setV4, st.mark, legacy, proxyModePorts(st.mode)...)
+		}
+		if byAddress && cfg.Queue.IPv6Enabled {
+			addProxyDivertRuleIpt(true, st.chainPre, st.setV6, st.mark, legacy, proxyModePorts(st.mode)...)
+		}
+		if err := routeCollectedGuard(be, cfg, set, st, st.chainPre); err != nil {
+			return err
+		}
+		if byAddress && cfg.Queue.IPv4Enabled {
 			addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "tcp", proxyModePorts(st.mode)...)
 			if st.quicReject {
 				addQUICPassRuleIpt(false, st.chainPre, st.setV4, sources, legacy)
@@ -437,7 +449,6 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 			}
 		}
 		if byAddress && cfg.Queue.IPv6Enabled {
-			addProxyDivertRuleIpt(true, st.chainPre, st.setV6, st.mark, legacy, proxyModePorts(st.mode)...)
 			addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy, "tcp", proxyModePorts(st.mode)...)
 			if st.quicReject {
 				addQUICPassRuleIpt(true, st.chainPre, st.setV6, sources, legacy)
