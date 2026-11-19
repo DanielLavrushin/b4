@@ -296,6 +296,31 @@ func TestNoCollectionWhileDiscoveryRuns(t *testing.T) {
 	}
 }
 
+func TestAnInstallUnderWayWhenDiscoveryStartsStillCompletes(t *testing.T) {
+	r := newCollectCountRig(t)
+	paused := false
+	r.p.SetCollectedPause(func() bool { return paused })
+	r.p.collectedInstall = func(_ context.Context, _ *config.Config, current func() bool) error {
+		r.installs++
+		paused = true
+		if !current() {
+			return errors.New("superseded")
+		}
+		return nil
+	}
+	r.silent(t, 42000)
+	r.sweep(4 * time.Second)
+	r.silent(t, 42001)
+	r.sweep(5 * time.Second)
+
+	if r.installs != 1 || !slices.Equal(r.p.publishedCollected(), []string{"1.2.3.4"}) {
+		t.Fatalf("an install that began before Discovery publishes its addresses: installs=%d published=%v", r.installs, r.p.publishedCollected())
+	}
+	if ports := resetsTo(r.sent()); !slices.Equal(ports, []uint16{42000, 42001}) {
+		t.Fatalf("the waiting connections of an install that began before Discovery are reset, got resets to %v", ports)
+	}
+}
+
 func TestACollectedCommitSettlesThePendingReconcileUnderItsOwnLock(t *testing.T) {
 	set := collectedConsumerSet()
 	w := newInjectingWorker(t, &set)
