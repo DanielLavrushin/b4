@@ -2,6 +2,7 @@ package nfq
 
 import (
 	"context"
+	"encoding/binary"
 	"net"
 	"net/netip"
 	"slices"
@@ -230,6 +231,81 @@ func TestHeaderOnlyRepliesTheQueueMissedNeitherCountNorStartTheCollectCountOver(
 			}
 			if ports := resetsTo(r.sent()); r.collected() != 1 || !slices.Equal(ports, []uint16{42000, 42002}) {
 				t.Fatalf("header-only replies are no answer, so the count must go on: candidates=%d resets=%v", r.collected(), ports)
+			}
+		})
+	}
+}
+
+func collectedV6Hello(sport uint16) []byte {
+	pkt := makeV6TCPPacket(silentHello(), silentHelloSeq)
+	binary.BigEndian.PutUint16(pkt[IPv6HeaderLen:IPv6HeaderLen+2], sport)
+	binary.BigEndian.PutUint32(pkt[IPv6HeaderLen+8:IPv6HeaderLen+12], silentServerAck)
+	return pkt
+}
+
+func collectedV6Reply(sport uint16) []byte {
+	pkt := makeV6TCPPacket(nil, silentServerAck)
+	copy(pkt[8:24], net.ParseIP("2001:db8::2"))
+	copy(pkt[24:40], net.ParseIP("2001:db8::1"))
+	binary.BigEndian.PutUint16(pkt[IPv6HeaderLen:IPv6HeaderLen+2], 443)
+	binary.BigEndian.PutUint16(pkt[IPv6HeaderLen+2:IPv6HeaderLen+4], sport)
+	binary.BigEndian.PutUint32(pkt[IPv6HeaderLen+8:IPv6HeaderLen+12], afterHello())
+	pkt[IPv6HeaderLen+13] = 0x10
+	return pkt
+}
+
+func TestTheHeaderAllowanceForIPv6RepliesTheQueueMissedCoversTheIPv6Header(t *testing.T) {
+	flow := func(t *testing.T, r *collectCountRig, sport uint16) *ctnl.Flow {
+		t.Helper()
+		tuple, err := ctnl.NewTuple(6, netip.AddrPortFrom(netip.MustParseAddr("2001:db8::1"), sport), netip.MustParseAddrPort("[2001:db8::2]:443"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r.flowOf(tuple)
+	}
+	silent := func(t *testing.T, r *collectCountRig, sport uint16) {
+		t.Helper()
+		r.w.ProcessPacket(collectedV6Hello(sport))
+		if !r.watched(sport) {
+			t.Fatalf("the IPv6 ClientHello from port %d is not watched, so this test proves nothing", sport)
+		}
+		reply := collectedV6Reply(sport)
+		f := flow(t, r, sport)
+		f.ReplyPackets++
+		f.ReplyBytes += uint64(len(reply))
+		r.w.ProcessPacket(reply)
+	}
+	for name, tc := range map[string]struct {
+		bytes    uint64
+		answered bool
+	}{
+		"a packet at the IPv6 header allowance":        {bytes: 60 + 40},
+		"one byte more than the IPv6 header allowance": {bytes: 60 + 40 + 1, answered: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newCollectCountRig(t)
+			r.w.getConfig().Queue.IPv6Enabled = true
+			silent(t, r, 42000)
+			r.sweep(4 * time.Second)
+			silent(t, r, 42001)
+			f := flow(t, r, 42001)
+			f.ReplyPackets++
+			f.ReplyBytes += tc.bytes
+			r.sweep(5 * time.Second)
+			if r.collected() != 0 || r.watched(42001) || len(resetsTo(r.sent())) != 0 {
+				t.Fatalf("an IPv6 connection with replies the queue did not see must neither count nor wait: candidates=%d watched=%v resets=%v", r.collected(), r.watched(42001), resetsTo(r.sent()))
+			}
+			silent(t, r, 42002)
+			r.sweep(6 * time.Second)
+
+			if tc.answered {
+				if r.collected() != 0 || !r.watched(42002) {
+					t.Fatalf("IPv6 reply bytes beyond the headers are an answer and start the count over: candidates=%d", r.collected())
+				}
+				return
+			}
+			if ports := resetsTo(r.sent()); r.collected() != 1 || !slices.Equal(ports, []uint16{42000, 42002}) {
+				t.Fatalf("an IPv6 packet's 40-byte header is no answer, so the count must go on: candidates=%d resets=%v", r.collected(), ports)
 			}
 		})
 	}
