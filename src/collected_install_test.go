@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net"
 	"strconv"
 	"strings"
@@ -60,6 +61,7 @@ func TestCollectedInstallerClearsTheLastAddressOfACollectedOnlyConsumer(t *testi
 				refused: func(*config.Config) error { step("refused"); return nil },
 				wait:    func(context.Context) error { step("wait"); return nil },
 				refresh: func(*config.Config) error { step("refresh"); return nil },
+				capture: func(*config.Config) error { step("capture"); return nil },
 				routing: func(*config.Config) { step("routing") },
 				dscp:    func(*config.Config) { step("dscp") },
 				ready:   func(*config.Config) error { step("ready"); return nil },
@@ -67,7 +69,7 @@ func TestCollectedInstallerClearsTheLastAddressOfACollectedOnlyConsumer(t *testi
 			if err := install(context.Background(), view); err != nil {
 				t.Fatalf("clearing the last collected address of a collected-only consumer was refused: %v", err)
 			}
-			if got := strings.Join(ran, ","); got != "refused,wait,refresh,routing,dscp,ready" {
+			if got := strings.Join(ran, ","); got != "refused,wait,refresh,capture,routing,dscp,ready" {
 				t.Fatalf("installer steps ran as %s", got)
 			}
 			if status := mgr.ListenerStatus("consumer", 0); status.V4 || status.V6 {
@@ -91,6 +93,7 @@ func TestCollectedInstallerRefusesWhileAConsumerListenerIsDown(t *testing.T) {
 				refused: func(*config.Config) error { return nil },
 				wait:    func(context.Context) error { return nil },
 				refresh: func(*config.Config) error { return nil },
+				capture: func(*config.Config) error { return nil },
 				routing: func(*config.Config) {},
 				dscp:    func(*config.Config) {},
 				ready:   func(*config.Config) error { return nil },
@@ -103,5 +106,29 @@ func TestCollectedInstallerRefusesWhileAConsumerListenerIsDown(t *testing.T) {
 				t.Fatalf("the install of a collected IPv4 address was accepted while the consumer had no IPv4 listener to take its connections (err %v); the firewall then diverts them to a port nothing listens on", err)
 			}
 		})
+	}
+}
+
+func TestCollectedInstallerFailsWhileTheCaptureSetsLagThePool(t *testing.T) {
+	view := collectedOnlyConsumer(t, config.RoutingModeProxy).WithCollectedIPs(nil)
+	mgr := tproxy.NewManager(nil)
+	t.Cleanup(mgr.Stop)
+	var ran []string
+	step := func(name string) { ran = append(ran, name) }
+	refused := errors.New("collected capture sets: b4_mss_0_v4c kept 198.51.100.7")
+	install := collectedTargetsInstaller(mgr, collectedInstallSteps{
+		refused: func(*config.Config) error { step("refused"); return nil },
+		wait:    func(context.Context) error { step("wait"); return nil },
+		refresh: func(*config.Config) error { step("refresh"); return nil },
+		capture: func(*config.Config) error { step("capture"); return refused },
+		routing: func(*config.Config) { step("routing") },
+		dscp:    func(*config.Config) { step("dscp") },
+		ready:   func(*config.Config) error { step("ready"); return nil },
+	})
+	if err := install(context.Background(), view); !errors.Is(err, refused) {
+		t.Fatalf("a capture-set sync the kernel refused must fail the install so that it is retried, got %v", err)
+	}
+	if got := strings.Join(ran, ","); got != "refused,wait,refresh,capture" {
+		t.Fatalf("installer steps ran as %s", got)
 	}
 }

@@ -461,7 +461,7 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 		}
 	}
 
-	return true
+	return iptCaptureCollectedRulesPresent()
 }
 
 func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
@@ -591,7 +591,7 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 		}
 	}
 
-	return true
+	return nftCaptureCollectedRulesPresent(nft)
 }
 
 func (m *Monitor) ensureRules(requested bool) (*config.Config, bool) {

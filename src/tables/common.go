@@ -78,6 +78,7 @@ func appliedOr(cfg *config.Config) *config.Config {
 }
 
 func addRules(cfg *config.Config) error {
+	captureCollectedForget()
 	if cfg.System.Tables.SkipSetup {
 		return nil
 	}
@@ -112,6 +113,7 @@ func addRules(cfg *config.Config) error {
 
 func clearRules(cfg *config.Config) error {
 	defer revertCollectedAccounting()
+	captureCollectedForget()
 	if cfg.System.Tables.SkipSetup {
 		return nil
 	}

@@ -951,10 +951,11 @@ type UpstreamProxyConfig struct {
 }
 
 type SetMSSClampEntry struct {
-	SetID   string
-	SetIdx  int
-	Size    int
-	IPv4    []string
-	IPv6    []string
-	Sources []DeviceMatch
+	SetID     string
+	SetIdx    int
+	Size      int
+	IPv4      []string
+	IPv6      []string
+	Sources   []DeviceMatch
+	Collected bool
 }

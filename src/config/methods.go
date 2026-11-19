@@ -987,7 +987,7 @@ func (cfg *Config) CollectSetMSSClamps() []SetMSSClampEntry {
 		if set == nil || !set.Enabled || !set.MSSClamp.Enabled || set.MSSClamp.Size <= 0 {
 			continue
 		}
-		entry := SetMSSClampEntry{SetID: set.Id, SetIdx: i, Size: set.MSSClamp.Size}
+		entry := SetMSSClampEntry{SetID: set.Id, SetIdx: i, Size: set.MSSClamp.Size, Collected: set.Targets.UseCollectedIPs}
 		seen4 := make(map[string]struct{})
 		seen6 := make(map[string]struct{})
 		for _, ipStr := range set.Targets.IpsToMatch {
@@ -1017,7 +1017,7 @@ func (cfg *Config) CollectSetMSSClamps() []SetMSSClampEntry {
 				entry.Sources = AppendDeviceMatch(entry.Sources, seenSource, m)
 			}
 		}
-		if len(entry.IPv4) == 0 && len(entry.IPv6) == 0 && len(entry.Sources) == 0 {
+		if len(entry.IPv4) == 0 && len(entry.IPv6) == 0 && len(entry.Sources) == 0 && !entry.Collected {
 			continue
 		}
 		entries = append(entries, entry)

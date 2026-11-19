@@ -40,6 +40,33 @@ func (c *Config) CollectsReplies() bool {
 	return false
 }
 
+func (c *Config) CollectedDuplicateIPs() (ipv4, ipv6 []string, used bool) {
+	seen := make(map[netip.Addr]struct{})
+	for _, set := range c.Sets {
+		if set == nil || !set.Enabled || !set.TCP.Duplicate.Enabled || !set.Targets.UseCollectedIPs {
+			continue
+		}
+		used = true
+		for _, raw := range set.Targets.CollectedIPs {
+			ip, err := netip.ParseAddr(raw)
+			if err != nil {
+				continue
+			}
+			ip = ip.Unmap()
+			if _, dup := seen[ip]; dup {
+				continue
+			}
+			seen[ip] = struct{}{}
+			if ip.Is4() {
+				ipv4 = append(ipv4, ip.String())
+			} else {
+				ipv6 = append(ipv6, ip.String())
+			}
+		}
+	}
+	return ipv4, ipv6, used
+}
+
 func (c *Config) collectedDuplicateSetIDs() []string {
 	var ids []string
 	for _, set := range c.Sets {

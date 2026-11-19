@@ -1178,6 +1178,26 @@ func TestValidate_SharedManualTableWithDifferentGatewaysWarns(t *testing.T) {
 	})
 }
 
+func TestAClampAndDuplicationOnCollectedAddressesAloneValidate(t *testing.T) {
+	cfg := NewConfig()
+	clamp := NewSetConfig()
+	clamp.Id, clamp.Name, clamp.Enabled = "clamp", "collected clamp", true
+	clamp.Targets.UseCollectedIPs = true
+	clamp.MSSClamp.Enabled, clamp.MSSClamp.Size = true, 88
+	dup := NewSetConfig()
+	dup.Id, dup.Name, dup.Enabled = "dup", "collected dup", true
+	dup.Targets.UseCollectedIPs = true
+	dup.TCP.Duplicate.Enabled, dup.TCP.Duplicate.Count = true, 2
+	cfg.Sets = []*SetConfig{&clamp, &dup}
+	logs := captureValidationWarnings(t)
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("collected addresses get the set's MSS clamp and duplication through their own capture sets, so Use collected IPs alone must scope both: %v", err)
+	}
+	if strings.Contains(logs.String(), "no IP targets") {
+		t.Errorf("a duplication set that uses collected IPs has IP targets, yet Validate warned: %s", logs.String())
+	}
+}
+
 func TestCollectWithClosingFakesWarns(t *testing.T) {
 	cases := []struct {
 		name   string

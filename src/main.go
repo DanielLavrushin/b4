@@ -345,6 +345,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		},
 		wait:    waitTables,
 		refresh: tables.RefreshCollectedRules,
+		capture: tables.SyncCollectedCaptureSets,
 		routing: tables.RoutingSyncConfig,
 		dscp:    tables.SyncDSCP,
 		ready:   tables.CollectedTargetsReady,
@@ -1130,6 +1131,7 @@ type collectedInstallSteps struct {
 	refused func(*config.Config) error
 	wait    func(context.Context) error
 	refresh func(*config.Config) error
+	capture func(*config.Config) error
 	routing func(*config.Config)
 	dscp    func(*config.Config)
 	ready   func(*config.Config) error
@@ -1144,6 +1146,9 @@ func collectedTargetsInstaller(mgr *tproxy.Manager, steps collectedInstallSteps)
 			return err
 		}
 		if err := steps.refresh(c); err != nil {
+			return err
+		}
+		if err := steps.capture(c); err != nil {
 			return err
 		}
 		mgr.SyncConfig(c)

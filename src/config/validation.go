@@ -474,7 +474,7 @@ func (c *Config) Validate() error {
 			if set.TCP.Duplicate.Count > 10 {
 				set.TCP.Duplicate.Count = 10
 			}
-			if len(set.Targets.IPs) == 0 && len(set.Targets.GeoIpCategories) == 0 && len(set.Targets.ASNs) == 0 {
+			if len(set.Targets.IPs) == 0 && len(set.Targets.GeoIpCategories) == 0 && len(set.Targets.ASNs) == 0 && !set.Targets.UseCollectedIPs {
 				log.Warnf("Set '%s' has duplication enabled but no IP targets configured", set.Name)
 			}
 		}
@@ -512,12 +512,12 @@ func (c *Config) Validate() error {
 			if set.MSSClamp.Size > 1460 {
 				set.MSSClamp.Size = 1460
 			}
-			hasIPScope := len(set.Targets.IPs) > 0 || len(set.Targets.GeoIpCategories) > 0 || len(set.Targets.ASNs) > 0
+			hasIPScope := len(set.Targets.IPs) > 0 || len(set.Targets.GeoIpCategories) > 0 || len(set.Targets.ASNs) > 0 || set.Targets.UseCollectedIPs
 			hasMACScope := len(set.Targets.SourceDevices) > 0 && !set.Targets.SourceDevicesExclude
 			if !hasIPScope && !hasMACScope {
 				v.addf(fmt.Sprintf("sets[%d].mss_clamp", setIdx), "mss_clamp_scope_required",
 					map[string]any{"set": set.Name},
-					"set %q: MSS clamp requires IP, GeoIP, ASN, or included source device targets (MSS is set on SYN, before SNI/GeoSite can match; excluded devices cannot scope it)", set.Name)
+					"set %q: MSS clamp requires IP, GeoIP, ASN, collected IP, or included source device targets (MSS is set on SYN, before SNI/GeoSite can match; excluded devices cannot scope it)", set.Name)
 				return v.result()
 			}
 		}
