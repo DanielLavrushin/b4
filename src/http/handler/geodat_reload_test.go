@@ -20,7 +20,7 @@ func TestSaveGeoConfigRefreshesTheFirewallWhenIpsetsChange(t *testing.T) {
 	api.getCfg().System.Geo.GeoIpPath = filepath.Join(dir, "old.dat")
 	refreshed := countRefreshes(t)
 
-	if err := api.saveGeoConfig(func(geo *geodat.GeoDatConfig) { geo.GeoIpPath = filepath.Join(dir, "empty.dat") }); err != nil {
+	if _, err := api.saveGeoConfig(func(geo *geodat.GeoDatConfig) { geo.GeoIpPath = filepath.Join(dir, "empty.dat") }, geodatReplaced{ip: true}); err != nil {
 		t.Fatal(err)
 	}
 	if got := api.getCfg().GetSetById("dup").Targets.IpsToMatch; len(got) != 0 {
@@ -35,7 +35,7 @@ func TestSaveGeoConfigExpandsASNsOfEverySet(t *testing.T) {
 	s := useAsnStore(t)
 	putTelegram(t, s)
 	api, _ := asnAPI(t, asnSet("tg", "62041"))
-	if err := api.saveGeoConfig(func(geo *geodat.GeoDatConfig) {}); err != nil {
+	if _, err := api.saveGeoConfig(func(geo *geodat.GeoDatConfig) {}, geodatReplaced{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := api.getCfg().GetSetById("tg").Targets.IpsToMatch; !slices.Equal(got, telegramPrefixes) {

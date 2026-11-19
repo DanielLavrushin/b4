@@ -219,6 +219,7 @@ export const IpsTab = ({
               loading={geoipLoading}
               selected={config.targets.geoip_categories}
               breakdown={stats?.geoip_category_breakdown}
+              missingText={t("sets.targets.geoipCatMissing")}
               onSelectedChange={(categories) =>
                 onChange("targets.geoip_categories", categories)
               }

@@ -262,6 +262,8 @@ export const DomainsTab = ({
               loading={geositeLoading}
               selected={config.targets.geosite_categories}
               breakdown={stats?.geosite_category_breakdown}
+              missingText={t("sets.targets.geositeCatMissing")}
+              stripAttrs
               onSelectedChange={(categories) =>
                 onChange("targets.geosite_categories", categories)
               }
