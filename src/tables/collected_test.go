@@ -317,6 +317,62 @@ func TestCollectedGuardRestoresOnlyTheOriginalDirection(t *testing.T) {
 	}
 }
 
+func TestCollectedGuardRestoreFollowsTheTagOfEveryFamilyOnNft(t *testing.T) {
+	old := run
+	t.Cleanup(func() { run = old })
+	for _, c := range []struct {
+		name       string
+		ipv4, ipv6 bool
+		sources    []string
+	}{
+		{"dual stack", true, true, nil},
+		{"dual stack, two sources", true, true, []string{"br-a", "br-b"}},
+		{"ipv4 only", true, false, nil},
+		{"ipv6 only", false, true, nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := familyTestConfig(c.ipv4, c.ipv6)
+			set := staticTestSet(config.RoutingModeProxy, nil)
+			set.Targets.UseCollectedIPs = true
+			set.Routing.Upstream.UDP = true
+			st := routeState{collected: true, setID: set.Id, mode: config.RoutingModeProxy, mark: 0x7133, ipv4: c.ipv4, ipv6: c.ipv6, setV4: "b4r_collect_v4", setV6: "b4r_collect_v6", chainPre: "b4r_collect_pre", chainOut: "b4r_collect_out", sources: c.sources}
+			for _, chain := range []string{st.chainPre, st.chainOut} {
+				sources := c.sources
+				if len(sources) == 0 || chain == st.chainOut {
+					sources = []string{""}
+				}
+				var calls []string
+				run = refuseDeletes(func(args ...string) (string, error) { calls = append(calls, strings.Join(args, " ")); return "", nil })
+				if err := routeCollectedGuard(&routeNftBackend{}, cfg, set, st, chain); err != nil {
+					t.Fatal(err)
+				}
+				for _, src := range sources {
+					restore, lastTag := -1, -1
+					restores := 0
+					for i, call := range calls {
+						if src != "" && !strings.Contains(call, fmt.Sprintf("iifname %q", src)) {
+							continue
+						}
+						if strings.Contains(call, " ct mark set ") {
+							lastTag = i
+						}
+						if strings.Contains(call, " meta mark set ") {
+							restore = i
+							restores++
+						}
+					}
+					if restores != 1 || lastTag < 0 {
+						t.Fatalf("%s, source %q: got %d restore(s) and tag at %d, want one restore after the tags:\n%s", chain, src, restores, lastTag, strings.Join(calls, "\n"))
+					}
+					if restore < lastTag {
+						t.Errorf("%s, source %q: the restore sits above the tag of a later family, so a new connection of that family to a collected address is not marked at the guard; the router's own IPv6 SYN then reaches the router-traffic rate guard and past its limit leaves unmarked by the uplink:\n%s", chain, src, strings.Join(calls, "\n"))
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestCollectedOrdinaryConsumerNeedsNoRoutingState(t *testing.T) {
 	staticResetGlobals(t)
 	cfg := familyTestConfig(true, false)

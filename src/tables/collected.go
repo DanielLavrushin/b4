@@ -247,7 +247,7 @@ func routeCollectedGuardRules(be routeBackend, cfg *config.Config, set *config.S
 							return err
 						}
 					}
-					if !nftRestored[src] {
+					if !nftRestored[src] && (family.v6 || !st.ipv6) {
 						nftRestored[src] = true
 						args = append(append(append([]string{}, scope...), ports...), "ct", "direction", "original", "ct", "mark", "&", fmt.Sprintf("0x%x", routeSetMarkMask), "==", fmt.Sprintf("0x%x", st.mark), "meta", "mark", "set", fmt.Sprintf("0x%x", mark))
 						if err := emit(args); err != nil {
