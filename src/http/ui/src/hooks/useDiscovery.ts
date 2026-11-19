@@ -67,6 +67,9 @@ const START_ERROR_CODES = new Set([
   "bad_pin",
   "dscp_rules_pending",
   "note_too_long",
+  "tun_carrier_unavailable",
+  "ipv6_unsupported_tun",
+  "dscp_unsupported_tun",
 ]);
 
 const startFailureText = (e: unknown): string => {
