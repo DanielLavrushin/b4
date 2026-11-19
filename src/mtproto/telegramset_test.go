@@ -294,11 +294,11 @@ func TestAnInterfaceTelegramSetKeepsIPv6OffWhenItsRouteHasNone(t *testing.T) {
 	useTelegramSet(t, routedTelegramConfig(config.RoutingModeInterface))
 
 	useTelegramRouting(t, &TelegramRoute{Mode: config.RoutingModeInterface, Mark: 0x2a, IPv4: true}, nil)
-	if dialNetwork() != "tcp4" || dialFamilyAllows(net.ParseIP("2001:67c:4e8:f004::a")) {
+	if dialNetwork(telegramRouteMark) != "tcp4" || dialFamilyAllows(net.ParseIP("2001:67c:4e8:f004::a"), telegramRouteMark) {
 		t.Fatal("a set routing IPv4 only must keep IPv6 dials off, or they leave by the main table outside the set's route")
 	}
 	useTelegramRouting(t, &TelegramRoute{Mode: config.RoutingModeInterface, Mark: 0x2a, IPv4: true, IPv6: true}, nil)
-	if dialNetwork() != "tcp" || !dialFamilyAllows(net.ParseIP("2001:67c:4e8:f004::a")) {
+	if dialNetwork(telegramRouteMark) != "tcp" || !dialFamilyAllows(net.ParseIP("2001:67c:4e8:f004::a"), telegramRouteMark) {
 		t.Fatal("a set routing IPv6 too must allow IPv6 dials")
 	}
 }
@@ -370,7 +370,7 @@ func TestAnIPv6OnlyInterfaceTelegramSetNeverDialsIPv4(t *testing.T) {
 	v4, v6 := net.ParseIP("149.154.167.51"), net.ParseIP("2001:67c:4e8:f004::a")
 
 	useTelegramRouting(t, &TelegramRoute{Mode: config.RoutingModeInterface, Mark: 0x2a, IPv6: true}, nil)
-	if got := dialNetwork(); got != "tcp6" || dialFamilyAllows(v4) || !dialFamilyAllows(v6) {
+	if got := dialNetwork(telegramRouteMark); got != "tcp6" || dialFamilyAllows(v4, telegramRouteMark) || !dialFamilyAllows(v6, telegramRouteMark) {
 		t.Fatalf("a set routing IPv6 only dials over %q, so IPv4 dials leave by the main table outside the set's route and kill switch", got)
 	}
 	tr, ok := telegramHTTPClient(200 * time.Millisecond).Transport.(*http.Transport)
@@ -384,7 +384,7 @@ func TestAnIPv6OnlyInterfaceTelegramSetNeverDialsIPv4(t *testing.T) {
 	}
 
 	useTelegramRouting(t, &TelegramRoute{Mode: config.RoutingModeInterface, Mark: 0x2a, IPv4: true, IPv6: true}, nil)
-	if got := dialNetwork(); got != "tcp4" || !dialFamilyAllows(v4) {
+	if got := dialNetwork(telegramRouteMark); got != "tcp4" || !dialFamilyAllows(v4, telegramRouteMark) {
 		t.Fatalf("a set routing both families dials over %q on a router without IPv6, want tcp4", got)
 	}
 }
@@ -874,5 +874,41 @@ func TestAnExplicitRouteMarkOrTableChangeRebuildsTheTelegramPools(t *testing.T) 
 				t.Fatalf("the bridge kept its WebSocket pool after the set's %s changed", name)
 			}
 		})
+	}
+}
+
+const telegramRouteMark = uint(config.SelfDialRelayMark | 0x2a)
+
+func TestAConnectionTestWithTheChoiceClearedDialsTheFamiliesOfThePathWithoutASet(t *testing.T) {
+	prev := dialIPv6Probe
+	dialIPv6Probe = func() bool { return false }
+	t.Cleanup(func() { dialIPv6Probe = prev })
+	useTelegramSet(t, routedTelegramConfig(config.RoutingModeInterface))
+	useTelegramRouting(t, &TelegramRoute{Mode: config.RoutingModeInterface, Mark: 0x2a, IPv6: true}, nil)
+
+	cleared := routedTelegramConfig(config.RoutingModeInterface)
+	cleared.System.MTProto.UpstreamSet = ""
+	probe, err := PlanTransportProbe(cleared, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tcp := transportPlan{kind: transportTCP, addr: "127.0.0.1:1"}
+	edge := everyRouteKind()["Telegram's WS edge"]
+	var addrErr *net.AddrError
+
+	_, err = dialOneTCP(tcp, planDialMark(tcp, probe.mark), 200*time.Millisecond)
+	if errors.As(err, &addrErr) {
+		t.Fatalf("a connection test without the set refused an IPv4 address on the saved IPv6-only set's families: %v", err)
+	}
+	if eps := wsDialEndpoints(context.Background(), edge.dialHost, edge.sni, planDialMark(edge, probe.mark)); len(eps) != 1 {
+		t.Fatalf("a connection test without the set dropped the IPv4 WS edge on the saved set's families: %v", eps)
+	}
+
+	_, err = dialOneTCP(tcp, planDialMark(tcp, selfDialMark()), 200*time.Millisecond)
+	if !errors.As(err, &addrErr) {
+		t.Fatalf("a dial on the saved IPv6-only set's route reached an IPv4 address: %v", err)
+	}
+	if eps := wsDialEndpoints(context.Background(), edge.dialHost, edge.sni, planDialMark(edge, selfDialMark())); len(eps) != 0 {
+		t.Fatalf("a WS dial on the saved IPv6-only set's route kept an IPv4 endpoint: %v", eps)
 	}
 }

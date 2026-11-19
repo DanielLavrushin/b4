@@ -308,7 +308,7 @@ func telegramHTTPClient(timeout time.Duration) *http.Client {
 	return netprobe.HTTPClientDial(func(ctx context.Context, network, addr string) (net.Conn, error) {
 		mark, _ := resolveTelegramMark(selfDialMark())
 		if network == "tcp" {
-			network = dialNetwork()
+			network = dialNetwork(mark)
 		}
 		return dialTelegramTCP(ctx, network, addr, mark, timeout)
 	}, timeout)
@@ -327,6 +327,6 @@ func DialTelegramDirect(ctx context.Context, dest string) (net.Conn, bool, error
 	if deadline, ok := ctx.Deadline(); ok {
 		timeout = time.Until(deadline)
 	}
-	conn, err := dialTelegramTCP(ctx, dialNetwork(), dest, mark, timeout)
+	conn, err := dialTelegramTCP(ctx, dialNetwork(mark), dest, mark, timeout)
 	return conn, true, err
 }

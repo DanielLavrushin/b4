@@ -308,9 +308,9 @@ var wsCurvePreferences = []tls.CurveID{tls.X25519, tls.CurveP256, tls.CurveP384}
 // wsDialEndpoints resolves host to the addresses a dial may use, with any
 // address currently cooling moved to the back rather than dropped - a cooling
 // address is still a route, and dropping the last one leaves none.
-func wsDialEndpoints(ctx context.Context, host, sni string) []string {
+func wsDialEndpoints(ctx context.Context, host, sni string, mark uint) []string {
 	if ip := net.ParseIP(host); ip != nil {
-		if !dialFamilyAllows(ip) {
+		if !dialFamilyAllows(ip, mark) {
 			return nil
 		}
 		return []string{host}
@@ -323,7 +323,7 @@ func wsDialEndpoints(ctx context.Context, host, sni string) []string {
 	cooling := make([]string, 0, len(addrs))
 	skipped := 0
 	for _, a := range addrs {
-		if !dialFamilyAllows(a.IP) {
+		if !dialFamilyAllows(a.IP, mark) {
 			skipped++
 			continue
 		}
@@ -414,7 +414,7 @@ func dialWSAs(host, sni, hostHeader, path string, timeout time.Duration, mark ui
 	eps := []string{host}
 	if !telegramViaProxy(mark) {
 		rctx, rcancel := context.WithTimeout(context.Background(), resolveWindow)
-		eps = wsDialEndpoints(rctx, host, sni)
+		eps = wsDialEndpoints(rctx, host, sni, mark)
 		rcancel()
 	}
 
@@ -482,7 +482,7 @@ func isConnectStage(err error) bool {
 func dialWSEndpoint(host, sni, hostHeader, path string, timeout time.Duration, mark uint) (net.Conn, error) {
 	deadline := time.Now().Add(timeout)
 	dctx, dcancel := context.WithDeadline(context.Background(), deadline)
-	raw, err := dialTelegramTCP(dctx, dialNetwork(), net.JoinHostPort(host, wsDialPort), mark, timeout)
+	raw, err := dialTelegramTCP(dctx, dialNetwork(mark), net.JoinHostPort(host, wsDialPort), mark, timeout)
 	dcancel()
 	if err != nil {
 		return nil, fmt.Errorf("tcp dial %s: %w", host, err)

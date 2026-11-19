@@ -945,7 +945,7 @@ func dialOne(p transportPlan, mark uint) (net.Conn, error) {
 }
 
 func dialOneTCP(p transportPlan, mark uint, timeout time.Duration) (net.Conn, error) {
-	conn, err := dialTelegramTCP(context.Background(), dialNetwork(), p.addr, mark, timeout)
+	conn, err := dialTelegramTCP(context.Background(), dialNetwork(mark), p.addr, mark, timeout)
 	if err != nil {
 		return nil, err
 	}

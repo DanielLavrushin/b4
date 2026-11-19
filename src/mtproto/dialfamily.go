@@ -12,8 +12,8 @@ func dialIPv6Usable() bool {
 	return dialIPv6Probe()
 }
 
-func dialFamilies() (v4, v6 bool) {
-	if p := currentTelegramPath(); p.kind == telegramPathInterface {
+func dialFamilies(mark uint) (v4, v6 bool) {
+	if p := currentTelegramPath(); p.kind == telegramPathInterface && mark&^uint(config.SelfDialRelayMark) != 0 {
 		switch {
 		case !p.ipv6:
 			return true, false
@@ -24,8 +24,8 @@ func dialFamilies() (v4, v6 bool) {
 	return true, dialIPv6Usable()
 }
 
-func dialNetwork() string {
-	switch v4, v6 := dialFamilies(); {
+func dialNetwork(mark uint) string {
+	switch v4, v6 := dialFamilies(mark); {
 	case !v4:
 		return "tcp6"
 	case v6:
@@ -34,8 +34,8 @@ func dialNetwork() string {
 	return "tcp4"
 }
 
-func dialFamilyAllows(ip net.IP) bool {
-	v4, v6 := dialFamilies()
+func dialFamilyAllows(ip net.IP, mark uint) bool {
+	v4, v6 := dialFamilies(mark)
 	if ip.To4() != nil {
 		return v4
 	}
