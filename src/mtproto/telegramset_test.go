@@ -390,6 +390,47 @@ func TestAnIPv6OnlyInterfaceTelegramSetNeverDialsIPv4(t *testing.T) {
 	}
 }
 
+func TestTheBridgeDialsAClientsOwnDestinationWithinTheRoutesFamiliesOnly(t *testing.T) {
+	withIPv6(t, false)
+	dial := func(t *testing.T) error {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		conn, handled, err := DialTelegramDirect(ctx, "[::1]:9")
+		if !handled {
+			t.Fatal("the bridge's direct dial must go through the Telegram set")
+		}
+		if conn != nil {
+			_ = conn.Close()
+		}
+		return err
+	}
+	var addrErr *net.AddrError
+	for _, tc := range []struct {
+		name  string
+		cfg   *config.Config
+		route *TelegramRoute
+	}{
+		{name: "strategy set", cfg: telegramSetTestConfig(true)},
+		{name: "interface set routing both families", cfg: routedTelegramConfig(config.RoutingModeInterface), route: &TelegramRoute{Mode: config.RoutingModeInterface, Mark: 0x2a, IPv4: true, IPv6: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			useTelegramSet(t, tc.cfg)
+			useTelegramRouting(t, tc.route, nil)
+			if err := dial(t); errors.As(err, &addrErr) {
+				t.Fatalf("the bridge refused a client's own IPv6 destination on a router without global IPv6, which has no other address to fall back to: %v", err)
+			}
+		})
+	}
+	t.Run("interface set routing IPv4 only", func(t *testing.T) {
+		useTelegramSet(t, routedTelegramConfig(config.RoutingModeInterface))
+		useTelegramRouting(t, &TelegramRoute{Mode: config.RoutingModeInterface, Mark: 0x2a, IPv4: true}, nil)
+		if err := dial(t); !errors.As(err, &addrErr) {
+			t.Fatalf("an IPv6 destination behind a set routing IPv4 only must be refused, or it leaves by the main table outside the set's route: %v", err)
+		}
+	})
+}
+
 func TestAQueueFamilyChangeRebuildsThePoolsOfAnInterfaceTelegramSet(t *testing.T) {
 	families := func(mode string, v4, v6 bool) *config.Config {
 		cfg := routedTelegramConfig(mode)

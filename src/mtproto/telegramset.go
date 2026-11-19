@@ -340,6 +340,6 @@ func DialTelegramDirect(ctx context.Context, dest string) (net.Conn, bool, error
 	if deadline, ok := ctx.Deadline(); ok {
 		timeout = time.Until(deadline)
 	}
-	conn, err := dialTelegramTCP(ctx, dialNetwork(mark), dest, mark, timeout)
+	conn, err := dialTelegramTCP(ctx, routeNetwork(mark), dest, mark, timeout)
 	return conn, true, err
 }
