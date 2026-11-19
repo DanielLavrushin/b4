@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/tables"
 	"github.com/daniellavrushin/b4/tproxy"
 )
 
@@ -187,8 +188,8 @@ func TestTheCollectedInstallerChecksItsViewBeforeEachChange(t *testing.T) {
 		current int
 		want    string
 	}{
-		{name: "current throughout", current: 6, want: "refused,discovery,current,refresh,current,capture,current,current,routing,current,dscp,current,ready"},
-		{name: "superseded after the capture sets", current: 2, want: "refused,discovery,current,refresh,current,capture,current"},
+		{name: "current throughout", current: 5, want: "refused,discovery,refresh,current,capture,current,current,routing,current,dscp,current,ready"},
+		{name: "superseded after the capture sets", current: 1, want: "refused,discovery,refresh,current,capture,current"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			view := collectedOnlyConsumer(t, config.RoutingModeProxy).WithCollectedIPs(nil)
@@ -209,5 +210,28 @@ func TestTheCollectedInstallerChecksItsViewBeforeEachChange(t *testing.T) {
 				t.Fatalf("superseded=%v but the install returned %v", superseded, err)
 			}
 		})
+	}
+}
+
+func TestAPendingFirewallRefreshFailsTheCollectedInstallBeforeAnyChange(t *testing.T) {
+	view := collectedOnlyConsumer(t, config.RoutingModeProxy).WithCollectedIPs(nil)
+	mgr := tproxy.NewManager(nil)
+	t.Cleanup(mgr.Stop)
+	var ran []string
+	steps := recordingInstallSteps(&ran, false)
+	steps.refresh = func(*config.Config) error {
+		ran = append(ran, "refresh")
+		return tables.ErrFirewallRefreshPending
+	}
+	install := collectedTargetsInstaller(mgr, steps)
+	err := install(context.Background(), view, func() bool {
+		ran = append(ran, "current")
+		return true
+	})
+	if !errors.Is(err, tables.ErrFirewallRefreshPending) {
+		t.Fatalf("a pending refresh must fail the install, got %v", err)
+	}
+	if got := strings.Join(ran, ","); got != "refused,discovery,refresh" {
+		t.Fatalf("a pending refresh must fail the install before its first change, so no rollback follows; ran %s", got)
 	}
 }

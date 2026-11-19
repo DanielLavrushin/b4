@@ -73,6 +73,68 @@ func TestCollectedRefreshAfterTheFinalClearAddsNothing(t *testing.T) {
 	}
 }
 
+func TestACollectedViewNeverRebuildsTheFirewall(t *testing.T) {
+	oldAdd, oldClear, oldRun := addRulesFn, clearRulesFn, run
+	rulesMu.Lock()
+	oldApplied, oldLogged := rulesAppliedCfg, collectedRefreshPendingLogged
+	rulesMu.Unlock()
+	t.Cleanup(func() {
+		addRulesFn, clearRulesFn, run = oldAdd, oldClear, oldRun
+		rulesMu.Lock()
+		rulesAppliedCfg, collectedRefreshPendingLogged = oldApplied, oldLogged
+		rulesMu.Unlock()
+	})
+	var calls []string
+	run = refuseDeletes(func(args ...string) (string, error) {
+		calls = append(calls, strings.Join(args, " "))
+		return "", nil
+	})
+	clearRulesFn = func(*config.Config) error {
+		calls = append(calls, "clear")
+		return nil
+	}
+	addRulesFn = func(*config.Config) error {
+		calls = append(calls, "add")
+		return nil
+	}
+	logs := captureTablesLog(t)
+	pending := func() int { return strings.Count(logs.String(), "wait for the refresh of the firewall") }
+	applied := config.NewConfig()
+	saved := config.NewConfig()
+	saved.Queue.TCPConnBytesLimit = applied.Queue.TCPConnBytesLimit + 2
+	rulesMu.Lock()
+	rulesAppliedCfg, collectedRefreshPendingLogged = &applied, false
+	rulesMu.Unlock()
+	view := saved.WithCollectedIPs([]string{"203.0.113.7"})
+
+	for range 3 {
+		if err := RefreshCollectedRules(view); !errors.Is(err, ErrFirewallRefreshPending) {
+			t.Fatalf("a collected view on a base the firewall does not hold yet must wait for its refresh, got %v", err)
+		}
+	}
+	if len(calls) != 0 {
+		t.Fatalf("a collected view rebuilt the firewall: %q", calls)
+	}
+	if n := pending(); n != 1 {
+		t.Fatalf("a streak of pending collected refreshes must be logged once, got %d lines", n)
+	}
+
+	rulesMu.Lock()
+	rulesAppliedCfg = &saved
+	rulesMu.Unlock()
+	if err := RefreshCollectedRules(view); err != nil {
+		t.Fatalf("once the firewall holds the saved base the collected refresh must pass, got %v", err)
+	}
+	other := config.NewConfig()
+	other.Queue.TCPConnBytesLimit = saved.Queue.TCPConnBytesLimit + 2
+	if err := RefreshCollectedRules(other.WithCollectedIPs(nil)); !errors.Is(err, ErrFirewallRefreshPending) {
+		t.Fatalf("a later pending refresh returned %v", err)
+	}
+	if n := pending(); n != 2 || len(calls) != 0 {
+		t.Fatalf("a new pending streak must be logged again: %d lines, calls %q", n, calls)
+	}
+}
+
 func TestMonitorRebuildsAPendingApplyBehindACollectedView(t *testing.T) {
 	origRun, origAdd, origClear := run, addRulesFn, clearRulesFn
 	rulesMu.Lock()

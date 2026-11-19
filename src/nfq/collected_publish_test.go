@@ -6,12 +6,14 @@ import (
 	"net"
 	"net/netip"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/iphealth"
+	"github.com/daniellavrushin/b4/tables"
 )
 
 type blockedInstall struct {
@@ -317,5 +319,36 @@ func TestACollectedCommitSettlesThePendingReconcileUnderItsOwnLock(t *testing.T)
 	p.configMu.Unlock()
 	if dirty || wait != 0 || !at.IsZero() {
 		t.Fatalf("the commit left the reconcile pending (dirty=%v wait=%v): a caller that clears it after the lock is released also clears the reconcile of a save that landed in between", dirty, wait)
+	}
+}
+
+func TestAPendingFirewallRefreshIsRetriedWithoutAWarning(t *testing.T) {
+	set := collectedConsumerSet()
+	w := newInjectingWorker(t, &set)
+	installs := 0
+	p := collectedTestPool(t, w, nil)
+	p.collectedInstall = func(context.Context, *config.Config, func() bool) error {
+		installs++
+		if installs == 1 {
+			return tables.ErrFirewallRefreshPending
+		}
+		return nil
+	}
+	n := *w.getConfig()
+	if err := p.UpdateConfig(&n); err != nil {
+		t.Fatal(err)
+	}
+	logs := captureLog(t)
+	now := time.Now()
+	p.collectedPass(now)
+	if installs != 1 || !p.collectedDirty {
+		t.Fatalf("a pending refresh must fail the reconcile and keep it pending: installs=%d dirty=%v", installs, p.collectedDirty)
+	}
+	if strings.Contains(logs.String(), "interception not ready") {
+		t.Fatalf("a pending firewall refresh is logged once by the firewall, not as a collected failure: %q", logs.String())
+	}
+	p.collectedPass(now.Add(collectedRetryFirst + time.Second))
+	if installs != 2 || p.collectedDirty {
+		t.Fatalf("the reconcile must be retried once the refresh landed: installs=%d dirty=%v", installs, p.collectedDirty)
 	}
 }

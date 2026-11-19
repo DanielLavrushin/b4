@@ -1151,8 +1151,10 @@ func collectedTargetsInstaller(mgr *tproxy.Manager, steps collectedInstallSteps)
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		if err := steps.refresh(c); err != nil {
+			return err
+		}
 		changes := []func() error{
-			func() error { return steps.refresh(c) },
 			func() error { return steps.capture(c) },
 			func() error { mgr.SyncConfig(c); return nil },
 			func() error { steps.routing(c); return nil },

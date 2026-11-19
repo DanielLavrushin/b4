@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/binary"
+	"errors"
 	"net"
 	"net/netip"
 	"slices"
@@ -16,6 +17,7 @@ import (
 	"github.com/daniellavrushin/b4/iphealth"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/sni"
+	"github.com/daniellavrushin/b4/tables"
 	"github.com/daniellavrushin/b4/utils"
 )
 
@@ -382,6 +384,10 @@ func (p *Pool) publishCollected(requireConsumer bool) collectedPublish {
 	case p.collectedEpoch.Load() != epoch:
 		log.Tracef("Collected IPs: a save or a pool change superseded the install, it runs again on the next pass")
 		result.outcome = collectedSuperseded
+		return result
+	case errors.Is(err, tables.ErrFirewallRefreshPending):
+		log.Tracef("Collected IPs: interception not ready: %v", err)
+		result.outcome = collectedFailed
 		return result
 	case err != nil:
 		log.Warnf("Collected IPs: interception not ready: %v", err)

@@ -3,6 +3,7 @@ package tables
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -624,17 +625,21 @@ func ReloadKernelModules() {
 	ctnl.Retest()
 }
 
+var (
+	ErrFirewallRefreshPending     = errors.New("the firewall still holds the previous configuration")
+	collectedRefreshPendingLogged bool
+)
+
 func RefreshCollectedRules(cfg *config.Config) error {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
 	if rulesAppliedCfg == nil || !config.FirewallRefreshNeeded(rulesAppliedCfg, cfg) {
+		collectedRefreshPendingLogged = false
 		return nil
 	}
-	dscpKeepOnRefresh = true
-	err := clearRulesFn(appliedOr(cfg))
-	dscpKeepOnRefresh = false
-	if err != nil {
-		return err
+	if !collectedRefreshPendingLogged {
+		collectedRefreshPendingLogged = true
+		log.Infof("Collected IPs: the firewall still holds the previous configuration, so new collected addresses wait for the refresh of the firewall")
 	}
-	return addRulesFn(cfg)
+	return ErrFirewallRefreshPending
 }
