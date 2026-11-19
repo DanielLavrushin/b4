@@ -576,6 +576,7 @@ func (api *API) getSet(w http.ResponseWriter, id string) {
 }
 
 // @Summary Create a new set
+// @Description A field the body leaves out takes its set default, the value a new set gets in the web interface. A set created without "enabled" is enabled.
 // @Tags Sets
 // @Accept json
 // @Produce json
@@ -585,7 +586,7 @@ func (api *API) getSet(w http.ResponseWriter, id string) {
 // @Security BearerAuth
 // @Router /sets [post]
 func (api *API) createSet(w http.ResponseWriter, r *http.Request) {
-	var set config.SetConfig
+	set := config.NewSetConfig()
 	if err := json.NewDecoder(r.Body).Decode(&set); err != nil {
 		writeAPIError(w, ErrInvalidJSON())
 		return
@@ -633,13 +634,14 @@ func insertSetAfter(sets []*config.SetConfig, set *config.SetConfig, afterID str
 }
 
 // @Summary Update a set
-// @Description When the body carries the "revision" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before.
+// @Description The body replaces the whole set. It must carry "name", "enabled" and "targets", otherwise the write is refused with 400 validation_failed and the set is left as it was. Any other field the body leaves out takes its set default, not the value the set had. When the body carries the "revision" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before.
 // @Tags Sets
 // @Accept json
 // @Produce json
 // @Param id path string true "Set ID"
 // @Param set body SetWithRevision true "Updated set configuration"
 // @Success 200 {object} SetWithRevision
+// @Failure 400 {object} APIError "code: validation_failed"
 // @Failure 404 {string} string
 // @Failure 409 {object} APIError "code: set_changed"
 // @Security BearerAuth
@@ -651,10 +653,30 @@ func (api *API) updateSet(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	var probe struct {
-		Revision string `json:"revision"`
+		Revision string    `json:"revision"`
+		Name     *string   `json:"name"`
+		Enabled  *bool     `json:"enabled"`
+		Targets  *struct{} `json:"targets"`
 	}
 	if err := json.Unmarshal(body, &probe); err != nil {
 		writeAPIError(w, ErrInvalidJSON())
+		return
+	}
+	var missing []FieldError
+	for _, key := range []struct {
+		path    string
+		present bool
+	}{
+		{"name", probe.Name != nil},
+		{"enabled", probe.Enabled != nil},
+		{"targets", probe.Targets != nil},
+	} {
+		if !key.present {
+			missing = append(missing, FieldError{Path: key.path, Code: "required", Message: key.path + " is required"})
+		}
+	}
+	if len(missing) > 0 {
+		writeAPIError(w, ErrValidation("PUT replaces the whole set: send the full set, with its name, enabled and targets", missing...))
 		return
 	}
 	revisionCheck := func(current *config.Config) error {
@@ -671,7 +693,7 @@ func (api *API) updateSet(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 
-	var updated config.SetConfig
+	updated := config.NewSetConfig()
 	if err := json.Unmarshal(body, &updated); err != nil {
 		writeAPIError(w, ErrInvalidJSON())
 		return

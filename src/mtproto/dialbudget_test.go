@@ -238,7 +238,7 @@ func TestDialEndpointsPrefersAddressesThatHaveNotTimedOut(t *testing.T) {
 	t.Cleanup(wsResetState)
 
 	// An IP literal has nothing to resolve and no ordering to make.
-	if got := wsDialEndpoints(context.Background(), "127.0.0.1", "kws2.example.co.uk"); len(got) != 1 || got[0] != "127.0.0.1" {
+	if got := wsDialEndpoints(context.Background(), "127.0.0.1", "kws2.example.co.uk", 0); len(got) != 1 || got[0] != "127.0.0.1" {
 		t.Fatalf("literal address rewritten: %v", got)
 	}
 }

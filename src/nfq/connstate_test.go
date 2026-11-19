@@ -10,7 +10,7 @@ import (
 func newTrackerWithConn() *connStateTracker {
 	tracker := &connStateTracker{conns: make(map[string]*connInfo)}
 	set := &config.SetConfig{}
-	tracker.RegisterOutgoing("10.0.0.1:12345->1.2.3.4:443", set)
+	tracker.RegisterOutgoing("10.0.0.1:12345->1.2.3.4:443", set, false)
 	return tracker
 }
 
@@ -46,7 +46,7 @@ func TestRegisterOutgoing_PreservesState(t *testing.T) {
 	}
 
 	set2 := &config.SetConfig{Name: "updated"}
-	tracker.RegisterOutgoing("10.0.0.1:12345->1.2.3.4:443", set2)
+	tracker.RegisterOutgoing("10.0.0.1:12345->1.2.3.4:443", set2, false)
 
 	info = tracker.conns["10.0.0.1:12345->1.2.3.4:443"]
 	if !info.ttlRecorded || info.serverTTL != 52 {

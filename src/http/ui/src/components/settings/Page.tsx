@@ -407,9 +407,9 @@ export function SettingsPage() {
   const showErrorRef = useRef(showError);
   showErrorRef.current = showError;
 
-  const loadConfig = useCallback(async () => {
+  const loadConfig = useCallback(async (quiet = false) => {
     try {
-      setLoading(true);
+      if (!quiet) setLoading(true);
       const data = await configApi.get();
       setConfig(data);
       setOriginalConfig(structuredClone(data));
@@ -673,7 +673,7 @@ export function SettingsPage() {
             config={config}
             onChange={handleChange}
             loadConfig={() => {
-              loadConfig().catch(() => {});
+              loadConfig(true).catch(() => {});
             }}
           />
         </TabPanel>

@@ -16,18 +16,26 @@ interface B4ChipListProps<T> {
   maxHeight?: number;
   collapsedMax?: number;
   highlight?: (item: T) => boolean;
+  error?: (item: T) => boolean;
 }
 
-export const chipSx = (accented: boolean, clickable: boolean) => ({
-  bgcolor: accented ? colors.accent.secondary : colors.accent.primary,
-  color: accented ? colors.state.warning : colors.secondary,
-  fontWeight: accented ? 600 : undefined,
-  border: accented ? `1px solid ${colors.state.warning}` : undefined,
-  cursor: clickable ? "pointer" : undefined,
-  "& .MuiChip-deleteIcon": {
-    color: accented ? colors.state.warning : colors.secondary,
-  },
-});
+export const chipSx = (accented: boolean, clickable: boolean, erred = false) => {
+  const tone = erred
+    ? colors.state.error
+    : accented
+      ? colors.state.warning
+      : undefined;
+  return {
+    bgcolor: tone ? colors.accent.secondary : colors.accent.primary,
+    color: tone ?? colors.secondary,
+    fontWeight: tone ? 600 : undefined,
+    border: tone ? `1px solid ${tone}` : undefined,
+    cursor: clickable ? "pointer" : undefined,
+    "& .MuiChip-deleteIcon": {
+      color: tone ?? colors.secondary,
+    },
+  };
+};
 
 export function B4ChipList<T>({
   items,
@@ -42,6 +50,7 @@ export function B4ChipList<T>({
   showEmpty = false,
   collapsedMax,
   highlight,
+  error,
 }: Readonly<B4ChipListProps<T>>) {
   const [expanded, setExpanded] = useState(false);
 
@@ -85,7 +94,11 @@ export function B4ChipList<T>({
                 onDelete={onDelete ? () => onDelete(item) : undefined}
                 onClick={onClick ? () => onClick(item) : undefined}
                 size="small"
-                sx={chipSx(highlight?.(item) ?? false, !!onClick)}
+                sx={chipSx(
+                  highlight?.(item) ?? false,
+                  !!onClick,
+                  error?.(item) ?? false,
+                )}
               />
             ))}
             {canCollapse && !expanded && (

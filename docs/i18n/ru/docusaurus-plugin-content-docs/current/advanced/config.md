@@ -297,11 +297,12 @@ b4 хранит конфигурацию в одном JSON-файле, по у�
 | Секреты | Список секретов | `system.mtproto.secrets` |
 | Транспорт к Telegram (общий) | **Режим транспорта** | `system.mtproto.upstream_mode` |
 | Транспорт к Telegram (общий) | **DC Relay** | `system.mtproto.dc_relay` |
+| Транспорт к Telegram (общий) | **Сет для Telegram** | `system.mtproto.upstream_set` |
 | Транспорт к Telegram (общий) | **Домен Cloudflare Worker** | `system.mtproto.cfworker_domain` |
 | Транспорт к Telegram (общий) | **Обрабатывать соединения с Worker сетами** | `system.mtproto.cfworker_dpi` |
 | Транспорт к Telegram (общий) | **Свой WebSocket-домен** | `system.mtproto.ws_custom_domain` |
-| Транспорт к Telegram (общий) | **IP edge-сервера Telegram (расширенное)** | `system.mtproto.ws_endpoint_host` |
-| Транспорт к Telegram (общий) | **Имя для фронтинга WS-узла Telegram (расширенное)** | `system.mtproto.ws_front_sni` |
+| Транспорт к Telegram (общий) | **IP edge-сервера Telegram** | `system.mtproto.ws_endpoint_host` |
+| Транспорт к Telegram (общий) | **Имя для фронтинга WS-узла Telegram** | `system.mtproto.ws_front_sni` |
 | Транспорт к Telegram (общий) | **CF-резерв** | `system.mtproto.cfproxy_enabled` |
 | Транспорт к Telegram (общий) | **URL списка CF-доменов** | `system.mtproto.cfproxy_url` |
 | Транспорт к Telegram (общий) | **Резервное зеркало списка DC** | `system.mtproto.dc_fallback_enabled` |

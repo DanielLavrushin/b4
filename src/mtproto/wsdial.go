@@ -15,10 +15,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
-
-	"golang.org/x/sys/unix"
 
 	"github.com/daniellavrushin/b4/log"
 )
@@ -57,6 +54,7 @@ type wsConn struct {
 	rxBuf  []byte
 	wMu    sync.Mutex
 	closed atomic.Bool
+	mark   uint
 }
 
 func (c *wsConn) Read(p []byte) (int, error) {
@@ -310,9 +308,9 @@ var wsCurvePreferences = []tls.CurveID{tls.X25519, tls.CurveP256, tls.CurveP384}
 // wsDialEndpoints resolves host to the addresses a dial may use, with any
 // address currently cooling moved to the back rather than dropped - a cooling
 // address is still a route, and dropping the last one leaves none.
-func wsDialEndpoints(ctx context.Context, host, sni string) []string {
+func wsDialEndpoints(ctx context.Context, host, sni string, mark uint) []string {
 	if ip := net.ParseIP(host); ip != nil {
-		if !dialFamilyAllows(ip) {
+		if !dialFamilyAllows(ip, mark) {
 			return nil
 		}
 		return []string{host}
@@ -323,10 +321,10 @@ func wsDialEndpoints(ctx context.Context, host, sni string) []string {
 	}
 	fresh := make([]string, 0, len(addrs))
 	cooling := make([]string, 0, len(addrs))
-	skippedV6 := 0
+	skipped := 0
 	for _, a := range addrs {
-		if !dialFamilyAllows(a.IP) {
-			skippedV6++
+		if !dialFamilyAllows(a.IP, mark) {
+			skipped++
 			continue
 		}
 		s := a.IP.String()
@@ -337,7 +335,7 @@ func wsDialEndpoints(ctx context.Context, host, sni string) []string {
 		fresh = append(fresh, s)
 	}
 	if len(fresh) == 0 && len(cooling) == 0 {
-		log.Tracef("[tg-ws] %s resolves to %d IPv6 address(es) and this router has no IPv6 route, so there is nothing to dial", host, skippedV6)
+		log.Tracef("[tg-ws] %s resolves to %d address(es), none in an address family this router dials Telegram over, so there is nothing to dial", host, skipped)
 		return nil
 	}
 	return append(fresh, cooling...)
@@ -413,12 +411,15 @@ func dialWSAs(host, sni, hostHeader, path string, timeout time.Duration, mark ui
 	if resolveWindow > wsResolveMaxWait {
 		resolveWindow = wsResolveMaxWait
 	}
-	rctx, rcancel := context.WithTimeout(context.Background(), resolveWindow)
-	eps := wsDialEndpoints(rctx, host, sni)
-	rcancel()
+	eps := []string{host}
+	if !telegramViaProxy(mark) {
+		rctx, rcancel := context.WithTimeout(context.Background(), resolveWindow)
+		eps = wsDialEndpoints(rctx, host, sni, mark)
+		rcancel()
+	}
 
 	if len(eps) == 0 {
-		return nil, fmt.Errorf("tcp dial %s: no usable address (IPv6 is off and the name has no IPv4 address)", host)
+		return nil, fmt.Errorf("tcp dial %s: no usable address (the name has no address in a family this router dials Telegram over)", host)
 	}
 	attempts := len(eps)
 	if attempts > wsDialMaxEndpoints {
@@ -480,19 +481,9 @@ func isConnectStage(err error) bool {
 // budget it was drawn from is already spent.
 func dialWSEndpoint(host, sni, hostHeader, path string, timeout time.Duration, mark uint) (net.Conn, error) {
 	deadline := time.Now().Add(timeout)
-	dialer := &net.Dialer{Deadline: deadline}
-	if mark > 0 {
-		dialer.Control = func(network, address string, c syscall.RawConn) error {
-			var sErr error
-			if err := c.Control(func(fd uintptr) {
-				sErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, unix.SO_MARK, int(mark))
-			}); err != nil {
-				return err
-			}
-			return sErr
-		}
-	}
-	raw, err := dialer.Dial(dialNetwork(), net.JoinHostPort(host, wsDialPort))
+	dctx, dcancel := context.WithDeadline(context.Background(), deadline)
+	raw, err := dialTelegramTCP(dctx, dialNetwork(mark), net.JoinHostPort(host, wsDialPort), mark, timeout)
+	dcancel()
 	if err != nil {
 		return nil, fmt.Errorf("tcp dial %s: %w", host, err)
 	}
@@ -571,5 +562,5 @@ func dialWSEndpoint(host, sni, hostHeader, path string, timeout time.Duration, m
 	resp.Body.Close()
 
 	_ = tlsConn.SetDeadline(time.Time{})
-	return &wsConn{tls: tlsConn, br: br}, nil
+	return &wsConn{tls: tlsConn, br: br, mark: mark}, nil
 }

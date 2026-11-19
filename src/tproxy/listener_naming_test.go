@@ -86,6 +86,12 @@ func (m *mockSocks) serve(c net.Conn) {
 			return
 		}
 		r.host = net.IP(ip).String()
+	case 4:
+		ip := make([]byte, 16)
+		if _, err := io.ReadFull(c, ip); err != nil {
+			return
+		}
+		r.host = net.IP(ip).String()
 	case 3:
 		l := make([]byte, 1)
 		if _, err := io.ReadFull(c, l); err != nil {

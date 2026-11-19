@@ -38,8 +38,12 @@ func Dialer(mark int, timeout, keepAlive time.Duration) *net.Dialer {
 }
 
 func HTTPClient(mark int, timeout time.Duration) *http.Client {
+	return HTTPClientDial(Dialer(mark, timeout, timeout).DialContext, timeout)
+}
+
+func HTTPClientDial(dial func(ctx context.Context, network, addr string) (net.Conn, error), timeout time.Duration) *http.Client {
 	tr := &http.Transport{
-		DialContext:           Dialer(mark, timeout, timeout).DialContext,
+		DialContext:           dial,
 		ForceAttemptHTTP2:     true,
 		TLSHandshakeTimeout:   timeout,
 		ResponseHeaderTimeout: timeout,

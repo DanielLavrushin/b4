@@ -350,10 +350,10 @@ func (c *Config) refuseSafeCopy(path string, data []byte, paths []string) error 
 	return log.Errorf("the config file holds the %s placeholder of a safe copy at %s, so b4 does not load it", RedactedMarker, strings.Join(paths, ", "))
 }
 
-func (c *Config) decodeFile(data []byte) error {
+func (c *Config) DecodeWithSetDefaults(data []byte) error {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return fmt.Errorf("failed to parse config file: %w", err)
+		return fmt.Errorf("failed to parse config: %w", err)
 	}
 
 	rawSets := raw["sets"]
@@ -361,7 +361,7 @@ func (c *Config) decodeFile(data []byte) error {
 
 	withoutSets, _ := json.Marshal(raw)
 	if err := json.Unmarshal(withoutSets, c); err != nil {
-		return fmt.Errorf("failed to parse config file: %w", err)
+		return fmt.Errorf("failed to parse config: %w", err)
 	}
 
 	if rawSets == nil {
@@ -417,7 +417,7 @@ func (c *Config) LoadWithMigration(path string) (bool, error) {
 		return false, c.refuseSafeCopy(path, data, paths)
 	}
 
-	decodeErr := c.decodeFile(data)
+	decodeErr := c.DecodeWithSetDefaults(data)
 	if paths := c.RedactedValuePaths(); len(paths) > 0 {
 		return false, c.refuseSafeCopy(path, data, paths)
 	}
