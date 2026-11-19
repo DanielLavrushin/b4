@@ -152,8 +152,6 @@ func (p *Pool) applyCollected(w *Worker, completed []helloWatch, now time.Time) 
 	var targets []collectedTarget
 	switch result.outcome {
 	case collectedApplied:
-		p.collectedDirty = false
-		p.collectedRetryWait, p.collectedRetryAt = 0, time.Time{}
 		targets = p.collectedSettleTargetsLocked(before, batch)
 	case collectedSuperseded:
 		p.collectedDirty = true
@@ -408,6 +406,8 @@ func (p *Pool) publishCollected(requireConsumer bool) collectedPublish {
 	}
 	p.collectedViewBase, p.collectedViewGen, p.collectedView = cfg, p.collectedPubGen, view
 	p.collectedMu.Unlock()
+	p.collectedDirty = false
+	p.collectedRetryWait, p.collectedRetryAt = 0, time.Time{}
 	if rebuild && p.collectedChanged != nil {
 		p.collectedChanged(matcher)
 	}

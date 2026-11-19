@@ -293,3 +293,29 @@ func TestNoCollectionWhileDiscoveryRuns(t *testing.T) {
 		t.Fatalf("both silent connections after Discovery must be reset, got resets to %v", ports)
 	}
 }
+
+func TestACollectedCommitSettlesThePendingReconcileUnderItsOwnLock(t *testing.T) {
+	set := collectedConsumerSet()
+	w := newInjectingWorker(t, &set)
+	p := collectedTestPool(t, w, func(context.Context, *config.Config) error { return nil })
+	n := *w.getConfig()
+	if err := p.UpdateConfig(&n); err != nil {
+		t.Fatal(err)
+	}
+	p.configMu.Lock()
+	p.collectedRetryWait, p.collectedRetryAt = collectedRetryFirst, time.Now().Add(time.Hour)
+	dirty := p.collectedDirty
+	p.configMu.Unlock()
+	if !dirty {
+		t.Fatal("setup: a save with a consumer must leave the pool to reconcile")
+	}
+	if r := p.publishCollected(false); r.outcome != collectedApplied {
+		t.Fatalf("setup: the publish failed with outcome %d", r.outcome)
+	}
+	p.configMu.Lock()
+	dirty, wait, at := p.collectedDirty, p.collectedRetryWait, p.collectedRetryAt
+	p.configMu.Unlock()
+	if dirty || wait != 0 || !at.IsZero() {
+		t.Fatalf("the commit left the reconcile pending (dirty=%v wait=%v): a caller that clears it after the lock is released also clears the reconcile of a save that landed in between", dirty, wait)
+	}
+}
