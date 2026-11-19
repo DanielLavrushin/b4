@@ -1,3 +1,5 @@
+import { parseSSEBlocks, type SSEEvent } from "./sse";
+
 export interface AIStreamUsage {
   input_tokens?: number;
   output_tokens?: number;
@@ -7,33 +9,6 @@ export interface AIStreamHandlers {
   onDelta: (text: string) => void;
   onDone?: (usage?: AIStreamUsage) => void;
   onError?: (message: string) => void;
-}
-
-interface SSEEvent {
-  event: string;
-  data: string;
-}
-
-function* parseSSEBlocks(buffer: string): Generator<{ event: SSEEvent; rest: string }> {
-  let rest = buffer;
-  let idx = rest.indexOf("\n\n");
-  while (idx !== -1) {
-    const block = rest.slice(0, idx);
-    rest = rest.slice(idx + 2);
-    let event = "message";
-    const dataLines: string[] = [];
-    for (const line of block.split("\n")) {
-      if (line.startsWith("event: ")) {
-        event = line.slice(7).trim();
-      } else if (line.startsWith("data: ")) {
-        dataLines.push(line.slice(6));
-      }
-    }
-    if (dataLines.length > 0) {
-      yield { event: { event, data: dataLines.join("\n") }, rest };
-    }
-    idx = rest.indexOf("\n\n");
-  }
 }
 
 export async function streamAi(

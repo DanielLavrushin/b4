@@ -90,12 +90,14 @@ export const B4RunSteps = ({ steps, active }: B4RunStepsProps) => (
 interface B4RunBarProps {
   value: number;
   indeterminate?: boolean;
+  label?: string;
 }
 
-export const B4RunBar = ({ value, indeterminate = false }: B4RunBarProps) => (
+export const B4RunBar = ({ value, indeterminate = false, label }: B4RunBarProps) => (
   <LinearProgress
     variant={indeterminate ? "indeterminate" : "determinate"}
     value={Math.min(100, Math.max(0, value))}
+    aria-label={label}
     sx={{
       height: 4,
       borderRadius: 2,
