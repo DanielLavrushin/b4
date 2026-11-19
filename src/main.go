@@ -339,27 +339,16 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	pool := nfq.NewPool(&cfg)
 	collectedView.Store((func(*config.Config) *config.Config)(pool.CollectedConfig))
-	pool.SetCollectedTargetsInstaller(func(ctx context.Context, c *config.Config) error {
-		if err := collectedInstallRefusal(c, engineDown.Load(), isTUN || tunEngineRef.Load() != nil); err != nil {
-			return err
-		}
-		if err := waitTables(ctx); err != nil {
-			return err
-		}
-		if err := tables.RefreshCollectedRules(c); err != nil {
-			return err
-		}
-		tproxyMgr.SyncConfig(c)
-		tables.RoutingSyncConfig(c)
-		tables.SyncDSCP(c)
-		if err := tables.CollectedTargetsReady(c); err != nil {
-			return err
-		}
-		if err := tproxyMgr.CollectedConsumersReady(c); err != nil {
-			return err
-		}
-		return ctx.Err()
-	}, tproxyResolver.Set)
+	pool.SetCollectedTargetsInstaller(collectedTargetsInstaller(tproxyMgr, collectedInstallSteps{
+		refused: func(c *config.Config) error {
+			return collectedInstallRefusal(c, engineDown.Load(), isTUN || tunEngineRef.Load() != nil)
+		},
+		wait:    waitTables,
+		refresh: tables.RefreshCollectedRules,
+		routing: tables.RoutingSyncConfig,
+		dscp:    tables.SyncDSCP,
+		ready:   tables.CollectedTargetsReady,
+	}), tproxyResolver.Set)
 	tproxyMgr.SetWarmTupleFlows(pool.WarmTupleFlows())
 	tables.DNSQueryCopyOpenFunc = pool.OpenDNSQueryCopy
 	tables.DNSQueryCopyAliveFunc = pool.DNSQueryCopyAlive
@@ -1135,4 +1124,37 @@ func collectedInstallRefusal(c *config.Config, engineDown, tun bool) error {
 		return fmt.Errorf("packet interception unavailable")
 	}
 	return nil
+}
+
+type collectedInstallSteps struct {
+	refused func(*config.Config) error
+	wait    func(context.Context) error
+	refresh func(*config.Config) error
+	routing func(*config.Config)
+	dscp    func(*config.Config)
+	ready   func(*config.Config) error
+}
+
+func collectedTargetsInstaller(mgr *tproxy.Manager, steps collectedInstallSteps) func(context.Context, *config.Config) error {
+	return func(ctx context.Context, c *config.Config) error {
+		if err := steps.refused(c); err != nil {
+			return err
+		}
+		if err := steps.wait(ctx); err != nil {
+			return err
+		}
+		if err := steps.refresh(c); err != nil {
+			return err
+		}
+		mgr.SyncConfig(c)
+		steps.routing(c)
+		steps.dscp(c)
+		if err := steps.ready(c); err != nil {
+			return err
+		}
+		if err := mgr.CollectedConsumersReady(c); err != nil {
+			return err
+		}
+		return ctx.Err()
+	}
 }
