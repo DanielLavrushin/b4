@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/netip"
 	"slices"
 	"strings"
 	"testing"
@@ -283,5 +284,76 @@ func TestAMispredictedOwnerResetsOnlyOnce(t *testing.T) {
 	}
 	if n := strings.Count(logs.String(), "is collected, but set"); n != 1 {
 		t.Fatalf("the misprediction must be reported once per address, got %d lines in %q", n, logs.String())
+	}
+}
+
+func TestAnAddressCollectedAgainBeforeItsRemovalIsPublishedIsNotInstalledAgain(t *testing.T) {
+	consumer := readyConsumer(true)
+	producer := readyProducer()
+	consumer.Escalate.To = producer.Id
+	r := newCollectReadyRig(t, consumer, producer)
+	resets := r.resetLog()
+	r.w.destState.SetEscalation("i.ytimg.com", producer.Id, escalateReasonStall, time.Hour)
+	logs := captureLog(t)
+	addr := netip.MustParseAddr("1.2.3.4")
+
+	r.silent(t, 42000)
+	r.sweep(4 * time.Second)
+	r.silent(t, 42001)
+	r.sweep(5 * time.Second)
+	if r.installs != 1 || !slices.Equal(resets(), []uint16{42000, 42001}) {
+		t.Fatalf("setup: the first pair must collect the address: installs=%d resets=%v", r.installs, resets())
+	}
+
+	install, save := r.p.collectedInstall, true
+	r.p.collectedInstall = func(ctx context.Context, view *config.Config, current func() bool) error {
+		if save {
+			save = false
+			r.p.configMu.Lock()
+			n := *r.p.collectedBase
+			r.p.configMu.Unlock()
+			if err := r.p.UpdateConfig(&n); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return install(ctx, view, current)
+	}
+	r.p.configMu.Lock()
+	expiring := r.p.collected[addr]
+	expiring.at = r.start.Add(10 * time.Second).Add(-config.CollectedIPTTL)
+	r.p.collected[addr] = expiring
+	r.p.configMu.Unlock()
+	r.sweep(10 * time.Second)
+	r.p.configMu.Lock()
+	_, pooled := r.p.collected[addr]
+	r.p.configMu.Unlock()
+	if pooled || !slices.Equal(r.p.publishedCollected(), []string{"1.2.3.4"}) {
+		t.Fatalf("setup: a save during the expiry's install must leave the address out of the pool and still published: pooled=%v published=%v", pooled, r.p.publishedCollected())
+	}
+
+	r.silent(t, 42002)
+	r.silent(t, 42003)
+	r.sweep(14 * time.Second)
+	r.p.configMu.Lock()
+	again, pooled := r.p.collected[addr]
+	r.p.configMu.Unlock()
+	if !pooled || !slices.Equal(r.p.publishedCollected(), []string{"1.2.3.4"}) {
+		t.Fatalf("setup: the next pair must collect the address again before its removal reached the firewall: pooled=%v published=%v", pooled, r.p.publishedCollected())
+	}
+	if again.published == 0 {
+		t.Fatal("an address the commit leaves published must carry its publication mark, even when the published list did not change")
+	}
+
+	installs, builds := r.installs, matcherBuilds(logs.String())
+	r.silent(t, 42004)
+	r.sweep(20 * time.Second)
+	if r.installs != installs || matcherBuilds(logs.String()) != builds {
+		t.Fatalf("a later connection to the published address was installed again: installs %d->%d, matcher builds %d->%d", installs, r.installs, builds, matcherBuilds(logs.String()))
+	}
+	if ports := resets(); slices.Contains(ports, 42004) {
+		t.Fatalf("a connection after the publication that still reached the producer must end without a reset, got resets to %v", ports)
+	}
+	if r.watched(42004) {
+		t.Fatal("the later connection must stop being watched")
 	}
 }

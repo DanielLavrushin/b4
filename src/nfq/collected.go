@@ -648,16 +648,12 @@ func (p *Pool) collectedWatchGen() uint64 {
 	return t.watchGen
 }
 
-func (p *Pool) stampPublishedLocked(old, ips []string) {
-	was := make(map[string]bool, len(old))
-	for _, ip := range old {
-		was[ip] = true
-	}
+func (p *Pool) stampPublishedLocked(ips []string) {
 	before := p.collectedWatchGen() + 1
 	for _, ip := range ips {
 		addr, err := netip.ParseAddr(ip)
 		candidate, pooled := p.collected[addr]
-		if was[ip] || err != nil || !pooled {
+		if err != nil || !pooled || candidate.published != 0 {
 			continue
 		}
 		candidate.published, candidate.lateNoted = before, false
@@ -741,9 +737,7 @@ func (p *Pool) publishCollectedWith(requireConsumer bool, prepared *collectedPre
 			w.matcher.Store(matcher)
 		}
 	}
-	if !unchanged {
-		p.stampPublishedLocked(p.publishedCollected(), ips)
-	}
+	p.stampPublishedLocked(ips)
 	p.collectedMu.Lock()
 	if !unchanged {
 		p.collectedPublished = ips
