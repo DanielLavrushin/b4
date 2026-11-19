@@ -215,6 +215,35 @@ func TestARecollectionAfterExpiryNeedsTwoNewSilentConnections(t *testing.T) {
 	}
 }
 
+func TestACountThatCompletesInTheExpiryPassDoesNotKeepTheAddress(t *testing.T) {
+	consumer := readyConsumer(true)
+	consumer.Escalate.To = readyProducer().Id
+	r := newLifetimeRig(t, consumer)
+	r.w.destState.SetEscalation("i.ytimg.com", consumer.Escalate.To, escalateReasonStall, time.Hour)
+	r.collect(t)
+	r.expireAt(10 * time.Second)
+	r.silent(t, 42002)
+	r.sweep(10 * time.Second)
+
+	if r.collected() != 0 || r.installs != 2 || len(r.lastView(t)) != 0 || r.consumerMatches("1.2.3.4") {
+		t.Fatalf("an address whose time is up must leave the firewall even when a count for it completes in the same pass: candidates=%d installs=%d view=%v", r.collected(), r.installs, r.lastView(t))
+	}
+	if r.watched(42002) || slices.Contains(r.resets(), 42002) {
+		t.Fatal("the connection that completed a count for the expiring address must end without a reset")
+	}
+	r.silent(t, 42003)
+	r.sweep(11 * time.Second)
+	if r.collected() != 0 {
+		t.Fatal("one silent connection after the expiry must not collect the address again")
+	}
+	r.silent(t, 42004)
+	r.sweep(12 * time.Second)
+	entries := r.p.GetCollectedIPs()
+	if len(entries) != 1 || r.installs != 3 || entries[0].Since != r.start.Add(12*time.Second).UnixMilli() {
+		t.Fatalf("two new silent connections must collect it again, with a new collection time: entries=%+v installs=%d", entries, r.installs)
+	}
+}
+
 func TestAFailedRemovalPublishIsRetried(t *testing.T) {
 	for name, drop := range map[string]func(*testing.T, *lifetimeRig){
 		"expired": func(t *testing.T, r *lifetimeRig) { r.expireAt(10 * time.Second) },

@@ -163,7 +163,7 @@ func (p *Pool) collectedPass(now time.Time) {
 
 func (p *Pool) applyCollected(w *Worker, completed []helloWatch, now time.Time) {
 	removed := p.expireCollected(w, now)
-	fresh, again := p.sortCollected(w, completed)
+	fresh, again := p.sortCollected(w, completed, removed)
 	owned, prepared := p.ownCollected(w, fresh)
 	p.configMu.Lock()
 	batch := p.addCollectedLocked(w, owned, now)
@@ -326,7 +326,7 @@ func (p *Pool) collectedProducerLocked(h helloWatch) (netip.Addr, bool) {
 	return addr, producer != nil && producer.Enabled && producer.TCP.IPBlockDetect.Collects() && !producer.Targets.UseCollectedIPs
 }
 
-func (p *Pool) sortCollected(w *Worker, completed []helloWatch) (fresh, again []helloWatch) {
+func (p *Pool) sortCollected(w *Worker, completed []helloWatch, removed map[netip.Addr]collectedCandidate) (fresh, again []helloWatch) {
 	if len(completed) == 0 {
 		return nil, nil
 	}
@@ -334,7 +334,7 @@ func (p *Pool) sortCollected(w *Worker, completed []helloWatch) (fresh, again []
 	defer p.configMu.Unlock()
 	for _, h := range completed {
 		addr, usable := p.collectedProducerLocked(h)
-		if !usable {
+		if _, gone := removed[addr]; !usable || gone {
 			w.destState.EndWatch(h)
 			continue
 		}
