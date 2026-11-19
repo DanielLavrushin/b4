@@ -3,6 +3,7 @@ package tables
 import (
 	"net"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -196,6 +197,85 @@ func TestNetnsTheTelegramSetsKillSwitchHoldsItsConnectionsWhenTheInterfaceGoesAw
 			case !c.killSwitch && (err != nil || uplink != 1):
 				netnsLogState(t, rig.engine)
 				t.Fatalf("with the interface down and no kill switch the marked dial reached the uplink %d times (%v), want once: the set's traffic falls back to the normal uplink", uplink, err)
+			}
+		})
+	}
+}
+
+func netnsTargetOnlyLearned(t *testing.T, engine, setName string) {
+	t.Helper()
+	if engine == backendNFTables {
+		static := netnsRun(t, "nft", "list", "set", "inet", routeNftTable, setName)
+		learned := netnsRun(t, "nft", "list", "set", "inet", routeNftTable, routeNftDynSet(setName))
+		if strings.Contains(static, netnsTarget) || !strings.Contains(learned, netnsTarget) {
+			t.Fatalf("%s must sit in the learned set only, so the test proves what an address learned from DNS or a server name does:\n%s\n%s", netnsTarget, static, learned)
+		}
+		return
+	}
+	out := netnsRun(t, "ipset", "list", setName)
+	for _, line := range strings.Split(out, "\n") {
+		if f := strings.Fields(line); len(f) >= 3 && f[0] == netnsTarget && f[1] == "timeout" && f[2] != "0" {
+			return
+		}
+	}
+	t.Fatalf("%s is not a learned entry of %s, so the test proves nothing about an address learned from DNS or a server name:\n%s", netnsTarget, setName, out)
+}
+
+func TestNetnsAPacketB4SendsIntoItsTelegramConnectionLeavesWithTheConnection(t *testing.T) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+	for _, engine := range []string{backendIPTables, backendNFTables} {
+		t.Run(engine, func(t *testing.T) {
+			if engine == backendNFTables && !nftWorking() {
+				t.Skip("nftables is not usable here")
+			}
+			routeEngine = nil
+			defer func() { routeEngine = nil }()
+
+			cfg := netnsConfig(engine)
+			set := cfg.Sets[0]
+			set.Targets.IPs = []string{"198.51.100.99"}
+			set.Targets.IpsToMatch = set.Targets.IPs
+			if err := AddRules(cfg); err != nil {
+				t.Fatalf("AddRules: %v", err)
+			}
+			defer func() { _ = ClearRules(cfg) }()
+			RoutingSyncConfig(cfg)
+			defer RoutingClearAll()
+
+			RoutingLearnIP(cfg, set, net.ParseIP(netnsTarget))
+			netnsTargetOnlyLearned(t, engine, netnsRoutingSetName(t, engine))
+			netnsAddCounters(t)
+			stopQueue := netnsStartQueueListener(t, uint16(cfg.Queue.StartNum))
+			defer stopQueue()
+
+			injector := netnsInjectorMark(cfg.Queue.Mark)
+			for _, tc := range []struct {
+				name  string
+				mark  uint32
+				sport uint16
+				want  string
+				why   string
+			}{
+				{"b4's own Telegram connection", config.TelegramSetDialMark, 41021, netnsPrimary,
+					"b4's own dials stay on the main table"},
+				{"a packet b4 sends into its Telegram connection", injector | config.TelegramSetDialMark, 41022, netnsPrimary,
+					"it carries the connection's dial mark, so it leaves the way the connection does"},
+				{"a packet b4 sends into another connection", injector, 41023, netnsSecondary,
+					"the learned address takes the injector mark to the set's interface, which split the Telegram connection when its packets carried that mark alone"},
+			} {
+				netnsZeroCounters(t)
+				netnsSendMarked(t, tc.mark, tc.sport, 443)
+				counts := netnsEgressCounts(t)
+				if counts[tc.want] != 1 {
+					netnsLogState(t, engine)
+					t.Errorf("%s (0x%x): expected the packet on %s, counters were %v: %s", tc.name, tc.mark, tc.want, counts, tc.why)
+				}
+				for dev, n := range counts {
+					if dev != tc.want && n != 0 {
+						t.Errorf("%s (0x%x): %d packet(s) left over %s instead", tc.name, tc.mark, n, dev)
+					}
+				}
 			}
 		})
 	}

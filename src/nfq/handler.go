@@ -118,6 +118,9 @@ func (w *Worker) handleQueued(vc *verdictCtx, a nfqueue.Attribute, mark uint) in
 	}
 	if a.Mark != nil && config.IsTelegramSetMark(*a.Mark) {
 		vc.telegramSet = w.getConfig().TelegramUpstreamSet()
+		if vc.telegramSet != nil {
+			w.telegramFlows.note(*a.Payload, time.Now())
+		}
 	}
 
 	if !w.matchesInterface(a) {
@@ -661,7 +664,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 
 		if set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.Active() {
-			w.connTracker.RegisterOutgoing(connKey, set)
+			w.connTracker.RegisterOutgoing(connKey, set, vc.telegramSet != nil)
 		}
 
 		vc.drop()
@@ -1002,7 +1005,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 
 		if !foreignEgress && (set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.Active() || addressHolds) {
-			w.connTracker.RegisterOutgoing(connKey, set)
+			w.connTracker.RegisterOutgoing(connKey, set, vc.telegramSet != nil)
 			if isAck && !isSyn && !isRst && cfg.IsTCPPort(dport) && set.TCP.RSTProtection.Enabled {
 				w.connTracker.MarkEstablished(connKey)
 			}

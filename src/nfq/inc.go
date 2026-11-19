@@ -22,7 +22,7 @@ func (w *Worker) HandleIncoming(vc *verdictCtx, v byte, raw []byte, ihl int, src
 	}
 	w.recordDestAlive(srcStr, dstStr, isSynAck)
 
-	incomingSet := w.connTracker.GetSetForIncoming(dstStr, dport, srcStr, sport)
+	incomingSet, telegram := w.connTracker.incomingConn(dstStr, dport, srcStr, sport)
 	if incomingSet == nil && isSynAck {
 		w.connTracker.RecordEarlySynAck(dstStr, dport, srcStr, sport, packetTTL(v, raw), int(raw[ihl+12]>>4)*4 > 20)
 	}
@@ -71,6 +71,9 @@ func (w *Worker) HandleIncoming(vc *verdictCtx, v byte, raw []byte, ihl int, src
 		payloadLen := len(payload)
 
 		if payloadLen > 0 {
+			if telegram {
+				w.telegramFlows.noteReply(raw, time.Now())
+			}
 			inc := &incomingSet.TCP.Incoming
 
 			switch inc.Mode {
