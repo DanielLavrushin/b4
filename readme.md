@@ -263,7 +263,7 @@ Docs: [Configuration file (RU)](https://docs.b4core.app/ru/docs/advanced/config)
 For kernels without NFQUEUE support, switch the engine mode to **TUN interface** under **Settings → Core → Packet Engine**. B4 creates its own TUN device and steers traffic into it with policy routing, running the same packet engine.
 
 > [!IMPORTANT]
-> TUN mode is a fallback, not an equal alternative. Roughly 60% of the feature set works there: B4 installs none of its usual firewall rules, so anything built on them is unavailable. Discovery and the Watchdog's auto-healing do not run, and IPv6 is not forwarded. Use NFQUEUE where the kernel supports it.
+> TUN mode is a fallback, not an equal alternative. Roughly 60% of the feature set works there: B4 installs none of its usual firewall rules, so anything built on them is unavailable. Discovery and the Watchdog's auto-healing run with limits: IPv4 only, without strategies that act on replies, and not for a set with its own DSCP value. IPv6 is not forwarded. Use NFQUEUE where the kernel supports it.
 
 ## Command line
 

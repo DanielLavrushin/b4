@@ -4,7 +4,7 @@ title: How Discovery searches
 description: The phases of a Discovery run, the DNS check, alternative addresses, ECH and page hosts, how the watchdog checks and heals a set, and how the DPI Detector fetches.
 ---
 
-A [Discovery](../discovery.md) run applies b4's built-in strategy presets one after another on a capture queue of its own, fetches every site through each, and keeps the presets that made the page load. The configured sets keep working during a run: only the run's own fetches go through the strategy under test. The [watchdog](../watchdog.md) heals a set with the same kind of run.
+A [Discovery](../discovery.md) run applies b4's built-in strategy presets one after another on a capture queue of its own, or [under the TUN engine](#tun) on a TUN device of its own, fetches every site through each, and keeps the presets that made the page load. The configured sets keep working during a run: only the run's own fetches go through the strategy under test. The [watchdog](../watchdog.md) heals a set with the same kind of run.
 
 ## The phases of a run
 
@@ -46,6 +46,22 @@ A card lists up to twelve other strategies that loaded every site on it, fastest
 Only one run is in progress at a time, and the watchdog shares it. A heal that comes due during a run started by hand waits for it, and a run cannot start by hand during a heal. A firewall refresh started during a run waits for the run to finish. A rewrite of b4's DSCP rules does not wait and stops the run, see [DSCP rules](./dscp.md#discovery). After a run, its capture queue and firewall rules are released, which takes a few seconds.
 
 Discovery's own fetches skip the sets, so its verdict on an address is the raw one. Another tool run on a machine where b4 works goes through b4's sets, and a TLS check that passes there measures the bypass, not the network. Local and private destinations, and names or redirects that lead to them, are never fetched.
+
+## Under the TUN engine {#tun}
+
+While b4 runs the TUN engine, a run creates a TUN device of its own, `b4dsc0`, for its length. The router routes the run's probe connections into that device by their mark, and b4 reads them there, applies the strategy under test and sends them out through the uplink. The live sets never see them. The engine that decides is the one running, not the saved **Packet Engine** choice, so a TUN host that also has NFQUEUE runs Discovery this way too. The device's rules and table are listed under [TUN mode](../guides/marks.md#discovery-tun).
+
+Only the outgoing packets of the router's own connections pass through a TUN device. The server's replies are delivered to the router directly, as under the TUN engine itself. That sets the limits of a run:
+
+| Limit | Effect |
+| --- | --- |
+| Replies | A strategy part that acts on the server's replies, an incoming mode or RST injection protection, cannot be tested. Remembered winners, community sets and presets with one are skipped, and the set's current strategy is tested without them. |
+| IPv4 only | The probes use IPv4, as the TUN engine does. A run that asks for IPv6 is refused. |
+| DSCP | The run cannot write a set's own DSCP value into its probes, so a run or heal for such a set is refused, see [DSCP rules](./dscp.md#discovery). |
+
+The device sees no DNS answers, and a heal skips the DNS phase. Before the strategies, the run therefore resolves the IPv4 addresses of every domain it has no address for, through the resolver its fetches use. A strategy part that acts on the first packet of a connection, which carries no name, such as a fake SYN, then applies from the first connection to each address. These addresses are used only for matching during the run and never reach a set.
+
+A run does not start while the TUN engine is not running or has no uplink address. Every 5 seconds the run checks its device, its route and its rules. When one of them is gone, the run stops as after a rewrite of b4's DSCP rules, and its results cannot be applied. A device or rules left behind by a crash are removed the next time the TUN engine starts.
 
 ## A run for a set
 

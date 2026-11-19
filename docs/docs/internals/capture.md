@@ -78,7 +78,7 @@ The log says so at startup, and **System Diagnostics** shows **This device only*
 
 ### Address translation {#tun-nat}
 
-The TUN engine itself rewrites the source address of captured packets to the uplink address. Its rule stays ahead of any masquerade rule that names no outgoing interface. NAT Masquerade leaves the TUN device out. When TUN captures only the router's own traffic, the rule is a NAT exemption instead, `-o <device> -j ACCEPT`, which keeps the source address.
+The TUN engine itself rewrites the source address of captured packets to the uplink address. Its rule stays ahead of any masquerade rule that names no outgoing interface. NAT Masquerade leaves out the TUN device and the device [Discovery uses under TUN](./discovery.md#tun), so the probes keep the source address their route gives them. When TUN captures only the router's own traffic, the rule is a NAT exemption instead, `-o <device> -j ACCEPT`, which keeps the source address.
 
 ## When b4 tells the direction by port {#direction-by-port}
 

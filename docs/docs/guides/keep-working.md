@@ -41,6 +41,7 @@ When the watchdog writes a new strategy, the row shows it under **Last heal**, a
 | The switch cannot be turned on | A condition fails, and the caption under the switch names it, see [Watchdog](../sets/discovery.md#watchdog). |
 | **Cannot verify** | No page can be checked: another set handles them, an escalation sends them elsewhere, or they are unusable. The set needs pages that it handles itself. |
 | **Cooldown** or **Gave up**, with the reason that the current strategy loads the addresses | Tested alone, the set's strategy loads the pages, yet the live check fails. Something outside the strategy is in the way: another set, DNS or IPv6. The **Traffic** page shows which set the connections get. |
+| **Gave up**, with the reason that the set is limited to IPv6 or has its own DSCP value | Under the [TUN engine](../discovery.md#tun) Discovery cannot test such a set. Heals run again once the set's **IP Version Filter** changes or its own DSCP value is turned off. |
 | **Gave up** | Three heals in a row failed, and the reason shows the last cause. A manual run with **Find a strategy** on the set's **Discovery** tab shows what works, and **Check now** on the **Watchdog** page resumes the heals. |
 
 When no strategy helps any more, the sites need a [VPN](./vpn.md) or a [proxy](./proxy.md). A set routed that way, as the escalation backup, catches the sites that keep failing.

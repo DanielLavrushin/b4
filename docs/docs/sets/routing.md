@@ -148,7 +148,7 @@ The **DSCP** block at the bottom of **Traffic Routing** writes the set's own DSC
 | **Enable per-set DSCP** | Writes the set's value. Turned on with the value at `0`, it fills in the first of `7`, `31`, `6` and `25` that no other set and no **Set DSCP** uses. | Off |
 | **DSCP value** | 0-63. `0` clears the field. | `0` |
 
-The value replaces the value of **Set DSCP** under [Settings > Core > Firewall](../settings/core.md#dscp) in those packets, whether **Set DSCP** is on or off, and the interface list there limits it too. The value stays on this router: a [shared set](./sharing.md) never carries it.
+The value replaces the value of **Set DSCP** under [Settings > Core > Firewall](../settings/core.md#dscp) in those packets, whether **Set DSCP** is on or off, and the interface list there limits it too. The value stays on this router: a [shared set](./sharing.md) never carries it. Under the [TUN engine](../discovery.md#tun), Discovery and the watchdog's heals cannot test a set with its own value.
 
 ### Choosing the value {#dscp-values}
 

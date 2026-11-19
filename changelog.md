@@ -4,6 +4,10 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Discovery** and the watchdog's heals run under the TUN engine, routers without NFQUEUE included. Under TUN they test IPv4 only, skip strategies with **Incoming Mode** or **RST Injection Protection**, and cannot test a set with its own DSCP value. [#528](https://github.com/DanielLavrushin/b4/issues/528)
+
 ### Fixed
 
 - After b4 stopped, a router with its own connection-tracking settings, such as OpenWrt, was left with the kernel defaults instead, and in rare cases with b4's settings. ([#613](https://github.com/DanielLavrushin/b4/pull/613), thanks [@mvanhorn](https://github.com/mvanhorn); [#575](https://github.com/DanielLavrushin/b4/issues/575))

@@ -32,7 +32,7 @@ The defaults are the usual choice.
 | **Try strategies that worked before** | Winners of earlier runs go first. **Forget them** clears that list. | On |
 | **Confirm each strategy** | Fetches in a row a strategy has to pass during the search, 1 to 5. | 1 |
 | **TLS version for the probes** | Limits the probes, and the created set, to TLS 1.2 or 1.3. | Auto |
-| **IP version for the probes** | The same for IPv4 and IPv6. Shown while the capture engine handles both. | Auto |
+| **IP version for the probes** | The same for IPv4 and IPv6. Shown while the capture engine handles both. IPv6 is unavailable [under the TUN engine](#tun). | Auto |
 | **Captured ClientHello as the fake payload** | Fake packets carry a ClientHello captured under [Settings > Payloads](./settings/payloads.md). | None |
 
 ## A run
@@ -47,11 +47,21 @@ A run stops when b4 rewrites its DSCP rules during it, for example after a set's
 
 One run is in progress at a time, the searches of the [watchdog](./watchdog.md) included. A watchdog search shows on this page but cannot be stopped here.
 
+## Under the TUN engine {#tun}
+
+While b4 runs the TUN engine, Discovery sends its probes through it, and the page shows a note about it. A run under TUN has three limits:
+
+- The probes use IPv4 only. IPv6 under **IP version for the probes** is unavailable, and a run for a set whose **IP Version Filter** is IPv6 does not start.
+- Strategies that act on the server's replies, **Incoming Mode** and **RST Injection Protection**, are not tested. Remembered winners, community sets and built-in strategies that use them are skipped, and the set's current strategy is tested without them.
+- A run for a set with its own [DSCP value](./sets/routing.md#dscp) does not start.
+
+The engine that counts is the one b4 is running. A new choice under **Settings > Core > Packet Engine** counts after the restart that applies it. While the TUN engine is not running or has no uplink address yet, a run does not start.
+
 ## A run for a set
 
 A run for a set ends with one verdict for the whole set, above **Results per address**. The set's own strategy is tested first, as **Current strategy of the set**, and a strategy is confirmed on all addresses together.
 
-For a set with its own [DSCP value](./sets/routing.md#dscp), the probes carry that value, as the set's traffic does, and take the set's route through the router in front of b4. The progress and the results show **DSCP &lt;value&gt;, as the set's traffic**. The probes of any other run carry the value of **Set DSCP** under [Settings > Core > Firewall](./settings/core.md#dscp) while it is on, or none, also to the addresses of such a set.
+For a set with its own [DSCP value](./sets/routing.md#dscp), the probes carry that value, as the set's traffic does, and take the set's route through the router in front of b4. The progress and the results show **DSCP &lt;value&gt;, as the set's traffic**. Under the [TUN engine](#tun), such a run does not start. The probes of any other run carry the value of **Set DSCP** under [Settings > Core > Firewall](./settings/core.md#dscp) while it is on, or none, also to the addresses of such a set.
 
 | Verdict | Meaning and what the card offers |
 | --- | --- |
