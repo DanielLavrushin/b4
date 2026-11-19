@@ -3,6 +3,8 @@ package tables
 import (
 	"strings"
 	"testing"
+
+	"github.com/daniellavrushin/b4/config"
 )
 
 func deferredEgressCommands(t *testing.T, iface string, killSwitch bool) string {
@@ -88,6 +90,47 @@ func TestARouteWhoseInterfaceNeverAppearedIsPublishedWithoutItsRule(t *testing.T
 	}
 	if r := publish("lo"); r.RuleMissing {
 		t.Fatal("once the interface exists and its rule is added, the route must be published as installed again")
+	}
+}
+
+func TestARouteWhoseInterfaceIsSeenLaterIsPublishedWithItsRule(t *testing.T) {
+	if !hasBinary("ip") {
+		t.Skip("no ip binary")
+	}
+	for name, appear := range map[string]func(*config.Config){
+		"link watcher": func(cfg *config.Config) { routeReinstallForInterface(cfg, "lo", func() bool { return false }) },
+		"rule check":   RoutingReconcilePolicyRules,
+	} {
+		t.Run(name, func(t *testing.T) {
+			familyResetGlobals(t)
+			rpFilterHarness(t, map[string]string{"all": "0", "lo": "0"})
+			prevRun, prevProto, prevSeen, prevRoutes := run, routeIPSupportsProto, routeIfaceSeen, routeSetRoutes.Load()
+			run = func(args ...string) (string, error) { return "", nil }
+			routeIPSupportsProto = func() bool { return false }
+			routeIfaceSeen = make(map[string]bool)
+			t.Cleanup(func() {
+				run, routeIPSupportsProto, routeIfaceSeen = prevRun, prevProto, prevSeen
+				routeSetRoutes.Store(prevRoutes)
+			})
+
+			cfg := config.NewConfig()
+			set := config.NewSetConfig()
+			set.Id, set.Enabled = "late", true
+			set.Routing.Enabled, set.Routing.Mode, set.Routing.EgressInterface = true, config.RoutingModeInterface, "lo"
+			cfg.Sets = []*config.SetConfig{&set}
+			st := loopTestState("lo", set.RoutingIncludesRouterTraffic())
+			st.setID = "late"
+			routeRuleCache["late"] = st
+			routePublishMarksLocked()
+			if r, ok := RoutingSetRoute("late"); !ok || !r.RuleMissing {
+				t.Fatal("before b4 has seen the interface the route has no rule and must be published that way")
+			}
+
+			appear(&cfg)
+			if r, ok := RoutingSetRoute("late"); !ok || r.RuleMissing {
+				t.Fatalf("the %s put the set's rule in place but the route stayed published without it, so b4's own Telegram dials kept leaving as if there were no set", name)
+			}
+		})
 	}
 }
 
