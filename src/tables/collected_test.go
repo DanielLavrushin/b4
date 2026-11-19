@@ -636,3 +636,74 @@ func TestCollectedGuardLeavesAnInterfaceConsumerToTheFallback(t *testing.T) {
 		}
 	}
 }
+
+func TestCollectedGuardTagsNewUDPOnlyInThePreChain(t *testing.T) {
+	for _, backend := range []routeBackend{&routeIptBackend{}, &routeNftBackend{}} {
+		for _, c := range []struct {
+			name      string
+			udp, quic bool
+		}{
+			{"udp not routed", false, false},
+			{"udp routed", true, false},
+			{"udp routed, quic refused", true, true},
+		} {
+			t.Run(backend.name()+"/"+c.name, func(t *testing.T) {
+				staticResetGlobals(t)
+				localGuardReset(t)
+				emitted := captureProxyRuleArgv(t)
+				run = refuseDeletes(run)
+				stubBinaries(t, backendIPTables, backendIP6Tables)
+				cfg := collectedGuardTestConfig(config.RoutingModeProxy, true)
+				cfg.Queue.IPv6Enabled = true
+				set := cfg.Sets[0]
+				set.Routing.Upstream.UDP = c.udp
+				if c.quic {
+					set.UDP.Mode = config.UDPModeReject
+					set.UDP.FilterQUIC = config.QUICFilterAll
+				}
+				st := buildRouteState(cfg, set)
+				st.set = set
+				if st.quicReject != (!c.udp || c.quic) {
+					t.Fatalf("quicReject=%v does not follow the set", st.quicReject)
+				}
+				if err := routeEnsureProxyRule(backend, cfg, set, st, nil); err != nil {
+					t.Fatalf("routeEnsureProxyRule: %v", err)
+				}
+				udpTags := func(chain string) []string {
+					var tags []string
+					for _, line := range chainRuleLines(*emitted, chain) {
+						if !strings.Contains(line, "-p udp") && !strings.Contains(line, "l4proto udp") {
+							continue
+						}
+						if strings.Contains(line, "_v4c ") || strings.Contains(line, "_v6c ") {
+							if strings.Contains(line, "CONNMARK") || strings.Contains(line, "ct mark set") {
+								tags = append(tags, line)
+							}
+						}
+					}
+					return tags
+				}
+				pre, out := udpTags(st.chainPre), udpTags(st.chainOut)
+				want := 0
+				if c.udp {
+					want = 2
+				}
+				if len(pre) != want {
+					t.Errorf("the pre chain holds %d UDP tag(s), want %d: a set that routes UDP through the upstream must claim a new UDP flow to a collected address, or the guard's return sends every datagram after the first out the uplink:\n%s", len(pre), want, strings.Join(chainRuleLines(*emitted, st.chainPre), "\n"))
+				}
+				if len(out) != 0 {
+					t.Errorf("the out chain got a UDP tag, which would proxy the router's own UDP through the restore although the set marks only its TCP: %v", out)
+				}
+				for _, line := range pre {
+					excluded := strings.Contains(line, "! --dport 443") || strings.Contains(line, "udp dport != 443")
+					if c.quic && !excluded {
+						t.Errorf("a set that refuses QUIC tags UDP/443 to a collected address, so the restore marks it for the proxy, the QUIC pass accepts it and it is delivered to the router instead of being refused in forward: %s", line)
+					}
+					if !c.quic && strings.Contains(line, "443") {
+						t.Errorf("a set that lets QUIC through the upstream excludes UDP/443 from the tag: %s", line)
+					}
+				}
+			})
+		}
+	}
+}

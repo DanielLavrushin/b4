@@ -9,8 +9,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -799,4 +801,256 @@ func TestNetnsAnInterfaceConsumerKeepsACollectedConnectionOnItsInterface(t *test
 
 func TestNetnsAnInterfaceConsumerKeepsACollectedConnectionOnItsInterfaceNft(t *testing.T) {
 	netnsAnInterfaceConsumerKeepsACollectedConnectionOnItsInterface(t, backendNFTables)
+}
+
+const (
+	netnsCollectedDatagramEnv = "B4_NETNS_COLLECTED_DGRAM"
+	netnsCollectedUDPPort     = 5353
+	netnsQUICCountNftable     = "b4t_quiccount"
+)
+
+func TestNetnsDeviceSendsDatagrams(t *testing.T) {
+	if os.Getenv(netnsCollectedDatagramEnv) == "" {
+		t.Skip("helper for the device side of the collected UDP tests")
+	}
+	port, _ := strconv.Atoi(os.Getenv("B4_PROBE_PORT"))
+	conn, err := net.DialUDP("udp4", nil, &net.UDPAddr{IP: net.ParseIP(os.Getenv("B4_PROBE_HOST")), Port: port})
+	if err != nil {
+		fmt.Printf("DGRAM dial failed: %v\n", err)
+		return
+	}
+	defer conn.Close()
+	var res []string
+	buf := make([]byte, 256)
+	for _, msg := range []string{"one", "two", "three"} {
+		if _, err := conn.Write([]byte(msg)); err != nil {
+			res = append(res, msg+":senderr")
+			continue
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+		n, err := conn.Read(buf)
+		switch {
+		case errors.Is(err, syscall.ECONNREFUSED):
+			res = append(res, msg+":refused")
+		case err != nil:
+			res = append(res, msg+":noreply")
+		default:
+			res = append(res, msg+":"+string(buf[:n]))
+		}
+	}
+	fmt.Printf("DGRAM %s\n", strings.Join(res, " "))
+}
+
+func (d *netnsDevice) datagrams(t *testing.T, host string, port int) string {
+	t.Helper()
+	cmd := exec.Command("nsenter", "-t", strconv.Itoa(d.pid), "-n", os.Args[0], "-test.run", "^TestNetnsDeviceSendsDatagrams$", "-test.v")
+	cmd.Env = append(os.Environ(), netnsCollectedDatagramEnv+"=1", "B4_PROBE_HOST="+host, "B4_PROBE_PORT="+strconv.Itoa(port))
+	out, _ := cmd.CombinedOutput()
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "DGRAM ") {
+			return strings.TrimPrefix(line, "DGRAM ")
+		}
+	}
+	return "no device output: " + strings.TrimSpace(string(out))
+}
+
+func netnsServeUDPRelay(t *testing.T, port int) func() []string {
+	t.Helper()
+	uc := netnsTransparentUDP(t, port)
+	var mu sync.Mutex
+	var got []string
+	note := func(s string) {
+		mu.Lock()
+		got = append(got, s)
+		mu.Unlock()
+	}
+	go func() {
+		buf := make([]byte, 2048)
+		oob := make([]byte, 512)
+		for {
+			n, oobn, _, src, err := uc.ReadMsgUDP(buf, oob)
+			if err != nil {
+				return
+			}
+			dst, err := parseNetnsOrigDst(oob[:oobn])
+			if err != nil {
+				note(string(buf[:n]) + "@?")
+				continue
+			}
+			note(string(buf[:n]) + "@" + dst)
+			lc := net.ListenConfig{Control: func(network, address string, c syscall.RawConn) error {
+				var ctlErr error
+				if err := c.Control(func(fd uintptr) {
+					for _, opt := range []struct{ level, name, value int }{
+						{unix.SOL_SOCKET, unix.SO_REUSEADDR, 1},
+						{unix.SOL_SOCKET, unix.SO_MARK, int(SelfDialMark)},
+						{unix.SOL_IP, unix.IP_TRANSPARENT, 1},
+					} {
+						if ctlErr = unix.SetsockoptInt(int(fd), opt.level, opt.name, opt.value); ctlErr != nil {
+							return
+						}
+					}
+				}); err != nil {
+					return err
+				}
+				return ctlErr
+			}}
+			reply, err := lc.ListenPacket(context.Background(), "udp4", dst)
+			if err != nil {
+				note("reply socket: " + err.Error())
+				continue
+			}
+			_, _ = reply.WriteTo([]byte("relay:"+string(buf[:n])), src)
+			_ = reply.Close()
+		}
+	}()
+	return func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), got...)
+	}
+}
+
+func netnsCountUplinkUDPTo(t *testing.T, engine, addr string) func() int {
+	t.Helper()
+	ipt := netnsCounterBinary(engine)
+	spec := func(action string) []string {
+		return []string{ipt, "-w", "-t", "mangle", action, "POSTROUTING", "-o", netnsPrimary, "-d", addr, "-p", "udp", "-j", "ACCEPT"}
+	}
+	netnsRun(t, spec("-I")...)
+	t.Cleanup(func() { _, _ = run(spec("-D")...) })
+	return func() int {
+		out := netnsRun(t, ipt, "-w", "-t", "mangle", "-L", "POSTROUTING", "-v", "-x", "-n")
+		for _, line := range strings.Split(out, "\n") {
+			f := strings.Fields(line)
+			if len(f) < 9 || (f[3] != "udp" && f[3] != "17") || f[6] != netnsPrimary || f[8] != addr {
+				continue
+			}
+			if n, err := strconv.Atoi(f[0]); err == nil {
+				return n
+			}
+		}
+		t.Fatalf("the uplink UDP counter for %s is gone:\n%s", addr, out)
+		return 0
+	}
+}
+
+func netnsCountQUICTo(t *testing.T, engine, hook string) func() int {
+	t.Helper()
+	if engine == backendNFTables {
+		_, _ = run("nft", "delete", "chain", "inet", netnsQUICCountNftable, hook)
+		_, _ = run("nft", "add", "table", "inet", netnsQUICCountNftable)
+		t.Cleanup(func() { _, _ = run("nft", "delete", "table", "inet", netnsQUICCountNftable) })
+		netnsRun(t, "nft", "add", "chain", "inet", netnsQUICCountNftable, hook, "{", "type", "filter", "hook", hook, "priority", "-200", ";", "policy", "accept", ";", "}")
+		netnsRun(t, "nft", "add", "rule", "inet", netnsQUICCountNftable, hook, "ip", "daddr", netnsDevInet, "udp", "dport", strconv.Itoa(quicRejectPort), "counter")
+		return func() int {
+			out, _ := run("nft", "list", "chain", "inet", netnsQUICCountNftable, hook)
+			return gwNftPackets(out)
+		}
+	}
+	chain := strings.ToUpper(hook)
+	spec := func(action string, at ...string) []string {
+		args := append([]string{engine, "-w", "-t", "mangle", action, chain}, at...)
+		return append(args, "-d", netnsDevInet, "-p", "udp", "--dport", strconv.Itoa(quicRejectPort))
+	}
+	netnsRun(t, spec("-I", "1")...)
+	t.Cleanup(func() { _, _ = run(spec("-D")...) })
+	return func() int {
+		out, _ := run(engine, "-w", "-t", "mangle", "-L", chain, "-v", "-x", "-n")
+		for _, line := range strings.Split(out, "\n") {
+			if !strings.Contains(line, netnsDevInet) || !strings.Contains(line, fmt.Sprintf("dpt:%d", quicRejectPort)) {
+				continue
+			}
+			if n, err := strconv.Atoi(strings.Fields(line)[0]); err == nil {
+				return n
+			}
+		}
+		return 0
+	}
+}
+
+func netnsCollectedRefusesQUIC(cfg *config.Config) *config.Config {
+	next := *cfg
+	set := *cfg.Sets[0]
+	set.UDP.Mode = config.UDPModeReject
+	set.UDP.FilterQUIC = config.QUICFilterAll
+	next.Sets = []*config.SetConfig{&set}
+	return &next
+}
+
+func netnsCollectedPreChain(t *testing.T, engine, chain string) string {
+	t.Helper()
+	if engine == backendNFTables {
+		out, _ := run("nft", "list", "chain", "inet", routeNftTable, chain)
+		return out
+	}
+	out, _ := run(engine, "-w", "-t", "mangle", "-L", chain, "-v", "-x", "-n")
+	return out
+}
+
+func netnsUDPToACollectedAddressStaysOnTheUpstream(t *testing.T, engine string) {
+	t.Run("routed datagrams", func(t *testing.T) {
+		dev, base, st := netnsCollectedProxySetUp(t, engine)
+		port, _ := portFromState(st)
+		relay := netnsServeUDPRelay(t, port)
+		uplink := netnsCountUplinkUDPTo(t, engine, netnsDevInet)
+		RoutingSyncConfig(base.WithCollectedIPs([]string{netnsDevInet}))
+
+		got := dev.datagrams(t, netnsDevInet, netnsCollectedUDPPort)
+		time.Sleep(200 * time.Millisecond)
+		dst := net.JoinHostPort(netnsDevInet, strconv.Itoa(netnsCollectedUDPPort))
+		want := []string{"one@" + dst, "two@" + dst, "three@" + dst}
+		seen, leaked := relay(), uplink()
+		if got != "one:relay:one two:relay:two three:relay:three" || !slices.Equal(seen, want) || leaked != 0 {
+			t.Logf("%s:\n%s", st.chainPre, netnsCollectedPreChain(t, engine, st.chainPre))
+			t.Errorf("three datagrams from one socket to the collected address %s: the device got %q, the upstream relay saw %v (want %v) and %d left by the uplink (want 0); the first datagram of a UDP flow to a collected address must be tagged for the set, or every later one meets the guard's return and leaves by the uplink", dst, got, seen, want, leaked)
+		}
+		if engine != backendNFTables {
+			listing := netnsCollectedPreChain(t, engine, st.chainPre)
+			writes := 0
+			for _, line := range strings.Split(listing, "\n") {
+				if !strings.Contains(line, "CONNMARK") || !strings.Contains(line, "ctstate NEW") {
+					continue
+				}
+				writes++
+				if !routeCollectedGuardLine(line) {
+					t.Errorf("a connection-mark write of the collected guard is not recognised as one, so the connection-mark check counts it as an interface claim: %s", line)
+				}
+			}
+			if writes < 2 {
+				t.Errorf("expected the TCP and the UDP tag of the collected guard in %s, found %d connection-mark write(s):\n%s", st.chainPre, writes, listing)
+			}
+		}
+	})
+
+	t.Run("QUIC refused", func(t *testing.T) {
+		dev, base, st := netnsCollectedProxySetUp(t, engine)
+		port, _ := portFromState(st)
+		relay := netnsServeUDPRelay(t, port)
+		cfg := netnsCollectedRefusesQUIC(base).WithCollectedIPs([]string{netnsDevInet})
+		RoutingSyncConfig(cfg)
+		routeMu.Lock()
+		cur := routeRuleCache[base.Sets[0].Id]
+		routeMu.Unlock()
+		if !cur.quicReject {
+			t.Fatal("the set does not refuse QUIC, so this run proves nothing")
+		}
+		forwarded, input := netnsCountQUICTo(t, engine, "forward"), netnsCountQUICTo(t, engine, "input")
+
+		got := dev.datagrams(t, netnsDevInet, quicRejectPort)
+		time.Sleep(200 * time.Millisecond)
+		if fw, in, seen := forwarded(), input(), relay(); !strings.HasPrefix(got, "one:refused") || fw == 0 || in != 0 || len(seen) != 0 {
+			t.Logf("%s:\n%s", cur.chainPre, netnsCollectedPreChain(t, engine, cur.chainPre))
+			t.Errorf("QUIC to the collected address %s of a set that refuses QUIC: the device got %q, %d datagram(s) were forwarded (want some) and %d reached the router's own input (want 0), the relay saw %v (want none); a UDP/443 datagram must reach the forward QUIC refusal, not be marked for the proxy and delivered to the router", netnsDevInet, got, fw, in, seen)
+		}
+		_ = st
+	})
+}
+
+func TestNetnsUDPToACollectedAddressStaysOnTheUpstream(t *testing.T) {
+	netnsUDPToACollectedAddressStaysOnTheUpstream(t, backendIPTables)
+}
+
+func TestNetnsUDPToACollectedAddressStaysOnTheUpstreamNft(t *testing.T) {
+	netnsUDPToACollectedAddressStaysOnTheUpstream(t, backendNFTables)
 }

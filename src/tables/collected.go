@@ -5,6 +5,7 @@ import (
 	"maps"
 	"net/netip"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -202,6 +203,7 @@ func routeCollectedGuardRules(be routeBackend, cfg *config.Config, set *config.S
 		sources = []string{""}
 	}
 	proxy := config.RoutingUsesTProxy(st.mode)
+	udpTag := proxy && chain == st.chainPre && set.Routing.Upstream.UDP && st.udpPorts == "" && len(proxyModePorts(st.mode)) == 0
 	nftRestored := make(map[string]bool, len(sources))
 	for _, family := range []struct {
 		v6      bool
@@ -234,6 +236,16 @@ func routeCollectedGuardRules(be routeBackend, cfg *config.Config, set *config.S
 					args := append(append([]string{}, base...), "meta", "l4proto", "tcp", "tcp", "flags", "&", "(syn|ack)", "==", "syn", "ct", "state", "new", "ct", "mark", "set", "ct", "mark", "&", fmt.Sprintf("0x%x", ^routeSetMarkMask), "or", fmt.Sprintf("0x%x", st.mark))
 					if err := emit(args); err != nil {
 						return err
+					}
+					if udpTag {
+						args = append(append([]string{}, base...), "meta", "l4proto", "udp")
+						if st.quicReject {
+							args = append(args, "udp", "dport", "!=", strconv.Itoa(quicRejectPort))
+						}
+						args = append(args, "ct", "state", "new", "ct", "mark", "set", "ct", "mark", "&", fmt.Sprintf("0x%x", ^routeSetMarkMask), "or", fmt.Sprintf("0x%x", st.mark))
+						if err := emit(args); err != nil {
+							return err
+						}
 					}
 					if !nftRestored[src] {
 						nftRestored[src] = true
@@ -281,6 +293,16 @@ func routeCollectedGuardRules(be routeBackend, cfg *config.Config, set *config.S
 					args := append(tagBase, "--syn", "-m", "conntrack", "--ctstate", "NEW", "-j", "CONNMARK", "--set-xmark", fmt.Sprintf("0x%x/0x%x", st.mark, routeSetMarkMask))
 					if err := emit(args); err != nil {
 						return err
+					}
+					if udpTag {
+						args = append(append([]string{}, base...), "-p", "udp")
+						if st.quicReject {
+							args = append(args, "!", "--dport", strconv.Itoa(quicRejectPort))
+						}
+						args = append(args, "-m", "conntrack", "--ctstate", "NEW", "-j", "CONNMARK", "--set-xmark", fmt.Sprintf("0x%x/0x%x", st.mark, routeSetMarkMask))
+						if err := emit(args); err != nil {
+							return err
+						}
 					}
 					args = append(append(append([]string{}, scope...), ports...), "-m", "conntrack", "--ctdir", "ORIGINAL", "-m", "connmark", "--mark", fmt.Sprintf("0x%x/0x%x", st.mark, routeSetMarkMask), "-j", "MARK", "--set-xmark", fmt.Sprintf("0x%x/0x%x", mark, routeProxyMarkMask))
 					if err := emit(args); err != nil {
