@@ -342,10 +342,11 @@ func (w *Worker) parseIPHeaders(raw []byte) (*pktInfo, bool) {
 type addressHold struct {
 	set    *config.SetConfig
 	prefix int
+	pinned bool
 }
 
 func (h addressHold) on() bool {
-	return h.set != nil && h.prefix > 0 && h.set.IPPriorityApplies()
+	return h.set != nil && h.prefix > 0 && (h.pinned || h.set.IPPriorityApplies())
 }
 
 func (h addressHold) contests(name *config.SetConfig) bool {
@@ -353,11 +354,11 @@ func (h addressHold) contests(name *config.SetConfig) bool {
 }
 
 func (h addressHold) fits(ipVersion uint8) bool {
-	return h.set.MatchesIPVersion(ipVersion)
+	return h.pinned || h.set.MatchesIPVersion(ipVersion)
 }
 
 func (h addressHold) outranks(matcher *sni.SuffixSet, name *config.SetConfig, srcMac string) bool {
-	return h.contests(name) && matcher.AddressHolds(h.set, h.prefix, name, srcMac)
+	return h.contests(name) && (h.pinned || matcher.AddressHolds(h.set, h.prefix, name, srcMac))
 }
 
 func (h addressHold) against(matcher *sni.SuffixSet, name *config.SetConfig, srcMac string, ipVersion uint8) bool {
@@ -440,7 +441,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	addressMatched := st != nil
-	hold := addressHold{set: st, prefix: stPrefix}
+	hold := addressHold{set: st, prefix: stPrefix, pinned: vc.telegramSet != nil}
 
 	connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 	vc.hellos, vc.helloKey = w.pendingHello, connKey
