@@ -11,12 +11,12 @@ import (
 	"github.com/daniellavrushin/b4/log"
 )
 
-func waitAndCapture(parent context.Context, active func() bool) (error, string) {
+func waitAndCapture(parent context.Context, active func() bool) (string, error) {
 	var buf bytes.Buffer
 	log.StartCapture(&buf)
 	err := waitDiscoveryBeforeRefresh(parent, active)
 	log.StopCapture(&buf)
-	return err, buf.String()
+	return buf.String(), err
 }
 
 func TestTablesRefreshNamesTheDiscoveryItWaitsFor(t *testing.T) {
@@ -24,7 +24,7 @@ func TestTablesRefreshNamesTheDiscoveryItWaitsFor(t *testing.T) {
 	discoveryRefreshWait = 50 * time.Millisecond
 	t.Cleanup(func() { discoveryRefreshWait = old })
 
-	err, logged := waitAndCapture(context.Background(), func() bool { return true })
+	logged, err := waitAndCapture(context.Background(), func() bool { return true })
 	if err == nil || !strings.Contains(err.Error(), "discovery did not finish") {
 		t.Fatalf("the timeout does not name Discovery: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestTablesRefreshNamesTheDiscoveryItWaitsFor(t *testing.T) {
 		t.Fatalf("no warning when the wait starts: %q", logged)
 	}
 
-	err, logged = waitAndCapture(context.Background(), func() bool { return false })
+	logged, err = waitAndCapture(context.Background(), func() bool { return false })
 	if err != nil {
 		t.Fatalf("an idle Discovery failed the refresh: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestTablesRefreshNamesTheDiscoveryItWaitsFor(t *testing.T) {
 
 	stopped, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err, _ := waitAndCapture(stopped, func() bool { return true }); !errors.Is(err, context.Canceled) {
+	if _, err := waitAndCapture(stopped, func() bool { return true }); !errors.Is(err, context.Canceled) {
 		t.Fatalf("a refresh during shutdown did not stop with the app context: %v", err)
 	}
 }
