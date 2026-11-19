@@ -1,6 +1,7 @@
 package ctnl
 
 import (
+	"encoding/binary"
 	"net/netip"
 	"testing"
 
@@ -26,5 +27,19 @@ func TestCollectedReplyDestinationKeepsTranslatedAddress(t *testing.T) {
 		if err != nil || flow.ReplyDestination != dst {
 			t.Fatalf("translated reply %s lost: %+v %v", dst, flow, err)
 		}
+	}
+}
+
+func TestParseFlowReadsTheConntrackID(t *testing.T) {
+	ae := netlink.NewAttributeEncoder()
+	ae.ByteOrder = binary.BigEndian
+	ae.Uint32(attrID, 0x0a0b0c0d)
+	data, err := ae.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	flow, err := parseFlow(data)
+	if err != nil || flow.ID != 0x0a0b0c0d {
+		t.Fatalf("conntrack ID = %#x (%v), want 0xa0b0c0d", flow.ID, err)
 	}
 }

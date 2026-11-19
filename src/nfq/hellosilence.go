@@ -482,7 +482,6 @@ func (w *Worker) sweepSilentHellos(cfg *config.Config, now time.Time) {
 	var answered map[string]bool
 	var silent []helloWatch
 	for _, h := range due {
-
 		switch {
 		case !active || !w.bans.on() || !silenceWatchedSet(cfg, h.setID):
 			w.destState.EndWatch(h)

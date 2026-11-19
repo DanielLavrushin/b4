@@ -15,6 +15,7 @@ const (
 	attrProtoInfo     = 4
 	attrCountersOrig  = 9
 	attrCountersReply = 10
+	attrID            = 12
 
 	attrProtoInfoTCP      = 1
 	attrProtoInfoTCPState = 1
@@ -140,7 +141,7 @@ func parseFlow(b []byte) (Flow, error) {
 			if addr.IsValid() && port != 0 {
 				f.ReplyDestination = netip.AddrPortFrom(addr.Unmap(), port)
 			}
-		case 12:
+		case attrID:
 			f.ID = ad.Uint32()
 		case attrProtoInfo:
 			ad.Nested(func(info *netlink.AttributeDecoder) error {
