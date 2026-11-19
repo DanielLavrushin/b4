@@ -28,6 +28,18 @@ func (c *Config) CollectedIPsInUse() bool {
 	return false
 }
 
+func (c *Config) CollectsReplies() bool {
+	if c.Queue.IsDiscovery || c.Queue.Mode == "tun" {
+		return false
+	}
+	for _, set := range c.Sets {
+		if set != nil && set.Enabled && set.TCP.IPBlockDetect.Collects() && !set.Targets.UseCollectedIPs {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *Config) collectedViewNeeded() bool {
 	for _, set := range c.Sets {
 		if len(set.Targets.CollectedIPs) > 0 || set.Enabled && set.Targets.UseCollectedIPs && !c.Queue.IsDiscovery {

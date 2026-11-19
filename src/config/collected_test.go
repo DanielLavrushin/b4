@@ -139,3 +139,42 @@ func TestTargetChecksAllocateNothingWithAFullPool(t *testing.T) {
 		t.Fatal("collected addresses a set does not use counted as its targets")
 	}
 }
+
+func TestSwitchingASetToCollectRefreshesTheFirewall(t *testing.T) {
+	withDetect := func(action string, useCollected bool) *Config {
+		cfg := NewConfig()
+		incoming := NewSetConfig()
+		incoming.Id, incoming.Name, incoming.Enabled = "incoming", "incoming", true
+		incoming.TCP.Incoming.Mode = "fake"
+		detect := NewSetConfig()
+		detect.Id, detect.Name, detect.Enabled = "detect", "detect", true
+		detect.TCP.IPBlockDetect.Enabled = true
+		detect.TCP.IPBlockDetect.Action = action
+		detect.Targets.UseCollectedIPs = useCollected
+		cfg.Sets = []*SetConfig{&incoming, &detect}
+		return &cfg
+	}
+	for name, change := range map[string][2]*Config{
+		"block to collect":                {withDetect("block", false), withDetect("collect", false)},
+		"collect to block":                {withDetect("collect", false), withDetect("block", false)},
+		"a collect set starts consuming":  {withDetect("collect", false), withDetect("collect", true)},
+		"a collect set stops consuming":   {withDetect("collect", true), withDetect("collect", false)},
+		"a collect set is turned off":     {withDetect("collect", false), withDetect("", false)},
+		"a collect set is turned back on": {withDetect("", false), withDetect("collect", false)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if !change[0].AnySetTCPIncoming() || !change[1].AnySetTCPIncoming() {
+				t.Fatal("another set keeps Incoming on in both configs, or this test proves nothing")
+			}
+			if !FirewallRefreshNeeded(change[0], change[1]) {
+				t.Fatal("whether a set collects decides whether the queue sees server replies, so the change needs a firewall refresh")
+			}
+		})
+	}
+	if FirewallRefreshNeeded(withDetect("collect", false), withDetect("collect", false)) {
+		t.Fatal("an unchanged Collect set needs no firewall refresh")
+	}
+	if FirewallRefreshNeeded(withDetect("block", false), withDetect("block", true)) {
+		t.Fatal("Use collected IPs on a Block set changes nothing the queue sees")
+	}
+}

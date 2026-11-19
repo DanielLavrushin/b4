@@ -437,13 +437,5 @@ func routeCollectedGuardsPresent(be routeBackend, cfg *config.Config) bool {
 }
 
 func collectedReplyObservation(cfg *config.Config) bool {
-	if cfg == nil || cfg.Queue.IsDiscovery || cfg.Queue.Mode == "tun" {
-		return false
-	}
-	for _, set := range cfg.Sets {
-		if set != nil && set.Enabled && set.TCP.IPBlockDetect.Collects() && !set.Targets.UseCollectedIPs {
-			return true
-		}
-	}
-	return false
+	return cfg != nil && cfg.CollectsReplies()
 }

@@ -1605,6 +1605,9 @@ func FirewallRefreshNeeded(oldCfg, newCfg *Config) bool {
 	if oldCfg.AnySetTCPIncoming() != newCfg.AnySetTCPIncoming() {
 		return true
 	}
+	if oldCfg.CollectsReplies() != newCfg.CollectsReplies() {
+		return true
+	}
 	if oldCfg.System.DNS.TCPDisabled != newCfg.System.DNS.TCPDisabled || oldCfg.DNSTCPListenPort() != newCfg.DNSTCPListenPort() {
 		return true
 	}
