@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/metrics"
 )
 
@@ -59,10 +58,9 @@ func (p *Pool) ClearCollectedIPs(raw string) (int, error) {
 	if p == nil {
 		return 0, nil
 	}
-	unlock := config.LockWrites()
-	defer unlock()
+	p.collectedApplyMu.Lock()
+	defer p.collectedApplyMu.Unlock()
 	p.configMu.Lock()
-	defer p.configMu.Unlock()
 	removed := make(map[netip.Addr]collectedCandidate)
 	for ip, candidate := range p.collected {
 		if !address.IsValid() || ip == address {
@@ -71,15 +69,29 @@ func (p *Pool) ClearCollectedIPs(raw string) (int, error) {
 		}
 	}
 	if len(removed) == 0 {
+		p.configMu.Unlock()
 		return 0, nil
 	}
-	if p.collectedCtx == nil || !p.publishCollectedViewLocked(false) {
+	p.collectedEpoch.Add(1)
+	p.configMu.Unlock()
+	result := p.publishCollected(false)
+	if result.outcome != collectedApplied {
+		p.configMu.Lock()
 		for ip, candidate := range removed {
-			p.collected[ip] = candidate
+			if _, back := p.collected[ip]; !back {
+				p.collected[ip] = candidate
+			}
 		}
+		p.collectedEpoch.Add(1)
 		p.collectedDirty = true
+		p.configMu.Unlock()
+		if result.needsRollback() {
+			p.rollbackCollected()
+		}
 		return 0, errors.New("collected target removal could not be applied")
 	}
+	p.configMu.Lock()
+	defer p.configMu.Unlock()
 	if p.state != nil && p.state.destState != nil {
 		t := p.state.destState
 		t.watchMu.Lock()

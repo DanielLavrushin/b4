@@ -28,7 +28,9 @@ type Pool struct {
 	collected          map[netip.Addr]collectedCandidate
 	collectedMu        sync.RWMutex
 	collectedPublished []string
-	collectedInstall   func(context.Context, *config.Config) error
+	collectedInstall   func(context.Context, *config.Config, func() bool) error
+	collectedApplyMu   sync.Mutex
+	collectedEpoch     atomic.Uint64
 	collectedChanged   func(*sni.SuffixSet)
 	collectedPaused    func() bool
 	collectedCtx       context.Context

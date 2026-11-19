@@ -1125,7 +1125,10 @@ func collectedInstallRefusal(c *config.Config, engineDown, tun bool) error {
 	return nil
 }
 
-var errCollectedDiscoveryRunning = errors.New("discovery is running")
+var (
+	errCollectedDiscoveryRunning = errors.New("discovery is running")
+	errCollectedSuperseded       = errors.New("superseded by a save, a pool change or the shutdown")
+)
 
 type collectedInstallSteps struct {
 	refused   func(*config.Config) error
@@ -1137,8 +1140,8 @@ type collectedInstallSteps struct {
 	ready     func(*config.Config) error
 }
 
-func collectedTargetsInstaller(mgr *tproxy.Manager, steps collectedInstallSteps) func(context.Context, *config.Config) error {
-	return func(ctx context.Context, c *config.Config) error {
+func collectedTargetsInstaller(mgr *tproxy.Manager, steps collectedInstallSteps) func(context.Context, *config.Config, func() bool) error {
+	return func(ctx context.Context, c *config.Config, current func() bool) error {
 		if err := steps.refused(c); err != nil {
 			return err
 		}
@@ -1148,17 +1151,21 @@ func collectedTargetsInstaller(mgr *tproxy.Manager, steps collectedInstallSteps)
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := steps.refresh(c); err != nil {
-			return err
+		changes := []func() error{
+			func() error { return steps.refresh(c) },
+			func() error { return steps.capture(c) },
+			func() error { mgr.SyncConfig(c); return nil },
+			func() error { steps.routing(c); return nil },
+			func() error { steps.dscp(c); return nil },
+			func() error { return steps.ready(c) },
 		}
-		if err := steps.capture(c); err != nil {
-			return err
-		}
-		mgr.SyncConfig(c)
-		steps.routing(c)
-		steps.dscp(c)
-		if err := steps.ready(c); err != nil {
-			return err
+		for _, change := range changes {
+			if !current() {
+				return errCollectedSuperseded
+			}
+			if err := change(); err != nil {
+				return err
+			}
 		}
 		if err := mgr.CollectedConsumersReady(c); err != nil {
 			return err

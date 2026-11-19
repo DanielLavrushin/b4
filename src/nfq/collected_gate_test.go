@@ -23,9 +23,18 @@ func collectedTestPool(t *testing.T, w *Worker, install func(context.Context, *c
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	p := &Pool{Workers: []*Worker{w}, state: &runtimeState{tlsCache: w.tlsCache, destState: w.destState}, collectedBase: w.getConfig(), collectedCtx: ctx, collectedCancel: cancel, collectedInstall: install}
+	p := &Pool{Workers: []*Worker{w}, state: &runtimeState{tlsCache: w.tlsCache, destState: w.destState}, collectedBase: w.getConfig(), collectedCtx: ctx, collectedCancel: cancel, collectedInstall: oneStepInstaller(install)}
 	w.pool = p
 	return p
+}
+
+func oneStepInstaller(install func(context.Context, *config.Config) error) func(context.Context, *config.Config, func() bool) error {
+	return func(ctx context.Context, cfg *config.Config, current func() bool) error {
+		if !current() {
+			return errors.New("superseded")
+		}
+		return install(ctx, cfg)
+	}
 }
 
 func TestASaveWithoutCollectedSetsRunsNoCollectedInstall(t *testing.T) {
@@ -106,8 +115,8 @@ func TestCollectedConfigKeepsOneViewPerPublishedPool(t *testing.T) {
 	}
 	p.configMu.Lock()
 	p.collected = map[netip.Addr]collectedCandidate{netip.MustParseAddr("203.0.113.7"): {setID: "producer", at: time.Now()}}
-	ok := p.publishCollectedViewLocked(true)
 	p.configMu.Unlock()
+	ok := p.publishCollected(true).outcome == collectedApplied
 	if !ok || seen == nil || seen == v1 {
 		t.Fatalf("publish ok=%v, a new view installed=%v", ok, seen != nil && seen != v1)
 	}
@@ -130,8 +139,8 @@ func TestAnUnchangedCollectedReconcileKeepsTheMatcher(t *testing.T) {
 	})
 	p.configMu.Lock()
 	p.collected = map[netip.Addr]collectedCandidate{netip.MustParseAddr("203.0.113.7"): {setID: "producer", at: time.Now()}}
-	published := p.publishCollectedViewLocked(true)
 	p.configMu.Unlock()
+	published := p.publishCollected(true).outcome == collectedApplied
 	if !published {
 		t.Fatal("setup: the first publish failed")
 	}

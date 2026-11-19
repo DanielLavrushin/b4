@@ -430,6 +430,7 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 	p.configMu.Lock()
 	defer p.configMu.Unlock()
 	p.collectedBase = newCfg
+	p.collectedEpoch.Add(1)
 	p.collectedDirty = p.collectedRelevantLocked(newCfg)
 	p.collectedRetryWait, p.collectedRetryAt = 0, time.Time{}
 	newCfg = p.CollectedConfig(newCfg)

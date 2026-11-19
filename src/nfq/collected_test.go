@@ -45,7 +45,7 @@ func unseededCollectedRig(t *testing.T, install func(context.Context, *config.Co
 	w := newInjectingWorker(t, append([]*config.SetConfig{&consumer, &producer}, extra...)...)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	p := &Pool{Workers: []*Worker{w}, state: &runtimeState{tlsCache: w.tlsCache}, collectedBase: w.getConfig(), collectedCtx: ctx, collectedCancel: cancel, collectedInstall: install}
+	p := &Pool{Workers: []*Worker{w}, state: &runtimeState{tlsCache: w.tlsCache}, collectedBase: w.getConfig(), collectedCtx: ctx, collectedCancel: cancel, collectedInstall: oneStepInstaller(install)}
 	w.pool = p
 	old := lookupFlow
 	lookupFlow = func(ctnl.Tuple, ctnl.Direction) (ctnl.Flow, bool, error) {
@@ -160,14 +160,14 @@ func TestCollectedFailureProgressReplacementAndNoConsumerNeverReset(t *testing.T
 				t.Fatal("watch not created")
 			}
 			if name == "progress" || name == "replacement" {
-				p.collectedInstall = func(context.Context, *config.Config) error {
+				p.collectedInstall = oneStepInstaller(func(context.Context, *config.Config) error {
 					if name == "progress" {
 						w.destState.NoteClientPacket(key, silentServerAck+300, true, false, time.Now(), nil)
 					} else {
 						w.destState.ForgetConnection(key)
 					}
 					return nil
-				}
+				})
 			}
 			if name == "server-data" {
 				lookupFlow = func(ctnl.Tuple, ctnl.Direction) (ctnl.Flow, bool, error) {

@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"slices"
 	"sort"
+	"sync/atomic"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
@@ -33,7 +34,7 @@ type collectedCandidate struct {
 	at    time.Time
 }
 
-func (p *Pool) SetCollectedTargetsInstaller(install func(context.Context, *config.Config) error, changed func(*sni.SuffixSet)) {
+func (p *Pool) SetCollectedTargetsInstaller(install func(context.Context, *config.Config, func() bool) error, changed func(*sni.SuffixSet)) {
 	p.configMu.Lock()
 	defer p.configMu.Unlock()
 	p.collectedInstall, p.collectedChanged = install, changed
@@ -67,6 +68,8 @@ func (p *Pool) StopCollected() {
 		return
 	}
 	p.collectedCancel()
+	p.collectedApplyMu.Lock()
+	defer p.collectedApplyMu.Unlock()
 	p.configMu.Lock()
 	p.collectedDirty = false
 	p.configMu.Unlock()
@@ -90,6 +93,25 @@ type collectedTarget struct {
 	added bool
 }
 
+type collectedOutcome int
+
+const (
+	collectedApplied collectedOutcome = iota
+	collectedFailed
+	collectedSuperseded
+	collectedStopped
+)
+
+type collectedPublish struct {
+	outcome   collectedOutcome
+	mutated   bool
+	unchanged bool
+}
+
+func (r collectedPublish) needsRollback() bool {
+	return r.outcome == collectedFailed && r.mutated && !r.unchanged
+}
+
 func (p *Pool) SetCollectedPause(paused func() bool) {
 	p.configMu.Lock()
 	defer p.configMu.Unlock()
@@ -97,7 +119,12 @@ func (p *Pool) SetCollectedPause(paused func() bool) {
 }
 
 func (p *Pool) collectedPass(now time.Time) {
-	if p == nil || p.collectedCtx == nil || p.collectedCtx.Err() != nil || len(p.Workers) == 0 {
+	if p == nil || p.collectedCtx == nil || len(p.Workers) == 0 {
+		return
+	}
+	p.collectedApplyMu.Lock()
+	defer p.collectedApplyMu.Unlock()
+	if p.collectedCtx.Err() != nil {
 		return
 	}
 	w := p.Workers[0]
@@ -113,41 +140,41 @@ func (p *Pool) collectedPass(now time.Time) {
 
 func (p *Pool) applyCollected(w *Worker, completed []helloWatch, now time.Time) {
 	p.configMu.Lock()
-	due := len(completed) > 0 || p.collectedDueLocked(now)
+	batch := p.addCollectedLocked(w, completed)
+	due := len(batch) > 0 || p.collectedDueLocked(now)
+	before := p.publishedCollected()
 	p.configMu.Unlock()
 	if !due {
 		return
 	}
-	unlock := config.LockWrites()
+	result := p.publishCollected(false)
 	p.configMu.Lock()
-	batch := p.addCollectedLocked(w, completed)
-	if len(batch) == 0 && !p.collectedDueLocked(now) {
-		p.configMu.Unlock()
-		unlock()
-		return
-	}
-	before := p.publishedCollected()
-	if !p.publishCollectedViewLocked(false) {
+	var targets []collectedTarget
+	switch result.outcome {
+	case collectedApplied:
+		p.collectedDirty = false
+		p.collectedRetryWait, p.collectedRetryAt = 0, time.Time{}
+		targets = p.collectedSettleTargetsLocked(before, batch)
+	case collectedSuperseded:
+		p.collectedDirty = true
+	case collectedFailed:
 		p.dropCollectedLocked(w, batch)
 		if p.collectedDirty {
 			p.collectedRetryWait = min(max(2*p.collectedRetryWait, collectedRetryFirst), collectedRetryMax)
 			p.collectedRetryAt = now.Add(p.collectedRetryWait)
 		}
-		p.configMu.Unlock()
-		unlock()
+	}
+	p.configMu.Unlock()
+	if result.needsRollback() {
+		p.rollbackCollected()
+	}
+	if result.outcome != collectedApplied {
 		return
 	}
-	p.collectedDirty = false
-	p.collectedRetryWait, p.collectedRetryAt = 0, time.Time{}
-	targets := p.collectedSettleTargetsLocked(before, batch)
-	p.configMu.Unlock()
-	unlock()
 	kept, gone := p.settleCollected(w, targets)
-	unlock = config.LockWrites()
-	defer unlock()
+	p.takeBackCollected(gone)
 	p.configMu.Lock()
 	defer p.configMu.Unlock()
-	p.takeBackCollectedLocked(gone)
 	for _, addr := range kept {
 		name := p.collected[addr].setID
 		if set := p.collectedBase.GetSetById(name); set != nil {
@@ -197,6 +224,7 @@ func (p *Pool) addCollectedLocked(w *Worker, completed []helloWatch) []collected
 				p.collected = make(map[netip.Addr]collectedCandidate)
 			}
 			p.collected[addr] = collectedCandidate{setID: h.setID, host: h.host, port: h.port, at: time.Now()}
+			p.collectedEpoch.Add(1)
 		}
 		batch = append(batch, collectedEntry{watch: h, addr: addr, added: !existed})
 	}
@@ -207,6 +235,7 @@ func (p *Pool) dropCollectedLocked(w *Worker, batch []collectedEntry) {
 	for _, e := range batch {
 		if e.added {
 			delete(p.collected, e.addr)
+			p.collectedEpoch.Add(1)
 		}
 		w.destState.EndWatch(e.watch)
 	}
@@ -282,79 +311,95 @@ func (p *Pool) settleCollected(w *Worker, targets []collectedTarget) (kept, gone
 	return kept, gone
 }
 
-func (p *Pool) takeBackCollectedLocked(gone []netip.Addr) {
+func (p *Pool) takeBackCollected(gone []netip.Addr) {
 	if len(gone) == 0 {
 		return
 	}
+	p.configMu.Lock()
 	for _, addr := range gone {
 		delete(p.collected, addr)
 	}
-	if !p.publishCollectedViewLocked(false) {
+	p.collectedEpoch.Add(1)
+	p.configMu.Unlock()
+	result := p.publishCollected(false)
+	if result.outcome == collectedApplied {
+		return
+	}
+	if result.outcome == collectedFailed {
 		log.Warnf("Collected IPs: interrupted candidate rollback incomplete for %v", gone)
-		p.collectedDirty = true
+	}
+	p.configMu.Lock()
+	p.collectedDirty = true
+	p.configMu.Unlock()
+	if result.needsRollback() {
+		p.rollbackCollected()
 	}
 }
 
-func (p *Pool) publishCollectedLocked() bool {
-	return p.publishCollectedViewLocked(true)
-}
-
-func (p *Pool) publishCollectedViewLocked(requireConsumer bool) bool {
-	cfg := p.collectedBase
-	if cfg == nil || p.collectedInstall == nil || p.collectedCtx.Err() != nil || p.collectedEngineTUN || cfg.Queue.IsDiscovery || cfg.Queue.Mode == "tun" || cfg.System.Tables.SkipSetup {
-		return false
+func (p *Pool) publishCollected(requireConsumer bool) collectedPublish {
+	p.configMu.Lock()
+	cfg, install, epoch := p.collectedBase, p.collectedInstall, p.collectedEpoch.Load()
+	if cfg == nil || install == nil || p.collectedCtx == nil || p.collectedCtx.Err() != nil || p.collectedEngineTUN || cfg.Queue.IsDiscovery || cfg.Queue.Mode == "tun" || cfg.System.Tables.SkipSetup || requireConsumer && !collectedConsumerEnabled(cfg) {
+		p.configMu.Unlock()
+		return collectedPublish{outcome: collectedFailed}
 	}
 	ips := make([]string, 0, len(p.collected))
 	for ip := range p.collected {
 		ips = append(ips, ip.String())
 	}
+	p.configMu.Unlock()
 	sort.Strings(ips)
-	consumers := false
-	for _, set := range cfg.Sets {
-		consumers = consumers || set.Enabled && set.Targets.UseCollectedIPs
-	}
-	if requireConsumer && !consumers {
-		return false
-	}
-	p.collectedMu.RLock()
-	unchanged := slices.Equal(ips, p.collectedPublished)
-	p.collectedMu.RUnlock()
+	unchanged := slices.Equal(ips, p.publishedCollected())
 	var view *config.Config
 	if unchanged {
 		view = p.CollectedConfig(cfg)
 	} else {
 		view = cfg.WithCollectedIPs(ips)
 	}
+	rebuild := !unchanged || len(p.Workers) == 0 || p.Workers[0].getConfig() != view
+	var matcher *sni.SuffixSet
+	if rebuild {
+		matcher = buildMatcher(view)
+	}
 	ctx, cancel := context.WithTimeout(p.collectedCtx, 5*time.Second)
 	defer cancel()
-	installErr := p.collectedInstall(ctx, view)
-	if installErr == nil {
-		installErr = ctx.Err()
+	var mutated atomic.Bool
+	err := install(ctx, view, func() bool {
+		current := ctx.Err() == nil && p.collectedEpoch.Load() == epoch
+		if current {
+			mutated.Store(true)
+		}
+		return current
+	})
+	if err == nil {
+		err = ctx.Err()
 	}
-	if err := installErr; err != nil {
+	result := collectedPublish{mutated: mutated.Load(), unchanged: unchanged}
+	p.configMu.Lock()
+	defer p.configMu.Unlock()
+	switch {
+	case p.collectedCtx.Err() != nil:
+		result.outcome = collectedStopped
+		return result
+	case p.collectedEpoch.Load() != epoch:
+		log.Tracef("Collected IPs: a save or a pool change superseded the install, it runs again on the next pass")
+		result.outcome = collectedSuperseded
+		return result
+	case err != nil:
 		log.Warnf("Collected IPs: interception not ready: %v", err)
-		if unchanged || p.collectedCtx.Err() != nil {
-			return false
+		result.outcome = collectedFailed
+		return result
+	}
+	if rebuild {
+		if len(p.Workers) > 0 {
+			matcher.TransferLearnedIPs(p.Workers[0].getMatcher())
+			matcher.KeepConnectionPolicy(p.Workers[0].getMatcher())
 		}
-		rollback, done := context.WithTimeout(p.collectedCtx, 5*time.Second)
-		defer done()
-		if err := p.collectedInstall(rollback, p.CollectedConfig(cfg)); err != nil {
-			log.Warnf("Collected IPs: rollback incomplete: %v", err)
+		p.state.tlsCache.PublishCollected(matcher)
+		for _, w := range p.Workers {
+			w.cfg.Store(view)
+			w.matcher.Store(matcher)
 		}
-		return false
-	}
-	if unchanged && len(p.Workers) > 0 && p.Workers[0].getConfig() == view {
-		return true
-	}
-	matcher := buildMatcher(view)
-	if len(p.Workers) > 0 {
-		matcher.TransferLearnedIPs(p.Workers[0].getMatcher())
-		matcher.KeepConnectionPolicy(p.Workers[0].getMatcher())
-	}
-	p.state.tlsCache.PublishCollected(matcher)
-	for _, w := range p.Workers {
-		w.cfg.Store(view)
-		w.matcher.Store(matcher)
 	}
 	p.collectedMu.Lock()
 	if !unchanged {
@@ -363,10 +408,35 @@ func (p *Pool) publishCollectedViewLocked(requireConsumer bool) bool {
 	}
 	p.collectedViewBase, p.collectedViewGen, p.collectedView = cfg, p.collectedPubGen, view
 	p.collectedMu.Unlock()
-	if p.collectedChanged != nil {
+	if rebuild && p.collectedChanged != nil {
 		p.collectedChanged(matcher)
 	}
-	return true
+	result.outcome = collectedApplied
+	return result
+}
+
+func (p *Pool) rollbackCollected() {
+	p.configMu.Lock()
+	cfg, install, epoch := p.collectedBase, p.collectedInstall, p.collectedEpoch.Load()
+	p.configMu.Unlock()
+	if cfg == nil || install == nil || p.collectedCtx.Err() != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(p.collectedCtx, 5*time.Second)
+	defer cancel()
+	err := install(ctx, p.CollectedConfig(cfg), func() bool {
+		return ctx.Err() == nil && p.collectedEpoch.Load() == epoch
+	})
+	if err == nil {
+		err = ctx.Err()
+	}
+	if err == nil || p.collectedCtx.Err() != nil {
+		return
+	}
+	log.Warnf("Collected IPs: rollback incomplete: %v", err)
+	p.configMu.Lock()
+	p.collectedDirty = true
+	p.configMu.Unlock()
 }
 
 func (p *Pool) collectedDueLocked(now time.Time) bool {

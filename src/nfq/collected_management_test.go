@@ -19,10 +19,10 @@ func managementRig(t *testing.T) (*Worker, *Pool) {
 		netip.MustParseAddr("1.2.3.4"): {setID: p.collectedBase.Sets[1].Id, host: "first.example.org", port: 443, at: time.Now()},
 		netip.MustParseAddr("8.8.8.8"): {setID: p.collectedBase.Sets[1].Id, host: "second.example.org", port: 443, at: time.Now().Add(-time.Second)},
 	}
-	if !p.publishCollectedLocked() {
+	p.configMu.Unlock()
+	if p.publishCollected(true).outcome != collectedApplied {
 		t.Fatal("seed publication failed")
 	}
-	p.configMu.Unlock()
 	return w, p
 }
 
@@ -60,12 +60,12 @@ func TestCollectedManagementRemovesOneAndForgetsOldWatch(t *testing.T) {
 
 func TestCollectedManagementFailureRestoresMembership(t *testing.T) {
 	w, p := managementRig(t)
-	p.collectedInstall = func(_ context.Context, cfg *config.Config) error {
+	p.collectedInstall = oneStepInstaller(func(_ context.Context, cfg *config.Config) error {
 		if len(cfg.Sets[0].Targets.CollectedIPs) == 1 {
 			return errors.New("kernel rejected update")
 		}
 		return nil
-	}
+	})
 	n, err := p.ClearCollectedIPs("1.2.3.4")
 	if err == nil || n != 0 || len(p.GetCollectedIPs()) != 2 {
 		t.Fatal("failed removal reported success or lost state", n, err)
@@ -126,7 +126,7 @@ func TestCollectedManagementRemovalRejectsAnAlreadyQueuedWatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := 0
-	p.collectedInstall = func(context.Context, *config.Config) error { calls++; return nil }
+	p.collectedInstall = oneStepInstaller(func(context.Context, *config.Config) error { calls++; return nil })
 	p.applyCollected(p.Workers[0], []helloWatch{stale}, time.Now())
 	if _, back := p.collected[netip.MustParseAddr("1.2.3.4")]; back || calls != 0 {
 		t.Fatal("queued old watch republished a removed IP", calls)

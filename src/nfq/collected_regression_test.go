@@ -51,12 +51,12 @@ func TestCollectedExactReplyAccounting(t *testing.T) {
 				flow.ReplyPackets++
 				flow.ReplyBytes += 52
 			case "late-progress":
-				p.collectedInstall = func(context.Context, *config.Config) error {
+				p.collectedInstall = oneStepInstaller(func(context.Context, *config.Config) error {
 					w.destState.NoteCollectedServerPacket(key, tcp, 203, 255)
 					flow.ReplyPackets++
 					flow.ReplyBytes += 255
 					return nil
-				}
+				})
 			}
 			sweepAcknowledgedCollectedHellos(w, time.Now().Add(4*time.Second))
 			want := name == "observed-acks"

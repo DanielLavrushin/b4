@@ -67,7 +67,7 @@ func TestCollectedInstallerClearsTheLastAddressOfACollectedOnlyConsumer(t *testi
 				dscp:      func(*config.Config) { step("dscp") },
 				ready:     func(*config.Config) error { step("ready"); return nil },
 			})
-			if err := install(context.Background(), view); err != nil {
+			if err := install(context.Background(), view, func() bool { return true }); err != nil {
 				t.Fatalf("clearing the last collected address of a collected-only consumer was refused: %v", err)
 			}
 			if got := strings.Join(ran, ","); got != "refused,discovery,refresh,capture,routing,dscp,ready" {
@@ -99,7 +99,7 @@ func TestCollectedInstallerRefusesWhileAConsumerListenerIsDown(t *testing.T) {
 				dscp:      func(*config.Config) {},
 				ready:     func(*config.Config) error { return nil },
 			})
-			err := install(context.Background(), view)
+			err := install(context.Background(), view, func() bool { return true })
 			if status := mgr.ListenerStatus("consumer", 0); status.V4 {
 				t.Skipf("the consumer listener started on port %d, so this host cannot show a listener that is down", port)
 			}
@@ -126,7 +126,7 @@ func TestCollectedInstallerFailsWhileTheCaptureSetsLagThePool(t *testing.T) {
 		dscp:      func(*config.Config) { step("dscp") },
 		ready:     func(*config.Config) error { step("ready"); return nil },
 	})
-	if err := install(context.Background(), view); !errors.Is(err, refused) {
+	if err := install(context.Background(), view, func() bool { return true }); !errors.Is(err, refused) {
 		t.Fatalf("a capture-set sync the kernel refused must fail the install so that it is retried, got %v", err)
 	}
 	if got := strings.Join(ran, ","); got != "refused,discovery,refresh,capture" {
@@ -156,7 +156,7 @@ func TestTheCollectedInstallerFailsAtOnceWhileDiscoveryRuns(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	start := time.Now()
-	err := install(ctx, view)
+	err := install(ctx, view, func() bool { return true })
 	if took := time.Since(start); err == nil || took > time.Second {
 		t.Fatalf("a collected install while Discovery runs must fail at once, got err %v after %v", err, took)
 	}
@@ -173,10 +173,41 @@ func TestACancelledCollectedInstallChangesNothing(t *testing.T) {
 	install := collectedTargetsInstaller(mgr, recordingInstallSteps(&ran, false))
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := install(ctx, view); !errors.Is(err, context.Canceled) {
+	if err := install(ctx, view, func() bool { return true }); !errors.Is(err, context.Canceled) {
 		t.Fatalf("a cancelled install must fail with its context, got %v", err)
 	}
 	if got := strings.Join(ran, ","); got != "refused,discovery" {
 		t.Fatalf("a cancelled install ran the steps %s", got)
+	}
+}
+
+func TestTheCollectedInstallerChecksItsViewBeforeEachChange(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		current int
+		want    string
+	}{
+		{name: "current throughout", current: 6, want: "refused,discovery,current,refresh,current,capture,current,current,routing,current,dscp,current,ready"},
+		{name: "superseded after the capture sets", current: 2, want: "refused,discovery,current,refresh,current,capture,current"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			view := collectedOnlyConsumer(t, config.RoutingModeProxy).WithCollectedIPs(nil)
+			mgr := tproxy.NewManager(nil)
+			t.Cleanup(mgr.Stop)
+			var ran []string
+			install := collectedTargetsInstaller(mgr, recordingInstallSteps(&ran, false))
+			checks := 0
+			err := install(context.Background(), view, func() bool {
+				ran = append(ran, "current")
+				checks++
+				return checks <= tc.current
+			})
+			if got := strings.Join(ran, ","); got != tc.want {
+				t.Fatalf("installer steps ran as %s, want %s", got, tc.want)
+			}
+			if superseded := checks > tc.current; superseded != errors.Is(err, errCollectedSuperseded) {
+				t.Fatalf("superseded=%v but the install returned %v", superseded, err)
+			}
+		})
 	}
 }
