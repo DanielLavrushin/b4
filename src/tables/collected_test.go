@@ -18,8 +18,8 @@ func TestCollectedGuardKeepsEstablishedOwnersBothBackends(t *testing.T) {
 			cfg := familyTestConfig(true, true)
 			set := staticTestSet(config.RoutingModeProxy, nil)
 			set.Targets.UseCollectedIPs = true
-			state := routeState{setID: set.Id, mode: config.RoutingModeProxy, mark: 0x7133, ipv4: true, ipv6: true, setV4: "b4r_collect_v4", setV6: "b4r_collect_v6", chainPre: "b4r_collect_pre"}
-			if err := routeCollectedGuard(backend, cfg, set, state, state.chainPre, []string{"br-test"}); err != nil {
+			state := routeState{collected: true, setID: set.Id, mode: config.RoutingModeProxy, mark: 0x7133, ipv4: true, ipv6: true, setV4: "b4r_collect_v4", setV6: "b4r_collect_v6", chainPre: "b4r_collect_pre", sources: []string{"br-test"}}
+			if err := routeCollectedGuard(backend, cfg, set, state, state.chainPre); err != nil {
 				t.Fatal(err)
 			}
 			all := strings.Join(calls, "\n")
@@ -40,7 +40,7 @@ func TestCollectedGuardKeepsEstablishedOwnersBothBackends(t *testing.T) {
 				}
 			}
 			run = func(...string) (string, error) { return "", errors.New("kernel refused guard") }
-			if err := routeCollectedGuard(backend, cfg, set, state, state.chainPre, nil); err == nil {
+			if err := routeCollectedGuard(backend, cfg, set, state, state.chainPre); err == nil {
 				t.Fatal("guard failure was ignored")
 			}
 		})
@@ -73,8 +73,8 @@ func TestCollectedReuseGuardScopesPort443BeforeProtocolOptions(t *testing.T) {
 	cfg := familyTestConfig(true, false)
 	set := staticTestSet(config.RoutingModeWSReuse, nil)
 	set.Targets.UseCollectedIPs = true
-	st := routeState{mode: config.RoutingModeWSReuse, mark: 0x7133, ipv4: true, setV4: "b4r_collect_v4", chainPre: "b4r_collect_pre"}
-	if err := routeCollectedGuard(&routeIptBackend{}, cfg, set, st, st.chainPre, nil); err != nil {
+	st := routeState{collected: true, mode: config.RoutingModeWSReuse, mark: 0x7133, ipv4: true, setV4: "b4r_collect_v4", chainPre: "b4r_collect_pre"}
+	if err := routeCollectedGuard(&routeIptBackend{}, cfg, set, st, st.chainPre); err != nil {
 		t.Fatal(err)
 	}
 	for _, call := range calls {
@@ -239,8 +239,8 @@ func TestCollectedGuardRestoresHeldConnectionsWithoutTheGuardSet(t *testing.T) {
 				cfg := familyTestConfig(true, true)
 				set := staticTestSet(mode, nil)
 				set.Targets.UseCollectedIPs = true
-				st := routeState{setID: set.Id, mode: mode, mark: 0x7133, ipv4: true, ipv6: true, setV4: "b4r_collect_v4", setV6: "b4r_collect_v6", chainPre: "b4r_collect_pre"}
-				if err := routeCollectedGuard(backend, cfg, set, st, st.chainPre, []string{"br-test"}); err != nil {
+				st := routeState{collected: true, setID: set.Id, mode: mode, mark: 0x7133, ipv4: true, ipv6: true, setV4: "b4r_collect_v4", setV6: "b4r_collect_v6", chainPre: "b4r_collect_pre", sources: []string{"br-test"}}
+				if err := routeCollectedGuard(backend, cfg, set, st, st.chainPre); err != nil {
 					t.Fatal(err)
 				}
 				marker, want := " meta mark set ", 1
@@ -356,5 +356,64 @@ func TestDroppingASetThatNeverCollectedProbesNoGuardSet(t *testing.T) {
 		if strings.Contains(call, st.setV4+"c") || strings.Contains(call, st.setV6+"c") {
 			t.Errorf("dropping a set that never used collected IPs touched a guard set: %s", call)
 		}
+	}
+}
+
+func collectedGuardAnswerFrom(installed []string) func(args ...string) (string, error) {
+	return func(args ...string) (string, error) {
+		line := strings.Join(args, " ")
+		if slices.Contains(args, "-C") {
+			if slices.Contains(installed, strings.Replace(line, " -C ", " -A ", 1)) {
+				return "", nil
+			}
+			return "iptables: Bad rule (does a matching rule exist in that chain?).", errors.New("exit status 1")
+		}
+		prefix := "nft list chain inet " + routeNftTable + " "
+		if strings.HasPrefix(line, prefix) {
+			chain := strings.TrimPrefix(line, prefix)
+			var body []string
+			for _, rule := range installed {
+				if rest, ok := strings.CutPrefix(rule, "nft add rule inet "+routeNftTable+" "+chain+" "); ok {
+					body = append(body, "\t\t"+rest)
+				}
+			}
+			return "table inet " + routeNftTable + " {\n\tchain " + chain + " {\n" + strings.Join(body, "\n") + "\n\t}\n}\n", nil
+		}
+		return "", nil
+	}
+}
+
+func TestCollectedGuardCheckMatchesWhatASourceScopedConsumerGets(t *testing.T) {
+	for _, backend := range []routeBackend{&routeIptBackend{}, &routeNftBackend{}} {
+		t.Run(backend.name(), func(t *testing.T) {
+			staticResetGlobals(t)
+			localGuardReset(t)
+			emitted := captureProxyRuleArgv(t)
+			run = refuseDeletes(run)
+			stubBinaries(t, backendIPTables)
+			cfg := collectedGuardTestConfig(config.RoutingModeProxy, true)
+			set := cfg.Sets[0]
+			set.Targets.SourceDevices = []string{"aa:bb:cc:dd:ee:ff"}
+			st := buildRouteState(cfg, set)
+			st.set = set
+			if !st.srcScoped {
+				t.Fatal("a set limited to one device is not source scoped")
+			}
+			if err := routeEnsureProxyRule(backend, cfg, set, st, nil); err != nil {
+				t.Fatalf("routeEnsureProxyRule: %v", err)
+			}
+			installed := append([]string(nil), *emitted...)
+			for _, line := range chainRuleLines(installed, st.chainOut) {
+				if strings.Contains(line, st.setV4+"c") {
+					t.Errorf("a source-scoped proxy set got a collected guard in %s: %s", st.chainOut, line)
+				}
+			}
+
+			run = refuseDeletes(collectedGuardAnswerFrom(installed))
+			routeRuleCache = map[string]routeState{set.Id: st}
+			if !routeCollectedGuardsPresent(backend, cfg) {
+				t.Errorf("the check misses the guard of a source-scoped collected consumer that holds exactly what the emitter installed, so the monitor rebuilds its routing on every tick:\n%s", strings.Join(installed, "\n"))
+			}
+		})
 	}
 }

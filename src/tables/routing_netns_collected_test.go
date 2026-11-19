@@ -306,3 +306,66 @@ func TestNetnsACollectedConsumerSurvivesARoutingModeChange(t *testing.T) {
 func TestNetnsACollectedConsumerSurvivesARoutingModeChangeNft(t *testing.T) {
 	netnsACollectedConsumerSurvivesARoutingModeChange(t, backendNFTables)
 }
+
+func netnsASourceScopedCollectedConsumerIsNotRestoredEveryTick(t *testing.T, engine string) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+	netnsRequireEngine(t, engine)
+	netnsTurnOnForwarding(t)
+	dev := netnsStartDevice(t)
+
+	routeEngine = nil
+	base := netnsLocalGuardConfig(engine, dev.mac, []string{netnsDevOther})
+	base.Sets[0].Targets.UseCollectedIPs = true
+	if err := AddRules(base); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	t.Cleanup(func() {
+		RoutingClearAll()
+		_ = ClearRules(base)
+		routeEngine = nil
+	})
+	cfg := base.WithCollectedIPs([]string{netnsDevInet})
+	RoutingSyncConfig(cfg)
+	routeMu.Lock()
+	st, ok := routeRuleCache[base.Sets[0].Id]
+	routeMu.Unlock()
+	if !ok || !st.srcScoped {
+		t.Fatalf("the device-scoped collected proxy set did not install as a source-scoped set: installed=%v", ok)
+	}
+	port, _ := portFromState(st)
+	go netnsServeEcho(netnsMarkedTransparentListener(t, port, SelfDialMark))
+
+	if !RoutingRulesPresent(cfg) {
+		t.Errorf("right after the sync the monitor finds the rules of a source-scoped collected consumer missing")
+	}
+	RoutingSyncConfig(cfg)
+	if !RoutingRulesPresent(cfg) {
+		t.Errorf("after a second sync the monitor finds the rules of a source-scoped collected consumer missing")
+	}
+	m, ptr := newLockTestMonitor(t)
+	ptr.Store(cfg)
+	m.snapshotRoutingIfaces(cfg)
+	var resyncs []bool
+	for i := 0; i < 3; i++ {
+		m.lost = false
+		m.reconcileRouting(false)
+		resyncs = append(resyncs, m.lost)
+	}
+	for _, lost := range resyncs {
+		if lost {
+			netnsLogState(t, engine)
+			t.Errorf("the monitor rebuilt the routing rules on these ticks %v, want none: it demands a guard in %s that the emitter never installs for a source-scoped set", resyncs, st.chainOut)
+			break
+		}
+	}
+	netnsCollectedIsProxied(t, dev, netnsDevInet, "after the monitor ticks")
+}
+
+func TestNetnsASourceScopedCollectedConsumerIsNotRestoredEveryTick(t *testing.T) {
+	netnsASourceScopedCollectedConsumerIsNotRestoredEveryTick(t, backendIPTables)
+}
+
+func TestNetnsASourceScopedCollectedConsumerIsNotRestoredEveryTickNft(t *testing.T) {
+	netnsASourceScopedCollectedConsumerIsNotRestoredEveryTick(t, backendNFTables)
+}

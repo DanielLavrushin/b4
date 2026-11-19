@@ -65,6 +65,7 @@ type routeState struct {
 	upstreamKey string
 	udpPorts    string
 	sourcesKey  string
+	sources     []string
 	deviceKey   string
 	blockAction string
 	quicReject  bool
@@ -621,6 +622,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		domainOnly: set.Targets.DomainOnly,
 		mode:       mode,
 		sourcesKey: sourcesKey,
+		sources:    sources,
 		deviceKey:  routeSetDeviceGate(cfg, set).key(),
 		srcScoped:  routeSetIsSourceScoped(set),
 		ipv4:       cfg.Queue.IPv4Enabled,
@@ -1783,7 +1785,7 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 	}
 
 	routeAddMarkRestoreRules(be, st.chainPre, sources, st.mark, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
-	if err := routeCollectedGuard(be, cfg, set, st, st.chainPre, sources); err != nil {
+	if err := routeCollectedGuard(be, cfg, set, st, st.chainPre); err != nil {
 		return err
 	}
 	if cfg.Queue.IPv4Enabled {
@@ -1795,7 +1797,7 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 		routeAddMarkFallbackRules(be, st.chainPre, true, st.setV6, st.mark, sources)
 	}
 
-	if err := routeCollectedGuard(be, cfg, set, st, st.chainOut, nil); err != nil {
+	if err := routeCollectedGuard(be, cfg, set, st, st.chainOut); err != nil {
 		return err
 	}
 	routeAddOutChainRules(be, cfg, st, gate)

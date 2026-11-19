@@ -99,8 +99,29 @@ func routeCollectedFamilyEntries(set *config.SetConfig, v6 bool) []string {
 	return entries
 }
 
-func routeCollectedGuard(be routeBackend, cfg *config.Config, set *config.SetConfig, st routeState, chain string, sources []string) error {
-	return routeCollectedGuardRules(be, cfg, set, st, chain, sources, func(args []string) error { _, err := run(args...); return err })
+type routeCollectedGuardChain struct {
+	chain   string
+	sources []string
+}
+
+func routeCollectedGuardChains(be routeBackend, st routeState) []routeCollectedGuardChain {
+	if !st.collected {
+		return nil
+	}
+	pre := routeCollectedGuardChain{chain: st.chainPre, sources: st.sources}
+	if config.RoutingIsBlock(st.mode) || config.RoutingUsesTProxy(st.mode) && st.srcScoped {
+		return []routeCollectedGuardChain{pre}
+	}
+	return []routeCollectedGuardChain{pre, {chain: st.chainOut}}
+}
+
+func routeCollectedGuard(be routeBackend, cfg *config.Config, set *config.SetConfig, st routeState, chain string) error {
+	for _, guard := range routeCollectedGuardChains(be, st) {
+		if guard.chain == chain {
+			return routeCollectedGuardRules(be, cfg, set, st, chain, guard.sources, func(args []string) error { _, err := run(args...); return err })
+		}
+	}
+	return nil
 }
 
 func routeCollectedGuardRules(be routeBackend, cfg *config.Config, set *config.SetConfig, st routeState, chain string, sources []string, emit func([]string) error) error {
@@ -265,17 +286,9 @@ func routeCollectedGuardsPresent(be routeBackend, cfg *config.Config) bool {
 				return false
 			}
 		}
-		chains := []string{st.chainPre}
-		if !config.RoutingIsBlock(st.mode) {
-			chains = append(chains, st.chainOut)
-		}
-		for _, chain := range chains {
-			sources := []string(nil)
-			if chain == st.chainPre {
-				sources = routeNormalizedSources(st.set.Routing.SourceInterfaces)
-			}
+		for _, guard := range routeCollectedGuardChains(be, st) {
 			if be.name() == backendNFTables {
-				out, err := run("nft", "list", "chain", "inet", routeNftTable, chain)
+				out, err := run("nft", "list", "chain", "inet", routeNftTable, guard.chain)
 				if err != nil {
 					return false
 				}
@@ -298,7 +311,7 @@ func routeCollectedGuardsPresent(be routeBackend, cfg *config.Config) bool {
 					}
 				}
 			} else {
-				err := routeCollectedGuardRules(be, cfg, st.set, st, chain, sources, func(args []string) error {
+				err := routeCollectedGuardRules(be, cfg, st.set, st, guard.chain, guard.sources, func(args []string) error {
 					check := append([]string(nil), args...)
 					for i, arg := range check {
 						if arg == "-A" {

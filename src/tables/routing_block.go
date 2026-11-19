@@ -38,7 +38,7 @@ func routeEnsureBlockRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		}
 		be.flushChain(st.chainPre, true)
 		routeAddBlacklistGate(be, "filter", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
-		if err := routeCollectedGuard(be, cfg, set, st, st.chainPre, sources); err != nil {
+		if err := routeCollectedGuard(be, cfg, set, st, st.chainPre); err != nil {
 			return err
 		}
 		if cfg.Queue.IPv4Enabled {
@@ -59,7 +59,7 @@ func routeEnsureBlockRule(be routeBackend, cfg *config.Config, set *config.SetCo
 			return err
 		}
 		routeAddBlacklistGate(be, "filter", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
-		if err := routeCollectedGuard(be, cfg, set, st, st.chainPre, sources); err != nil {
+		if err := routeCollectedGuard(be, cfg, set, st, st.chainPre); err != nil {
 			return err
 		}
 		if cfg.Queue.IPv4Enabled {
