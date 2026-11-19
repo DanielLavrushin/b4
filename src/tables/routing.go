@@ -2370,11 +2370,15 @@ func routeIPSupportsProtoExec() bool {
 		if !hasBinary("ip") {
 			return
 		}
-		if _, err := run("ip", "route", "show", "table", "12345", "proto", routeProtoID); err == nil {
-			routeProtoOK = true
+		if version, err := run("ip", "-V"); err != nil || !strings.Contains(version, "iproute2") {
+			log.Infof("Routing: the ip command here is not iproute2 and cannot list a route's protocol, so b4 does not mark the routes it owns; a routing table another service already uses is recognised by its interface alone")
 			return
 		}
-		log.Infof("Routing: this iproute2 does not understand route protocols, so b4 cannot mark the routes it owns; a routing table another service already uses is recognised by its interface alone")
+		if _, err := run("ip", "route", "show", "table", "main", "proto", routeProtoID); err != nil {
+			log.Infof("Routing: this iproute2 does not understand route protocols, so b4 cannot mark the routes it owns; a routing table another service already uses is recognised by its interface alone")
+			return
+		}
+		routeProtoOK = true
 	})
 	return routeProtoOK
 }
