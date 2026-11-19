@@ -26,9 +26,9 @@ func seedEarlierSilentConnection(w *Worker, dst net.IP, port uint16) {
 	w.destState.watchMu.Lock()
 	defer w.destState.watchMu.Unlock()
 	if w.destState.collectRuns == nil {
-		w.destState.collectRuns = make(map[string]silentRun)
+		w.destState.collectRuns = make(map[string]collectRun)
 	}
-	w.destState.collectRuns[iphealth.BanKey(dst, int(port))] = silentRun{count: 1, until: time.Now().Add(w.getConfig().System.IPHealth.RetestInterval())}
+	w.destState.collectRuns[iphealth.BanKey(dst, int(port))] = collectRun{count: 1, until: time.Now().Add(w.getConfig().System.IPHealth.RetestInterval())}
 }
 
 func unseededCollectedRig(t *testing.T, install func(context.Context, *config.Config) error, extra ...*config.SetConfig) (*Worker, *Pool, func() [][]byte) {

@@ -269,7 +269,7 @@ type destStateTracker struct {
 	watchGen         uint64
 	collectHistory   collectedHistory
 	collectDeadlines collectedDeadlineHeap
-	collectRuns      map[string]silentRun
+	collectRuns      map[string]collectRun
 	collectWake      chan struct{}
 	watching         atomic.Int32
 	collectWatching  atomic.Int32
