@@ -341,3 +341,21 @@ func TestAReuseSetWhoseTProxyRuleIsRefusedIsNotDiverted(t *testing.T) {
 		})
 	}
 }
+
+func TestAMissingIP6TablesBinaryLeavesAReuseSetDiverted(t *testing.T) {
+	attempts, added := refusedTProxyRig(t, backendIPTables, func([]string) bool { return false })
+	hasBinaryCache.Store(backendIP6Tables, false)
+	RoutingSyncConfig(refusedTProxyConfig(t, true))
+	v6 := 0
+	for _, line := range *attempts {
+		if strings.HasPrefix(line, backendIP6Tables+" ") {
+			v6++
+		}
+	}
+	if v6 != 0 || len(*added) == 0 {
+		t.Fatalf("setup: %d ip6tables TPROXY adds tried and %d TPROXY adds taken, want no IPv6 add and the IPv4 rule in", v6, len(*added))
+	}
+	if !WSReuseDiverts("reuse") {
+		t.Fatal("a reuse set is published as undiverted because ip6tables is missing, although no IPv6 packet reaches b4's queue without it and the IPv4 TPROXY rule went in")
+	}
+}
