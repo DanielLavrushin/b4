@@ -34,6 +34,19 @@ func TestWSReuseTopicSaysAFailedWarmGetsTheSetsStrategy(t *testing.T) {
 	}
 }
 
+func TestWSReuseTopicSaysAFailedWarmIsSkippedForTenMinutes(t *testing.T) {
+	facts := TopicFacts("tcp.wssize_reuse.enabled")
+	for _, want := range []string{
+		"that address and SNI name skip the warm for 10 minutes",
+		"any saved settings change other than collected addresses forgets these failures",
+		"A failed pass after a good warm and failures on b4's own side are not remembered.",
+	} {
+		if !strings.Contains(facts, want) {
+			t.Errorf("tcp.wssize_reuse.enabled does not say %q: %s", want, facts)
+		}
+	}
+}
+
 func TestWSReuseAgeTopicStatesTheDefaultAndTheCap(t *testing.T) {
 	facts := TopicFacts("tcp.wssize_reuse.max_age_seconds")
 	for _, want := range []string{

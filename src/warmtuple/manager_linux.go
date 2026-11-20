@@ -25,7 +25,18 @@ var (
 	ErrCapacity = errors.New("all warm-tuple ports are leased")
 	ErrClosed   = errors.New("warm-tuple manager is closed")
 	ErrTarget   = errors.New("destination is outside the fixed warm-tuple selector")
+	ErrWarm     = errors.New("the server failed the warm")
 )
+
+type warmError struct{ error }
+
+func (e warmError) Unwrap() error { return e.error }
+
+func (e warmError) Is(target error) bool { return target == ErrWarm }
+
+type connectError struct{ error }
+
+func (e connectError) Unwrap() error { return e.error }
 
 type Config struct {
 	WarmAge        time.Duration
@@ -282,6 +293,10 @@ func (m *Manager) runWarm(ctx context.Context, l *lease) (time.Time, error) {
 	started := time.Now()
 	c, err := m.connect(ctx, l.port, m.cfg.WarmMark)
 	if err != nil {
+		var refused connectError
+		if errors.As(err, &refused) {
+			err = warmError{err}
+		}
 		return started, err
 	}
 	defer c.Close()
@@ -290,7 +305,10 @@ func (m *Manager) runWarm(ctx context.Context, l *lease) (time.Time, error) {
 	}
 	stop := context.AfterFunc(ctx, func() { c.Close() })
 	defer stop()
-	return started, m.warm(ctx, c)
+	if err := m.warm(ctx, c); err != nil {
+		return started, warmError{err}
+	}
+	return started, nil
 }
 
 func (m *Manager) connect(ctx context.Context, port uint16, mark uint32) (net.Conn, error) {
@@ -309,7 +327,7 @@ func (m *Manager) connect(ctx context.Context, port uint16, mark uint32) (net.Co
 			return c, nil
 		}
 		if !errors.Is(err, unix.EADDRINUSE) && !errors.Is(err, unix.EADDRNOTAVAIL) {
-			return nil, err
+			return nil, connectError{err}
 		}
 		timer := time.NewTimer(m.cfg.RetryInterval)
 		select {

@@ -296,6 +296,70 @@ func TestFailuresNeverFallbackAndReleaseTheLease(t *testing.T) {
 	}
 }
 
+func TestOnlyServerOutcomesAreErrWarm(t *testing.T) {
+	refused := errors.New("connect: connection refused")
+	for name, c := range map[string]struct {
+		setup  func(*testing.T, *Manager, Config)
+		server bool
+	}{
+		"TLS handshake": {func(_ *testing.T, m *Manager, _ Config) {
+			m.warm = func(context.Context, net.Conn) error {
+				return errors.New("remote error: tls: protocol version not supported")
+			}
+		}, true},
+		"HTTP status": {func(_ *testing.T, m *Manager, _ Config) {
+			m.warm = func(context.Context, net.Conn) error { return errors.New("warm HTTP status 404, expected 204") }
+		}, true},
+		"warm timeout": {func(_ *testing.T, m *Manager, _ Config) {
+			m.warm = func(ctx context.Context, _ net.Conn) error { <-ctx.Done(); return ctx.Err() }
+		}, true},
+		"refused connect": {func(_ *testing.T, m *Manager, _ Config) {
+			m.dial = func(context.Context, uint16, uint32) (net.Conn, error) { return nil, refused }
+		}, true},
+		"flow registration": {func(_ *testing.T, m *Manager, _ Config) {
+			m.capture = func() (func(), error) { return nil, errors.New("warm flow is already registered or registry is full") }
+		}, false},
+		"different tuple": {func(t *testing.T, m *Manager, cfg Config) {
+			m.dial = func(_ context.Context, port uint16, _ uint32) (net.Conn, error) {
+				c := fakeSocket(t, cfg, port)
+				c.remote = &net.TCPAddr{IP: net.IPv4(203, 0, 113, 9), Port: 443}
+				return c, nil
+			}
+		}, false},
+		"source port held": {func(_ *testing.T, m *Manager, _ Config) {
+			m.dial = func(context.Context, uint16, uint32) (net.Conn, error) { return nil, unix.EADDRINUSE }
+		}, false},
+		"pass": {func(t *testing.T, m *Manager, cfg Config) {
+			m.dial = func(_ context.Context, port uint16, mark uint32) (net.Conn, error) {
+				if mark != cfg.WarmMark {
+					return nil, unix.EADDRNOTAVAIL
+				}
+				return fakeSocket(t, cfg, port), nil
+			}
+		}, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := fixture()
+			cfg.WarmTimeout, cfg.ReuseTimeout = 100*time.Millisecond, 100*time.Millisecond
+			m := fakeManager(t, cfg)
+			c.setup(t, m, cfg)
+			conn, err := m.DialContext(context.Background(), cfg.Host+":443")
+			if err == nil || conn != nil {
+				t.Fatalf("got %v, %v, want a failure", conn, err)
+			}
+			if errors.Is(err, ErrWarm) != c.server {
+				t.Fatalf("%v counts as a server failure of the warm: %t, want %t", err, errors.Is(err, ErrWarm), c.server)
+			}
+			if name == "refused connect" && !errors.Is(err, refused) {
+				t.Fatalf("%v lost the connect error it wraps", err)
+			}
+			if m.Active() != 0 {
+				t.Fatal("the failure leaked a lease")
+			}
+		})
+	}
+}
+
 func TestConcurrentLeaseShutdownAndExpiry(t *testing.T) {
 	cfg := fixture()
 	m := fakeManager(t, cfg)

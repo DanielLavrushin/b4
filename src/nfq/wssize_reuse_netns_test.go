@@ -916,22 +916,36 @@ func warmFailureFallbackBinary(t *testing.T, binary, backend string) {
 	if !strings.Contains(logged, "[wssize-reuse-fallback]") {
 		t.Error("the relayed connection is not logged as a reuse fallback")
 	}
+	hello = request()
+	again := nextReuseRecord(t, reads)
+	againPort := reusePeerPort(t, again.peer)
+	if again.err != nil || again.method != "GET" || warmTuplePort(againPort) {
+		t.Fatalf("want the next connection to the same address and name relayed at once from an ordinary source port, without a warm: %+v", again)
+	}
+	if !bytes.Equal(again.hello, hello) {
+		t.Fatal("the second fallback changed the client's ClientHello")
+	}
 	time.Sleep(100 * time.Millisecond)
 	packets := wire()
 	warmSYNs := reuseSYNs(packets, warmTuplePort)
-	fallbackSYNs := reuseSYNs(packets, func(port uint16) bool { return port == getPort })
+	fallbackSYNs := reuseSYNs(packets, func(port uint16) bool { return port == getPort || port == againPort })
 	if len(warmSYNs) != 1 || warmSYNs[0].sport != warmPort || warmSYNs[0].window != 1 || warmSYNs[0].scale != 1 {
-		t.Fatalf("want one warm SYN with the set's window 1 and scale 1 and no pass: %+v", warmSYNs)
+		t.Fatalf("want one warm SYN with the set's window 1 and scale 1, no pass and no second warm: %+v", warmSYNs)
 	}
-	if len(fallbackSYNs) != 1 || fallbackSYNs[0].window != 1 || fallbackSYNs[0].scale != 1 {
-		t.Fatalf("want the fallback SYN with the set's window 1 and scale 1 from the queue: %+v", fallbackSYNs)
+	if len(fallbackSYNs) != 2 || fallbackSYNs[0].sport != getPort || fallbackSYNs[1].sport != againPort {
+		t.Fatalf("want a SYN for each fallback: %+v", fallbackSYNs)
+	}
+	for _, syn := range fallbackSYNs {
+		if syn.window != 1 || syn.scale != 1 {
+			t.Fatalf("want each fallback SYN with the set's window 1 and scale 1 from the queue: %+v", fallbackSYNs)
+		}
 	}
 	select {
 	case record := <-reads:
 		t.Fatalf("an extra server record: %+v", record)
 	default:
 	}
-	t.Logf("%s: a refused warm from port %d, the client's TLS relayed from port %d with the set's strategy", backend, warmPort, getPort)
+	t.Logf("%s: a refused warm from port %d, the client's TLS relayed from ports %d and %d with the set's strategy, the second without a warm", backend, warmPort, getPort, againPort)
 }
 
 func TestNetnsCollectedWSReuseTransparentBinary(t *testing.T) {

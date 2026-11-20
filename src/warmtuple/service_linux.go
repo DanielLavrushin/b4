@@ -25,8 +25,17 @@ const coolingPrune = 2048
 const maxFallbacks = 1024
 const fallbackDialTimeout = 10 * time.Second
 const fallbackWarnInterval = time.Minute
+const failureRetention = 10 * time.Minute
+const maxFailures = 4096
 
 var ErrFallbackCapacity = errors.New("every fallback relay slot is in use")
+
+var errRecentWarmFailure = errors.New("the warm to this address and name failed less than 10 minutes ago")
+
+type failureKey struct {
+	target netip.Addr
+	host   string
+}
 
 type serviceKey struct {
 	owner, set, host, route string
@@ -80,6 +89,7 @@ type Service struct {
 	pending    map[*serviceLease]context.CancelFunc
 	directs    map[*directConn]struct{}
 	fallbacks  int
+	failures   map[failureKey]time.Time
 	warnings   map[warnKey]*warnLimiter
 	source     func(context.Context, netip.AddrPort) (netip.Addr, error)
 	route      func(context.Context, netip.AddrPort, netip.Addr) (string, error)
@@ -98,7 +108,7 @@ type serviceConn struct {
 func NewService(flows *Flows) *Service {
 	ctx, stop := context.WithCancel(context.Background())
 	return &Service{clients: make(chan struct{}, 256), ctx: ctx, stop: stop, flows: flows, next: firstPort, leases: make(map[uint16]*serviceLease), cooling: make(map[coolKey]time.Time),
-		pending: make(map[*serviceLease]context.CancelFunc), directs: make(map[*directConn]struct{}), warnings: make(map[warnKey]*warnLimiter),
+		pending: make(map[*serviceLease]context.CancelFunc), directs: make(map[*directConn]struct{}), failures: make(map[failureKey]time.Time), warnings: make(map[warnKey]*warnLimiter),
 		source: routeSource, route: routeFingerprint, newManager: New, direct: dialDirect}
 }
 
@@ -153,6 +163,7 @@ func (s *Service) UpdateConfig(cfg *config.Config) {
 	}
 	if !collectedOnlyUpdate(s.cfg, cfg) {
 		s.epoch++
+		clear(s.failures)
 	}
 	s.cfg = cfg
 	for l, cancel := range s.pending {
@@ -242,6 +253,11 @@ func (s *Service) Dial(ctx context.Context, set *config.SetConfig, owner, host s
 		s.mu.Unlock()
 		return nil, ErrTarget
 	}
+	failed := failureKey{target: target.Addr(), host: host}
+	if time.Now().Before(s.failures[failed]) {
+		s.mu.Unlock()
+		return s.fallBackAfter(ctx, set.Id, host, source, target, errRecentWarmFailure)
+	}
 	key := serviceKey{owner: owner, set: set.Id, host: host, target: target, source: source, route: egress}
 	l, err := s.reserveLocked(key, set, source)
 	if err != nil {
@@ -268,7 +284,11 @@ func (s *Service) Dial(ctx context.Context, set *config.SetConfig, owner, host s
 		live = false
 	}
 	if err != nil {
-		s.discardLocked(l, time.Now())
+		now := time.Now()
+		s.discardLocked(l, now)
+		if live && errors.Is(err, ErrWarm) {
+			s.rememberFailureLocked(failed, now)
+		}
 		s.mu.Unlock()
 		if live {
 			return s.fallBackAfter(ctx, set.Id, host, source, target, err)
@@ -301,8 +321,29 @@ func (s *Service) fallBackAfter(ctx context.Context, id, host string, source net
 	if err != nil {
 		return nil, fmt.Errorf("%v; relay with the set's strategy: %w", cause, err)
 	}
-	s.noteFallback(set, host, cause)
+	s.noteFallback(set, host, target, cause)
 	return c, nil
+}
+
+func (s *Service) rememberFailureLocked(key failureKey, now time.Time) {
+	if _, known := s.failures[key]; !known && len(s.failures) >= maxFailures {
+		for k, until := range s.failures {
+			if !now.Before(until) {
+				delete(s.failures, k)
+			}
+		}
+		if len(s.failures) >= maxFailures {
+			var earliest failureKey
+			var first time.Time
+			for k, until := range s.failures {
+				if first.IsZero() || until.Before(first) {
+					earliest, first = k, until
+				}
+			}
+			delete(s.failures, earliest)
+		}
+	}
+	s.failures[key] = now.Add(failureRetention)
 }
 
 func (s *Service) dialFallback(ctx context.Context, id, host string, source netip.Addr, target netip.AddrPort) (net.Conn, *config.SetConfig, error) {
@@ -357,16 +398,25 @@ func (s *Service) limiter(key warnKey) *warnLimiter {
 	return w
 }
 
-func (s *Service) noteFallback(set *config.SetConfig, host string, cause error) {
-	if !errors.Is(cause, ErrCapacity) {
+func (s *Service) noteFallback(set *config.SetConfig, host string, target netip.AddrPort, cause error) {
+	switch {
+	case errors.Is(cause, errRecentWarmFailure):
+		log.Tracef("WSSIZE reuse [%s]: %s (%s): %v, relayed with the set's strategy without reuse", set.Name, host, target.Addr(), cause)
+	case errors.Is(cause, ErrWarm):
+		if n, warn := s.limiter(warnKey{set: set.Id, kind: "warm"}).note(time.Now()); warn {
+			log.Warnf("WSSIZE reuse [%s]: warm to %s (%s) failed: %v; connections to that address and name use the set's strategy without reuse for 10 minutes, %d failed warms so far", set.Name, target.Addr(), host, cause, n)
+			return
+		}
+		log.Tracef("WSSIZE reuse [%s]: warm to %s (%s) failed: %v; relayed with the set's strategy without reuse for 10 minutes", set.Name, target.Addr(), host, cause)
+	case errors.Is(cause, ErrCapacity):
+		if n, warn := s.limiter(warnKey{set: set.Id, kind: "capacity"}).note(time.Now()); warn {
+			log.Warnf("WSSIZE reuse [%s]: %s: %v, %d connections relayed with the set's strategy without reuse so far", set.Name, host, cause, n)
+			return
+		}
+		log.Tracef("WSSIZE reuse [%s]: %s: %v, relayed with the set's strategy without reuse", set.Name, host, cause)
+	default:
 		log.Warnf("WSSIZE reuse [%s]: %s: %v; relayed with the set's strategy without reuse", set.Name, host, cause)
-		return
 	}
-	if n, warn := s.limiter(warnKey{set: set.Id, kind: "capacity"}).note(time.Now()); warn {
-		log.Warnf("WSSIZE reuse [%s]: %s: %v, %d connections relayed with the set's strategy without reuse so far", set.Name, host, cause, n)
-		return
-	}
-	log.Tracef("WSSIZE reuse [%s]: %s: %v, relayed with the set's strategy without reuse", set.Name, host, cause)
 }
 
 func (c *serviceConn) Close() error {

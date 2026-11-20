@@ -578,8 +578,8 @@ func TestAFullFallbackRegistryClosesWithAPlainError(t *testing.T) {
 		s.fallbacks = maxFallbacks
 		s.mu.Unlock()
 		c, err := s.Dial(context.Background(), set, "192.0.2.10", "warm.example.org", netip.MustParseAddrPort("203.0.113.2:443"))
-		if c != nil || !errors.Is(err, ErrFallbackCapacity) {
-			t.Fatalf("with %d fallbacks relaying, a failed warm gave %T, %v, want the client closed", maxFallbacks, c, err)
+		if c != nil || !errors.Is(err, ErrFallbackCapacity) || errors.Is(err, ErrWarm) {
+			t.Fatalf("with %d fallbacks relaying, a failed warm gave %T, %v, want the client closed with a plain error", maxFallbacks, c, err)
 		}
 		s.mu.Lock()
 		s.fallbacks = 0
@@ -602,11 +602,11 @@ func TestAFullFallbackRegistryClosesWithAPlainError(t *testing.T) {
 			releases = append(releases, release)
 		}
 		c, err := s.Dial(context.Background(), set, "192.0.2.10", "warm.example.org", netip.MustParseAddrPort("203.0.113.2:443"))
-		if c != nil || err == nil || errors.Is(err, ErrCapacity) || errors.Is(err, ErrFallbackCapacity) {
-			t.Fatalf("with the flow registry full the client got %T, %v, want it closed with the registry's error", c, err)
+		if c != nil || err == nil || errors.Is(err, ErrCapacity) || errors.Is(err, ErrFallbackCapacity) || errors.Is(err, ErrWarm) {
+			t.Fatalf("with the flow registry full the client got %T, %v, want it closed with the registry's plain error", c, err)
 		}
-		if count.Load() != 0 || direct.calls() != 1 || s.fallbackCount() != 0 {
-			t.Fatalf("%d warms, %d fallback dials and %d fallbacks held, want 0, 1 and 0", count.Load(), direct.calls(), s.fallbackCount())
+		if count.Load() != 0 || direct.calls() != 1 || s.fallbackCount() != 0 || s.failureCount() != 0 {
+			t.Fatalf("%d warms, %d fallback dials, %d fallbacks held and %d remembered failures, want 0, 1, 0 and 0", count.Load(), direct.calls(), s.fallbackCount(), s.failureCount())
 		}
 	})
 }
@@ -654,5 +654,170 @@ func TestFallbackDialerRelaysThroughSetStrategy(t *testing.T) {
 	}
 	if _, err := s.Fallback(context.Background(), set, "192.0.2.10", "warm.example.org", netip.MustParseAddrPort("203.0.113.2:80")); !errors.Is(err, ErrTarget) {
 		t.Fatalf("a fallback to port 80 got %v, want ErrTarget", err)
+	}
+}
+
+func (s *Service) failureCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.failures)
+}
+
+func failWarmsCounted(t *testing.T, s *Service, cause error) *atomic.Int32 {
+	t.Helper()
+	warms := &atomic.Int32{}
+	s.newManager = func(c Config) (*Manager, error) {
+		c.ReconnectDelay = 20 * time.Millisecond
+		m := fakeManager(t, c)
+		m.warm = func(context.Context, net.Conn) error { warms.Add(1); return cause }
+		return m, nil
+	}
+	return warms
+}
+
+func dialExpectingFallback(t *testing.T, s *Service, set *config.SetConfig, host string) {
+	t.Helper()
+	c, err := s.Dial(context.Background(), set, "192.0.2.10", host, netip.MustParseAddrPort("203.0.113.2:443"))
+	if err != nil || !isFallback(c) {
+		t.Fatalf("%s got %T, %v, want a relay with the set's strategy", host, c, err)
+	}
+	c.Close()
+}
+
+func TestFailedWarmIsRememberedPerAddressAndName(t *testing.T) {
+	s, cfg, set, _ := serviceFixture(t)
+	set.Targets.UseCollectedIPs = true
+	warms := failWarmsCounted(t, s, errors.New("warm HTTP status 404, expected 204"))
+	direct := recordDirect(t, s)
+	dialExpectingFallback(t, s, set, "warm.example.org")
+	if warms.Load() != 1 || s.failureCount() != 1 {
+		t.Fatalf("%d warms and %d remembered failures after the first failed warm, want 1 and 1", warms.Load(), s.failureCount())
+	}
+	s.mu.Lock()
+	cooling := len(s.cooling)
+	s.mu.Unlock()
+	dialExpectingFallback(t, s, set, "WARM.example.org.")
+	s.mu.Lock()
+	leases, coolingAfter := len(s.leases), len(s.cooling)
+	s.mu.Unlock()
+	if warms.Load() != 1 || leases != 0 || coolingAfter != cooling || direct.calls() != 2 {
+		t.Fatalf("the remembered address and name warmed %d times, holds %d leases, cools %d ports (%d before) and fell back %d times, want 1 warm, no port and 2 fallbacks", warms.Load(), leases, coolingAfter, cooling, direct.calls())
+	}
+	dialExpectingFallback(t, s, set, "other.example.org")
+	if warms.Load() != 2 {
+		t.Fatalf("another name on the same address warmed %d times in all, want a second warm", warms.Load())
+	}
+	s.mu.Lock()
+	s.failures[failureKey{target: netip.MustParseAddr("203.0.113.2"), host: "warm.example.org"}] = time.Now().Add(-time.Second)
+	s.mu.Unlock()
+	dialExpectingFallback(t, s, set, "warm.example.org")
+	if warms.Load() != 3 {
+		t.Fatalf("an expired failure still skipped the warm (%d warms)", warms.Load())
+	}
+	s.UpdateConfig(cfg.WithCollectedIPs([]string{"203.0.113.9"}))
+	if s.failureCount() != 2 {
+		t.Fatalf("a collected-only update left %d remembered failures, want 2", s.failureCount())
+	}
+	next := cfg.Clone()
+	next.Sets[0].TCP.Seg2Delay++
+	s.UpdateConfig(next)
+	if s.failureCount() != 0 {
+		t.Fatalf("a settings change kept %d remembered failures", s.failureCount())
+	}
+	dialExpectingFallback(t, s, next.Sets[0], "warm.example.org")
+	if warms.Load() != 4 {
+		t.Fatalf("after a settings change the address and name warmed %d times in all, want a fourth warm", warms.Load())
+	}
+}
+
+func TestPassReconnectFailureIsNotRemembered(t *testing.T) {
+	s, _, set, warms := serviceFixture(t)
+	recordDirect(t, s)
+	s.newManager = func(c Config) (*Manager, error) {
+		c.ReconnectDelay, c.ReuseTimeout = 20*time.Millisecond, 100*time.Millisecond
+		m := fakeManager(t, c)
+		m.warm = func(context.Context, net.Conn) error { warms.Add(1); return nil }
+		m.dial = func(_ context.Context, port uint16, mark uint32) (net.Conn, error) {
+			if mark != c.WarmMark {
+				return nil, unix.EADDRNOTAVAIL
+			}
+			return fakeSocket(t, c, port), nil
+		}
+		return m, nil
+	}
+	dialExpectingFallback(t, s, set, "warm.example.org")
+	dialExpectingFallback(t, s, set, "warm.example.org")
+	if warms.Load() != 2 || s.failureCount() != 0 {
+		t.Fatalf("%d warms and %d remembered failures after two failed passes, want 2 and 0", warms.Load(), s.failureCount())
+	}
+}
+
+func TestACaptureErrorIsNotRemembered(t *testing.T) {
+	s, _, set, warms := serviceFixture(t)
+	recordDirect(t, s)
+	target := netip.MustParseAddrPort("203.0.113.2:443")
+	release, err := s.flows.Register(netip.AddrPortFrom(netip.MustParseAddr("203.0.113.1"), firstPort), target, s.cfg, set, "warm.example.org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	dialExpectingFallback(t, s, set, "warm.example.org")
+	if warms.Load() != 0 || s.failureCount() != 0 {
+		t.Fatalf("a refused flow registration ran %d warms and left %d remembered failures, want 0 and 0", warms.Load(), s.failureCount())
+	}
+	c, err := s.Dial(context.Background(), set, "192.0.2.10", "warm.example.org", target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if pass, ok := c.(*serviceConn); !ok || !pass.Conn.(*Conn).Warmed || warms.Load() != 1 {
+		t.Fatalf("after a local registration error the next connection got %T with %d warms, want a warmed pass", c, warms.Load())
+	}
+}
+
+func TestFailureMemoryIsBounded(t *testing.T) {
+	s, _, _, _ := serviceFixture(t)
+	target := netip.MustParseAddr("203.0.113.2")
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range maxFailures + 1 {
+		s.rememberFailureLocked(failureKey{target: target, host: fmt.Sprintf("site%d.example.org", i)}, now.Add(time.Duration(i)*time.Millisecond))
+	}
+	if len(s.failures) != maxFailures {
+		t.Fatalf("%d remembered failures, want at most %d", len(s.failures), maxFailures)
+	}
+	if _, kept := s.failures[failureKey{target: target, host: "site0.example.org"}]; kept {
+		t.Fatal("a full memory kept its earliest expiry and dropped another entry")
+	}
+	for key := range s.failures {
+		s.failures[key] = now.Add(-time.Second)
+	}
+	s.rememberFailureLocked(failureKey{target: target, host: "fresh.example.org"}, now)
+	if len(s.failures) != 1 {
+		t.Fatalf("%d remembered failures after a record into a memory of expired ones, want 1", len(s.failures))
+	}
+}
+
+func TestFailedWarmWarnsOncePerMinutePerSet(t *testing.T) {
+	logged := captureWarnings(t)
+	s, cfg, _, _ := serviceFixture(t)
+	next := cfg.Clone()
+	second := *next.Sets[0]
+	second.Id, second.Name = "reuse2", "reuse2"
+	next.Sets = append(next.Sets, &second)
+	s.UpdateConfig(next)
+	failWarms(t, s, errors.New("warm HTTP status 404, expected 204"))
+	recordDirect(t, s)
+	for i := range 3 {
+		dialExpectingFallback(t, s, next.Sets[0], fmt.Sprintf("site%d.example.org", i))
+	}
+	dialExpectingFallback(t, s, next.Sets[0], "site0.example.org")
+	dialExpectingFallback(t, s, &second, "other.example.org")
+	if n := logged.warnings("failed warms so far"); n != 2 {
+		t.Fatalf("%d warnings for 4 failed warms in two sets within a minute, want one per set", n)
+	}
+	if logged.warnings("WSSIZE reuse [reuse]: warm to") != 1 || logged.warnings("WSSIZE reuse [reuse2]: warm to") != 1 {
+		t.Fatal("each set did not get its own warning")
 	}
 }
