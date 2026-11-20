@@ -58,6 +58,33 @@ export const telegramSetProblem = (
 export const telegramSetUsable = (config: B4Config) =>
   telegramSetId(config) !== "" && telegramSetProblem(config) === null;
 
+const portNumber = (text: string) =>
+  /^[+-]?\d+$/.test(text) ? Number(text) : Number.NaN;
+
+const portRange = (part: string): [number, number] | null => {
+  const text = part.trim();
+  if (text === "") return null;
+  const dash = text.indexOf("-");
+  if (dash >= 0) {
+    const low = portNumber(text.slice(0, dash));
+    const high = portNumber(text.slice(dash + 1));
+    return low >= 1 && low <= high && high <= 65535 ? [low, high] : null;
+  }
+  const port = portNumber(text);
+  return port >= 1 && port <= 65535 ? [port, port] : null;
+};
+
+export const setTakesTCPPort = (set: B4SetConfig | undefined, port: number) => {
+  const ranges = (set?.tcp?.dport_filter ?? "")
+    .split(",")
+    .map(portRange)
+    .filter((range) => range !== null);
+  return (
+    ranges.length === 0 ||
+    ranges.some(([low, high]) => port >= low && port <= high)
+  );
+};
+
 export const telegramSetRoutes = (config: B4Config) =>
   telegramSetUsable(config) &&
   config.sets.some(

@@ -364,6 +364,7 @@
       "relayProcessingWorker": "Worker",
       "relayProcessingNone": "Нет: b4 не применяет обход DPI",
       "relayProcessingStrategy": "Стратегия сета для Telegram {{name}}",
+      "relayProcessingPortFilter": "Нет: в фильтре TCP-портов сета для Telegram {{name}} нет порта 443",
       "relayProcessingRoute": "Маршрут сета для Telegram {{name}}; пока маршрута нет, как без сета",
       "relayProcessingSets": "Сеты, которые их покрывают, без своих маршрутов",
       "upstreamSet": "Сет для Telegram",

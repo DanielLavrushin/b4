@@ -3,12 +3,15 @@ import { Box, Stack, Typography } from "@mui/material";
 import { colors } from "@design";
 import { B4Config } from "@models/config";
 import {
+  setTakesTCPPort,
   telegramSetId,
   telegramSetRoutes,
   telegramSetUsable,
 } from "@models/telegramSet";
 
-type RelayProcessing = "none" | "strategy" | "route" | "sets";
+type RelayProcessing = "none" | "strategy" | "portFilter" | "route" | "sets";
+
+const RELAY_PORT = 443;
 
 const relayProcessing = (
   config: B4Config,
@@ -17,7 +20,9 @@ const relayProcessing = (
 ): RelayProcessing => {
   if (telegramSetUsable(config)) {
     if (telegramSetRoutes(config)) return "route";
-    return followsTelegramSetStrategy ? "strategy" : "none";
+    if (!followsTelegramSetStrategy) return "none";
+    const set = config.sets.find((s) => s.id === telegramSetId(config));
+    return setTakesTCPPort(set, RELAY_PORT) ? "strategy" : "portFilter";
   }
   return setsMayProcess ? "sets" : "none";
 };
@@ -53,6 +58,8 @@ export const MTProtoRelayProcessing = ({ config }: { config: B4Config }) => {
     switch (processing) {
       case "strategy":
         return t("settings.MTProto.relayProcessingStrategy", { name });
+      case "portFilter":
+        return t("settings.MTProto.relayProcessingPortFilter", { name });
       case "route":
         return t("settings.MTProto.relayProcessingRoute", { name });
       case "sets":

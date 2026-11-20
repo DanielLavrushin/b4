@@ -359,6 +359,7 @@
       "relayProcessingWorker": "Worker",
       "relayProcessingNone": "None: b4 skips DPI",
       "relayProcessingStrategy": "Strategy of the Telegram set {{name}}",
+      "relayProcessingPortFilter": "None: the TCP port filter of the Telegram set {{name}} leaves out port 443",
       "relayProcessingRoute": "Route of the Telegram set {{name}}; while that route is not in place, as without a set",
       "relayProcessingSets": "The sets that cover them, without routing them",
       "upstreamSet": "Telegram set",
