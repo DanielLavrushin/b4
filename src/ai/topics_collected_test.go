@@ -72,3 +72,18 @@ func TestCollectTopicSaysTheFirstConsumerOwnsWhileItsRulesAreNotInEffect(t *test
 		t.Errorf("tcp.ip_block_detect.action still says only a consumer with no rules yet owns collection, but one whose egress never appeared, whose install failed or whose reuse is not diverted does too: %s", facts)
 	}
 }
+
+func TestDSCPTopicNamesCollectedIPsAsAddressesOfTheSet(t *testing.T) {
+	facts := TopicFacts("dscp.enabled")
+	i := strings.Index(facts, "An address belongs to the set")
+	if i < 0 {
+		t.Fatalf("dscp.enabled no longer says which addresses belong to the set: %s", facts)
+	}
+	sentence := facts[i:]
+	if end := strings.Index(sentence, ". "); end >= 0 {
+		sentence = sentence[:end]
+	}
+	if !strings.Contains(sentence, "targets.use_collected_ips") {
+		t.Errorf("the address sentence of dscp.enabled leaves out collected IPs, although the DSCP plan stamps them through SetConfig.TargetIPs and DSCPRefusal counts use_collected_ips as an address target: %q", sentence)
+	}
+}
