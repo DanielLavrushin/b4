@@ -841,7 +841,7 @@ func TestWarmFailsOnDataAfterTheFinalAnswerWhateverItsRecord(t *testing.T) {
 		"a HEAD body in the answer's TLS record":        {head + "hello"},
 		"a HEAD body in a later TLS record":             {head, "hello"},
 		"103, 204 and extra bytes in one TLS record":    {"HTTP/1.1 103 Early Hints\r\n\r\n" + final + "EXTRA"},
-		"over 4 KiB after the answer in its TLS record": {final + strings.Repeat("x", 5000)},
+		"over 4 KiB after the answer in the same write": {final + strings.Repeat("x", 5000)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			m := realWarmManager(t, warmTLSRecords(t, cert, false, records...), roots)
