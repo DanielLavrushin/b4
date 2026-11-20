@@ -67,7 +67,7 @@ The reason under a set's status says why it is in that state or how the last hea
 | Edited | The set changed while the search ran, so nothing was written. |
 | Busy | Another Discovery run was in progress. The watchdog tries again later. |
 | Rules changed | b4 was applying or rewriting the firewall rules the search depends on, such as its DSCP rules, so nothing was written. The watchdog tries again later. |
-| TUN engine unavailable | The TUN engine was not running or had no uplink address yet, so the search did not start. The set waits in **Cooldown** for at least a minute. |
+| TUN engine unavailable | The TUN engine could not carry the search's probes, for example while it was not running or had no uplink address yet, so the search did not start. The set waits in **Cooldown** for at least a minute. |
 | IPv6 under TUN | The set's **IP Version Filter** is IPv6, and Discovery under TUN tests IPv4 only. No heal runs until the filter changes or b4 runs the NFQUEUE engine. |
 | DSCP under TUN | The set has its own DSCP value, which Discovery under TUN cannot write into its probes. No heal runs until the set stops writing its own value or b4 runs the NFQUEUE engine. |
 

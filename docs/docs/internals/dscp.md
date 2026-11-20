@@ -73,7 +73,7 @@ A [Discovery](../discovery.md) run for a set with its own value, and a [watchdog
 
 With the NFQUEUE engine, probes without a set's value carry what other traffic carries: the **Set DSCP** value while it is on, or none, also to the addresses of sets with values of their own. A run for sites, not for a set, takes this path throughout.
 
-Under the [TUN engine](./discovery.md#tun), a run for a set with its own value and a heal of such a set are refused, and no run gets the chain described below. The probes of a run carry what b4's DSCP rules give other traffic by destination: the **Set DSCP** value while it is on and, to the addresses of a set with its own value, that set's value.
+Under the [TUN engine](./discovery.md#tun), a run for a set whose value goes into its probes, as above, and a heal of such a set are refused, and no run gets the chain described below. The probes of a run carry what b4's DSCP rules give other traffic by destination: the **Set DSCP** value while it is on and, to the addresses of a set with its own value, that set's value.
 
 b4 records the path a run's probes took: the value in each IP version and the interface list of **Set DSCP**. Before a result goes into a set or creates one, from the Discovery page, over MCP or by the watchdog, b4 compares that record with the path the set's traffic takes at that moment, in the IP versions both the set and the result cover. Another value, a value on one side only, or another interface list refuses the write.
 

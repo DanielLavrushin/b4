@@ -3302,7 +3302,7 @@
       "bad_pin": "A pinned address was refused. Each line takes a public IP address, then the names it serves.",
       "dscp_rules_pending": "b4 is still applying its DSCP rules, which decide the network path of the probes. Start the search again in a moment.",
       "note_too_long": "The note is longer than {{maxNote}} characters.",
-      "tun_carrier_unavailable": "Discovery could not send its probes through the TUN engine: the engine is not running or has no uplink address yet. Start the search again once the TUN engine is running.",
+      "tun_carrier_unavailable": "Discovery could not send its probes through the TUN engine, for example because the engine is not running or has no uplink address yet. Start the search again once the TUN engine is running.",
       "ipv6_unsupported_tun": "Under the TUN engine Discovery tests IPv4 only, like the engine itself, and this run asked for IPv6: picked for the probes or taken from a set limited to IPv6. A set limited to IPv6 cannot be tested under TUN.",
       "dscp_unsupported_tun": "The set has its own DSCP value, which takes its traffic along another network path. Under the TUN engine Discovery cannot write that value into its probes, so this set cannot be tested under TUN."
     },
@@ -4009,7 +4009,7 @@
       "edited": "The set was changed while the search ran, so the result was not written.",
       "busy": "Another Discovery search was running. The watchdog tries again later.",
       "rules_changed": "b4 was applying or rewriting the firewall rules the search depends on, so it could not follow the path the set's traffic takes. The watchdog tries again later.",
-      "tun_carrier_unavailable": "The search could not go through the TUN engine: the engine is not running or has no uplink address yet. The watchdog tries again later.",
+      "tun_carrier_unavailable": "The search could not go through the TUN engine, for example because the engine is not running or has no uplink address yet. The watchdog tries again later.",
       "ipv6_unsupported_tun": "The set is limited to IPv6, and under the TUN engine Discovery tests IPv4 only, so the watchdog cannot search for a strategy for this set. Checks continue. Heals can run again once the set's IP version changes or b4 restarts with the NFQUEUE engine.",
       "dscp_unsupported_tun": "The set has its own DSCP value, and under the TUN engine Discovery cannot write it into its probes, so the watchdog cannot search for a strategy for this set. Checks continue. Heals can run again once the set's DSCP value is turned off or b4 restarts with the NFQUEUE engine."
     },

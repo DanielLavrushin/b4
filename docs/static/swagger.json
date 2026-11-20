@@ -2090,7 +2090,7 @@
                         }
                     },
                     "400": {
-                        "description": "reserved_host, no_urls, too_many_urls, bad_dns_server, bad_pin or note_too_long",
+                        "description": "routed_set, reserved_host, no_urls, too_many_urls, bad_dns_server, bad_pin or note_too_long",
                         "schema": {
                             "$ref": "#/definitions/handler.APIError"
                         }

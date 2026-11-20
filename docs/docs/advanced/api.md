@@ -61,7 +61,7 @@ The watchdog reports why a set is in its state, or how its last heal ended, as o
 | `edited` | The set was changed during the check or the search, so nothing was written |
 | `busy` | Another Discovery run holds the runtime, and the heal waits |
 | `rules_changed` | b4 was applying or rewriting the firewall rules the search depends on, such as its DSCP rules, so nothing was written; the heal is tried again later |
-| `tun_carrier_unavailable` | The TUN engine was not running or had no uplink address, so the run could not start; the set cools down for at least a minute and never gives up for it |
+| `tun_carrier_unavailable` | The TUN engine could not carry the run's probes, for example while it was not running or had no uplink address yet, so the run could not start; the set cools down for at least a minute and never gives up for it |
 | `ipv6_unsupported_tun` | The set is limited to IPv6, which Discovery cannot test under the TUN engine; the watchdog gives up on the set until its IP version changes |
 | `dscp_unsupported_tun` | The set has its own DSCP value, which Discovery cannot write into its probes under the TUN engine; the watchdog gives up on the set until it stops writing that value |
 

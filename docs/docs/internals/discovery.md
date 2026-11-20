@@ -43,7 +43,7 @@ A card lists up to twelve other strategies that loaded every site on it, fastest
 
 ### One run at a time
 
-Only one run is in progress at a time, and the watchdog shares it. A heal that comes due during a run started by hand waits for it, and a run cannot start by hand during a heal. A firewall refresh started during a run waits for the run to finish. A rewrite of b4's DSCP rules does not wait and stops the run, see [DSCP rules](./dscp.md#discovery). After a run, its capture queue and firewall rules are released, which takes a few seconds.
+Only one run is in progress at a time, and the watchdog shares it. A heal that comes due during a run started by hand waits for it, and a run cannot start by hand during a heal. With the NFQUEUE engine, a firewall refresh started during a run waits for the run to finish; under the [TUN engine](#tun) it does not wait. A rewrite of b4's DSCP rules does not wait and stops the run, see [DSCP rules](./dscp.md#discovery). After a run, its capture queue and firewall rules are released, which takes a few seconds. Under TUN, its device, route and `ip` rules are removed instead.
 
 Discovery's own fetches skip the sets, so its verdict on an address is the raw one. Another tool run on a machine where b4 works goes through b4's sets, and a TLS check that passes there measures the bypass, not the network. Local and private destinations, and names or redirects that lead to them, are never fetched.
 
@@ -61,7 +61,7 @@ Only the outgoing packets of the router's own connections pass through a TUN dev
 
 The device sees no DNS answers, and a heal skips the DNS phase. Before the strategies, the run therefore resolves the IPv4 addresses of every domain it has no address for, through the resolver its fetches use. A strategy part that acts on the first packet of a connection, which carries no name, such as a fake SYN, then applies from the first connection to each address. These addresses are used only for matching during the run and never reach a set.
 
-A run does not start while the TUN engine is not running or has no uplink address. Every 5 seconds the run checks its device, its route and its rules. When one of them is gone, the run stops as after a rewrite of b4's DSCP rules, and its results cannot be applied. A device or rules left behind by a crash are removed the next time the TUN engine starts.
+A run does not start while the TUN engine is not running or has no uplink address. Every 5 seconds the run checks its device, its route, its rules and the uplink address. When one of them is gone or the uplink address changes, the run stops as after a rewrite of b4's DSCP rules, and its results cannot be applied. A device or rules left behind by a crash are removed the next time the TUN engine starts.
 
 ## A run for a set
 

@@ -53,7 +53,7 @@ rule without a mask, such as nftables `meta mark set 0x00021546` or iptables
 | 24 | `0x1000000` | A proxy set's TCP packet that the router sent itself | Fixed, added to the set's mark |
 | 25 | `0x2000000` | NFQUEUE mode: the packets b4 sends into a connection from its raw sockets, such as fakes, split segments and re-sent SYNs; see [connections b4 sends packets into](#connections-b4-sends-packets-into) | Fixed, added to the queue mark |
 | 26 | `0x4000000` | b4's own connections to Telegram while a **Telegram set** is chosen, and the packets b4 sends into them; see [connections b4 opens itself](#connections-b4-opens-itself) | Fixed, carried together with bit 18 as `0x4040000` |
-| 28 | `0x10000000` | TUN mode: packets b4 writes back | Fixed, added to the queue mark |
+| 28 | `0x10000000` | TUN mode: packets b4 writes back | Fixed; added to the queue mark, and to Discovery's injected mark on the packets a Discovery run in TUN mode sends |
 | 29 | `0x20000000` | Packets b4 sends toward a device on the network | Fixed; added to the queue mark in NFQUEUE mode, and to Discovery's injected mark on the packets a Discovery run in NFQUEUE mode sends back toward its probes |
 | 30 | `0x40000000` | TUN mode: packets steered into `b4tun0`; unused when the default route itself points at `b4tun0` | Fixed |
 | all | `0xffffffff` | Discovery, only while a run is active | By default the queue mark plus 1 and plus 2, `0x8001` and `0x8002`; `system.checker.discovery_flow_mark` and `system.checker.discovery_injected_mark` replace them |
@@ -592,8 +592,8 @@ with the source address of the device's route. These rules cover IPv4 only.
 With port capture and the default marks, `B4_TUN` returns the probes, whose mark has every bit
 of the queue mark. On the whole default route, priority 81 comes ahead of the main table and its default
 route into `b4tun0`. During a run, a packet of another service whose mark is exactly the flow
-mark goes into the device too. Every 5 seconds b4 checks the device, its route and these
-rules, and a missing one stops the run. A device, table or rules left behind by a crash are
+mark goes into the device too. Every 5 seconds b4 checks the device, its route, these rules
+and the uplink address. A missing one, or a changed uplink address, stops the run. A device, table or rules left behind by a crash are
 removed when the TUN engine next starts, before its own rules.
 
 ## Routing rules and tables

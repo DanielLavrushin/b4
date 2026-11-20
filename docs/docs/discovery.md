@@ -61,7 +61,7 @@ The engine that counts is the one b4 is running. A new choice under **Settings >
 
 A run for a set ends with one verdict for the whole set, above **Results per address**. The set's own strategy is tested first, as **Current strategy of the set**, and a strategy is confirmed on all addresses together.
 
-For a set with its own [DSCP value](./sets/routing.md#dscp), the probes carry that value, as the set's traffic does, and take the set's route through the router in front of b4. The progress and the results show **DSCP &lt;value&gt;, as the set's traffic**. Under the [TUN engine](#tun), such a run does not start. The probes of any other run carry the value of **Set DSCP** under [Settings > Core > Firewall](./settings/core.md#dscp) while it is on, or none, also to the addresses of such a set.
+For a set with its own [DSCP value](./sets/routing.md#dscp), the probes carry that value, as the set's traffic does, and take the set's route through the router in front of b4. The progress and the results show **DSCP &lt;value&gt;, as the set's traffic**. Under the [TUN engine](#tun), such a run does not start. With the NFQUEUE engine, the probes of any other run carry the value of **Set DSCP** under [Settings > Core > Firewall](./settings/core.md#dscp) while it is on, or none, also to the addresses of such a set. Under TUN they carry the same, except that to the addresses of such a set they carry its value.
 
 | Verdict | Meaning and what the card offers |
 | --- | --- |

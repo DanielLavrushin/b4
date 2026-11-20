@@ -201,7 +201,7 @@ Docs: [MTProto / Telegram](https://docs.b4core.app/docs/mtproto)
 
 ## Discovery, Watchdog, DPI Detector
 
-**Discovery** tests bypass strategies against your real network on an isolated queue, tunes the parameters of whatever works, and checks for DNS poisoning and IP-level blocks along the way, asking other regions' DNS answers for an address the block does not cover. Results apply as sets without a restart, and the set is previewed before it is created.
+**Discovery** tests bypass strategies against your real network on an isolated queue, or under TUN on a TUN device of its own, tunes the parameters of whatever works, and checks for DNS poisoning and IP-level blocks along the way, asking other regions' DNS answers for an address the block does not cover. Results apply as sets without a restart, and the set is previewed before it is created.
 
 **Watchdog** fetches the domains you list periodically. After enough consecutive failures it re-runs Discovery for that domain, verifies the result, and rolls back if it does not hold. Disabled by default.
 
