@@ -204,11 +204,6 @@ func (s *Service) Dial(ctx context.Context, set *config.SetConfig, owner, host s
 		s.mu.Unlock()
 		return nil, err
 	}
-	if l.manager.cfg.Source != source {
-		s.discardLocked(l.port, time.Now())
-		s.mu.Unlock()
-		return nil, errors.New("warm egress source changed")
-	}
 	ctx, cancel := context.WithCancel(ctx)
 	s.pending[l] = cancel
 	l.manager.capture = func() (func(), error) {
