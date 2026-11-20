@@ -33,14 +33,20 @@ func inactiveReuseHelloVerdict(t *testing.T, reuse bool, edit func(*config.Confi
 
 func TestInactiveReuseSetKeepsItsStrategy(t *testing.T) {
 	for _, c := range []struct {
-		name string
-		edit func(*config.Config)
+		name    string
+		edit    func(*config.Config)
+		running bool
 	}{
-		{"the TUN engine", func(c *config.Config) { c.Queue.Mode = "tun" }},
-		{"firewall setup skipped", func(c *config.Config) { c.System.Tables.SkipSetup = true }},
-		{"a queue mark with the relay bit", func(c *config.Config) { c.Queue.Mark = 0x48000 }},
+		{"the TUN engine", func(c *config.Config) { c.Queue.Mode = "tun" }, false},
+		{"the TUN engine running, NFQUEUE saved", func(c *config.Config) { c.Queue.Mode = "nfqueue" }, true},
+		{"firewall setup skipped", func(c *config.Config) { c.System.Tables.SkipSetup = true }, false},
+		{"a queue mark with the relay bit", func(c *config.Config) { c.Queue.Mark = 0x48000 }, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
+			if c.running {
+				config.SetRunningEngineTUN(true)
+				t.Cleanup(func() { config.SetRunningEngineTUN(false) })
+			}
 			if got := inactiveReuseHelloVerdict(t, false, c.edit); got != engine.VerdictDrop {
 				t.Fatalf("setup: the set's fragmentation did not run on its ClientHello without reuse (verdict %v), so this case proves nothing", got)
 			}

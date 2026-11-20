@@ -338,6 +338,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	isTUN := cfg.Queue.Mode == "tun"
 	discoveryRT.SetEngineTUN(isTUN)
+	config.SetRunningEngineTUN(isTUN)
 	engineAttempt = loadEngineAttempt()
 
 	pool := nfq.NewPool(&cfg)

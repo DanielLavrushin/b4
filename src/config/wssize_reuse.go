@@ -3,7 +3,14 @@ package config
 import (
 	"fmt"
 	"net/netip"
+	"sync/atomic"
 )
+
+var runningEngineTUN atomic.Bool
+
+func SetRunningEngineTUN(on bool) { runningEngineTUN.Store(on) }
+
+func RunningEngineTUN() bool { return runningEngineTUN.Load() }
 
 func (s *SetConfig) ReusesWSSize() bool {
 	return s != nil && s.Enabled && s.TCP.WSSizeReuse.Enabled
@@ -15,7 +22,7 @@ func (c *Config) WSReuseInactiveReason() string {
 		return ""
 	case c.Queue.IsDiscovery:
 		return "discovery"
-	case c.Queue.Mode == "tun":
+	case c.Queue.Mode == "tun" || RunningEngineTUN():
 		return "tun"
 	case c.System.Tables.SkipSetup:
 		return "skip_setup"

@@ -109,6 +109,43 @@ func TestWSReuseStaysOffWithoutNFQUEUEFirewall(t *testing.T) {
 	}
 }
 
+func TestWSReuseFollowsTheRunningTUNEngine(t *testing.T) {
+	for _, saved := range []string{"", "nfqueue", "tun"} {
+		t.Run("saved "+saved, func(t *testing.T) {
+			SetRunningEngineTUN(true)
+			t.Cleanup(func() { SetRunningEngineTUN(false) })
+			cfg := reuseConfig(t)
+			cfg.Queue.Mode = saved
+			cfg.Sets[0].Name = "Video edges"
+			warnings := captureEgressGatewayWarnings(t)
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("a reuse set was refused (%v)", err)
+			}
+			if got := cfg.WSReuseInactiveReason(); got != "tun" {
+				t.Errorf("queue.mode saved as %q while this process runs the TUN engine: inactive reason %q, want \"tun\"; the saved engine applies only after a restart", saved, got)
+			}
+			if cfg.WSReuseActive(cfg.Sets[0]) {
+				t.Errorf("queue.mode saved as %q: reuse counts as active under the running TUN engine", saved)
+			}
+			if view := cfg.RoutingSets()[0]; view.Routing.Enabled || view.Routing.Mode == RoutingModeWSReuse {
+				t.Errorf("queue.mode saved as %q: the routing view diverts the set to the reuse relay under the running TUN engine (enabled=%v mode=%q), so its TCP/443 loses the TUN engine's strategy until the restart", saved, view.Routing.Enabled, view.Routing.Mode)
+			}
+			if ids := wsReuseRoutingShape(cfg); len(ids) != 0 {
+				t.Errorf("queue.mode saved as %q: the firewall shape lists reuse sets %v under the running TUN engine", saved, ids)
+			}
+			warned := false
+			for _, line := range *warnings {
+				if strings.Contains(line, "'Video edges'") && strings.Contains(line, "the engine is TUN") {
+					warned = true
+				}
+			}
+			if !warned {
+				t.Errorf("queue.mode saved as %q: no warning says reuse does nothing while the engine is TUN: %q", saved, *warnings)
+			}
+		})
+	}
+}
+
 func TestWSReuseRejectsUnsupportedPaths(t *testing.T) {
 	cases := map[string]func(*Config){
 		"no window":       func(c *Config) { c.Sets[0].TCP.WSSize.Window = 0 },
