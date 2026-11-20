@@ -312,6 +312,9 @@ func routeHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP, sta
 	if old, ok := routeRuleCache[set.Id]; ok {
 		if !routeStateEqual(old, cur) {
 			previous, hadPrevious = old, true
+			if routeRebuildRemovesOldAtOnce(old, cur) {
+				previous = previous.withoutReuseDiversion()
+			}
 			retireOld = routeCleanupForRebuild(be, old, cur)
 			delete(routeRuleCache, set.Id)
 			routeForgetSetLearnState(set.Id)
@@ -760,6 +763,16 @@ func routeDropSets(be routeBackend, st routeState, keepSets bool) {
 	}
 }
 
+func routeRebuildRemovesOldAtOnce(old, cur routeState) bool {
+	sameShape := config.RoutingIsBlock(old.mode) == config.RoutingIsBlock(cur.mode) &&
+		config.RoutingUsesTProxy(old.mode) == config.RoutingUsesTProxy(cur.mode)
+	sameFamilies := old.ipv4 == cur.ipv4 && old.ipv6 == cur.ipv6
+	if config.RoutingUsesTProxy(old.mode) {
+		return !sameShape || !sameFamilies
+	}
+	return !sameShape || !sameFamilies || config.RoutingIsBlock(old.mode)
+}
+
 func routeCleanupForRebuild(be routeBackend, old, cur routeState) func() {
 	sameShape := config.RoutingIsBlock(old.mode) == config.RoutingIsBlock(cur.mode) &&
 		config.RoutingUsesTProxy(old.mode) == config.RoutingUsesTProxy(cur.mode)
@@ -787,7 +800,7 @@ func routeCleanupForRebuild(be routeBackend, old, cur routeState) func() {
 		}
 	}
 
-	if !sameShape || !sameFamilies || config.RoutingIsBlock(old.mode) || config.RoutingUsesTProxy(old.mode) {
+	if routeRebuildRemovesOldAtOnce(old, cur) {
 		routeCleanupAnyKeeping(be, old, keepSets)
 		return func() {}
 	}
@@ -1559,6 +1572,9 @@ func routingSyncConfigLocked(cfg *config.Config) {
 		if old, ok := routeRuleCache[set.Id]; ok {
 			if !routeStateEqual(old, cur) || old.diverts != cur.diverts {
 				previous, hadPrevious = old, true
+				if routeRebuildRemovesOldAtOnce(old, cur) {
+					previous = previous.withoutReuseDiversion()
+				}
 				retireOld = routeCleanupForRebuild(be, old, cur)
 				delete(routeRuleCache, set.Id)
 				routeForgetSetLearnState(set.Id)

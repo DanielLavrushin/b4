@@ -2,6 +2,7 @@ package tables
 
 import (
 	"errors"
+	"net"
 	"slices"
 	"strings"
 	"testing"
@@ -503,6 +504,52 @@ func TestOnlyTheReuseSetsOwnFamiliesDecideItsDiversion(t *testing.T) {
 				st.collected = true
 				if _, routed := routeCollectedRouteOf(st); routed != tc.diverted {
 					t.Fatalf("%s: the collected route view says routed=%v, want %v", tc.name, routed, tc.diverted)
+				}
+			})
+		}
+	}
+}
+
+func TestAFailedFamilyRebuildDoesNotRestoreTheRemovedDiversion(t *testing.T) {
+	for _, engine := range []string{backendIPTables, backendNFTables} {
+		for _, then := range []string{"the retry installs it", "a save goes back to the old families", "a rebuild from a DNS answer failed and the retry installs it"} {
+			t.Run(engine+", "+then, func(t *testing.T) {
+				viaDNS := strings.HasPrefix(then, "a rebuild from a DNS answer")
+				attempts, _ := refusedTProxyRig(t, engine, func([]string) bool { return false })
+				RoutingSyncConfig(refusedTProxyConfig(t, false))
+				if !WSReuseDiverts("reuse") {
+					t.Fatal("setup: the IPv4 reuse set is not diverted")
+				}
+				refuseV6 := true
+				inner := run
+				run = func(args ...string) (string, error) {
+					v6set := slices.ContainsFunc(args, func(a string) bool { return strings.HasPrefix(a, "b4r_") && strings.HasSuffix(a, "_v6") })
+					create := args[0] == "ipset" && slices.Contains(args, "create") || args[0] == "nft" && len(args) > 2 && args[1] == "add" && args[2] == "set"
+					if refuseV6 && v6set && create {
+						return "refused", errors.New("exit status 1")
+					}
+					return inner(args...)
+				}
+				if viaDNS {
+					cfg := refusedTProxyConfig(t, true)
+					routeHandleDNS(cfg, cfg.RoutingSets()[0], []net.IP{net.ParseIP("203.0.113.9")}, nil)
+					if _, cached := routeRuleCache["reuse"]; !cached || !routeInstallFailedRecently("reuse") {
+						t.Fatalf("setup: a DNS answer for the set under the new families with the IPv6 set refused did not fail the set's rebuild (cached=%v)", cached)
+					}
+				} else {
+					RoutingSyncConfig(refusedTProxyConfig(t, true))
+					if _, cached := routeRuleCache["reuse"]; !cached || routeSyncOutcome.setErrs["reuse"].Error == "" {
+						t.Fatalf("setup: turning the IPv6 queue on with the IPv6 set refused did not fail the set's rebuild (cached=%v)", cached)
+					}
+				}
+				if WSReuseDiverts("reuse") {
+					t.Fatalf("the rebuild for the new families removed the set's TPROXY rules at once and then failed, yet the set is published as diverted, so b4's queue passes its TCP/443 untouched with no rule to divert it")
+				}
+				tried := len(*attempts)
+				refuseV6 = false
+				RoutingSyncConfig(refusedTProxyConfig(t, then != "a save goes back to the old families"))
+				if len(*attempts) == tried || !WSReuseDiverts("reuse") {
+					t.Errorf("after %s: %d new TPROXY adds, diverted=%v; want the set rebuilt and diverted again, since its old rules are gone", then, len(*attempts)-tried, WSReuseDiverts("reuse"))
 				}
 			})
 		}

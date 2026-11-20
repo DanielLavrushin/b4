@@ -25,6 +25,11 @@ func (st routeState) reuseDiverted() bool {
 	return st.mode == config.RoutingModeWSReuse && st.diverts && st.tproxied
 }
 
+func (st routeState) withoutReuseDiversion() routeState {
+	st.diverts, st.tproxied = false, false
+	return st
+}
+
 func routeWarnRefusedWSReuseTProxy(set *config.SetConfig, st routeState) {
 	if st.mode != config.RoutingModeWSReuse || !st.diverts || st.tproxied {
 		return
