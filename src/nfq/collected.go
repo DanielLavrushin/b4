@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"slices"
 	"sort"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -26,6 +27,7 @@ const (
 	maxCollectedIPs       = 1024
 	silentHellosToCollect = 2
 	maxCollectedRuns      = 1024
+	maxCollectedRefusals  = 8
 	collectedRetryFirst   = 10 * time.Second
 	collectedRetryMax     = 5 * time.Minute
 )
@@ -47,7 +49,15 @@ func (c collectedCandidate) until() time.Time {
 type collectRun struct {
 	count   int
 	until   time.Time
-	unowned uint64
+	refused map[string]uint64
+}
+
+func collectedRefusalScope(h helloWatch) string {
+	name := ""
+	if h.scope != nil {
+		name = h.scope.name
+	}
+	return strings.ToLower(h.mac) + "|" + name
 }
 
 type collectedPrepared struct {
@@ -405,10 +415,11 @@ func (p *Pool) ownCollected(w *Worker, fresh []helloWatch) ([]helloWatch, *colle
 			continue
 		}
 		w.destState.EndWatch(h)
+		scope := collectedRefusalScope(h)
+		w.destState.markCollectRunUnowned(h, scope, mark)
+		w.destState.endParkedCollectedFrom(h.dst, h.port, scope)
 		if key := netip.AddrPortFrom(addr, h.port); !refused[key] {
 			refused[key] = true
-			w.destState.markCollectRunUnowned(h.dst, h.port, mark)
-			w.destState.endParkedCollected(h.dst, h.port)
 			log.Infof("Collected IP: %s not collected: no set with Use collected IPs takes its next connection (set order, IP priority or routing)", addr)
 		}
 	}
@@ -997,17 +1008,31 @@ func (t *destStateTracker) collectRunUnowned(h helloWatch, mark uint64) bool {
 	t.watchMu.RLock()
 	defer t.watchMu.RUnlock()
 	run, known := t.collectRuns[iphealth.BanKey(h.dst, int(h.port))]
-	return known && run.unowned == mark
+	return known && run.refused[collectedRefusalScope(h)] == mark
 }
 
-func (t *destStateTracker) markCollectRunUnowned(dst net.IP, port uint16, mark uint64) {
+func (t *destStateTracker) markCollectRunUnowned(h helloWatch, scope string, mark uint64) {
 	t.watchMu.Lock()
 	defer t.watchMu.Unlock()
-	key := iphealth.BanKey(dst, int(port))
-	if run, known := t.collectRuns[key]; known {
-		run.unowned = mark
-		t.collectRuns[key] = run
+	run, known := t.collectRuns[iphealth.BanKey(h.dst, int(h.port))]
+	if !known {
+		return
 	}
+	if _, marked := run.refused[scope]; !marked && len(run.refused) >= maxCollectedRefusals {
+		for other, at := range run.refused {
+			if at != mark {
+				delete(run.refused, other)
+			}
+		}
+		if len(run.refused) >= maxCollectedRefusals {
+			return
+		}
+	}
+	if run.refused == nil {
+		run.refused = make(map[string]uint64)
+	}
+	run.refused[scope] = mark
+	t.collectRuns[iphealth.BanKey(h.dst, int(h.port))] = run
 }
 
 func (t *destStateTracker) collectRunOpen(dst net.IP, port uint16) bool {
@@ -1018,10 +1043,14 @@ func (t *destStateTracker) collectRunOpen(dst net.IP, port uint16) bool {
 }
 
 func (t *destStateTracker) endParkedCollected(dst net.IP, port uint16) {
+	t.endParkedCollectedFrom(dst, port, "")
+}
+
+func (t *destStateTracker) endParkedCollectedFrom(dst net.IP, port uint16, scope string) {
 	t.watchMu.Lock()
 	defer t.watchMu.Unlock()
 	for key, h := range t.watches {
-		if h.collect && h.parked && h.isTo(dst, port) {
+		if h.collect && h.parked && h.isTo(dst, port) && (scope == "" || collectedRefusalScope(*h) == scope) {
 			t.unwatchLocked(key)
 		}
 	}
