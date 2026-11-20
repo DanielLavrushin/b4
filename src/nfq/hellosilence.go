@@ -311,7 +311,7 @@ func (t *destStateTracker) unwatchLocked(key string) {
 	t.watching.Store(int32(len(t.watches)))
 }
 
-func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pkt *pktInfo, scope *ingressScope, connKey, host, sniSet, ipSet string, sport, dport, tlsVersion uint16, deadline time.Time) {
+func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pkt *pktInfo, scope *ingressScope, selfDialed bool, connKey, host, sniSet, ipSet string, sport, dport, tlsVersion uint16, deadline time.Time) {
 	if w == nil || w.destState == nil || cfg == nil || cfg.Queue.IsDiscovery || (!set.TCP.IPBlockDetect.Collects() && (!banEnforced(set) || !w.bans.on())) {
 		return
 	}
@@ -353,7 +353,7 @@ func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pk
 
 		fakesCloseEntry: w.closingFakesMayHaveHit(cfg, set, host),
 	}
-	if _, ok := eligibleCollectedIP(h.dst); ok && !h.collect && !h.consumer {
+	if _, ok := eligibleCollectedIP(h.dst); ok && !h.collect && !h.consumer && !selfDialed {
 		h.takenAway = collectedTakenAway(cfg, w.getMatcher(), *h)
 	}
 	if h.collect {

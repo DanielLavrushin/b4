@@ -7,6 +7,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/tables"
+	"github.com/florianl/go-nfqueue"
 )
 
 func installedCollectedRoute(cfg *config.Config, set *config.SetConfig) (tables.CollectedRoute, bool) {
@@ -71,6 +72,58 @@ func TestARouterConnectionCountsAsTakenOnlyWhereItsConsumerRoutesTheRouter(t *te
 				t.Errorf("router_traffic=%s: the server answered the router's own connection and the address was kept=%v, want %v; the consumer routes the router's own traffic only when router_traffic includes it, otherwise that answer came over the uplink", routerTraffic, kept, want)
 			}
 		})
+	}
+}
+
+func TestBsOwnConnectionNeverCountsAsTakenByARoutingConsumer(t *testing.T) {
+	selfMark, telegramMark := config.SelfDialMark, config.TelegramSetDialMark
+	proxy := readyConsumer(false)
+	proxy.Routing.Enabled, proxy.Routing.Mode = true, config.RoutingModeProxy
+	reuse := readyConsumer(false)
+	reuse.TCP.WSSizeReuse.Enabled = true
+	routed := interfaceConsumer()
+	routed.Routing.RouterTraffic = config.RouterTrafficInclude
+	for _, consumer := range []*config.SetConfig{routed, proxy, reuse} {
+		for _, c := range []struct {
+			name string
+			mark *uint32
+			kept bool
+		}{
+			{"the router's own connection", nil, true},
+			{"b4's own connection", &selfMark, false},
+			{"b4's own Telegram connection", &telegramMark, false},
+		} {
+			kind := consumer.Routing.Mode
+			if consumer.TCP.WSSizeReuse.Enabled {
+				kind = "wssize-reuse"
+			}
+			t.Run(kind+", "+c.name, func(t *testing.T) {
+				idx := scopeIfaces(t)
+				set := *consumer
+				r := newCollectReadyRig(t, &set, readyProducer(), blockWatchSet())
+				for i, sport := range []uint16{42000, 42001} {
+					queuedFrom(t, r.w, silentHelloFrom(sport), idx["br0"], nil, nil)
+					r.serverSends(t, sport, 0x10, nil)
+					r.sweep(time.Duration(4+i) * time.Second)
+				}
+				if r.collected() != 1 {
+					t.Fatalf("setup: candidates=%d installs=%d", r.collected(), r.installs)
+				}
+				blockHello := buildClientHello("www.block.example", 16, 0xAB)
+				raw := clientPacket(43000, silentHelloSeq, 0x18, blockHello)
+				id := uint32(1)
+				a := nfqueue.Attribute{PacketID: &id, Payload: &raw, Hook: hookAt(nfHookLocalOut), Mark: c.mark}
+				r.w.handleQueued(&verdictCtx{id: id, q: newFakeQueue()}, a, uint(r.w.getConfig().Queue.Mark))
+				if !r.watched(43000) {
+					t.Fatal("setup: the router's own Block connection is not watched")
+				}
+				r.w.ProcessPacket(clientPacketAcking(43000, silentHelloSeq+uint32(len(blockHello)), silentServerAck+1400, 0x10, nil))
+				r.sweep(10 * time.Second)
+				if kept := r.collected() == 1; kept != c.kept {
+					t.Errorf("%s, %s: the server answered and the address was kept=%v, want %v; every interface, proxy and reuse chain returns on b4's own dial bit 0x%x, so b4's own connections leave by the uplink and their answer says the address is reachable there", kind, c.name, kept, c.kept, config.SelfDialMark)
+				}
+			})
+		}
 	}
 }
 
