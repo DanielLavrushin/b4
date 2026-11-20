@@ -417,7 +417,7 @@ func (w *Worker) connectionSet(matcher *sni.SuffixSet, connKey, srcMac string, i
 				set, held = hold.set, true
 			}
 		}
-		w.tlsCache.DecideHeld(connKey, decision.gen, matcher, srcMac, set, held)
+		w.tlsCache.DecideHeld(connKey, decision.gen, matcher, srcMac, set, held, hold.set)
 	}
 	if set == nil {
 		return nil, "", false
@@ -473,8 +473,12 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	if tcp[13]&0x02 == 0 && vc.telegramSet == nil && w.tlsCache.HasPinned() {
 		if decision, ok := w.tlsCache.Decision(connKey); ok && decision.collectedPinned && matcher.SameConnectionPolicy(decision.decidedBy) && decision.decidedMac == pkt.srcMac {
 			previousKeep := keep
+			pinnedID := decision.priorSet
+			if decision.set != nil {
+				pinnedID = decision.set.Id
+			}
 			keep = func(candidate *config.SetConfig) bool {
-				return decision.set != nil && candidate.Id == decision.set.Id && previousKeep.Keeps(candidate)
+				return pinnedID != "" && candidate.Id == pinnedID && previousKeep.Keeps(candidate)
 			}
 			matched, set, stPrefix = matcher.MatchIPWithSourceDetail(pkt.dst, pkt.srcMac, keep)
 			st = set
@@ -823,7 +827,11 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				matchedLearned = false
 				learnedHost = ""
 			}
-			w.tlsCache.DecideHeld(connKey, helloGen, matcher, pkt.srcMac, decided, heldHello)
+			var prior *config.SetConfig
+			if matched {
+				prior = set
+			}
+			w.tlsCache.DecideHeld(connKey, helloGen, matcher, pkt.srcMac, decided, heldHello, prior)
 		}
 
 		if matched && !matchedSNI && set != nil && !set.MatchesTLSVersion(tlsVersion) {

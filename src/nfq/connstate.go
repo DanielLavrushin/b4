@@ -40,6 +40,7 @@ type tlsInfo struct {
 	decidedBy       *sni.SuffixSet
 	decidedMac      string
 	set             *config.SetConfig
+	priorSet        string
 	heldBy          string
 }
 
@@ -159,10 +160,10 @@ func (c *tlsInfoCache) Decision(connKey string) (tlsInfo, bool) {
 }
 
 func (c *tlsInfoCache) Decide(connKey string, gen uint64, matcher *sni.SuffixSet, srcMac string, set *config.SetConfig) {
-	c.DecideHeld(connKey, gen, matcher, srcMac, set, false)
+	c.DecideHeld(connKey, gen, matcher, srcMac, set, false, nil)
 }
 
-func (c *tlsInfoCache) DecideHeld(connKey string, gen uint64, matcher *sni.SuffixSet, srcMac string, set *config.SetConfig, held bool) {
+func (c *tlsInfoCache) DecideHeld(connKey string, gen uint64, matcher *sni.SuffixSet, srcMac string, set *config.SetConfig, held bool, prior *config.SetConfig) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -173,6 +174,10 @@ func (c *tlsInfoCache) DecideHeld(connKey string, gen uint64, matcher *sni.Suffi
 		info.decidedBy = matcher
 		info.decidedMac = srcMac
 		info.set = set
+		info.priorSet = ""
+		if set == nil && prior != nil {
+			info.priorSet = prior.Id
+		}
 		info.heldBy = ""
 		if held && set != nil {
 			info.heldBy = set.Id
@@ -190,6 +195,7 @@ func (c *tlsInfoCache) ForgetDecisions(current *sni.SuffixSet) {
 		info.decidedBy = nil
 		info.collectedPinned = false
 		info.set = nil
+		info.priorSet = ""
 	}
 }
 
