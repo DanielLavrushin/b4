@@ -1,9 +1,20 @@
 package warmtuple
 
 import (
+	"bufio"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"errors"
+	"fmt"
+	"io"
+	"math/big"
 	"net"
+	"net/http"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -563,5 +574,124 @@ func TestRetryRecoveryAndCloseAtHandoff(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatal("close at handoff deadlocked")
 		}
+	}
+}
+
+func warmTestCA(t *testing.T, host string) (tls.Certificate, *x509.CertPool) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: host}, DNSNames: []string{host},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+		KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IsCA: true, BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := x509.NewCertPool()
+	pool.AddCert(cert)
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: cert}, pool
+}
+
+type tupleConn struct {
+	*net.TCPConn
+	local, remote net.Addr
+}
+
+func (c *tupleConn) LocalAddr() net.Addr  { return c.local }
+func (c *tupleConn) RemoteAddr() net.Addr { return c.remote }
+
+func warmTLSServer(t *testing.T, cert tls.Certificate, status int) string {
+	t.Helper()
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			raw, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_ = raw.SetDeadline(time.Now().Add(5 * time.Second))
+				c := tls.Server(raw, &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS13, NextProtos: []string{"http/1.1"}})
+				defer c.Close()
+				if err := c.Handshake(); err != nil || status == 0 {
+					return
+				}
+				if _, err := http.ReadRequest(bufio.NewReader(c)); err != nil {
+					return
+				}
+				if _, err := fmt.Fprintf(c, "HTTP/1.1 %d test\r\nLocation: https://warm.example.org/\r\nContent-Length: 0\r\n\r\n", status); err != nil {
+					return
+				}
+				_, _ = io.Copy(io.Discard, c)
+			}()
+		}
+	}()
+	t.Cleanup(func() {
+		ln.Close()
+		wg.Wait()
+	})
+	return ln.Addr().String()
+}
+
+func realWarmManager(t *testing.T, server string, roots *x509.CertPool) *Manager {
+	t.Helper()
+	cfg := fixture()
+	cfg.RootCAs = roots
+	m := fakeManager(t, cfg)
+	m.warm = m.warmTLS
+	m.dial = func(ctx context.Context, port uint16, mark uint32) (net.Conn, error) {
+		if mark != cfg.WarmMark {
+			return fakeSocket(t, cfg, port), nil
+		}
+		var d net.Dialer
+		c, err := d.DialContext(ctx, "tcp4", server)
+		if err != nil {
+			return nil, err
+		}
+		return &tupleConn{TCPConn: c.(*net.TCPConn), local: net.TCPAddrFromAddrPort(netip.AddrPortFrom(cfg.Source, port)), remote: net.TCPAddrFromAddrPort(cfg.Target)}, nil
+	}
+	return m
+}
+
+func TestWarmTLSConfigCarriesRoots(t *testing.T) {
+	cert, roots := warmTestCA(t, "warm.example.org")
+	cfg := fixture()
+	cfg.RootCAs = roots
+	cfg.CompactHello = true
+	m := fakeManager(t, cfg)
+	c := m.tlsConfig()
+	if c.ServerName != cfg.Host || c.MinVersion != tls.VersionTLS13 || c.MaxVersion != tls.VersionTLS13 || c.RootCAs == nil || !c.RootCAs.Equal(roots) || c.InsecureSkipVerify {
+		t.Fatalf("the warm's TLS config has ServerName %q, TLS %#x-%#x, roots set=%t, skip verify=%t, want %q, TLS 1.3 only, the configured roots and verification", c.ServerName, c.MinVersion, c.MaxVersion, c.RootCAs != nil, c.InsecureSkipVerify, cfg.Host)
+	}
+	server := warmTLSServer(t, cert, 204)
+	conn, err := realWarmManager(t, server, roots).DialContext(context.Background(), cfg.Host+":443")
+	if err != nil {
+		t.Fatalf("a warm whose server certificate chains to the configured roots failed: %v", err)
+	}
+	conn.Close()
+	_, other := warmTestCA(t, "warm.example.org")
+	if conn, err := realWarmManager(t, server, other).DialContext(context.Background(), cfg.Host+":443"); err == nil || !errors.Is(err, ErrWarm) {
+		if conn != nil {
+			conn.Close()
+		}
+		t.Fatalf("a warm whose server certificate does not chain to the configured roots gave %v, want a failed warm", err)
 	}
 }

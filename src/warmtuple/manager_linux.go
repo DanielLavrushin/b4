@@ -405,21 +405,25 @@ func (m *Manager) dialSocket(ctx context.Context, port uint16, mark uint32) (net
 	return d.DialContext(ctx, network, m.cfg.Target.String())
 }
 
+func (m *Manager) tlsConfig() *tls.Config {
+	c := &tls.Config{
+		ServerName: m.cfg.Host, RootCAs: m.cfg.RootCAs,
+		MinVersion: tls.VersionTLS13, MaxVersion: tls.VersionTLS13,
+		NextProtos: []string{"http/1.1"},
+	}
+	if m.cfg.CompactHello {
+		c.CurvePreferences = []tls.CurveID{tls.X25519}
+	}
+	return c
+}
+
 func (m *Manager) warmTLS(ctx context.Context, raw net.Conn) error {
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := raw.SetDeadline(deadline); err != nil {
 			return err
 		}
 	}
-	tlsConfig := &tls.Config{
-		ServerName: m.cfg.Host, RootCAs: m.cfg.RootCAs,
-		MinVersion: tls.VersionTLS13, MaxVersion: tls.VersionTLS13,
-		NextProtos: []string{"http/1.1"},
-	}
-	if m.cfg.CompactHello {
-		tlsConfig.CurvePreferences = []tls.CurveID{tls.X25519}
-	}
-	c := tls.Client(raw, tlsConfig)
+	c := tls.Client(raw, m.tlsConfig())
 	defer c.Close()
 	if err := c.HandshakeContext(ctx); err != nil {
 		return err
