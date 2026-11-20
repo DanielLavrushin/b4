@@ -2,7 +2,6 @@ package tables
 
 import (
 	"net"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -81,9 +80,6 @@ func kpolBuild(t *testing.T, c kpolCase) *kpolRig {
 	t.Helper()
 	netnsRequire(t)
 	netnsRequireEngine(t, backendIPTables)
-	if _, err := os.Lstat("/proc/thread-self"); err != nil {
-		t.Skip("the uplink servers and the hosts enter their namespaces through /proc/thread-self, which this kernel lacks")
-	}
 	gwKeepSysctl(t, "net/ipv4/ip_forward", "1")
 
 	_, _ = run("ip", "link", "del", kpolLan)

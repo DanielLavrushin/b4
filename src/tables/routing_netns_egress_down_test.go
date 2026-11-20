@@ -3,7 +3,6 @@ package tables
 import (
 	"fmt"
 	"net"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -67,9 +66,6 @@ func egdAnswer(tag string) func(c net.Conn, _ int32) {
 
 func egdStart(t *testing.T, engine string) *egdRig {
 	t.Helper()
-	if _, err := os.Lstat("/proc/thread-self"); err != nil {
-		t.Skip("the uplinks and the LAN client enter their namespaces through /proc/thread-self, which this kernel lacks")
-	}
 	gwKeepSysctl(t, "net/ipv4/ip_forward", "1")
 
 	uplink, main, lan := gwStartNode(t), gwStartNode(t), gwStartNode(t)
