@@ -73,11 +73,11 @@ func NewMonitor(cfgPtr *atomic.Pointer[config.Config], view ...func(*config.Conf
 		startDelay:   monitorStartDelay,
 		ifaceState:   make(map[string]ifaceSnapshot),
 		egressIPHere: make(map[string]bool),
-		linkWatcher:  newLinkWatcher(cfgPtr),
 	}
 	if len(view) > 0 {
 		m.configView = view[0]
 	}
+	m.linkWatcher = newLinkWatcher(cfgPtr, m.configView)
 	m.tickFn = m.tick
 	return m
 }
