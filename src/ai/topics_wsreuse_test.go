@@ -79,8 +79,17 @@ func TestWSReuseAgeTopicStatesTheDefaultAndTheCap(t *testing.T) {
 
 func TestWSReuseTopicSaysAnyHTTPStatusWarms(t *testing.T) {
 	facts := TopicFacts("tcp.wssize_reuse.enabled")
-	if !strings.Contains(facts, "needs a complete HTTP answer, whatever its status") {
-		t.Errorf("tcp.wssize_reuse.enabled does not say that any HTTP status warms: %s", facts)
+	for _, want := range []string{
+		"needs a complete final HTTP answer, whatever its status (interim 1xx answers are read past)",
+		"more data or a reset from the server fails the warm",
+		"a missing TLS close_notify does not",
+	} {
+		if !strings.Contains(facts, want) {
+			t.Errorf("tcp.wssize_reuse.enabled does not say %q: %s", want, facts)
+		}
+	}
+	if strings.Contains(facts, "then a clean TLS and TCP close") {
+		t.Errorf("tcp.wssize_reuse.enabled still asks for a clean TLS close, but a server close without TLS close_notify still warms: %s", facts)
 	}
 	for _, stale := range []string{"204 answer", "another HTTP status"} {
 		if strings.Contains(facts, stale) {

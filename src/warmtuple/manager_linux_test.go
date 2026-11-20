@@ -736,3 +736,97 @@ func TestWarmWithoutAStatusLineFails(t *testing.T) {
 		})
 	}
 }
+
+func warmTLSRecords(t *testing.T, cert tls.Certificate, bareClose bool, records ...string) string {
+	t.Helper()
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			raw, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_ = raw.SetDeadline(time.Now().Add(5 * time.Second))
+				c := tls.Server(raw, &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS13, NextProtos: []string{"http/1.1"}})
+				if bareClose {
+					defer raw.Close()
+				} else {
+					defer c.Close()
+				}
+				if err := c.Handshake(); err != nil {
+					return
+				}
+				if _, err := http.ReadRequest(bufio.NewReader(c)); err != nil {
+					return
+				}
+				for i, record := range records {
+					if i > 0 {
+						time.Sleep(20 * time.Millisecond)
+					}
+					if _, err := io.WriteString(c, record); err != nil {
+						return
+					}
+				}
+				_, _ = io.Copy(io.Discard, c)
+			}()
+		}
+	}()
+	t.Cleanup(func() {
+		ln.Close()
+		wg.Wait()
+	})
+	return ln.Addr().String()
+}
+
+func TestWarmReadsPastInterimAnswers(t *testing.T) {
+	cert, roots := warmTestCA(t, "warm.example.org")
+	hints := "HTTP/1.1 103 Early Hints\r\nLink: </a.css>; rel=preload\r\n\r\n"
+	final := "HTTP/1.1 204 No Content\r\n\r\n"
+	for name, tc := range map[string]struct {
+		records []string
+		warms   bool
+	}{
+		"103 and 204 in one TLS record":         {[]string{hints + final}, true},
+		"103 and 204 in two TLS records":        {[]string{hints, final}, true},
+		"two 103s and 204 in three TLS records": {[]string{hints, hints, final}, true},
+		"100 and 403 in two TLS records":        {[]string{"HTTP/1.1 100 Continue\r\n\r\n", "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n"}, true},
+		"a lone 100 and no final answer":        {[]string{"HTTP/1.1 100 Continue\r\n\r\n"}, false},
+		"103 and a partial final answer":        {[]string{hints, "HTTP/1.1 20"}, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := realWarmManager(t, warmTLSRecords(t, cert, false, tc.records...), roots)
+			c, err := m.DialContext(context.Background(), "warm.example.org:443")
+			if c != nil {
+				defer c.Close()
+			}
+			switch {
+			case tc.warms && (err != nil || !c.(*Conn).Warmed):
+				t.Fatalf("a final HTTP answer after interim ones did not warm: %v", err)
+			case !tc.warms && (c != nil || !errors.Is(err, ErrWarm)):
+				t.Fatalf("interim answers without a final one gave a connection=%t and %v, want a failed warm", c != nil, err)
+			}
+		})
+	}
+}
+
+func TestWarmCountsAServerCloseWithoutCloseNotify(t *testing.T) {
+	cert, roots := warmTestCA(t, "warm.example.org")
+	m := realWarmManager(t, warmTLSRecords(t, cert, true, "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n"), roots)
+	c, err := m.DialContext(context.Background(), "warm.example.org:443")
+	if err != nil {
+		t.Fatalf("a server that answered and closed its TCP side without a TLS close_notify failed the warm: %v", err)
+	}
+	defer c.Close()
+	if !c.(*Conn).Warmed {
+		t.Fatal("a server that answered and closed without a TLS close_notify did not count as a warm")
+	}
+}

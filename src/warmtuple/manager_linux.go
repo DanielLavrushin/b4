@@ -435,7 +435,11 @@ func (m *Manager) warmTLS(ctx context.Context, raw net.Conn) error {
 	if err := req.Write(c); err != nil {
 		return err
 	}
-	resp, err := http.ReadResponse(bufio.NewReader(io.LimitReader(c, 64*1024)), req)
+	answers := bufio.NewReader(io.LimitReader(c, 64*1024))
+	resp, err := http.ReadResponse(answers, req)
+	for err == nil && resp.StatusCode/100 == 1 && resp.StatusCode != http.StatusSwitchingProtocols {
+		resp, err = http.ReadResponse(answers, req)
+	}
 	if err != nil {
 		return err
 	}
