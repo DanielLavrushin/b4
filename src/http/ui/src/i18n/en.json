@@ -2288,7 +2288,7 @@
       "filterL7Stun": "Browsers",
       "filterL7StunDesc": "Calls in browsers, Discord in a browser included, and in other apps that start calls with STUN.",
       "callsWhichUnknownDesc": "This version of b4 does not know this value, so the set selects nothing for it. Choosing an option replaces it.",
-      "filterL7TargetsWarning": "<strong>A set that handles only calls takes no targets:</strong> this set has domains, addresses or categories, so b4 refuses to save it. Remove the targets, or choose another option in Calls.",
+      "filterL7TargetsWarning": "<strong>A set that handles only calls takes no targets:</strong> this set has domains, addresses or categories, or uses collected IPs, so b4 refuses to save it. Remove the targets and turn off Use collected IPs, or choose another option in Calls.",
       "filterL7PortsWarning": "<strong>A set that handles only calls needs a port filter:</strong> b4 sees UDP only on port 443 and on the ports sets list. Enter the ports the calls arrive on, such as <strong>19294-19344,50000-50100</strong> for Discord.",
       "callsUseDiscordPorts": "Use Discord ports",
       "filterL7TcpPortsWarning": "<strong>A set that handles only calls takes no TCP port filter:</strong> with no targets it would act on every TCP connection on those ports, so b4 refuses to save it. Clear the port filter in the TCP tab, or choose another option in Calls.",

@@ -717,7 +717,7 @@ func (c *Config) Validate() error {
 				return v.result()
 			}
 			if set.DeclaresDestinationTargets() {
-				v.add(fmt.Sprintf("sets[%d].udp.filter_l7", setIdx), "conflict", "UDP protocol selection applies to sets without domain, IP, GeoSite, GeoIP or ASN targets", nil)
+				v.add(fmt.Sprintf("sets[%d].udp.filter_l7", setIdx), "conflict", "UDP protocol selection applies to sets without domain, IP, GeoSite, GeoIP, ASN or collected IP targets", nil)
 				return v.result()
 			}
 			if set.TCP.DPortFilter != "" {
