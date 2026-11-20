@@ -368,3 +368,22 @@ func (vc *verdictCtx) handOffReason() string {
 	}
 	return ""
 }
+
+func (vc *verdictCtx) handOffIface() string {
+	if vc.tunnel != "" {
+		return vc.tunnel
+	}
+	return vc.rerouted
+}
+
+func handOffLabel(vc *verdictCtx, set *config.SetConfig, routed, foreign bool) string {
+	if foreign {
+		if iface := vc.handOffIface(); iface != "" && (!routed || iface != set.Routing.EgressInterface) {
+			return vc.handOffReason()
+		}
+	}
+	if routed {
+		return "routed->" + set.Routing.EgressInterface
+	}
+	return ""
+}

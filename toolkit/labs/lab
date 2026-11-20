@@ -31,6 +31,8 @@ usage: lab <command> [arguments]
   status [name]                what is running, on which port
   test <name> [pattern]        build a test binary from the checkout, run it in the instance
   ab <name> [pattern]          the same for the checkout and for its base, then compare
+  ros <name> <command...>      run a RouterOS command on a routeros instance (ssh and the
+                               others reach the b4 container inside it)
 
 test and ab run the netns tests of ./tables/ matching the pattern (default TestNetns).
 LAB_PKG picks another package, LAB_BASE another base than origin/main, and B4_LAB_REPO
@@ -52,10 +54,13 @@ named() {
 
 inst_dir() { echo "$LAB_HOME/instances/$1"; }
 
+inst_kind() {
+	cat "$(inst_dir "$1")/kind" 2>/dev/null || echo cloud
+}
+
 inst_pid() {
 	pidfile="$(inst_dir "$1")/pid"
-	[ -f "$pidfile" ] || return 1
-	pid="$(cat "$pidfile")"
+	pid="$(cat "$pidfile" 2>/dev/null)" || return 1
 	kill -0 "$pid" 2>/dev/null || return 1
 	ps -p "$pid" -o args= 2>/dev/null | grep -qF -- "-name b4-lab-$1 " || return 1
 	echo "$pid"
@@ -83,7 +88,15 @@ load_guest() {
 	GUEST_SEED=nocloud
 	GUEST_GOARCH=amd64
 	GUEST_PROVISION=""
+	GUEST_KIND=cloud
+	PACKAGES_URL=""
+	PACKAGES_SHA256=""
+	CONTAINER_IMAGE=""
 	. "$GUESTS/$1.env"
+}
+
+needs_provision() {
+	[ "$GUEST_KIND" = routeros ] || [ -n "$GUEST_PROVISION" ]
 }
 
 SSH_OPTS="-o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 -o ServerAliveInterval=15"
@@ -118,31 +131,76 @@ ensure_key() {
 	key_ready || die "the lab's ssh key could not be made in $(dirname "$KEY")"
 }
 
-fetch_image() {
-	image="$LAB_HOME/images/$(basename "$IMAGE_URL")"
-	if [ ! -f "$image" ]; then
+fetch_file() {
+	file="$LAB_HOME/images/$(basename "$1")"
+	if [ ! -f "$file" ]; then
 		need curl
 		mkdir -p "$LAB_HOME/images"
-		part="$image.part.$$"
-		echo "lab: downloading $(basename "$IMAGE_URL")" >&2
-		curl -fsSL --retry 3 -o "$part" "$IMAGE_URL" || {
+		part="$file.part.$$"
+		echo "lab: downloading $(basename "$1")" >&2
+		curl -fsSL --retry 3 -o "$part" "$1" || {
 			rm -f "$part"
-			die "could not download $IMAGE_URL"
+			die "could not download $1"
 		}
 		got="$(sha256sum "$part" | cut -d' ' -f1)"
-		if [ "$got" != "$IMAGE_SHA256" ]; then
+		if [ "$got" != "$2" ]; then
 			rm -f "$part"
-			die "checksum of $(basename "$IMAGE_URL") is $got, expected $IMAGE_SHA256"
+			die "checksum of $(basename "$1") is $got, expected $2"
 		fi
-		mv "$part" "$image"
+		mv "$part" "$file"
 	fi
-	echo "$image"
+	echo "$file"
+}
+
+fetch_image() {
+	fetch_file "$IMAGE_URL" "$IMAGE_SHA256"
+}
+
+routeros_files() {
+	need unzip
+	zip="$(fetch_file "$IMAGE_URL" "$IMAGE_SHA256")"
+	base="${zip%.img.zip}.qcow2"
+	if [ ! -f "$base" ]; then
+		raw="$base.raw.$$"
+		unzip -p "$zip" '*.img' > "$raw" && [ -s "$raw" ] || {
+			rm -f "$raw"
+			die "$(basename "$zip") holds no disk image"
+		}
+		qemu-img convert -q -f raw -O qcow2 "$raw" "$base.part.$$" || {
+			rm -f "$raw" "$base.part.$$"
+			die "could not convert $(basename "$zip") to qcow2"
+		}
+		rm -f "$raw"
+		mv "$base.part.$$" "$base"
+	fi
+	packages="$(fetch_file "$PACKAGES_URL" "$PACKAGES_SHA256")"
+	npk="$(routeros_npk)"
+	if [ ! -f "$npk" ]; then
+		unzip -q -o "$packages" "$(basename "$npk")" -d "$LAB_HOME/images" && [ -f "$npk" ] ||
+			die "$(basename "$packages") holds no $(basename "$npk")"
+	fi
+	echo "$base"
+}
+
+routeros_npk() {
+	ver="${PACKAGES_URL##*/all_packages-x86-}"
+	echo "$LAB_HOME/images/container-${ver%.zip}.npk"
+}
+
+port_taken() {
+	ss -ltn 2>/dev/null | grep -q "[:.]$1 "
 }
 
 free_port() {
 	port=22220
-	while ss -ltn 2>/dev/null | grep -q "[:.]$port "; do
-		port=$((port + 1))
+	span="${1:-1}"
+	while :; do
+		i=0
+		while [ "$i" -lt "$span" ] && ! port_taken "$((port + i))"; do
+			i=$((i + 1))
+		done
+		[ "$i" -lt "$span" ] || break
+		port=$((port + i + 1))
 	done
 	echo "$port"
 }
@@ -220,57 +278,224 @@ cmd_up() {
 	fi
 	if ! inst_pid "$name" >/dev/null; then
 		start_guest
-	elif [ -z "$GUEST_PROVISION" ] || [ -f "$dir/provisioned" ]; then
+	elif ! needs_provision || [ -f "$dir/provisioned" ]; then
 		echo "lab: $name is already running, ssh port $(inst_port "$name")"
 		return 0
 	else
 		echo "lab: $name is running but was never provisioned, ssh port $(inst_port "$name")" >&2
 	fi
 	port="$(inst_port "$name")"
+	if [ "$GUEST_KIND" = routeros ] && [ ! -f "$dir/provisioned" ]; then
+		routeros_provision
+	fi
+	ready=true
+	[ "$GUEST_KIND" = routeros ] && ready='test "$(cat /proc/1/comm)" = init'
+	hint="see $dir/console.log"
+	[ "$GUEST_KIND" = routeros ] && hint="lab ros $name '/log print'"
 	tries=0
-	until guest_ssh "$name" true 2>/dev/null; do
+	until guest_ssh "$name" "$ready" 2>/dev/null; do
 		tries=$((tries + 1))
-		[ "$tries" -lt 90 ] || die "$name did not answer ssh in time; see $dir/console.log"
+		[ "$tries" -lt "$(ssh_tries)" ] || die "$name did not answer ssh in time; $hint"
 		inst_pid "$name" >/dev/null || die "$name exited; see $dir/console.log"
 		sleep 2
 	done
 	if [ -n "$GUEST_PROVISION" ] && [ ! -f "$dir/provisioned" ]; then
 		echo "lab: provisioning $name" >&2
 		guest_ssh "$name" 'sh -s' < "$GUESTS/$GUEST_PROVISION"
-		touch "$dir/provisioned"
 	fi
-	echo "lab: $name is up: $(guest_ssh "$name" 'uname -sr'), ssh port $port"
+	needs_provision && touch "$dir/provisioned"
+	if [ "$GUEST_KIND" = routeros ]; then
+		echo "lab: $name is up: $(guest_ssh "$name" 'uname -sr'), ssh port $port into the b4 container, RouterOS ssh $((port + 1)), REST $((port + 2)), b4 web $((port + 3))"
+	else
+		echo "lab: $name is up: $(guest_ssh "$name" 'uname -sr'), ssh port $port"
+	fi
+}
+
+ssh_tries() {
+	if [ "$GUEST_KIND" = routeros ]; then
+		echo 450
+	else
+		echo 90
+	fi
+}
+
+launch_guest() {
+	if [ "$GUEST_KIND" = routeros ]; then
+		qemu-system-x86_64 -name "b4-lab-$name" -machine "accel=$accel" -cpu max \
+			-smp "${LAB_CPUS:-$GUEST_CPUS}" -m "${LAB_MEM:-$GUEST_MEM}" \
+			-display none -serial "file:$dir/console.log" -pidfile "$dir/pid" -daemonize \
+			-drive "file=$dir/disk.qcow2,if=ide,format=qcow2" \
+			-netdev "user,id=n0,hostfwd=tcp:127.0.0.1:$1-:2222,hostfwd=tcp:127.0.0.1:$(($1 + 1))-:22,hostfwd=tcp:127.0.0.1:$(($1 + 2))-:80,hostfwd=tcp:127.0.0.1:$(($1 + 3))-:7000" \
+			-device virtio-net-pci,netdev=n0 \
+			-device virtio-rng-pci 2> "$dir/qemu.err" 8>&-
+	else
+		qemu-system-x86_64 -name "b4-lab-$name" -machine "accel=$accel" -cpu max \
+			-smp "${LAB_CPUS:-$GUEST_CPUS}" -m "${LAB_MEM:-$GUEST_MEM}" \
+			-display none -serial "file:$dir/console.log" -pidfile "$dir/pid" -daemonize \
+			-drive "file=$dir/disk.qcow2,if=virtio,format=qcow2" \
+			-drive "file=$dir/seed.iso,media=cdrom,readonly=on" \
+			-netdev "user,id=n0,hostfwd=tcp:127.0.0.1:$1-:22" -device virtio-net-pci,netdev=n0 \
+			-device virtio-rng-pci 2> "$dir/qemu.err" 8>&-
+	fi
 }
 
 start_guest() {
 	ensure_key
-	image="$(fetch_image)"
+	if [ "$GUEST_KIND" = routeros ]; then
+		image="$(routeros_files)"
+		span=4
+	else
+		image="$(fetch_image)"
+		span=1
+	fi
 	mkdir -p "$dir"
 	echo "$GUEST_USER" > "$dir/user"
 	echo "$guest" > "$dir/guest"
+	echo "$GUEST_KIND" > "$dir/kind"
 	[ -f "$dir/disk.qcow2" ] || qemu-img create -q -f qcow2 -b "$image" -F qcow2 "$dir/disk.qcow2" "$GUEST_DISK"
-	[ -f "$dir/seed.iso" ] || make_seed "$dir" "$name"
-	port="$(free_port)"
+	[ "$GUEST_KIND" = routeros ] || [ -f "$dir/seed.iso" ] || make_seed "$dir" "$name"
+	port="$(free_port "$span")"
 	accel=tcg
 	[ -w /dev/kvm ] && accel=kvm
 	tries=0
-	until qemu-system-x86_64 -name "b4-lab-$name" -machine "accel=$accel" -cpu max \
-		-smp "${LAB_CPUS:-$GUEST_CPUS}" -m "${LAB_MEM:-$GUEST_MEM}" \
-		-display none -serial "file:$dir/console.log" -pidfile "$dir/pid" -daemonize \
-		-drive "file=$dir/disk.qcow2,if=virtio,format=qcow2" \
-		-drive "file=$dir/seed.iso,media=cdrom,readonly=on" \
-		-netdev "user,id=n0,hostfwd=tcp:127.0.0.1:$port-:22" -device virtio-net-pci,netdev=n0 \
-		-device virtio-rng-pci 2> "$dir/qemu.err" 8>&-; do
+	until launch_guest "$port"; do
 		tries=$((tries + 1))
 		if [ "$tries" -ge 20 ] || ! grep -q 'host forwarding' "$dir/qemu.err"; then
 			cat "$dir/qemu.err" >&2
 			die "qemu did not start $name"
 		fi
-		port=$((port + 1))
+		port=$((port + span))
 	done
 	cat "$dir/qemu.err" >&2
 	echo "$port" > "$dir/port"
 	echo "lab: $name starting ($accel), waiting for ssh on port $port" >&2
+}
+
+ros_rest() {
+	r_method="$1"
+	r_path="$2"
+	shift 2
+	curl -fsS --max-time "${ROS_REST_TIMEOUT:-60}" -u admin: -X "$r_method" \
+		-H 'Content-Type: application/json' "$@" "http://127.0.0.1:$(($(inst_port "$name") + 2))/rest$r_path"
+}
+
+ros_wait_rest() {
+	w_tries=0
+	until ros_rest GET /system/resource > /dev/null 2>&1; do
+		w_tries=$((w_tries + 1))
+		[ "$w_tries" -lt 150 ] || return 1
+		inst_pid "$name" >/dev/null || return 1
+		sleep 2
+	done
+}
+
+ros_id() {
+	ros_rest GET "$1?$2" | sed -n 's/^\[{"\.id":"\([^"]*\)".*/\1/p'
+}
+
+json_text() {
+	sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e "s/$(printf '\t')/\\\\t/g" | awk '{ printf "%s\\n", $0 }'
+}
+
+ros_put_file() {
+	p_contents="$(json_text < "$2")"
+	p_id="$(ros_id /file "name=$1")"
+	if [ -n "$p_id" ]; then
+		ros_rest PATCH "/file/$p_id" -d "{\"contents\":\"$p_contents\"}" > /dev/null
+	else
+		ros_rest PUT /file -d "{\"name\":\"$1\",\"contents\":\"$p_contents\"}" > /dev/null
+	fi
+}
+
+ros_ensure() {
+	[ -n "$(ros_id "$1" "$2")" ] && return 0
+	ros_rest PUT "$1" -d "$3" > /dev/null || die "RouterOS refused to add $1 $3"
+}
+
+routeros_power_cycle() {
+	pid="$(inst_pid "$name")" && kill "$pid"
+	c_tries=0
+	while inst_pid "$name" >/dev/null; do
+		c_tries=$((c_tries + 1))
+		[ "$c_tries" -lt 30 ] || die "$name did not stop for its power cycle"
+		sleep 1
+	done
+	accel=tcg
+	[ -w /dev/kvm ] && accel=kvm
+	port="$(inst_port "$name")"
+	r_tries=0
+	until launch_guest "$port"; do
+		r_tries=$((r_tries + 1))
+		if [ "$r_tries" -ge 20 ] || ! grep -q 'host forwarding' "$dir/qemu.err"; then
+			cat "$dir/qemu.err" >&2
+			die "qemu did not start $name again after its power cycle"
+		fi
+		port="$(free_port 4)"
+	done
+	echo "$port" > "$dir/port"
+}
+
+routeros_provision() {
+	need curl
+	need scp
+	echo "lab: setting up RouterOS in $name" >&2
+	ros_wait_rest || die "RouterOS in $name did not answer on its REST port; see $dir/console.log"
+	if ! ros_rest GET /user/ssh-keys | grep -q 'b4-lab'; then
+		ros_put_file lab_id.pub "$KEY.pub"
+		ros_rest POST /user/ssh-keys/import -d '{"public-key-file":"lab_id.pub","user":"admin"}' > /dev/null ||
+			die "RouterOS in $name refused the lab's ssh key"
+	fi
+	if ! ros_rest GET /system/package | grep -q '"name":"container"'; then
+		echo "lab: installing the container package" >&2
+		scp -q -O -i "$KEY" $SSH_OPTS -P "$((port + 1))" "$(routeros_npk)" admin@127.0.0.1:/ ||
+			die "could not copy the container package into $name"
+		ros_rest POST /system/reboot -d '{}' > /dev/null 2>&1 || true
+		sleep 10
+		ros_wait_rest || die "RouterOS in $name did not come back after installing the container package"
+		ros_rest GET /system/package | grep -q '"name":"container"' ||
+			die "the container package did not install in $name"
+	fi
+	if ! ros_rest GET /system/device-mode | grep -q '"container":"true"'; then
+		echo "lab: turning on container mode, which takes a power cycle" >&2
+		(
+			ROS_REST_TIMEOUT=600
+			ros_rest POST /system/device-mode/update -d '{"container":"yes"}' > /dev/null 2>&1
+		) 8>&- &
+		sleep 5
+		routeros_power_cycle
+		ros_wait_rest || die "RouterOS in $name did not come back after its power cycle"
+		ros_rest GET /system/device-mode | grep -q '"container":"true"' ||
+			die "container mode did not turn on in $name"
+	fi
+	echo "lab: setting up the container network and the b4 container" >&2
+	ros_ensure /interface/veth name=lab-b4 '{"name":"lab-b4","address":"172.17.0.2/24","gateway":"172.17.0.1"}'
+	ros_ensure /interface/bridge name=lab-bridge '{"name":"lab-bridge"}'
+	ros_ensure /interface/bridge/port interface=lab-b4 '{"bridge":"lab-bridge","interface":"lab-b4"}'
+	ros_ensure /ip/address interface=lab-bridge '{"address":"172.17.0.1/24","interface":"lab-bridge"}'
+	ros_ensure /ip/firewall/nat comment=lab-masq '{"chain":"srcnat","src-address":"172.17.0.0/24","out-interface":"ether1","action":"masquerade","comment":"lab-masq"}'
+	ros_ensure /ip/firewall/nat comment=lab-ssh '{"chain":"dstnat","in-interface":"ether1","protocol":"tcp","dst-port":"2222","action":"dst-nat","to-addresses":"172.17.0.2","to-ports":"22","comment":"lab-ssh"}'
+	ros_ensure /ip/firewall/nat comment=lab-web '{"chain":"dstnat","in-interface":"ether1","protocol":"tcp","dst-port":"7000","action":"dst-nat","to-addresses":"172.17.0.2","to-ports":"7000","comment":"lab-web"}'
+	ros_rest POST /container/config/set -d '{"registry-url":"https://registry-1.docker.io","tmpdir":"lab-pull"}' > /dev/null ||
+		die "RouterOS in $name refused the container registry settings"
+	ros_ensure /file name=b4lab '{"name":"b4lab","type":"directory"}'
+	ros_put_file b4lab/entry.sh "$GUESTS/routeros-entry.sh"
+	ros_put_file b4lab/authorized_keys "$KEY.pub"
+	[ -f "$dir/env" ] || printf 'LAB_ROS_FIREWALL=%s\n' "${LAB_ROS_FIREWALL:-legacy}" > "$dir/env"
+	ros_put_file b4lab/env "$dir/env"
+	ros_ensure /container name=b4 "{\"name\":\"b4\",\"remote-image\":\"$CONTAINER_IMAGE\",\"interface\":\"lab-b4\",\"root-dir\":\"lab-root\",\"mount\":\"/b4lab:/lab:rw\",\"entrypoint\":\"/bin/sh\",\"cmd\":\"/lab/entry.sh\",\"tmpfs\":\"/tmp:100M:01777\",\"logging\":\"yes\",\"start-on-boot\":\"yes\"}"
+	c_id="$(ros_id /container name=b4)"
+	[ -n "$c_id" ] || die "the b4 container is missing in $name"
+	echo "lab: pulling $CONTAINER_IMAGE into $name" >&2
+	c_tries=0
+	while ros_rest GET "/container/$c_id" | grep -q '"downloading/extracting":"true"'; do
+		c_tries=$((c_tries + 1))
+		[ "$c_tries" -lt 600 ] || die "RouterOS in $name did not finish pulling $CONTAINER_IMAGE; lab ros $name '/log print'"
+		sleep 2
+	done
+	if ! ros_rest GET "/container/$c_id" | grep -q '"running":"true"'; then
+		ros_rest POST /container/start -d "{\".id\":\"$c_id\"}" > /dev/null ||
+			die "RouterOS in $name did not start the b4 container; lab ros $name '/log print'"
+	fi
 }
 
 cmd_run() {
@@ -323,9 +548,13 @@ cmd_down() {
 	[ -n "$name" ] || die "usage: lab down <name>"
 	named "$name"
 	if pid="$(inst_pid "$name")"; then
-		guest_ssh "$name" 'poweroff' 2>/dev/null || true
+		if [ "$(inst_kind "$name")" = routeros ]; then
+			ros_rest POST /system/shutdown -d '{}' > /dev/null 2>&1 || true
+		else
+			guest_ssh "$name" 'poweroff' 2>/dev/null || true
+		fi
 		tries=0
-		while inst_pid "$name" >/dev/null && [ "$tries" -lt 20 ]; do
+		while inst_pid "$name" >/dev/null && [ "$tries" -lt 60 ]; do
 			sleep 1
 			tries=$((tries + 1))
 		done
@@ -359,6 +588,16 @@ cmd_status() {
 	else
 		echo "$name: stopped"
 	fi
+}
+
+cmd_ros() {
+	name="${1:-}"
+	[ "$#" -ge 2 ] || die "usage: lab ros <name> <command...>"
+	named "$name"
+	running "$name"
+	[ "$(inst_kind "$name")" = routeros ] || die "$name runs the guest $(cat "$(inst_dir "$name")/guest"), not RouterOS"
+	shift
+	ssh -i "$KEY" $SSH_OPTS -p "$(($(inst_port "$name") + 1))" admin@127.0.0.1 "$*"
 }
 
 test_guest() {
@@ -551,6 +790,7 @@ destroy) cmd_destroy "$@" ;;
 status) cmd_status "$@" ;;
 test) cmd_test "$@" ;;
 ab) cmd_ab "$@" ;;
+ros) cmd_ros "$@" ;;
 help | -h | --help) usage ;;
 *)
 	usage >&2

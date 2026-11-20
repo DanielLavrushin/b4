@@ -4,6 +4,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -56,7 +57,12 @@ func netnsRouteGet(args ...string) string {
 
 func netnsDummy(t *testing.T, name, addr string) {
 	t.Helper()
-	netnsIP(t, "link", "add", name, "type", "dummy")
+	if out, err := exec.Command("ip", "link", "add", name, "type", "dummy").CombinedOutput(); err != nil {
+		if vout, verr := exec.Command("ip", "link", "add", name, "type", "veth", "peer", "name", name+"p").CombinedOutput(); verr != nil {
+			t.Fatalf("ip link add %s: type dummy: %v (%s); type veth: %v (%s)", name, err, strings.TrimSpace(string(out)), verr, strings.TrimSpace(string(vout)))
+		}
+		netnsIP(t, "link", "set", name+"p", "up")
+	}
 	t.Cleanup(func() { exec.Command("ip", "link", "del", name).Run() })
 	if addr != "" {
 		netnsIP(t, "addr", "add", addr, "dev", name)
@@ -64,14 +70,40 @@ func netnsDummy(t *testing.T, name, addr string) {
 	netnsIP(t, "link", "set", name, "up")
 }
 
+func netnsLocalRulePrios(t *testing.T) []string {
+	t.Helper()
+	var prios []string
+	for _, line := range strings.Split(netnsIP(t, "rule", "show"), "\n") {
+		f := strings.Fields(line)
+		if len(f) == 5 && f[1] == "from" && f[2] == "all" && f[3] == "lookup" && f[4] == "local" {
+			prios = append(prios, strings.TrimSuffix(f[0], ":"))
+		}
+	}
+	return prios
+}
+
 func netnsMoveLocalRule(t *testing.T, prio int) {
 	t.Helper()
 	p := strconv.Itoa(prio)
-	netnsIP(t, "rule", "add", "priority", p, "lookup", "local")
-	netnsIP(t, "rule", "del", "priority", "0", "lookup", "local")
+	was := netnsLocalRulePrios(t)
+	if len(was) == 1 && was[0] == p {
+		return
+	}
+	if !slices.Contains(was, p) {
+		netnsIP(t, "rule", "add", "priority", p, "lookup", "local")
+	}
+	for _, old := range was {
+		if old != p {
+			netnsIP(t, "rule", "del", "priority", old, "lookup", "local")
+		}
+	}
 	t.Cleanup(func() {
-		exec.Command("ip", "rule", "add", "priority", "0", "lookup", "local").Run()
-		exec.Command("ip", "rule", "del", "priority", p, "lookup", "local").Run()
+		for _, old := range was {
+			exec.Command("ip", "rule", "add", "priority", old, "lookup", "local").Run()
+		}
+		if !slices.Contains(was, p) {
+			exec.Command("ip", "rule", "del", "priority", p, "lookup", "local").Run()
+		}
 	})
 }
 
@@ -98,9 +130,7 @@ func TestNetnsSteeredPacketsForThisDeviceStayLocal(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			netnsDummy(t, "b4lan0", "192.0.2.1/24")
 			netnsDummy(t, "b4cap0", "")
-			if tc.localPrio != 0 {
-				netnsMoveLocalRule(t, tc.localPrio)
-			}
+			netnsMoveLocalRule(t, tc.localPrio)
 
 			r := &routeManager{tunName: "b4cap0", captureTable: 96, quit: make(chan struct{})}
 			if err := r.setupCaptureTable(); err != nil {

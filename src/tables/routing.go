@@ -2322,12 +2322,17 @@ func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
 		if !routeIfaceWasSeen(iface) {
 			routeDelRuleAllForms(mark, tableStr)
 			routeApplyKillSwitch(st, false, ipv4, ipv6)
-			log.Warnf("Routing: set '%s' routes to %s, which has never appeared on this router (%v), so b4 installs no rule for it. A blackhole ends a route lookup instead of falling through, and arming one for an interface that was never there would drop every address the set matches", st.setID, iface, err)
+			log.Warnf("Routing: set '%s' routes to %s, which has never appeared on this router (%v), so b4 installs no rule for it. A blackhole ends a route lookup instead of falling through, and arming one for an interface that was never there would drop every address the set matches", routeStateSetName(st), iface, err)
 			return
 		}
 		addRules()
-		routeApplyKillSwitch(st, routeTableWantsKillSwitch(st), ipv4, ipv6)
-		log.Warnf("Routing: set '%s' routes to %s, which has gone away (%v); the set keeps its rule so it stops rather than leaves by the ordinary uplink, and starts again when the interface returns", st.setID, iface, err)
+		killSwitch := routeTableWantsKillSwitch(st)
+		routeApplyKillSwitch(st, killSwitch, ipv4, ipv6)
+		if killSwitch {
+			log.Warnf("Routing: set '%s' routes to %s, which has gone away (%v); the kill switch drops the set's traffic until the interface returns", routeStateSetName(st), iface, err)
+		} else {
+			log.Warnf("Routing: set '%s' routes to %s, which has gone away (%v); without a kill switch the set's traffic leaves by the ordinary uplink until the interface returns, and goes through %s again once b4 sees it come back", routeStateSetName(st), iface, err, iface)
+		}
 		return
 	}
 
@@ -2351,6 +2356,13 @@ func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
 
 	addRules()
 	routeApplyKillSwitch(st, routeTableWantsKillSwitch(st), ipv4, ipv6)
+}
+
+func routeStateSetName(st routeState) string {
+	if st.set != nil && st.set.Name != "" {
+		return st.set.Name
+	}
+	return st.setID
 }
 
 var routeIfaceSeen = make(map[string]bool)
@@ -2391,11 +2403,15 @@ func routeIPSupportsProtoExec() bool {
 		if !hasBinary("ip") {
 			return
 		}
-		if _, err := run("ip", "route", "show", "table", "12345", "proto", routeProtoID); err == nil {
-			routeProtoOK = true
+		if version, err := run("ip", "-V"); err != nil || !strings.Contains(version, "iproute2") {
+			log.Infof("Routing: the ip command here is not iproute2 and cannot list a route's protocol, so b4 does not mark the routes it owns; a routing table another service already uses is recognised by its interface alone")
 			return
 		}
-		log.Infof("Routing: this iproute2 does not understand route protocols, so b4 cannot mark the routes it owns; a routing table another service already uses is recognised by its interface alone")
+		if _, err := run("ip", "route", "show", "table", "main", "proto", routeProtoID); err != nil {
+			log.Infof("Routing: this iproute2 does not understand route protocols, so b4 cannot mark the routes it owns; a routing table another service already uses is recognised by its interface alone")
+			return
+		}
+		routeProtoOK = true
 	})
 	return routeProtoOK
 }
