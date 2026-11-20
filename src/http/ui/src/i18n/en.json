@@ -4114,7 +4114,7 @@
     "invalid_dns_server": "\"{{value}}\" is not a DNS server Discovery can use: an IP address with an optional port, udp://, tcp://, tcp+udp:// or an https:// URL",
     "required": "This field is required",
     "udp_l7_ports": "A set that handles only calls needs a UDP port filter, because b4 sees UDP only on port 443 and on the ports sets list. Enter the ports in the UDP tab, such as 19294-19344,50000-50100 for Discord, or choose another option in Calls.",
-    "udp_l7_targets": "A set that handles only calls takes no targets. Remove the domains, addresses, ASNs and categories in the Targets tab, or choose another option in Calls on the UDP tab.",
+    "udp_l7_targets": "A set that handles only calls takes no targets. Remove the domains, addresses, ASNs and categories and turn off Use collected IPs in the Targets tab, or choose another option in Calls on the UDP tab.",
     "udp_l7_tcp_ports": "A set that handles only calls takes no TCP port filter: with no targets it would act on every TCP connection on those ports. Clear the port filter in the TCP tab, or choose another option in Calls on the UDP tab.",
     "tls_pair_required": "Both TLS certificate and key must be specified together",
     "file_not_found": "File not found: {{path}}",
