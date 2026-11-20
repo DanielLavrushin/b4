@@ -198,3 +198,43 @@ func TestAConnectionKeepsItsSetAcrossASaveAndALaterCollectedPublish(t *testing.T
 		})
 	}
 }
+
+func TestALearnedSetThatTakesAListedAddressKeepsTheConnectionAcrossASaveAndAPublish(t *testing.T) {
+	const unlisted = "unlisted.example.net"
+	for _, save := range []bool{false, true} {
+		name := "without a save"
+		if save {
+			name = "with a save"
+		}
+		t.Run(name, func(t *testing.T) {
+			listing := newPassiveSet()
+			listing.Id, listing.Name = "listing", "listing"
+			listing.Targets.DomainOnly = false
+			listing.Targets.DomainsToMatch = nil
+			listing.Targets.IpsToMatch = []string{"1.2.3.4"}
+			learner := newFragmentingYTImagesSet()
+			learner.Id, learner.Name = "learner", "learner"
+			learner.Targets.DomainOnly = false
+			w := newInjectingWorker(t, &listing, &learner)
+			idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
+			stubInjectRoute(t, idx["eth7"], true)
+			queuedVerdict(t, w, makeV4TCPPacketFromPort(buildClientHello("i.ytimg.com", 16, 0xAB), 1000, 12346, 0x18), nil, idx["eth7"], 0)
+			hello := buildClientHello(unlisted, 16, 0xAB)
+			if v := queuedVerdict(t, w, pinnedHello(unlisted), nil, idx["eth7"], 0); v != nfqueue.NfDrop {
+				t.Fatalf("setup: the first ClientHello got verdict %d, want the learned set's drop", v)
+			}
+			if save {
+				saveSets(w, nil)
+			}
+			data := makeV4TCPPacket(tlsAppData(100), 1000+uint32(len(hello)))
+			if v := queuedVerdict(t, w, data, nil, idx["eth7"], 0); v != nfqueue.NfDrop {
+				t.Fatalf("setup: the data packet got verdict %d, want the learned set's drop", v)
+			}
+			publishCollectedMatcher(t, w, nil)
+			if v := queuedVerdict(t, w, pinnedHello(unlisted), nil, idx["eth7"], 0); v != nfqueue.NfDrop {
+				d, _ := w.tlsCache.Decision(pinnedConnKey)
+				t.Errorf("%s: a resent ClientHello got verdict %d after a collected publish, want the learned set's drop as before it (recorded set %q); the set that lists the address without IP priority never had the connection", name, v, d.priorSet)
+			}
+		})
+	}
+}

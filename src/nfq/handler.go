@@ -419,7 +419,7 @@ func (w *Worker) connectionSet(matcher *sni.SuffixSet, connKey, srcMac string, i
 			}
 		}
 		w.tlsCache.DecideHeld(connKey, decision.gen, matcher, srcMac, set, held, hold.set)
-		if set == nil && hold.set == nil {
+		if set == nil {
 			unnamed = decision.gen
 		}
 	}
