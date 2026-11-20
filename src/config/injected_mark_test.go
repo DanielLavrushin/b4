@@ -78,6 +78,60 @@ func TestDiscoveryMarksWithTUNReservedBitsAreWarnedAboutNotRefused(t *testing.T)
 	}
 }
 
+func TestDiscoveryMarksWithoutRouteBitsAreWarnedAbout(t *testing.T) {
+	buf := captureValidationWarnings(t)
+	routeBitsWarnedMarks.Store(0)
+	t.Cleanup(func() { routeBitsWarnedMarks.Store(0) })
+	const warning = "has no bit under 0x27fff"
+
+	validate := func(mode string, flow, injected uint) {
+		t.Helper()
+		cfg := NewConfig()
+		cfg.Queue.Mode = mode
+		cfg.System.Checker.DiscoveryFlowMark = flow
+		cfg.System.Checker.DiscoveryInjectedMark = injected
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("mode %q, Discovery marks 0x%x/0x%x must load: %v", mode, flow, injected, err)
+		}
+	}
+
+	validate("tun", 0x100000, 0x200000)
+	validate("tun", 0x100000, 0x200000)
+	validate("nfqueue", 0x18000, 0x100002)
+	if n := strings.Count(buf.String(), warning); n != 2 {
+		t.Fatalf("each pair with a mark that has no bit under 0x27fff is warned about once, got %d warnings:\n%s", n, buf.String())
+	}
+
+	buf.Reset()
+	validate("tun", 0, 0)
+	validate("tun", 0x100001, 0x100002)
+	if strings.Contains(buf.String(), warning) {
+		t.Fatalf("the derived marks and marks with a bit under 0x27fff must not warn:\n%s", buf.String())
+	}
+}
+
+func TestRouteMarkReservedCoversTheQueueAndDiscoveryMarksSetBits(t *testing.T) {
+	cfg := NewConfig()
+	for mark, want := range map[uint32]bool{0: false, 0x1: true, 0x2: true, 0x3: false, 0x8000: false} {
+		if got := cfg.RouteMarkReserved(mark); got != want {
+			t.Errorf("default marks (queue 0x8000, Discovery 0x8001/0x8002): RouteMarkReserved(0x%x) = %v, want %v", mark, got, want)
+		}
+	}
+	cfg.Queue.Mark = 0x8100
+	if !cfg.RouteMarkReserved(0x100) {
+		t.Error("the queue mark's bits under 0x27fff stay reserved")
+	}
+	set := NewSetConfig()
+	set.Routing.FWMark = 0x101
+	if got := cfg.RoutingMarkPin(&set); got != 0 {
+		t.Errorf("queue mark 0x8100 derives flow mark 0x8101, so pin 0x101 must be dropped, got 0x%x", got)
+	}
+	set.Routing.FWMark = 0x104
+	if got := cfg.RoutingMarkPin(&set); got != 0x104 {
+		t.Errorf("a pin clear of the queue and Discovery marks must be kept, got 0x%x", got)
+	}
+}
+
 func TestAQueueMarkWithTheInjectedBitIsKeptAndWarnedAboutOnce(t *testing.T) {
 	buf := captureValidationWarnings(t)
 	const warning = "has bit 0x2000000"

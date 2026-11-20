@@ -311,11 +311,11 @@ Sets that agree on all four share both.
 
 | Item | Value |
 | --- | --- |
-| Mark | From a hash of the four, in `0x100`-`0x7eff` and never equal to the queue mark's bits under `0x27fff`; if every hashed candidate is taken, counted up from `0x66` instead |
+| Mark | From a hash of the four, in `0x100`-`0x7eff` and never equal to the bits under `0x27fff` of the queue mark or of either Discovery mark; if every hashed candidate is taken, counted up from `0x66` instead |
 | Table | `100`-`249`, skipping tables named in `rt_tables`, looked up by another service's rule, or holding routes b4 did not add |
 | Rule | `ip rule add fwmark <mark>/0x27fff lookup <table> priority <10000 + table>`, for IPv4, and for IPv6 when **Enable IPv6 Support** is on |
 | Table contents | A default route through the interface, via the set's [gateway](../internals/routing.md#gateway) in the gateway's address family when b4 can use it, plus `blackhole default metric 4096` with the [kill switch](../sets/routing.md#kill-switch) |
-| Pinned values | `routing.fwmark` and `routing.table` in the configuration file or through the API, used only when both are set, the mark lies within `0x27fff`, is not `0x24bab`, does not contain every bit of the queue mark and does not equal its bits under `0x27fff` |
+| Pinned values | `routing.fwmark` and `routing.table` in the configuration file or through the API, used only when both are set, the mark lies within `0x27fff`, is not `0x24bab`, does not contain every bit of the queue mark and does not equal the bits under `0x27fff` of the queue mark or of either Discovery mark |
 
 The set marks the first packet of each connection to its destinations and saves the mark in
 the connection mark, with bit `0x40000000` as b4's claim. Later packets of that connection
@@ -382,7 +382,7 @@ port.
 
 | Item | Value |
 | --- | --- |
-| Mark | `0x20000`-`0x27dff`, from a hash of the set's ID, or the value after it when the hash equals the queue mark's bits under `0x27fff`; `routing.fwmark` replaces it when it lies within `0x27fff`, is not `0x24bab` and does not equal the queue mark's bits under `0x27fff` |
+| Mark | `0x20000`-`0x27dff`, from a hash of the set's ID, or the next free value when the hash equals the bits under `0x27fff` of the queue mark or of either Discovery mark; `routing.fwmark` replaces it when it lies within `0x27fff`, is not `0x24bab` and equals none of those bits |
 | Telegram over WebSocket switch | `0x24bab`, port `13443` |
 | Listener port | `13000 + mark % 50000` |
 | Rule, priority 3 | `fwmark <mark>/0x27fff lookup 252`, for IPv4, and for IPv6 when **Enable IPv6 Support** is on; table 252 holds `local default dev lo` and is shared by every proxy set. When 252 belongs to another service, b4 takes 251, 250, then 300-399 |
@@ -540,7 +540,10 @@ packets Discovery sends carry the injected mark, the queue mark plus 2. Both are
 whole 32-bit values. They are set by `system.checker.discovery_flow_mark` and
 `system.checker.discovery_injected_mark` in the configuration file. Under the TUN engine a run
 does not start while either mark has a bit of `0x70000000`, the marks TUN reserves for its own
-packets, and b4 logs a warning when it loads or saves such marks in TUN mode. The default values have bits under `0x27fff`, so no routing set routes Discovery's traffic. The rules below exist
+packets, and b4 logs a warning when it loads or saves such marks in TUN mode. A routing set leaves a packet alone when its mark has a bit under `0x27fff`, and no set gets a
+mark equal to either Discovery mark's bits under `0x27fff`, so with the default values no
+routing set routes Discovery's traffic. b4 logs a warning for Discovery marks without a bit
+under `0x27fff`. The rules below exist
 while a run is active, including runs the watchdog or the MCP server start. Which of them a
 run gets follows the engine b4 is running, not the saved `queue.mode`.
 
