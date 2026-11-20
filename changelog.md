@@ -6,7 +6,8 @@ All notable changes to b4 are recorded in this file.
 
 ### Added
 
-- A **Telegram set** under **Telegram upstream (shared)** takes b4's own connections to Telegram, the CF proxy domains included: its strategy, or its interface or proxy route; **Create a Telegram set** adds one. [#615](https://github.com/DanielLavrushin/b4/issues/615)
+- A **Telegram set** under **Telegram upstream (shared)** takes b4's own connections to Telegram, the CF proxy domains included: its strategy, or its interface or proxy route; **Create a Telegram set** adds one, and a **Telegram set** badge marks it on the **Sets** page. [#615](https://github.com/DanielLavrushin/b4/issues/615), [#640](https://github.com/DanielLavrushin/b4/issues/640)
+- **Let sets process CF proxy connections** under **Telegram upstream (shared)** lets a set covering the CF proxy domains or a custom WebSocket domain process b4's connections to them, in TUN mode too, and **DPI processing now** shows what handles each route. [#639](https://github.com/DanielLavrushin/b4/issues/639)
 - After an **Update** or **Upload** on the **Geo Databases** page, the card lists the sets with categories that match nothing in the new file, and the set editor marks a category absent from the file in red with the reason on hover. [#620](https://github.com/DanielLavrushin/b4/issues/620)
 - **Discovery** and the watchdog's heals run under the TUN engine, routers without NFQUEUE included. Under TUN they test IPv4 only, skip strategies with **Incoming Mode** or **RST Injection Protection**, and cannot test a set with its own DSCP value. [#528](https://github.com/DanielLavrushin/b4/issues/528)
 
@@ -21,6 +22,7 @@ All notable changes to b4 are recorded in this file.
 - A set added or changed through the API by a script, not in the web interface, could start sending fake packets nobody had turned on, and changing just one setting this way wiped the set's name and targets. [#527](https://github.com/DanielLavrushin/b4/issues/527)
 - When the interface a set routes to went away, the log said the set's traffic would not leave by the normal uplink, although without **Kill switch** it did.
 - A connection of a set routed into a tunnel such as WireGuard was logged as `routed->` on the **Logs** page even when it left by another interface, as for a KeeneticOS device in an internet access policy.
+- With **Let sets process Worker connections** on, b4's connection to the Cloudflare Worker broke when a set routed through an interface held the Worker's address.
 
 ## [1.92.0] - 2026-11-17
 

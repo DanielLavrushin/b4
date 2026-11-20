@@ -40,6 +40,7 @@ import {
 } from "@common/useChangeDialog";
 import { B4Config, B4SetConfig, SystemConfig } from "@models/config";
 import { dscpEnvironment } from "@utils";
+import { telegramSetId, telegramSetProblem } from "@models/telegramSet";
 import { DiscoveryTab } from "./DiscoveryTab";
 import { EscalationSettings } from "./Escalation";
 import { ImportExportSettings } from "./ImportExport";
@@ -47,6 +48,7 @@ import { ShareEnvelope } from "./ShareEnvelope";
 import { SetStats } from "./Manager";
 import { RoutingSettings, ROUTING_SUB_TABS } from "./Routing";
 import { TargetSettings, TARGET_SUB_TABS } from "./Target";
+import { TelegramSetNote } from "./targets/TelegramSetNote";
 import { TcpTabContainer, TCP_SUB_TABS } from "./tcp/TcpTabContainer";
 import { UdpSettings } from "./Udp";
 import { FAKING_ACCORDIONS } from "./tcp/TcpFaking";
@@ -228,6 +230,16 @@ export const SetEditorPage = ({
     if (editedId) map.set(editedId, editedName || editedId);
     return map;
   }, [config.sets, editedId, editedName]);
+  const telegramId = telegramSetId(config);
+  const telegramState = useMemo(() => {
+    if (!editedSet || isNew || telegramId !== editedSet.id) return undefined;
+    const sets = (config.sets ?? []).map((item) => {
+      const nested = item as unknown as { set?: B4SetConfig };
+      const set = nested.set ?? item;
+      return set.id === editedSet.id ? editedSet : set;
+    });
+    return { problem: telegramSetProblem({ ...config, sets }) };
+  }, [config, editedSet, isNew, telegramId]);
   const dialogsOpen = showDiscardDialog || blocker.state === "blocked";
   const tabSubDefs = useMemo(
     () => [
@@ -391,16 +403,21 @@ export const SetEditorPage = ({
       {/* Tab Content */}
       <Box sx={{ flex: 1, overflow: "auto", pb: 2, pr: 1, scrollbarGutter: "stable" }}>
         <B4TabPanel value={activeTab} index={TAB_INDEX.targets} idPrefix="set-tab" sx={{ pt: 3 }}>
-          <TargetSettings
-            initialSub={requestedSub}
-            geo={settings.geo}
-            config={editedSet}
-            stats={stats}
-            otherSetsTargets={otherSetsTargets}
-            ipv4={config.queue.ipv4}
-            ipv6={config.queue.ipv6}
-            onChange={handleChange}
-          />
+          <Stack spacing={3}>
+            {telegramState && (
+              <TelegramSetNote set={editedSet} problem={telegramState.problem} />
+            )}
+            <TargetSettings
+              initialSub={requestedSub}
+              geo={settings.geo}
+              config={editedSet}
+              stats={stats}
+              otherSetsTargets={otherSetsTargets}
+              ipv4={config.queue.ipv4}
+              ipv6={config.queue.ipv6}
+              onChange={handleChange}
+            />
+          </Stack>
         </B4TabPanel>
 
         <B4TabPanel value={activeTab} index={TAB_INDEX.tcp} idPrefix="set-tab" sx={{ pt: 3 }}>

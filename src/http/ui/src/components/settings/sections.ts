@@ -212,6 +212,8 @@ export const SETTINGS_DIALOG_SUB_DEFS: DialogSubDef[] = [
           "system.mtproto.dc_relay",
           "system.mtproto.cfworker_domain",
           "system.mtproto.cfworker_dpi",
+          "system.mtproto.cfproxy_dpi",
+          "system.mtproto.upstream_set",
           "system.mtproto.ws_custom_domain",
           "system.mtproto.ws_endpoint_host",
           "system.mtproto.ws_front_sni",

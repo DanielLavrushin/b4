@@ -1,6 +1,6 @@
 ---
 name: b4-lab
-description: Test a b4 change on another kernel or userland in a QEMU guest from toolkit/labs - which rung a question belongs on (namespace tests, a lab guest, a test box), starting a guest, running the netns tests there against main (lab test, lab ab), running the real binary, reading the results, adding a guest, and what a lab cannot prove. Use when a change adds, deletes or reorders ip rules, routes or firewall rules and has to hold on old kernels or an old iptables, when asked for a smoke test without a real router, when a report names a kernel or an iptables version the development machine does not have, when a question is about b4 in a MikroTik RouterOS container (the routeros guest: RouterOS CHR with the community b4 container), and before saying that a kernel-version case cannot be tested.
+description: Test a b4 change on another kernel or userland in a QEMU guest from toolkit/labs - which rung a question belongs on (namespace tests, a lab guest, a test box), starting a guest, running the netns tests there against main (lab test, lab ab), running the real binary, reading the results, adding a guest, and what a lab cannot prove. Use when a change adds, deletes or reorders ip rules, routes or firewall rules and has to hold on old kernels or an old iptables, when asked for a smoke test without a real router, when a report names a kernel or an iptables version the development machine does not have, when a question is about b4 in a MikroTik RouterOS container (the routeros guest: RouterOS CHR with the community b4 container), when a question is about b4's TUN engine on a router without NFQUEUE or with a vendor userland such as the Xiaomi BE7000 (the be7000 guests: that firmware's root filesystem on an arm64 5.4 kernel), and before saying that a kernel-version case cannot be tested.
 argument-hint: "<guest> [test pattern]"
 ---
 
@@ -28,6 +28,8 @@ another.
 | `debian8` | 3.16 | iptables 1.4.21, iproute2 3.16, ipset 6.23 | `ip rule add` takes an identical rule a second time. No `/proc/thread-self` |
 | `debian9` | 4.9 | iptables 1.6.0, iproute2 4.9, ipset 6.30 | `ip rule add` refuses a duplicate with `File exists` |
 | `routeros` | 5.6.3, RouterOS 7.25.1 CHR | The MikroTik community b4 container, iptables 1.8.13 legacy, iproute2 | Every new netns starts with `local` at 200; no `dummy`, `macvlan`, `vlan`, `gre` links; no iptables `socket` match or `TPROXY` target; no `/proc/net/nf_conntrack` |
+| `be7000` | 5.4 arm64 (emulated) | Xiaomi BE7000 stock firmware 1.1.16 root filesystem as a chroot: iptables 1.6.2 legacy, BusyBox 1.25.1, iproute2 5.11, musl | Only the firmware's netfilter modules, so no `xt_NFQUEUE`, `xt_hashlimit`, `ip6table_raw`; the vendor MARK target (`--set-mark-return`, 16-byte rules) through a matching `xt_mark`; no `/proc/net/nf_conntrack` in the guest kernel, unlike the router |
+| `be7000-noconnbytes` | as `be7000` | as `be7000` | No `xt_connbytes`, so the TUN engine takes the whole default route |
 
 On `debian8` and `debian9`, `ip rule del fwmark V lookup T` without a mask deletes a rule stored as `V/<mask>`,
 `nft` is not installed (tests of the nftables backend skip or fail), and `iptables-legacy` is
@@ -78,6 +80,20 @@ minutes with KVM (`toolkit/labs/README.md`, "The RouterOS guest").
   Discovery and the watchdog can run end to end there, slowly, through the internet.
 - It is CHR on x86 and the container image is a third-party build: a result there is about
   RouterOS's kernel and the image, not about an ARM router's hardware.
+
+## The BE7000 guest
+
+For a question about b4 on a TUN-only router with a vendor userland: the Xiaomi BE7000 stock
+firmware's root filesystem in a chroot on an arm64 5.4 kernel (`toolkit/labs/README.md`, "The
+BE7000 guest"). `lab test` and `lab ab` run the tests inside the chroot, so they call the
+firmware's iptables 1.6.2 and BusyBox; `LAB_PKG=./tun/` is the package that matters there.
+Run b4 with `scripts/b4-netns.sh --root /xiaomi`, built with `GOARCH=arm64`.
+
+- The CPU is emulated: the first `lab up` takes a long while, and a run is slow.
+- `be7000-noconnbytes` is the same guest without `xt_connbytes`, where the TUN engine takes the
+  whole default route.
+- It cannot show Qualcomm's other kernel patches, the NSS/ECM offload or Xiaomi's own services
+  and their firewall reloads. A result that depends on those needs a real box.
 
 ## Run the real binary
 

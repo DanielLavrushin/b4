@@ -84,6 +84,59 @@ func TestNetnsPacketsB4InjectsIntoItsTelegramConnectionsAreNotQueuedAgain(t *tes
 	}
 }
 
+func TestNetnsARelayDialSkipsTheQueueOnlyWithTheNoDPIMark(t *testing.T) {
+	for _, engineName := range []string{backendIPTables, backendNFTables} {
+		t.Run(engineName, func(t *testing.T) {
+			netnsRequire(t)
+			if engineName == backendNFTables && !hasBinary("nft") {
+				t.Skip("nft is not installed")
+			}
+			netnsDNSQueryLinks(t)
+
+			routeEngine = nil
+			defer func() { routeEngine = nil }()
+
+			cfg := netnsConfig(engineName)
+			cfg.Sets = nil
+			if err := AddRules(cfg); err != nil {
+				t.Fatalf("AddRules: %v", err)
+			}
+			defer func() { _ = ClearRules(cfg) }()
+
+			probes := []struct {
+				sport  int
+				mark   uint32
+				what   string
+				queued bool
+			}{
+				{41481, config.SelfDialRelayMark, "b4's own dial to a Cloudflare relay that no set may process", false},
+				{41482, config.SelfDialMark, "b4's own dial to a Cloudflare relay that sets may process", true},
+			}
+			snapshot, stop := netnsConntrackQueueListener(t, uint16(cfg.Queue.StartNum))
+			for _, p := range probes {
+				netnsSendRawMarkedUDP(t, p.sport, 443, p.mark)
+			}
+			time.Sleep(300 * time.Millisecond)
+			stop()
+
+			seen := map[int]int{}
+			for _, p := range snapshot() {
+				if p.dport == 443 {
+					seen[int(p.sport)]++
+				}
+			}
+			for _, p := range probes {
+				switch n := seen[p.sport]; {
+				case p.queued && n == 0:
+					t.Errorf("%s (0x%x) never reached the queue; with cfproxy_dpi or cfworker_dpi on, a set covering the relay must be able to process it", p.what, p.mark)
+				case !p.queued && n > 0:
+					t.Errorf("%s (0x%x) was queued %d time(s); the no-DPI mark keeps a set covering Cloudflare from breaking the relay", p.what, p.mark, n)
+				}
+			}
+		})
+	}
+}
+
 func netnsSendMarkedUDP(t *testing.T, srcPort, dstPort int, mark int) {
 	t.Helper()
 	d := net.Dialer{

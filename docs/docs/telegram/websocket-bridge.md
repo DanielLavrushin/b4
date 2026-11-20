@@ -75,10 +75,10 @@ Connections from devices reach the bridge untouched: no faking, fragmentation or
 | Route | DPI processing |
 | --- | --- |
 | Telegram's WebSocket edge, direct TCP to a data centre | An ordinary set whose targets match applies its DPI settings |
-| Cloudflare-proxied domains, a custom WebSocket domain | None. No set applies its DPI settings |
+| Cloudflare-proxied domains, a custom WebSocket domain | None, unless **Let sets process CF proxy connections** is on |
 | A Cloudflare Worker | None, unless **Let sets process Worker connections** is on |
 
-A set that covers Cloudflare for other sites therefore leaves these routes alone, apart from the Worker while that switch is on. With a [Telegram set](./upstream.md#telegram-set) chosen, no other set applies its DPI settings to these routes: a Telegram set without routing applies its strategy, to the Worker only while that switch is on, and one with routing carries them on its route without a strategy. A set in the **Telegram over WebSocket (built-in)** mode, unless it is limited by an included source-device list, leaves the bridge's connections to its targets unmodified.
+A set that covers Cloudflare for other sites therefore leaves these routes alone while their switch is off. With a switch on, a set that covers the route by address or by name handles it like a device's connection, in TUN mode too, but no set routes it. The **DPI processing now** lines on the [Telegram upstream](./upstream.md) card show what applies to each route. While a [Telegram set](./upstream.md#telegram-set) applies, no other set applies its DPI settings to these routes: a Telegram set without routing applies its strategy, to the Worker only while **Let sets process Worker connections** is on, and one with routing carries them on its route without a strategy. All these routes connect to port 443, and a Telegram set whose TCP port filter leaves out that port applies its strategy to none of them. A set in the **Telegram over WebSocket (built-in)** mode, unless it is limited by an included source-device list, leaves the bridge's connections to its targets unmodified.
 
 ### Connections the bridge passes on
 

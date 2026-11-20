@@ -6195,6 +6195,9 @@
                 "bridge_wait_sec": {
                     "type": "integer"
                 },
+                "cfproxy_dpi": {
+                    "type": "boolean"
+                },
                 "cfproxy_enabled": {
                     "description": "enable Cloudflare-proxied fallback WS domains (rescues DCs the network blocks)",
                     "type": "boolean"

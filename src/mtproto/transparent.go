@@ -134,6 +134,7 @@ func NewTransparentBridge(cfg *config.Config) *TransparentBridge {
 	}
 	b.cfg.Store(cfg)
 	setWorkerFollowsSets(cfg)
+	setCFProxyFollowsSets(cfg)
 	setTelegramSet(cfg)
 	liveBridge.Store(b)
 	return b
@@ -142,6 +143,7 @@ func NewTransparentBridge(cfg *config.Config) *TransparentBridge {
 func (b *TransparentBridge) UpdateConfig(newCfg *config.Config) {
 	old := b.cfg.Swap(newCfg)
 	setWorkerFollowsSets(newCfg)
+	setCFProxyFollowsSets(newCfg)
 	setTelegramSet(newCfg)
 	if old != nil &&
 		old.System.MTProto.CFWorkerDomain == newCfg.System.MTProto.CFWorkerDomain &&

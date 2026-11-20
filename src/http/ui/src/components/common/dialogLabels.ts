@@ -80,6 +80,7 @@ const LABEL_EXCEPTIONS: Record<string, string> = {
   "system.memory_limit": "settings.Service.memoryLimit",
   "system.mtproto.bind_address": "settings.Listener.bindAddress",
   "system.mtproto.bridge.enabled": "settings.TelegramBridge.title",
+  "system.mtproto.cfproxy_dpi": "settings.MTProto.cfProxyDpi",
   "system.mtproto.cfproxy_enabled": "settings.MTProto.cfProxyEnabled",
   "system.mtproto.cfproxy_url": "settings.MTProto.cfProxyURL",
   "system.mtproto.cfworker_domain": "settings.MTProto.cfWorkerDomain",

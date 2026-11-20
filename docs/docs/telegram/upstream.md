@@ -42,7 +42,7 @@ Telegram over WebSocket always uses **Auto (WebSocket → TCP)** and never the D
 | The handshake with Telegram's own edge is dropped for its names, while its address is reachable | A [fronting name](#fronting-name-for-the-ws-edge) |
 | Telegram's own edge does not answer at its default address | Another address in [Telegram WS edge IP](#telegram-ws-edge-ip) |
 | Direct TCP and the WebSocket routes are all blocked | A [DC Relay](./dc-relay.md) |
-| The CF proxy domains are blocked, while a set's strategy gets other sites through | A [Telegram set](#telegram-set) with that strategy |
+| The CF proxy domains are blocked, while a set's strategy gets other sites through | A [Telegram set](#telegram-set) with that strategy; in TUN mode, **Let sets process CF proxy connections** with that set covering Cloudflare |
 
 The log lines that identify each case are under [Telegram problems](./troubleshooting.md).
 
@@ -60,7 +60,8 @@ lists them; those it sends directly go through the Telegram set. With **No set**
 
 A set without routing applies its strategy to these connections on the ports b4 processes, 443
 and those in the sets' TCP port filters, within its own TCP port filter when it has one, so a
-DC Relay on other ports gets no strategy. It
+DC Relay on other ports gets no strategy. Its other target filters, such as the TLS version
+filter, do not apply to these connections. It
 applies to the Worker connections only while **Let sets process Worker connections** is on. A set routed through an
 interface carries them on that interface's route, and a proxy set through its upstream; neither
 applies its strategy to them. With **Send domain name to upstream** on, the default, the upstream
@@ -75,10 +76,22 @@ new path.
 and selects it. Both are saved with **Save Changes**. The set's strategy is edited on the
 **Sets** page like any set's.
 
+On the **Sets** page the chosen set's card carries a **Telegram set** badge, which opens this
+card. While the set applies, a Telegram set without targets reads **b4's own Telegram
+connections** where other cards list their targets, followed by its port filters when it has
+any. The set's **Targets** tab repeats this in a note. Targets are optional:
+domains and addresses added to the set make it handle devices' connections to them as well,
+like any set, and do not change how it handles b4's own connections. A TCP port filter on a set
+without targets also makes it handle devices' TCP connections on those ports that no other set
+claims.
+
 The set applies while it is enabled, its routing is complete and b4 runs in NFQUEUE mode. A
 block set or a Telegram over WebSocket set cannot be chosen. When one of these does not hold,
-the card says why and the connections go as they would without a set. They do the same while
-the set's route is not in place, for example right after a change. When the route fails later,
+the card says why, the badge on the Sets page names the reason, and the connections go as
+they would without a set. They do the same while
+the set's route is not in place, for example right after a change. Without a set, and in TUN mode, the
+Cloudflare routes follow **Let sets process CF proxy connections** and **Let sets process
+Worker connections**, see [DPI processing](./websocket-bridge.md#dpi-processing). When the route fails later,
 the set's own settings decide: the **Kill switch** of an interface set, **Fall back to direct on
 upstream failure** of a proxy set. The connections to the fake SNI website stay outside the set.
 
