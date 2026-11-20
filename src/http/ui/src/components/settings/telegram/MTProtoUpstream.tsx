@@ -28,6 +28,11 @@ import { SettingsPropHandlerType } from "@models/settings";
 import { mtprotoApi } from "@api/mtproto";
 import { MTProtoRelayHelpDialog } from "./MTProtoRelayHelpDialog";
 import { MTProtoProbeResults, type ProbeRow } from "./MTProtoProbeResults";
+import {
+  MTProtoUpstreamSet,
+  telegramSetRoutes,
+  telegramSetUsable,
+} from "./MTProtoUpstreamSet";
 
 type RefreshResult =
   | {
@@ -89,6 +94,7 @@ export const MTProtoUpstreamCard = ({
   );
   const [probeRows, setProbeRows] = useState<ProbeRow[] | null>(null);
   const [probeInterrupted, setProbeInterrupted] = useState(false);
+  const [probeWithoutSet, setProbeWithoutSet] = useState(false);
   const [wsTestError, setWsTestError] = useState<string | null>(null);
   const probeAbort = useRef<AbortController | null>(null);
 
@@ -103,6 +109,11 @@ export const MTProtoUpstreamCard = ({
       (s) =>
         s.enabled && s.routing?.enabled && s.routing.mode === "mtproto-ws",
     );
+  const showWorkerDpi =
+    (mtproto?.cfworker_domain || "").trim() !== "" &&
+    !telegramSetRoutes(config);
+  const hasEdgeOverride =
+    !!mtproto?.ws_endpoint_host || !!mtproto?.ws_front_sni;
   const showDcRelay =
     !!dcRelay || mode === "tcp" || mode === "auto" || bridgeInUse;
 
@@ -172,6 +183,7 @@ export const MTProtoUpstreamCard = ({
     setWsTesting(which);
     setProbeRows(null);
     setProbeInterrupted(false);
+    setProbeWithoutSet(false);
     setWsTestError(null);
     try {
       const finished = await mtprotoApi.probeTransports(
@@ -181,14 +193,17 @@ export const MTProtoUpstreamCard = ({
           ws_endpoint_host: mtproto?.ws_endpoint_host || "",
           cfworker_domain: mtproto?.cfworker_domain || "",
           cfproxy_enabled: mtproto?.cfproxy_enabled ?? true,
+          upstream_set: mtproto?.upstream_set ?? "",
           dc: PROBE_DC,
           ...overrides,
         },
         {
-          onPlan: (routes) =>
+          onPlan: (routes, telegramSet) => {
+            setProbeWithoutSet(telegramSetUsable(config) && telegramSet === "");
             setProbeRows(
               routes.map((transport) => ({ transport, status: "queued" })),
-            ),
+            );
+          },
           onStart: (index) =>
             setProbeRows((rows) =>
               updateProbeRow(rows, index, { status: "testing" }),
@@ -278,6 +293,9 @@ export const MTProtoUpstreamCard = ({
           </Grid>
         )}
         <Grid size={{ xs: 12 }}>
+          <MTProtoUpstreamSet config={config} onChange={onChange} />
+        </Grid>
+        <Grid size={{ xs: 12 }}>
           <B4TextField
             value={mtproto?.cfworker_domain || ""}
             path="system.mtproto.cfworker_domain"
@@ -317,7 +335,7 @@ export const MTProtoUpstreamCard = ({
             }}
           />
         </Grid>
-        {(mtproto?.cfworker_domain || "").trim() !== "" && (
+        {showWorkerDpi && (
           <Grid size={{ xs: 12 }}>
             <B4Switch
               checked={mtproto?.cfworker_dpi ?? false}
@@ -329,7 +347,7 @@ export const MTProtoUpstreamCard = ({
             />
           </Grid>
         )}
-        <Grid size={{ xs: 12, md: 6 }}>
+        <Grid size={{ xs: 12 }}>
           <B4TextField
             value={mtproto?.ws_custom_domain || ""}
             path="system.mtproto.ws_custom_domain"
@@ -344,42 +362,6 @@ export const MTProtoUpstreamCard = ({
             }}
             placeholder="your-domain.com"
             helperText={t("settings.MTProto.wsCustomDomainHelp")}
-            selectOnFocus
-          />
-        </Grid>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4TextField
-            value={mtproto?.ws_endpoint_host || ""}
-            path="system.mtproto.ws_endpoint_host"
-            onChange={(e) =>
-              onChange("system.mtproto.ws_endpoint_host", e.target.value)
-            }
-            onBlur={(e) => {
-              const cleaned = normalizeHost(e.target.value);
-              if (cleaned !== e.target.value) {
-                onChange("system.mtproto.ws_endpoint_host", cleaned);
-              }
-            }}
-            placeholder="149.154.167.220"
-            helperText={t("settings.MTProto.wsEndpointHostHelp")}
-            selectOnFocus
-          />
-        </Grid>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4TextField
-            value={mtproto?.ws_front_sni || ""}
-            path="system.mtproto.ws_front_sni"
-            onChange={(e) =>
-              onChange("system.mtproto.ws_front_sni", e.target.value)
-            }
-            onBlur={(e) => {
-              const cleaned = normalizeHost(e.target.value);
-              if (cleaned !== e.target.value) {
-                onChange("system.mtproto.ws_front_sni", cleaned);
-              }
-            }}
-            placeholder="sprinthost.ru"
-            helperText={t("settings.MTProto.wsFrontSniHelp")}
             selectOnFocus
           />
         </Grid>
@@ -442,6 +424,50 @@ export const MTProtoUpstreamCard = ({
         </Stack>
       </B4Accordion>
 
+      <B4Accordion
+        title={t("settings.MTProto.advanced")}
+        defaultExpanded={hasEdgeOverride}
+      >
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <B4TextField
+              value={mtproto?.ws_endpoint_host || ""}
+              path="system.mtproto.ws_endpoint_host"
+              onChange={(e) =>
+                onChange("system.mtproto.ws_endpoint_host", e.target.value)
+              }
+              onBlur={(e) => {
+                const cleaned = normalizeHost(e.target.value);
+                if (cleaned !== e.target.value) {
+                  onChange("system.mtproto.ws_endpoint_host", cleaned);
+                }
+              }}
+              placeholder="149.154.167.220"
+              helperText={t("settings.MTProto.wsEndpointHostHelp")}
+              selectOnFocus
+            />
+          </Grid>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <B4TextField
+              value={mtproto?.ws_front_sni || ""}
+              path="system.mtproto.ws_front_sni"
+              onChange={(e) =>
+                onChange("system.mtproto.ws_front_sni", e.target.value)
+              }
+              onBlur={(e) => {
+                const cleaned = normalizeHost(e.target.value);
+                if (cleaned !== e.target.value) {
+                  onChange("system.mtproto.ws_front_sni", cleaned);
+                }
+              }}
+              placeholder="sprinthost.ru"
+              helperText={t("settings.MTProto.wsFrontSniHelp")}
+              selectOnFocus
+            />
+          </Grid>
+        </Grid>
+      </B4Accordion>
+
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
         <Stack direction="row" spacing={1}>
           <Button
@@ -485,6 +511,11 @@ export const MTProtoUpstreamCard = ({
         {probeInterrupted && (
           <B4Alert severity="warning">
             {t("settings.MTProto.testInterrupted")}
+          </B4Alert>
+        )}
+        {probeWithoutSet && (
+          <B4Alert severity="info">
+            {t("settings.MTProto.testWithoutTelegramSet")}
           </B4Alert>
         )}
         {probeRows && (

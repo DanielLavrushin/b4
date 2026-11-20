@@ -1410,7 +1410,7 @@ func TestRoutingMarkPinDropsAPinEqualToTheQueueMarksSetBits(t *testing.T) {
 		pin, want uint32
 	}{
 		{0x100, 0},
-		{0x101, 0x101},
+		{0x104, 0x104},
 		{TelegramBridgeMark, TelegramBridgeMark},
 		{0, 0},
 	} {

@@ -23,8 +23,41 @@ env:
   BINARY_NAME: b4
 
 jobs:
+  preflight:
+    name: Check Changelog
+    runs-on: ubuntu-latest
+    outputs:
+      changelog: ${{ steps.read_changelog.outputs.changelog }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Read Changelog
+        id: read_changelog
+        env:
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          BASE=$(printf '%s' "$VERSION" | sed -E 's/-?(alpha|beta|rc|dev).*$//')
+          block() { awk -v h="## [$1]" 'index($0, "## [") == 1 { if (found) exit; if (index($0, h) == 1) found = 1 } found { print }' changelog.md; }
+          CHANGELOG=$(block "$BASE")
+          if [ -z "$CHANGELOG" ] && { [ "$BASE" != "$VERSION" ] || [ "$PRERELEASE" = "true" ]; }; then
+            CHANGELOG=$(block Unreleased | sed "1s/.*/## [$VERSION] (pre-release)/")
+          fi
+          if [ -z "$CHANGELOG" ]; then
+            echo "::error::changelog.md has no '## [$BASE]' block; rename [Unreleased] to it in changelog.md and changelog_ru.md before releasing"
+            exit 1
+          fi
+          echo "Using changelog block: $(printf '%s\n' "$CHANGELOG" | head -n 1)"
+          DELIM="CHANGELOG_$(openssl rand -hex 8)"
+          {
+            echo "changelog<<$DELIM"
+            printf '%s\n' "$CHANGELOG"
+            echo "$DELIM"
+          } >> "$GITHUB_OUTPUT"
+
   build-ui:
     name: Build UI
+    needs: preflight
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -93,6 +126,7 @@ jobs:
 
   hub-test:
     name: Run Hub Tests
+    needs: preflight
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -167,7 +201,7 @@ jobs:
 
   release:
     name: Create Release
-    needs: build-linux
+    needs: [preflight, build-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -197,20 +231,6 @@ jobs:
           echo "📦 Release artifacts:"
           ls -la
 
-      - name: Read Changelog
-        id: read_changelog
-        run: |
-          BASE=$(printf '%s' "$VERSION" | sed -E 's/-?(alpha|beta|rc|dev).*$//')
-          CHANGELOG=$(awk -v h="## [$BASE]" 'index($0, "## [") == 1 { if (found) exit; if (index($0, h) == 1) found = 1 } found { print }' changelog.md)
-          if [ -z "$CHANGELOG" ]; then
-            echo "::error::changelog.md has no '## [$BASE]' block; rename [Unreleased] to it in changelog.md and changelog_ru.md before releasing"
-            exit 1
-          fi
-          echo "Using changelog block: $(printf '%s\n' "$CHANGELOG" | head -n 1)"
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGELOG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
@@ -218,7 +238,7 @@ jobs:
           name: v${{ env.VERSION }}
           draft: ${{ inputs.draft }}
           prerelease: ${{ inputs.prerelease }}
-          body: ${{ steps.read_changelog.outputs.changelog }}
+          body: ${{ needs.preflight.outputs.changelog }}
           files: |
             release-assets/*.tar.gz
             release-assets/*.tar.gz.sha256

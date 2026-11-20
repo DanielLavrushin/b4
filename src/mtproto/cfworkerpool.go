@@ -70,6 +70,7 @@ func (p *cfWorkerPool) get(pl transportPlan) *wsConn {
 	}
 	k := planWorkerKey(pl)
 	now := time.Now()
+	mark := workerDialMark(p.mark)
 
 	p.mu.Lock()
 	bucket := p.idle[k]
@@ -80,7 +81,7 @@ func (p *cfWorkerPool) get(pl transportPlan) *wsConn {
 		if e.expiry != nil {
 			e.expiry.Stop()
 		}
-		if e.conn.closed.Load() || now.Sub(e.created) > cfWorkerPoolMaxAge || !e.conn.alive() {
+		if e.conn.closed.Load() || now.Sub(e.created) > cfWorkerPoolMaxAge || e.conn.mark != mark || !e.conn.alive() {
 			go func(c *wsConn) { _ = c.Close() }(e.conn)
 			continue
 		}

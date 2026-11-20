@@ -21,12 +21,15 @@ func nonOKStatusNote(result CheckResult) string {
 }
 
 func (ds *DiscoverySuite) testPresetInternal(preset ConfigPreset) CheckResult {
+	if ds.skipOnCarrier(preset) {
+		return carrierSkipped(ds.Domain)
+	}
 	log.DiscoveryLogf("  Testing '%s'...", preset.Name)
 
 	di := DomainInput{Domain: ds.Domain, CheckURL: ds.CheckURL}
 	testConfig := ds.buildTestConfig(preset)
 
-	if err := ds.pool.UpdateConfig(testConfig); err != nil {
+	if err := ds.applyPoolConfig(testConfig); err != nil {
 		log.DiscoveryLogf("    → FAILED (config error: %v)", err)
 		return CheckResult{
 			Domain: ds.Domain,
@@ -108,13 +111,22 @@ func (ds *DiscoverySuite) presetDomains(preset ConfigPreset) []DomainInput {
 
 func (ds *DiscoverySuite) testPresetAllDomains(preset ConfigPreset) map[string]CheckResult {
 	domains := ds.presetDomains(preset)
-	log.DiscoveryLogf("  Testing '%s' across %d domains...", preset.Name, len(domains))
-
 	results := make(map[string]CheckResult)
+	if ds.skipOnCarrier(preset) {
+		for _, di := range domains {
+			results[di.Domain] = carrierSkipped(di.Domain)
+		}
+		ds.CheckSuite.mu.Lock()
+		ds.CompletedChecks += len(domains)
+		ds.SkippedChecks += len(domains)
+		ds.CheckSuite.mu.Unlock()
+		return results
+	}
+	log.DiscoveryLogf("  Testing '%s' across %d domains...", preset.Name, len(domains))
 
 	testConfig := ds.buildTestConfigMulti(preset)
 
-	if err := ds.pool.UpdateConfig(testConfig); err != nil {
+	if err := ds.applyPoolConfig(testConfig); err != nil {
 		log.DiscoveryLogf("    → FAILED (config error: %v)", err)
 		for _, di := range domains {
 			results[di.Domain] = CheckResult{

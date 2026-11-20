@@ -990,6 +990,7 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "A field a set in \"sets\" leaves out takes its set default.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2089,7 +2090,7 @@
                         }
                     },
                     "400": {
-                        "description": "reserved_host, no_urls, too_many_urls, bad_dns_server, bad_pin or note_too_long",
+                        "description": "routed_set, reserved_host, no_urls, too_many_urls, bad_dns_server, bad_pin or note_too_long",
                         "schema": {
                             "$ref": "#/definitions/handler.APIError"
                         }
@@ -2101,7 +2102,7 @@
                         }
                     },
                     "409": {
-                        "description": "dscp_rules_pending while b4 is still applying its DSCP rules; another run in progress answers in plain text",
+                        "description": "dscp_rules_pending while b4 is still applying its DSCP rules; under the TUN engine tun_carrier_unavailable while the engine cannot carry the probes, ipv6_unsupported_tun for a run that asks for IPv6, dscp_unsupported_tun for a set with its own DSCP value; another run in progress answers in plain text",
                         "schema": {
                             "$ref": "#/definitions/handler.APIError"
                         }
@@ -3910,7 +3911,7 @@
                 "summary": "Probe MTProto upstream transports",
                 "parameters": [
                     {
-                        "description": "optional overrides: upstream_mode, ws_custom_domain, ws_endpoint_host, cfworker_domain, cfproxy_enabled, dc_relay, dc",
+                        "description": "optional overrides: upstream_mode, ws_custom_domain, ws_endpoint_host, cfworker_domain, cfproxy_enabled, dc_relay, upstream_set, dc",
                         "name": "body",
                         "in": "body",
                         "schema": {
@@ -4089,6 +4090,7 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "A field the body leaves out takes its set default, the value a new set gets in the web interface. A set created without \"enabled\" is enabled.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4356,7 +4358,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "When the body carries the \"revision\" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before.",
+                "description": "The body replaces the whole set. It must carry \"name\", \"enabled\" and \"targets\", otherwise the write is refused with 400 validation_failed and the set is left as it was. Any other field the body leaves out takes its set default, not the value the set had. When the body carries the \"revision\" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4390,6 +4392,12 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handler.SetWithRevision"
+                        }
+                    },
+                    "400": {
+                        "description": "code: validation_failed",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
                         }
                     },
                     "404": {
@@ -6248,6 +6256,9 @@
                     "type": "integer"
                 },
                 "upstream_mode": {
+                    "type": "string"
+                },
+                "upstream_set": {
                     "type": "string"
                 },
                 "web_proxy": {

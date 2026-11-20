@@ -148,6 +148,7 @@ func (ds *DiscoverySuite) RunDiscovery() {
 		}
 	}
 
+	ds.seedCarrierAddresses()
 	ds.probeECH()
 
 	if ds.interrupted() {

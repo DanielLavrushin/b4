@@ -158,16 +158,37 @@ var (
 	routeStaticApplied  = make(map[string]routeStaticEntries)
 	routeJumpOrderKey   string
 	routeMarksByIface   atomic.Pointer[map[string][]uint32]
+	routeSetRoutes      atomic.Pointer[map[string]SetRoute]
 )
+
+type SetRoute struct {
+	Mode        string
+	Mark        uint32
+	IPv4        bool
+	IPv6        bool
+	RuleMissing bool
+}
 
 func routePublishMarksLocked() {
 	marks := make(map[string][]uint32)
-	for _, st := range routeRuleCache {
+	routes := make(map[string]SetRoute, len(routeRuleCache))
+	for id, st := range routeRuleCache {
 		if st.mode == config.RoutingModeInterface && st.iface != "" && st.mark != 0 {
 			marks[st.iface] = append(marks[st.iface], st.mark)
 		}
+		routes[id] = SetRoute{Mode: st.mode, Mark: st.mark, IPv4: st.ipv4, IPv6: st.ipv6, RuleMissing: st.mode == config.RoutingModeInterface && st.iface != "" && !routeIfaceSeen[st.iface]}
 	}
 	routeMarksByIface.Store(&marks)
+	routeSetRoutes.Store(&routes)
+}
+
+func RoutingSetRoute(setID string) (SetRoute, bool) {
+	p := routeSetRoutes.Load()
+	if p == nil {
+		return SetRoute{}, false
+	}
+	route, ok := (*p)[setID]
+	return route, ok
 }
 
 func RoutedIfaceMarks(iface string) []uint32 {
@@ -1448,7 +1469,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 			routeWarnIncomplete(set, "routing mode is 'proxy' but the upstream port is not set")
 			continue
 		}
-		if len(set.Targets.IpsToMatch) == 0 && len(set.Targets.DomainsToMatch) == 0 && !set.RoutesUDPByPort() {
+		if len(set.Targets.IpsToMatch) == 0 && len(set.Targets.DomainsToMatch) == 0 && !set.RoutesUDPByPort() && !cfg.IsTelegramUpstreamSet(set) {
 			routeWarnNoDestination(set)
 			continue
 		}
@@ -2301,12 +2322,17 @@ func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
 		if !routeIfaceWasSeen(iface) {
 			routeDelRuleAllForms(mark, tableStr)
 			routeApplyKillSwitch(st, false, ipv4, ipv6)
-			log.Warnf("Routing: set '%s' routes to %s, which has never appeared on this router (%v), so b4 installs no rule for it. A blackhole ends a route lookup instead of falling through, and arming one for an interface that was never there would drop every address the set matches", st.setID, iface, err)
+			log.Warnf("Routing: set '%s' routes to %s, which has never appeared on this router (%v), so b4 installs no rule for it. A blackhole ends a route lookup instead of falling through, and arming one for an interface that was never there would drop every address the set matches", routeStateSetName(st), iface, err)
 			return
 		}
 		addRules()
-		routeApplyKillSwitch(st, routeTableWantsKillSwitch(st), ipv4, ipv6)
-		log.Warnf("Routing: set '%s' routes to %s, which has gone away (%v); the set keeps its rule so it stops rather than leaves by the ordinary uplink, and starts again when the interface returns", st.setID, iface, err)
+		killSwitch := routeTableWantsKillSwitch(st)
+		routeApplyKillSwitch(st, killSwitch, ipv4, ipv6)
+		if killSwitch {
+			log.Warnf("Routing: set '%s' routes to %s, which has gone away (%v); the kill switch drops the set's traffic until the interface returns", routeStateSetName(st), iface, err)
+		} else {
+			log.Warnf("Routing: set '%s' routes to %s, which has gone away (%v); without a kill switch the set's traffic leaves by the ordinary uplink until the interface returns, and goes through %s again once b4 sees it come back", routeStateSetName(st), iface, err, iface)
+		}
 		return
 	}
 
@@ -2330,6 +2356,13 @@ func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
 
 	addRules()
 	routeApplyKillSwitch(st, routeTableWantsKillSwitch(st), ipv4, ipv6)
+}
+
+func routeStateSetName(st routeState) string {
+	if st.set != nil && st.set.Name != "" {
+		return st.set.Name
+	}
+	return st.setID
 }
 
 var routeIfaceSeen = make(map[string]bool)
@@ -2370,11 +2403,15 @@ func routeIPSupportsProtoExec() bool {
 		if !hasBinary("ip") {
 			return
 		}
-		if _, err := run("ip", "route", "show", "table", "12345", "proto", routeProtoID); err == nil {
-			routeProtoOK = true
+		if version, err := run("ip", "-V"); err != nil || !strings.Contains(version, "iproute2") {
+			log.Infof("Routing: the ip command here is not iproute2 and cannot list a route's protocol, so b4 does not mark the routes it owns; a routing table another service already uses is recognised by its interface alone")
 			return
 		}
-		log.Infof("Routing: this iproute2 does not understand route protocols, so b4 cannot mark the routes it owns; a routing table another service already uses is recognised by its interface alone")
+		if _, err := run("ip", "route", "show", "table", "main", "proto", routeProtoID); err != nil {
+			log.Infof("Routing: this iproute2 does not understand route protocols, so b4 cannot mark the routes it owns; a routing table another service already uses is recognised by its interface alone")
+			return
+		}
+		routeProtoOK = true
 	})
 	return routeProtoOK
 }
@@ -2591,6 +2628,7 @@ func RoutingReconcilePolicyRules(cfg *config.Config) {
 	if len(routeRuleCache) == 0 {
 		return
 	}
+	defer routePublishMarksLocked()
 	routeReconcilePolicyRules(cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 }
 
@@ -2679,6 +2717,7 @@ func routeReinstallForInterface(cfg *config.Config, iface string, stopped func()
 		routeWarnEgressLoopRisk(set, st)
 		count++
 	}
+	routePublishMarksLocked()
 	routeMu.Unlock()
 
 	if count > 0 {
@@ -3234,6 +3273,9 @@ func routeMarkMatchesOwn(cfg *config.Config, mark uint32) bool {
 	if bits := routeQueueBypassMark(cfg) & routeSetMarkMask; bits != 0 && mark == bits {
 		return true
 	}
+	if cfg.RouteMarkReserved(mark) {
+		return true
+	}
 	return markOverlaps(mark, map[uint32]struct{}{SelfDialMark: {}})
 }
 
@@ -3256,6 +3298,9 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 		case set.Routing.FWMark == q&routeSetMarkMask:
 			log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which equals the bits of the queue mark 0x%x under the routing mark mask 0x%x, so every packet b4 injects would follow the set's ip rule; a mark is assigned instead",
 				set.Name, set.Routing.FWMark, q, routeSetMarkMask)
+		case cfg.RouteMarkReserved(set.Routing.FWMark):
+			log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which equals the bits of a Discovery mark under the routing mark mask 0x%x, so Discovery's probes or the packets it sends would follow the set's ip rule; a mark is assigned instead",
+				set.Name, set.Routing.FWMark, routeSetMarkMask)
 		case set.Routing.FWMark&^routeSetMarkMask != 0:
 			log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which has bits outside the routing mark mask 0x%x that b4 cannot carry through its firewall rules, so a mark is assigned instead",
 				set.Name, set.Routing.FWMark, routeSetMarkMask)

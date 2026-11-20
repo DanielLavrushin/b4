@@ -9,8 +9,80 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/sock"
 	"github.com/daniellavrushin/b4/tproxy"
 )
+
+func netnsSendRawMarkedUDP(t *testing.T, srcPort, dstPort int, mark uint32) {
+	t.Helper()
+	s, err := sock.NewSenderWithMark(int(mark))
+	if err != nil {
+		t.Fatalf("raw socket with mark 0x%x: %v", mark, err)
+	}
+	defer s.Close()
+	dst := net.ParseIP(dnsqPeerIP)
+	pkt := sock.BuildUDPPacketV4(net.ParseIP(dnsqIP), dst, uint16(srcPort), uint16(dstPort), []byte("b4-telegram-inject-probe"))
+	if err := s.SendIPv4(pkt, dst); err != nil {
+		t.Fatalf("send with mark 0x%x: %v", mark, err)
+	}
+}
+
+func TestNetnsPacketsB4InjectsIntoItsTelegramConnectionsAreNotQueuedAgain(t *testing.T) {
+	for _, engineName := range []string{backendIPTables, backendNFTables} {
+		t.Run(engineName, func(t *testing.T) {
+			netnsRequire(t)
+			if engineName == backendNFTables && !hasBinary("nft") {
+				t.Skip("nft is not installed")
+			}
+			netnsDNSQueryLinks(t)
+
+			routeEngine = nil
+			defer func() { routeEngine = nil }()
+
+			cfg := netnsConfig(engineName)
+			cfg.Sets = nil
+			if err := AddRules(cfg); err != nil {
+				t.Fatalf("AddRules: %v", err)
+			}
+			defer func() { _ = ClearRules(cfg) }()
+
+			injector := netnsInjectorMark(cfg.Queue.Mark)
+			probes := []struct {
+				sport  int
+				mark   uint32
+				what   string
+				queued bool
+			}{
+				{41471, injector | config.TelegramSetDialMark, "a packet b4 sends into one of its Telegram connections", false},
+				{41472, injector, "a packet b4 sends into another connection", false},
+				{41473, config.TelegramSetDialMark, "b4's own Telegram connection", true},
+				{41474, config.SelfDialMark, "another connection b4 opens itself", true},
+				{41475, 0, "an unmarked packet", true},
+			}
+			snapshot, stop := netnsConntrackQueueListener(t, uint16(cfg.Queue.StartNum))
+			for _, p := range probes {
+				netnsSendRawMarkedUDP(t, p.sport, 443, p.mark)
+			}
+			time.Sleep(300 * time.Millisecond)
+			stop()
+
+			seen := map[int]int{}
+			for _, p := range snapshot() {
+				if p.dport == 443 {
+					seen[int(p.sport)]++
+				}
+			}
+			for _, p := range probes {
+				switch n := seen[p.sport]; {
+				case p.queued && n == 0:
+					t.Errorf("%s (0x%x) never reached the queue; the return for b4's own packets must not take a connection b4 runs its strategy on", p.what, p.mark)
+				case !p.queued && n > 0:
+					t.Errorf("%s (0x%x) was queued %d time(s); b4 takes it for a new packet of the Telegram connection and sends into the connection again", p.what, p.mark, n)
+				}
+			}
+		})
+	}
+}
 
 func netnsSendMarkedUDP(t *testing.T, srcPort, dstPort int, mark int) {
 	t.Helper()

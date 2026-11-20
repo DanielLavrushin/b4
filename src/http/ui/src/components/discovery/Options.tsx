@@ -34,6 +34,9 @@ export interface DiscoveryOptions {
   pinsText: string;
 }
 
+export const runIpVersion = (choice: IPVersion, tunEngine: boolean): IPVersion =>
+  tunEngine && choice === "ipv6" ? "auto" : choice;
+
 export const optionsInvalid = (options: DiscoveryOptions) =>
   (options.checkDns && dnsEndpointError(options.dnsServer) !== null) ||
   pinsProblem(options.pinsText) !== null;
@@ -117,6 +120,7 @@ interface DiscoveryOptionsPanelProps {
   captures: Capture[];
   disabled?: boolean;
   ipVersionEnabled?: boolean;
+  tunEngine?: boolean;
   communityEnabled?: boolean;
   setPicked?: boolean;
   settingsDnsServer?: string;
@@ -144,6 +148,7 @@ export const DiscoveryOptionsPanel = ({
   captures,
   disabled = false,
   ipVersionEnabled = true,
+  tunEngine = false,
   communityEnabled = false,
   setPicked = false,
   settingsDnsServer = "",
@@ -170,7 +175,13 @@ export const DiscoveryOptionsPanel = ({
   const dnsServerError = dnsEndpointError(options.dnsServer);
   const pinsIssue = pinsProblem(options.pinsText);
   const invalid = optionsInvalid(options);
-  const summary = summarize(options, t, ipVersionEnabled, setPicked);
+  const ipVersion = runIpVersion(options.ipVersion, tunEngine);
+  const summary = summarize(
+    { ...options, ipVersion },
+    t,
+    ipVersionEnabled,
+    setPicked,
+  );
 
   return (
     <Box
@@ -380,7 +391,7 @@ export const DiscoveryOptionsPanel = ({
                 {t("discovery.options.ipVersion")}
               </Typography>
               <ToggleButtonGroup
-                value={options.ipVersion}
+                value={ipVersion}
                 exclusive
                 onChange={(_, value) => {
                   if (value !== null) {
@@ -393,14 +404,18 @@ export const DiscoveryOptionsPanel = ({
               >
                 <ToggleButton value="auto">Auto</ToggleButton>
                 <ToggleButton value="ipv4">IPv4</ToggleButton>
-                <ToggleButton value="ipv6">IPv6</ToggleButton>
+                <ToggleButton value="ipv6" disabled={tunEngine}>
+                  IPv6
+                </ToggleButton>
               </ToggleButtonGroup>
               <Typography
                 variant="caption"
                 color="text.secondary"
                 sx={{ mt: 0.75, display: "block" }}
               >
-                {t("discovery.options.ipVersionHint")}
+                {tunEngine
+                  ? t("discovery.options.ipVersionTunHint")
+                  : t("discovery.options.ipVersionHint")}
               </Typography>
             </Box>
           )}

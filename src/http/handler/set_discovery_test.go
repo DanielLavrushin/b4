@@ -1028,6 +1028,28 @@ func TestStartDiscoveryWhileDSCPRulesArePending(t *testing.T) {
 	}
 }
 
+func TestStartDiscoveryUnderTUNRefusesWithACode(t *testing.T) {
+	api, mux := discoveryAPI(t)
+	api.discoveryRT = discovery.NewRuntime()
+	prev := discoveryStartSuite
+	t.Cleanup(func() { discoveryStartSuite = prev })
+	var startErr error
+	discoveryStartSuite = func(*discovery.Runtime, *config.Config, []string, discovery.StartSuiteOptions) (*discovery.DiscoverySuite, error) {
+		return nil, startErr
+	}
+	start := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/discovery/start", strings.NewReader(`{"check_url":"youtube.com"}`)))
+		return rec
+	}
+
+	startErr = fmt.Errorf("%w: %w", discovery.ErrTUNCarrierUnavailable, errors.New("the TUN engine is not running"))
+	expectCode(t, start(), http.StatusConflict, "tun_carrier_unavailable")
+
+	startErr = discovery.ErrIPv6UnsupportedTUN
+	expectCode(t, start(), http.StatusConflict, "ipv6_unsupported_tun")
+}
+
 func TestRunPinsAreNormalized(t *testing.T) {
 	pins, err := runPins(map[string][]string{
 		"*.NTC.party.": {" 130.255.77.28 ", "130.255.77.28", "::ffff:130.255.77.29"},

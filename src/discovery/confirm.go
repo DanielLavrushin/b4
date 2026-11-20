@@ -163,7 +163,7 @@ func (ds *DiscoverySuite) confirmPreset(presetName string, stored *config.SetCon
 		log.DiscoveryLogf("Confirmation: could not rebuild '%s' as it would be deployed", presetName)
 		return passes, true
 	}
-	if err := ds.pool.UpdateConfig(confirmCfg); err != nil {
+	if err := ds.applyPoolConfig(confirmCfg); err != nil {
 		log.DiscoveryLogf("Confirmation: could not apply '%s': %v", presetName, err)
 		return passes, true
 	}

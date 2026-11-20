@@ -48,9 +48,11 @@ func setSendTimeout(fd int) {
 }
 
 type Sender struct {
-	fd4  int
-	fd6  int
-	mark int
+	fd4    int
+	fd6    int
+	mark   int
+	divert *Sender
+	when   func(packet []byte) bool
 }
 
 func NewSenderWithMark(mark int) (*Sender, error) {
@@ -117,7 +119,18 @@ func NewSenderWithFDs(fd4, fd6 int) *Sender {
 	return &Sender{fd4: fd4, fd6: fd6}
 }
 
+func (s *Sender) Divert(to *Sender, when func(packet []byte) bool) {
+	if to == nil || to == s || when == nil || to.divert != nil {
+		s.divert, s.when = nil, nil
+		return
+	}
+	s.divert, s.when = to, when
+}
+
 func (s *Sender) SendIPv4(packet []byte, destIP net.IP) error {
+	if s.divert != nil && s.when(packet) {
+		return s.divert.SendIPv4(packet, destIP)
+	}
 	if log.Level(log.CurLevel.Load()) >= log.LevelTrace {
 		log.Tracef("Sending IPv4 packet to %s, len=%d", destIP.String(), len(packet))
 	}
@@ -134,6 +147,9 @@ func (s *Sender) SendIPv4(packet []byte, destIP net.IP) error {
 }
 
 func (s *Sender) SendIPv6(packet []byte, destIP net.IP) error {
+	if s.divert != nil && s.divert.fd6 >= 0 && s.when(packet) {
+		return s.divert.SendIPv6(packet, destIP)
+	}
 	if s.fd6 < 0 {
 		return nil
 	}

@@ -93,11 +93,10 @@ How b4 reaches Telegram's data centres, for the MTProto proxy and Telegram over 
 | --- | --- | --- |
 | **Transport mode** | How the MTProto proxy reaches Telegram: **Direct TCP**, **Auto (WebSocket → TCP)** or **WebSocket only**. Telegram over WebSocket always uses Auto. | **Auto (WebSocket → TCP)** |
 | **DC Relay** | `host:port` of a VPS that forwards to the data centres, shown for **Direct TCP** and **Auto (WebSocket → TCP)**. The **?** button shows the `socat` commands. Not used by Telegram over WebSocket. See [DC Relay](../telegram/dc-relay.md). | Empty |
+| **Telegram set** | The set that carries b4's own connections to Telegram: a set without routing applies its strategy, a set routed through an interface or a proxy carries them on that route. **Create a Telegram set** adds a set with no targets and routing off, and selects it. See [Telegram set](../telegram/upstream.md#telegram-set). | **No set** |
 | **Cloudflare Worker domain** | One or more `*.workers.dev` names, separated by commas. See [Cloudflare Worker relay](../telegram/cloudflare-worker.md). | Empty |
-| **Let sets process Worker connections** | Shown once a Worker domain is set. Lets a set whose targets cover the Worker apply its DPI strategy to b4's connections to it. See [DPI processing](../telegram/websocket-bridge.md#dpi-processing). | Off |
+| **Let sets process Worker connections** | Shown once a Worker domain is set, unless a Telegram set with routing carries the Worker. Lets the Telegram set, or without one a set whose targets cover the Worker, apply its DPI strategy to b4's connections to the Worker. See [DPI processing](../telegram/websocket-bridge.md#dpi-processing). | Off |
 | **Custom WebSocket domain** | A domain that relays WebSocket traffic to Telegram. b4 adds `kws1.`, `kws2.` and so on for each data centre. | Empty |
-| **Telegram WS edge IP (advanced)** | Replaces the address of Telegram's own WebSocket edge. | `149.154.167.220` |
-| **Fronting name for Telegram's WS edge (advanced)** | A TLS name, such as `sprinthost.ru`, tried on Telegram's edge when the handshake under its own names goes unanswered. See [Fronting name for the WS edge](../telegram/upstream.md#fronting-name-for-the-ws-edge). | Empty (off) |
 
 **Test connection** tries each configured route to data centre 2 and lists the result of each. **Test direct TCP** tries data centre 2 over direct TCP, without the DC Relay.
 
@@ -113,10 +112,20 @@ How b4 reaches Telegram's data centres, for the MTProto proxy and Telegram over 
 
 b4 downloads these lists only while the MTProto proxy, Telegram over WebSocket or an enabled set in its routing mode is on.
 
+### Advanced
+
+The section opens on its own when either field is set.
+
+| Field | What it does | Default |
+| --- | --- | --- |
+| **Telegram WS edge IP** | Replaces the address of Telegram's own WebSocket edge. | `149.154.167.220` |
+| **Fronting name for Telegram's WS edge** | A TLS name, such as `sprinthost.ru`, tried on Telegram's edge when the handshake under its own names goes unanswered. See [Fronting name for the WS edge](../telegram/upstream.md#fronting-name-for-the-ws-edge). | Empty (off) |
+
 ## Saving changes
 
 The tab applies on **Save Changes**, without restarting the service.
 
 - A change to **Enable MTProto Proxy**, **Bind Address**, **Port**, **Fake SNI Domain**, **Transport mode**, **Custom WebSocket domain**, the WS edge IP, the fronting name or a CF proxy setting restarts the MTProto proxy.
+- Choosing another set in **Telegram set**, or changing the chosen set's routing, also closes the open sessions of the MTProto proxy and of Telegram over WebSocket, and the clients reconnect on the new path.
 - Secrets apply without a restart. A secret switched off or removed loses its open connections.
 - The WEB proxy's switch and hostname apply from the next request. A new relay port or certificate restarts only the relay's listener.

@@ -29,12 +29,12 @@ func TestTheInjectorMarksThePacketsItSendsIntoConnections(t *testing.T) {
 
 func TestSelfInjectedMark_PacketsSentIntoConnections(t *testing.T) {
 	cfg := selfMarkConfig()
-	for _, m := range []uint32{0x8000 | engine.InjectedMarkBit, 0x8000 | engine.InjectedMarkBit | 0x2bd8, uint32(injectorMark(cfg))} {
+	for _, m := range []uint32{0x8000 | engine.InjectedMarkBit, 0x8000 | engine.InjectedMarkBit | 0x2bd8, uint32(injectorMark(cfg)), uint32(telegramInjectorMark(cfg))} {
 		if !selfInjectedMark(m, 0x8000, cfg) {
 			t.Errorf("mark %#x is a packet b4 sent into a connection; dispatching it feeds b4 its own output", m)
 		}
 	}
-	for _, m := range []uint32{engine.InjectedMarkBit, engine.InjectedMarkBit | 0x2bd8, 0x8000 | engine.InjectedMarkBit | engine.ClientMark} {
+	for _, m := range []uint32{engine.InjectedMarkBit, engine.InjectedMarkBit | 0x2bd8, 0x8000 | engine.InjectedMarkBit | engine.ClientMark, config.TelegramSetDialMark, config.SelfDialMark} {
 		if selfInjectedMark(m, 0x8000, cfg) {
 			t.Errorf("mark %#x is not one b4's injector puts on a packet; accepting it would let traffic past the engine", m)
 		}

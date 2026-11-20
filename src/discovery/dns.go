@@ -41,6 +41,7 @@ type DNSProber struct {
 	cfg       *config.Config
 	flowMark  uint
 	ipVersion string
+	v4Only    bool
 	trusted   endpoint.Endpoint
 	ref       referenceAnswer
 
@@ -198,6 +199,7 @@ func (ds *DiscoverySuite) checkDNS(di DomainInput) *DNSDiscoveryResult {
 		ds.flowMark,
 		ds.ipVersion,
 	)
+	prober.v4Only = ds.carrier
 	prober.trusted = ds.trusted
 
 	ctx, cancel := ds.fetchContext(30 * time.Second)
@@ -230,6 +232,7 @@ func (ds *DiscoverySuite) pinnedResult(di DomainInput, pins []string, fromSet bo
 		ds.flowMark,
 		ds.ipVersion,
 	)
+	prober.v4Only = ds.carrier
 	ctx, cancel := ds.fetchContext(pinCheckTimeout)
 	defer cancel()
 	return prober.checkPins(ctx, pins, fromSet)
@@ -358,6 +361,9 @@ func NewDNSProber(domain string, port, tlsPort int, timeout time.Duration, pool 
 }
 
 func (p *DNSProber) ipNetwork() string {
+	if p.v4Only {
+		return "ip4"
+	}
 	switch p.ipVersion {
 	case "ipv4":
 		return "ip4"

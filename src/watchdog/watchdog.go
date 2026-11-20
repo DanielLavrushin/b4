@@ -421,6 +421,28 @@ func sameDSCP(a, b *config.DSCPProbe) bool {
 	return *a == *b
 }
 
+func (w *Watchdog) logLegacyStartErrorLocked(domains []string, err error) {
+	reason := tunRefusal(err)
+	fresh := false
+	for _, domain := range domains {
+		st, ok := w.domainStates[domain]
+		if !ok {
+			fresh = true
+			continue
+		}
+		if st.startRefusal != reason {
+			st.startRefusal = reason
+			fresh = true
+		}
+	}
+	switch {
+	case reason == "":
+		log.Warnf("[WATCHDOG] failed to start discovery: %v", err)
+	case fresh:
+		log.Infof("[WATCHDOG] %v: discovery cannot start under the TUN engine (%v); tried again after each cooldown", domains, err)
+	}
+}
+
 func (w *Watchdog) healBatch(domains []string, dscp *config.DSCPProbe) {
 	cfg := w.cfgPtr.Load()
 	wdCfg := cfg.System.Checker.Watchdog
@@ -453,8 +475,8 @@ func (w *Watchdog) healBatch(domains []string, dscp *config.DSCPProbe) {
 		IPVersion:       legacyIPVersion(dscp),
 	})
 	if err != nil {
-		log.Warnf("[WATCHDOG] failed to start discovery: %v", err)
 		w.mu.Lock()
+		w.logLegacyStartErrorLocked(domains, err)
 		for _, domain := range domains {
 			st, ok := w.domainStates[domain]
 			if !ok {
@@ -467,6 +489,14 @@ func (w *Watchdog) healBatch(domains []string, dscp *config.DSCPProbe) {
 		w.mu.Unlock()
 		return
 	}
+
+	w.mu.Lock()
+	for _, domain := range domains {
+		if st, ok := w.domainStates[domain]; ok {
+			st.startRefusal = ""
+		}
+	}
+	w.mu.Unlock()
 
 	finishRequested := false
 	pollEvery := w.pollEvery

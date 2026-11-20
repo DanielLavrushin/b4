@@ -2,8 +2,10 @@ package mtproto
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -116,6 +118,65 @@ func (fakeAddr) String() string  { return "1.2.3.4:5" }
 
 func newBridge() *TransparentBridge {
 	return NewTransparentBridge(&config.Config{})
+}
+
+type closingClient struct {
+	fakeConn
+	closed atomic.Bool
+}
+
+func (c *closingClient) Close() error {
+	c.closed.Store(true)
+	return nil
+}
+
+func directClientFrame(t *testing.T, dc int, protoTag uint32) []byte {
+	t.Helper()
+	frame := generateFrame(dc, protoTag)
+	enc, err := newAESCTR(frame[8:40], append([]byte(nil), frame[40:56]...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire := append([]byte(nil), frame...)
+	enc.XORKeyStream(wire, wire)
+	copy(wire[:56], frame[:56])
+	return wire
+}
+
+func TestTheBridgeClosesASessionWhoseDialIsStillRunning(t *testing.T) {
+	b := newBridge()
+	t.Cleanup(b.Close)
+	dialing, release := make(chan struct{}), make(chan struct{})
+	prev := bridgeDialDC
+	bridgeDialDC = func(*config.MTProtoConfig, config.QueueConfig, int, uint32, *dialPools, string, dialTarget) (*ObfuscatedConn, dialInfo, error) {
+		close(dialing)
+		<-release
+		return nil, dialInfo{}, errors.New("released")
+	}
+	t.Cleanup(func() { bridgeDialDC = prev })
+
+	client := &closingClient{fakeConn: fakeConn{r: bytes.NewReader(directClientFrame(t, 2, connectionTagInter))}}
+	done := make(chan struct{})
+	go func() {
+		b.Handle(client, net.ParseIP("8.8.8.8"), 443)
+		close(done)
+	}()
+	select {
+	case <-dialing:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the bridge never reached the data centre dial")
+	}
+	closeBridgeSessions()
+	closed := client.closed.Load()
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the bridge never returned")
+	}
+	if !closed {
+		t.Fatal("a session whose data centre dial was running when the Telegram set changed stayed open, so it would relay on the old path")
+	}
 }
 
 func TestHandleEmptyConnReturnsHandledNil(t *testing.T) {

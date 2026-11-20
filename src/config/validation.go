@@ -230,6 +230,27 @@ func findSharedTableGatewayClashes(sets []*SetConfig) []sharedTableGatewayClash 
 	return out
 }
 
+func (s *SetConfig) defaultEmptyModes() {
+	d := &DefaultSetConfig
+	for _, f := range []struct {
+		value *string
+		def   string
+	}{
+		{&s.TCP.Desync.Mode, d.TCP.Desync.Mode},
+		{&s.TCP.Win.Mode, d.TCP.Win.Mode},
+		{&s.TCP.Incoming.Mode, d.TCP.Incoming.Mode},
+		{&s.TCP.Incoming.Strategy, d.TCP.Incoming.Strategy},
+		{&s.Faking.SNIMutation.Mode, d.Faking.SNIMutation.Mode},
+		{&s.Fragmentation.Strategy, d.Fragmentation.Strategy},
+		{&s.UDP.FakingStrategy, d.UDP.FakingStrategy},
+		{&s.Routing.BlockAction, d.Routing.BlockAction},
+	} {
+		if *f.value == "" {
+			*f.value = f.def
+		}
+	}
+}
+
 func (c *Config) Validate() error {
 	v := &validator{}
 	c.System.WebServer.IsEnabled = c.System.WebServer.Port > 0 && c.System.WebServer.Port <= 65535
@@ -286,6 +307,7 @@ func (c *Config) Validate() error {
 	c.System.IPHealth.RepeatBanTTLSec = clampBanSec(c.System.IPHealth.RepeatBanTTLSec, DefaultIPRepeatBanTTLSec, MaxIPRepeatBanTTLSec)
 
 	for setIdx, set := range c.Sets {
+		set.defaultEmptyModes()
 		ws := &set.TCP.WSSize
 		ws.Cutoff = NormalizeWSSizeCutoff(ws.Cutoff)
 		if ws.StripScale {
@@ -651,6 +673,10 @@ func (c *Config) Validate() error {
 		v.add("queue.mark", "mark_conflict", "queue marks must be unique: mark, discovery_flow_mark, discovery_injected_mark", nil)
 		return v.result()
 	}
+	if c.Queue.Mode == "tun" {
+		warnDiscoveryMarksWithTUNBits(flowMark, injectedMark)
+	}
+	warnDiscoveryMarksWithoutRouteBits(flowMark, injectedMark)
 	if c.Queue.Mode != "tun" && !c.Queue.IsDiscovery {
 		warnQueueMarkWithInjectedBit(c.Queue.Mark)
 	}
@@ -707,6 +733,30 @@ func warnQueueMarkWithInjectedBit(mark uint) {
 		return
 	}
 	log.Warnf("queue.mark 0x%x has bit 0x%x, the bit b4 adds to the packets it sends into a client's connection, so b4 cannot tell those connections from its own: their SYN-ACKs and resets skip b4, and RST protection, RST escalation and TTL learning miss every connection b4 changed. Choose a queue mark without that bit", mark, uint(engine.InjectedMarkBit))
+}
+
+var tunBitsWarnedMarks atomic.Uint64
+
+func warnDiscoveryMarksWithTUNBits(flow, injected uint) {
+	const reserved = uint(engine.TunSteerMark | engine.ClientMark | engine.ReinjectMarkBit)
+	key := uint64(flow)<<32 | uint64(injected)
+	if (flow|injected)&reserved == 0 || tunBitsWarnedMarks.Swap(key) == key {
+		return
+	}
+	log.Warnf("system.checker.discovery_flow_mark 0x%x or discovery_injected_mark 0x%x has bits of 0x%x, the marks the TUN engine reserves (0x%x steer, 0x%x client, 0x%x reinject), so under the TUN engine Discovery's probes or re-sends would go past its carrier, and every Discovery run and watchdog heal is refused. Choose Discovery marks without those bits",
+		flow, injected, reserved, uint(engine.TunSteerMark), uint(engine.ClientMark), uint(engine.ReinjectMarkBit))
+}
+
+var routeBitsWarnedMarks atomic.Uint64
+
+func warnDiscoveryMarksWithoutRouteBits(flow, injected uint) {
+	const routeBits = uint(PerSetRouteMarkBits)
+	key := uint64(flow)<<32 | uint64(injected)
+	if (flow&routeBits != 0 && injected&routeBits != 0) || routeBitsWarnedMarks.Swap(key) == key {
+		return
+	}
+	log.Warnf("system.checker.discovery_flow_mark 0x%x or discovery_injected_mark 0x%x has no bit under 0x%x, the bits that tell a routing set a packet is already taken, so a routing set that targets an address Discovery probes can re-mark Discovery's packets and send them along the set's route instead of the path under test. Choose Discovery marks with a bit under 0x%x",
+		flow, injected, routeBits, routeBits)
 }
 
 func normalizeSetASNs(v *validator, setIdx int, set *SetConfig) bool {

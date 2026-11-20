@@ -181,7 +181,7 @@ func (api *API) handleMTProtoActiveClients(w http.ResponseWriter, r *http.Reques
 // @Tags MTProto
 // @Accept json
 // @Produce json,text/event-stream
-// @Param body body object false "optional overrides: upstream_mode, ws_custom_domain, ws_endpoint_host, cfworker_domain, cfproxy_enabled, dc_relay, dc"
+// @Param body body object false "optional overrides: upstream_mode, ws_custom_domain, ws_endpoint_host, cfworker_domain, cfproxy_enabled, dc_relay, upstream_set, dc"
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @Router /mtproto/test-ws [post]
@@ -197,6 +197,7 @@ func (api *API) handleMTProtoTestWS(w http.ResponseWriter, r *http.Request) {
 		CFWorkerDomain *string `json:"cfworker_domain"`
 		CFProxyEnabled *bool   `json:"cfproxy_enabled"`
 		DCRelay        *string `json:"dc_relay"`
+		UpstreamSet    *string `json:"upstream_set"`
 		DC             int     `json:"dc"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
@@ -231,6 +232,9 @@ func (api *API) handleMTProtoTestWS(w http.ResponseWriter, r *http.Request) {
 	if req.DCRelay != nil {
 		probeCfg.DCRelay = *req.DCRelay
 	}
+	if req.UpstreamSet != nil {
+		probeCfg.UpstreamSet = *req.UpstreamSet
+	}
 	if probeCfg.UpstreamMode == "" {
 		probeCfg.UpstreamMode = "auto"
 	}
@@ -239,16 +243,19 @@ func (api *API) handleMTProtoTestWS(w http.ResponseWriter, r *http.Request) {
 		dc = 2
 	}
 
-	probe, err := mtproto.PlanTransportProbe(&probeCfg, cfg.Queue, dc)
+	probeFull := *cfg
+	probeFull.System.MTProto = probeCfg
+	probe, err := mtproto.PlanTransportProbe(&probeFull, dc)
 	if err != nil {
 		writeJsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if !strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
 		sendResponse(w, map[string]interface{}{
-			"success": true,
-			"dc":      dc,
-			"results": probe.Run(r.Context(), mtproto.TransportProbeObserver{}),
+			"success":      true,
+			"dc":           dc,
+			"telegram_set": probe.TelegramSet(),
+			"results":      probe.Run(r.Context(), mtproto.TransportProbeObserver{}),
 		})
 		return
 	}
@@ -267,7 +274,7 @@ func streamTransportProbe(w http.ResponseWriter, r *http.Request, probe *mtproto
 	w.Header().Set("X-Accel-Buffering", "no")
 	flusher, _ := w.(http.Flusher)
 
-	writeSSE(w, flusher, "plan", map[string]any{"dc": dc, "routes": probe.Routes()})
+	writeSSE(w, flusher, "plan", map[string]any{"dc": dc, "routes": probe.Routes(), "telegram_set": probe.TelegramSet()})
 	probe.Run(r.Context(), mtproto.TransportProbeObserver{
 		Started: func(i int) {
 			writeSSE(w, flusher, "start", map[string]int{"index": i})

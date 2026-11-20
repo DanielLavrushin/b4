@@ -78,11 +78,11 @@ Connections from devices reach the bridge untouched: no faking, fragmentation or
 | Cloudflare-proxied domains, a custom WebSocket domain | None. No set applies its DPI settings |
 | A Cloudflare Worker | None, unless **Let sets process Worker connections** is on |
 
-A set that covers Cloudflare for other sites therefore leaves these routes alone, apart from the Worker while that switch is on. A set in the **Telegram over WebSocket (built-in)** mode, unless it is limited by an included source-device list, leaves the bridge's connections to its targets unmodified.
+A set that covers Cloudflare for other sites therefore leaves these routes alone, apart from the Worker while that switch is on. With a [Telegram set](./upstream.md#telegram-set) chosen, no other set applies its DPI settings to these routes: a Telegram set without routing applies its strategy, to the Worker only while that switch is on, and one with routing carries them on its route without a strategy. A set in the **Telegram over WebSocket (built-in)** mode, unless it is limited by an included source-device list, leaves the bridge's connections to its targets unmodified.
 
 ### Connections the bridge passes on
 
-Every TCP connection to a Telegram range enters the bridge, plain HTTPS to `web.telegram.org` or `t.me` included. A connection that is not MTProto, or that b4 cannot map to a data centre, goes on unchanged to its original address, through a Cloudflare Worker when one is set and the port is 443, or directly. The card counts these as **Passed on undecoded**.
+Every TCP connection to a Telegram range enters the bridge, plain HTTPS to `web.telegram.org` or `t.me` included. A connection that is not MTProto, or that b4 cannot map to a data centre, goes on unchanged to its original address, through a Cloudflare Worker when one is set and the port is 443, or directly. With a [Telegram set](./upstream.md#telegram-set) chosen, directly means through that set: its strategy, its interface route or its upstream. The card counts these as **Passed on undecoded**.
 
 ### Order among sets
 
