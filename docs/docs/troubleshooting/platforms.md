@@ -144,4 +144,4 @@ NAT Masquerade is off in b4, so the server's replies bypass the container. [Step
 
 ### The dashboard reports that the NFQUEUE engine did not start {#mikrotik-nfqueue}
 
-The error on the dashboard card names the cause. `Extension NFQUEUE revision 0 not supported, missing kernel module?` means that the kernel RouterOS runs the container on has no NFQUEUE support. **Switch to TUN** on the same card selects the TUN engine, which needs no queue modules, and restarts b4. See [Packet engine](../settings/core.md#packet-engine).
+The error on the dashboard card names the cause. `Extension NFQUEUE revision 0 not supported, missing kernel module?` means that the kernel RouterOS runs the container on has no NFQUEUE support. **Switch to TUN** on the same card selects the TUN engine, which needs no queue modules, and restarts b4. See [Packet engine](../settings/core.md#packet-engine). Discovery and the watchdog work under TUN with the limits in [Under the TUN engine](../discovery.md#tun).

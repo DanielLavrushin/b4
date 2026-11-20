@@ -58,13 +58,15 @@ type routeManager struct {
 	natGuardAdded      bool
 	noConnbytes        bool
 
-	captureTable int
-	tcpPorts     []string
-	udpPorts     []string
-	tcpLimit     int
-	udpLimit     int
-	dupIPs       []string
-	replyCapture bool
+	captureTable      int
+	tcpPorts          []string
+	udpPorts          []string
+	tcpLimit          int
+	udpLimit          int
+	dupIPs            []string
+	replyCapture      bool
+	discoveryFlow     uint
+	discoveryInjected uint
 
 	devicesEnabled bool
 	whiteIsBlack   bool

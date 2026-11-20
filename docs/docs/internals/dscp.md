@@ -71,7 +71,9 @@ installed with nftables
 
 A [Discovery](../discovery.md) run for a set with its own value, and a [watchdog](../watchdog.md) heal of such a set, write the value into their probes, so the router in front of b4 routes them as the set's traffic. The value goes into the probes of each IP version in which the set's traffic carries it: one the set's **IP Version Filter** admits and, with iptables, one whose binary can use ipsets. A set with **Domain-only matching** on is tested without its value, which goes only to its IP, GeoIP and ASN targets.
 
-Probes without a set's value carry what other traffic carries: the **Set DSCP** value while it is on, or none, also to the addresses of sets with values of their own. A run for sites, not for a set, takes this path throughout.
+With the NFQUEUE engine, probes without a set's value carry what other traffic carries: the **Set DSCP** value while it is on, or none, also to the addresses of sets with values of their own. A run for sites, not for a set, takes this path throughout.
+
+Under the [TUN engine](./discovery.md#tun), a run for a set with its own value and a heal of such a set are refused, even when the value would reach none of their probes, as with iptables and no `ipset` command. Sets with **Domain-only matching** on or with a refused value are exempt, and so is every set while **Skip IPTables/NFTables Setup** is on. No run gets the chain described below. The probes of a run carry what b4's DSCP rules give other traffic by destination: the **Set DSCP** value while it is on and, to the addresses of a set with its own value, that set's value.
 
 b4 records the path a run's probes took: the value in each IP version and the interface list of **Set DSCP**. Before a result goes into a set or creates one, from the Discovery page, over MCP or by the watchdog, b4 compares that record with the path the set's traffic takes at that moment, in the IP versions both the set and the result cover. Another value, a value on one side only, or another interface list refuses the write.
 

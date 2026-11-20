@@ -270,6 +270,19 @@ func ApplyDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark
 	return nil
 }
 
+func WatchCarrierDiscoveryDSCP(cfg *config.Config, lost func(error)) (*config.DSCPPath, func(), error) {
+	rulesMu.Lock()
+	defer rulesMu.Unlock()
+	if err := discoveryCheckDSCP(nil); err != nil {
+		return nil, nil, err
+	}
+	s := &discoverySteering{cfg: cfg, path: discoveryPathFor(cfg, nil), lost: lost}
+	discoveryRun.Store(s)
+	path := *s.path
+	path.Interfaces = slices.Clone(s.path.Interfaces)
+	return &path, func() { discoveryRun.CompareAndSwap(s, nil) }, nil
+}
+
 func ActiveDiscoveryDSCP() (*config.DSCPProbe, *config.DSCPPath) {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()

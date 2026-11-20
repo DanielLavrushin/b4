@@ -144,4 +144,4 @@ IPTABLES[iptables]: KeeneticOS runs its raw table after conntrack (kernel 4.9-nd
 
 ### Дашборд сообщает, что движок NFQUEUE не запустился {#mikrotik-nfqueue}
 
-Причину называет ошибка на карточке дашборда. `Extension NFQUEUE revision 0 not supported, missing kernel module?` означает, что в ядре, на котором RouterOS запускает контейнер, нет поддержки NFQUEUE. Кнопка **Переключить на TUN** на той же карточке выбирает движок TUN, которому модули очереди не нужны, и перезапускает b4. См. [Движок пакетов](../settings/core.md#packet-engine).
+Причину называет ошибка на карточке дашборда. `Extension NFQUEUE revision 0 not supported, missing kernel module?` означает, что в ядре, на котором RouterOS запускает контейнер, нет поддержки NFQUEUE. Кнопка **Переключить на TUN** на той же карточке выбирает движок TUN, которому модули очереди не нужны, и перезапускает b4. См. [Движок пакетов](../settings/core.md#packet-engine). Дискавери и мониторинг работают с TUN с ограничениями из раздела [С движком TUN](../discovery.md#tun).

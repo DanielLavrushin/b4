@@ -22,6 +22,27 @@ func TestTheListenerDropsAPinEqualToTheQueueMarksSetBits(t *testing.T) {
 	}
 }
 
+func TestAProxyMarkStepsOffTheDiscoveryMarksSetBits(t *testing.T) {
+	set := config.NewSetConfig()
+	set.Id = "discovery-pin"
+	cfg := config.NewConfig()
+
+	for _, pin := range []uint32{0x1, 0x2} {
+		set.Routing.FWMark = pin
+		if got, want := effectiveMark(&cfg, &set), MarkForSet(set.Id, 0); got != want {
+			t.Errorf("pin 0x%x equals Discovery mark 0x%x or 0x%x under 0x%x, so Discovery's probes or the packets it sends would match the set's priority 2 rule; want the automatic mark 0x%x, got 0x%x", pin, cfg.DiscoveryFlowMark(), cfg.DiscoveryInjectedMark(), config.PerSetRouteMarkBits, want, got)
+		}
+	}
+
+	set.Routing.FWMark = 0
+	natural := MarkForSet(set.Id, 0)
+	cfg.System.Checker.DiscoveryInjectedMark = uint(natural) | 0x100000
+	got := MarkForConfig(&cfg, &set)
+	if got == natural || !InMarkRange(got) || got == config.TelegramBridgeMark {
+		t.Errorf("Discovery injected mark 0x%x has the set's automatic mark 0x%x under 0x%x; the set must move to another mark in the proxy range, got 0x%x", cfg.System.Checker.DiscoveryInjectedMark, natural, config.PerSetRouteMarkBits, got)
+	}
+}
+
 func TestAnAutomaticMarkStepsOffTheQueueMarksSetBits(t *testing.T) {
 	set := config.NewSetConfig()
 	set.Id = "agree-set"

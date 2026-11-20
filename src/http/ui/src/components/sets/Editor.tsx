@@ -467,6 +467,7 @@ export const SetEditorPage = ({
             dirty={dirty}
             savedWatchdog={!!initialSet.discovery?.watchdog}
             globalWatchdog={!!settings.checker?.watchdog?.enabled}
+            dscpEnv={dscp}
             onChange={handleChange}
           />
         </B4TabPanel>

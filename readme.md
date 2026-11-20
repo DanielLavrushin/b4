@@ -201,7 +201,7 @@ Docs: [MTProto / Telegram](https://docs.b4core.app/docs/mtproto)
 
 ## Discovery, Watchdog, DPI Detector
 
-**Discovery** tests bypass strategies against your real network on an isolated queue, tunes the parameters of whatever works, and checks for DNS poisoning and IP-level blocks along the way, asking other regions' DNS answers for an address the block does not cover. Results apply as sets without a restart, and the set is previewed before it is created.
+**Discovery** tests bypass strategies against your real network on an isolated queue, or under TUN on a TUN device of its own, tunes the parameters of whatever works, and checks for DNS poisoning and IP-level blocks along the way, asking other regions' DNS answers for an address the block does not cover. Results apply as sets without a restart, and the set is previewed before it is created.
 
 **Watchdog** fetches the domains you list periodically. After enough consecutive failures it re-runs Discovery for that domain, verifies the result, and rolls back if it does not hold. Disabled by default.
 
@@ -263,7 +263,7 @@ Docs: [Configuration file (RU)](https://docs.b4core.app/ru/docs/advanced/config)
 For kernels without NFQUEUE support, switch the engine mode to **TUN interface** under **Settings → Core → Packet Engine**. B4 creates its own TUN device and steers traffic into it with policy routing, running the same packet engine.
 
 > [!IMPORTANT]
-> TUN mode is a fallback, not an equal alternative. Roughly 60% of the feature set works there: B4 installs none of its usual firewall rules, so anything built on them is unavailable. Discovery and the Watchdog's auto-healing do not run, and IPv6 is not forwarded. Use NFQUEUE where the kernel supports it.
+> TUN mode is a fallback, not an equal alternative. Roughly 60% of the feature set works there: B4 installs none of its usual firewall rules, so anything built on them is unavailable. Discovery and the Watchdog's auto-healing run with limits: IPv4 only, without strategies that act on replies, and not for a set with its own DSCP value. IPv6 is not forwarded. Use NFQUEUE where the kernel supports it.
 
 ## Command line
 

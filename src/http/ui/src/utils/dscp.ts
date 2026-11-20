@@ -87,6 +87,16 @@ export const dscpRefusal = (
   return null;
 };
 
+export const dscpStampsProbes = (
+  set: B4SetConfig,
+  env: Pick<DscpEnvironment, "skipSetup" | "deviceFilter">,
+): boolean => {
+  const dscp = set.dscp;
+  if (!dscp?.enabled || env.skipSetup || set.targets.domain_only) return false;
+  if (dscp.value < 0 || dscp.value > DSCP_MAX_VALUE) return false;
+  return dscpRefusal(set, env.deviceFilter) === null;
+};
+
 export const dscpRefusalKey = (set: B4SetConfig, refusal: DscpRefusal) =>
   refusal === "no_addresses" &&
   set.targets.domain_only &&

@@ -453,7 +453,7 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 			"started for %s. This runs for minutes, not seconds: it opens with %d strategies per domain, plus any the community hub publishes for it when the hub is on, and then explores the family that looked best, "+
 				"which can be another hundred or more, each preceded by a config-propagation pause. It stops early for a domain that turns out to work without b4 and right after the first fetch for one whose name does not resolve. "+
 				"Do NOT poll in a loop - tell the user it is running and call action=status once when they ask. "+
-				"While it runs, the watchdog cannot heal and a firewall refresh will block.",
+				"While it runs, the watchdog cannot heal, and with the NFQUEUE engine a firewall refresh will block.",
 			strings.Join(urls, ", "), len(discovery.GetPhase1Presets())),
 	}
 	if target != nil {
@@ -461,7 +461,7 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 			"started for set %q with %s. The set's current strategy is tested first; the search stops as soon as one strategy passes every confirmation try on every address, "+
 				"otherwise it runs for minutes like any discovery. It ends with a set verdict that action=status reports and action=apply with set=%q acts on. "+
 				"Do NOT poll in a loop - tell the user it is running and call action=status once when they ask. "+
-				"While it runs, the watchdog cannot heal and a firewall refresh will block.",
+				"While it runs, the watchdog cannot heal, and with the NFQUEUE engine a firewall refresh will block.",
 			target.Name, strings.Join(urls, ", "), target.Name)
 	}
 	out.Note = mcpWithProbeDSCP(out.Note, suite.DSCP, suite.DSCPIPVersion)
@@ -895,7 +895,7 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 					"Call action=status to see how far it has got, or action=cancel to stop it and keep what it has found, which can then be applied")
 		}
 		return nil, mcpDiscoveryOut{}, fmt.Errorf(
-			"a discovery run is still tearing down its firewall rules: applying now would block on a firewall refresh for up to five minutes. Call action=status until it reports finished, then apply")
+			"a discovery run is still shutting down: with the NFQUEUE engine, applying now would block on a firewall refresh for up to five minutes. Call action=status until it reports finished, then apply")
 	}
 
 	id := mcpResolveSuiteID(in.Id)

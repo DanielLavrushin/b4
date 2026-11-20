@@ -24,6 +24,7 @@ import {
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useDiscovery, useDiscoveryLogs } from "@hooks/useDiscovery";
 import { useSets } from "@hooks/useSets";
+import { useTunEngine } from "@hooks/useEngineMode";
 import { useHostMatchesInvalidate } from "@hooks/useHostMatches";
 import { useCaptures } from "@b4.capture";
 import { configApi } from "@b4.settings";
@@ -45,6 +46,7 @@ import {
   DiscoveryOptions,
   optionsInvalid,
   loadOptions,
+  runIpVersion,
   saveOptions,
 } from "./Options";
 import { RunPanel } from "./RunPanel";
@@ -98,6 +100,7 @@ export const DiscoveryRunner = () => {
   const { logs, connected, clearLogs } = useDiscoveryLogs();
   const { addDomainsToSet } = useSets();
   const { captures, loadCaptures } = useCaptures();
+  const tunEngine = useTunEngine();
 
   const [options, setOptions] = useState<DiscoveryOptions>(loadOptions);
   const [ipVersionEnabled, setIpVersionEnabled] = useState(true);
@@ -164,7 +167,9 @@ export const DiscoveryRunner = () => {
       .catch(() => {});
   }, []);
 
-  const effectiveIpVersion = ipVersionEnabled ? options.ipVersion : "auto";
+  const effectiveIpVersion = ipVersionEnabled
+    ? runIpVersion(options.ipVersion, tunEngine)
+    : "auto";
   const isReconnecting = !!suiteId && running && !suite;
   const showRun = running && !!suite;
   const showResults = !!suite && !running;
@@ -665,6 +670,9 @@ export const DiscoveryRunner = () => {
         icon={<DiscoveryIcon />}
         action={<B4NotifyToggle hint={t("discovery.notify.hint")} />}
       >
+        {tunEngine && (
+          <B4Alert severity="info">{t("discovery.tunNote")}</B4Alert>
+        )}
         {isReconnecting && (
           <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
             <CircularProgress size={20} sx={{ color: colors.secondary }} />
@@ -824,6 +832,7 @@ export const DiscoveryRunner = () => {
             <DiscoveryOptionsPanel
               options={options}
               ipVersionEnabled={ipVersionEnabled}
+              tunEngine={tunEngine}
               communityEnabled={communityEnabled}
               setPicked={!!pickedSet}
               settingsDnsServer={settingsDnsServer}

@@ -58,7 +58,10 @@ export type WatchReason =
   | "verify_failed"
   | "edited"
   | "busy"
-  | "rules_changed";
+  | "rules_changed"
+  | "tun_carrier_unavailable"
+  | "ipv6_unsupported_tun"
+  | "dscp_unsupported_tun";
 
 export interface URLWatchStatus {
   url: string;

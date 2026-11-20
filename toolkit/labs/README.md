@@ -121,6 +121,113 @@ the same for a test binary. `lab run <name> <script>` pipes any local script int
 is the way to drive a longer scenario: interfaces, a proxy set, rules deleted by hand, counts
 read back.
 
+## A KeeneticOS stand-in
+
+`scripts/keenetic-standin.sh` builds a router that looks like KeeneticOS where b4 meets it:
+its internet access policies, the chain that marks a policy's devices, the per-WAN rules,
+the run directory that makes b4 take the system for KeeneticOS, and the RCI on port 79. It
+runs the real b4 binary there, so a question such as "does a device in a policy follow an
+interface set" gets an answer from b4 itself, not from a model of b4's rules.
+
+`scripts/b4-netns.sh` gives its binary an empty network namespace with a `/run` and a `/tmp`
+of its own, and b4 decides whether it runs on KeeneticOS once, at start. So the stand-in is
+the binary that `b4-netns.sh` starts: it builds the router in that namespace, makes
+`/var/run/ndm`, starts the fake RCI, and then runs b4 as its child with the config and the
+arguments that follow. Build b4 as for any run in a guest. The config needs one set with
+routing on, output interface `nwg1` and `192.0.2.80` as its IP target; this `b4.json` is enough:
+
+```json
+{
+  "version": 52,
+  "sets": [
+    {
+      "id": "vpn",
+      "name": "VPN sites",
+      "enabled": true,
+      "routing": { "enabled": true, "egress_interface": "nwg1" },
+      "targets": { "ip": ["192.0.2.80"] }
+    }
+  ],
+  "system": {
+    "logging": { "directory": "/root/lab/kn-logs" },
+    "tables": { "monitor_interval": 5 }
+  }
+}
+```
+
+```sh
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go -C src build -o ../out/b4.lab .
+toolkit/labs/lab up debian9
+toolkit/labs/lab push debian9 out/b4.lab b4.json toolkit/labs/scripts/keenetic-standin.sh /root/lab
+toolkit/labs/lab run debian9 toolkit/labs/scripts/b4-netns.sh /root/lab/keenetic-standin.sh /root/lab/b4.json /root/lab/b4.lab --verbose=debug
+```
+
+The push keeps the script's executable bit, which `b4-netns.sh` needs. Without a b4 path
+after the config the router runs alone, which gives the baseline. That run stays in the
+foreground; drive it from a second terminal with the same script piped in:
+
+```sh
+toolkit/labs/lab run debian9 toolkit/labs/scripts/keenetic-standin.sh check
+toolkit/labs/lab run debian9 toolkit/labs/scripts/keenetic-standin.sh rewrite
+toolkit/labs/lab run debian9 toolkit/labs/scripts/keenetic-standin.sh rewrite 30
+toolkit/labs/lab run debian9 toolkit/labs/scripts/keenetic-standin.sh rewrite stop
+toolkit/labs/lab run debian9 toolkit/labs/scripts/keenetic-standin.sh show
+toolkit/labs/lab run debian9 toolkit/labs/scripts/keenetic-standin.sh in router curl -s 127.0.0.1:7000/api/config
+toolkit/labs/lab run debian9 toolkit/labs/scripts/keenetic-standin.sh stop
+```
+
+- `check` fetches `192.0.2.80` (the set's address) and `192.0.2.81` (an address outside it)
+  on ports 80 and 443 from the default-policy device, the policy device and the router. Both
+  addresses answer behind every uplink, and each listener replies with its uplink's name and
+  the source address it saw: `vpn 10.250.20.2` came through `nwg1`, `isp2 198.51.100.10` by
+  `eth2.5`, `isp1 203.0.113.10` by `eth3`.
+- `rewrite` does what an NDMS rewrite does to b4: it replaces the whole mangle table, IPv4 and
+  IPv6, with `iptables-restore` of the NDMS chain alone, so b4's chains and jumps are gone
+  until its monitor puts them back. `rewrite <seconds>` repeats it in the background.
+- `show` prints the ip rules with their tables, mangle `PREROUTING` and the hotspot chain with
+  counters, the connections nat `POSTROUTING` counted per output interface, `rp_filter`, and
+  the rewrites done.
+- `in <where> <command>` runs a command in `router`, `default`, `policy`, `isp1`, `isp2` or `vpn`.
+- `stop` stops b4, which removes its rules, and then the router. The control commands find the
+  run by the pid in `/var/tmp/keenetic-standin`, which also holds the helpers' logs and
+  `rci.log`, every request the fake RCI answered. One stand-in runs in a guest at a time.
+
+What it models, and where each value comes from:
+
+| What | In the stand-in | Source |
+| --- | --- | --- |
+| Policies | Five, n from 0 to 4: `fwmark 0xffffaaa+n lookup 4096+2n` at priority 100+2n, then `fwmark <the same> blackhole` at 101+2n; also `fwmark 0xffffa00 lookup main` at 10 | The rules of KeeneticOS 5.1.8 in issue 526 (on 4.x the same pairs sat at 1150 and 1151) |
+| Routes | The main table's default route leaves by `eth3`; policy 0's table by `eth2.5`, the other policies' by `eth3`, and each policy table also holds the LAN route | Chosen for the stand-in: the report has the rules, not the routes |
+| Per-WAN rules | `from <address> lookup` 16386 (`eth2.5`) at 1154, 16387 (`eth3`) at 1156, 16395 (`nwg1`) at 1172 | Issue 526 |
+| Interfaces | `br0` 192.168.10.1/24, `eth3` 203.0.113.10/23, `eth2.5` 198.51.100.10/22, `nwg1` 10.250.20.2/32 | The anonymised System Info of issue 526 |
+| Hotspot chain | `_NDM_HOTSPOT_PREROUTING_MANG` at the end of mangle `PREROUTING`, listing the policy device by MAC: `MARK --set-xmark 0x0ffffaaa/0xffffffff`, `CONNMARK --save-mark --nfmask 0xffffffff --ctmask 0xffffffff`, `RETURN` | `docs/docs/guides/marks.md` documents the whole mark by MAC address and its copy into the connection mark. The masks, the `RETURN` and a jump with no other match are assumed. The real name ends in `MANGL`, 29 characters; `iptables-restore` 1.6.0 on `debian9` refuses chain names over 28, so the stand-in drops the last letter. b4 never looks the name up |
+| Detection | A `/var/run/ndm` directory inside the run | `src/tables/dnskernel.go` also takes `-ndm` in the kernel release or a `raw_out` table, which a stock kernel cannot show |
+| RCI | `GET /rci/show/interface`, the batch `POST /rci/` for system names, `GET /rci/show/ip/hotspot` on 127.0.0.1:79, with the labels "Home network", "Provider", "LTE router" and "VPN" and two named devices | The reply shapes of `src/netif/keenetic_test.go`; the names are made up |
+| NAT | `MASQUERADE` on `eth3` and `eth2.5` in nat `POSTROUTING`, after a counting rule per output interface | Chosen for the stand-in |
+| ARP upstream | The uplinks answer ARP only for the addresses of their own interface (`arp_ignore` 1), so a route without a next hop through `eth3` or `eth2.5` fails, as it does in front of a real gateway | Chosen for the stand-in: with the default, an uplink answered ARP for the site addresses it holds, and a set table without a gateway still worked |
+
+What it cannot model:
+
+- NDMS itself: it is closed source. Its real chains and their order, the chains the stand-in
+  leaves out (`_NDM_OUTPUT_DELAY`, which queues to 64511 with an `ndmmark` match stock
+  iptables lacks; the mangle `INPUT` drop of TCP 443 to the router; NAT that depends on its
+  own `FORWARD` mark), when and how often it rewrites, and which tables a rewrite touches.
+- What RCI says about policies. The fake RCI answers only the three calls b4 makes and knows
+  nothing of which policy a device is in.
+- The WAN ping check, failover between WANs, and any route NDMS changes on its own.
+- WireGuard. The guest kernels have no WireGuard module, so `nwg1` is a TUN device, carried
+  by a small forwarder to `nwgpeer` in the `vpn` namespace. b4 counts both kinds as
+  encapsulated and routes the LAN's connections alike, but not the router's own traffic:
+  with `routing.router_traffic` on `auto` it leaves that traffic on the normal route for a
+  TUN output interface and says so at start, and with `include` it adds a rate guard to the
+  set's mangle `OUTPUT` chain and warns of a routing loop, which it does not for WireGuard.
+  For the set's `OUTPUT` rules that b4 had on the router of issue 526, set
+  `routing.router_traffic` to `include`.
+- IPv6 routing: no IPv6 addresses or rules, only the same chain in the IPv6 mangle table.
+- The `4.9-ndm` kernel itself and its `raw_out` table.
+
+The stand-in has run on `debian9` only.
+
 ## The RouterOS guest
 
 `lab up routeros` builds a MikroTik router in QEMU from RouterOS CHR, MikroTik's x86 build of
@@ -300,7 +407,8 @@ taken between the check and the start. Run it after any change here; `b4-check` 
   place, and every container start installs packages from Alpine's mirrors, as the image does
   on a real router.
 - A firmware's own behaviour, such as KeeneticOS rewriting its firewall or Broadcom's flow
-  cache, exists only on the real device.
+  cache, exists only on the real device. The KeeneticOS stand-in imitates the parts listed
+  under it, no more.
 - The packages `debian8` installs are not verified. Every key its apt trusts has expired, so
   provisioning turns the signature check off there, and they arrive over plain HTTP: do not
   provision it on a network you do not trust. `debian9` checks signatures.

@@ -24,13 +24,15 @@ After **Max Retries** failed checks in a row, the watchdog runs [Discovery for t
 
 A heal writes only a strategy that works on every address, and only the bypass strategy, as [Writing into an existing set](./discovery.md#writing-into-an-existing-set) describes. Then the addresses are checked again, and when one still fails, the set's previous strategy comes back. A heal never touches another set.
 
-A heal of a set with its own [DSCP value](./sets/routing.md#dscp) tests strategies with that value, as [Discovery for the set](./discovery.md#a-run-for-a-set) does. Nothing is written when the set's traffic has moved to another DSCP path by then, as after a change to **Set DSCP** under [Settings > Core > Firewall](./settings/core.md#dscp) or to its interface list.
+A heal of a set with its own [DSCP value](./sets/routing.md#dscp) tests strategies with that value, as [Discovery for the set](./discovery.md#a-run-for-a-set) does, except under the TUN engine, see below. Nothing is written when the set's traffic has moved to another DSCP path by then, as after a change to **Set DSCP** under [Settings > Core > Firewall](./settings/core.md#dscp) or to its interface list.
 
 After every heal, the set waits for the **Healing Cooldown**. After three failed heals in a row, the watchdog gives up on the set. Checks go on, but no heal starts until one of these happens:
 
 - a check finds every address loading;
 - **Check now** is clicked;
 - the set's watchdog is turned off and on again.
+
+Under the [TUN engine](./discovery.md#tun), a heal cannot run for a set whose **IP Version Filter** is IPv6 or that has its own DSCP value. The watchdog then gives up on the set at once, without a failed heal. Checks go on, and the give-up also ends when the filter changes or the set stops writing its own value. While the TUN engine is not running or has no uplink address yet, a heal waits in **Cooldown** for at least a minute instead, and the watchdog does not give up.
 
 A page opened before a heal, such as the set editor, cannot undo it. Its save is refused with an offer to reload, which discards the unsaved changes.
 
@@ -47,7 +49,7 @@ A watched set shows its status here, on its Discovery tab, on its card on the **
 | **Searching** | The heal's Discovery run is in progress. |
 | **Cooldown** | A heal failed or wrote nothing, and the next check waits for the cooldown. |
 | **Cannot verify** | No address can be checked: each is handled by another set, escalated or unusable. |
-| **Gave up** | Three heals failed in a row. Checks continue, heals do not. |
+| **Gave up** | Three heals failed in a row, or heals cannot run for the set under the TUN engine. Checks continue, heals do not. |
 
 Each address shows **OK**, **Failed**, **Other set** (with the set that handles it), **Escalated**, **Unusable** or **Queued**.
 
@@ -65,6 +67,9 @@ The reason under a set's status says why it is in that state or how the last hea
 | Edited | The set changed while the search ran, so nothing was written. |
 | Busy | Another Discovery run was in progress. The watchdog tries again later. |
 | Rules changed | b4 was applying or rewriting the firewall rules the search depends on, such as its DSCP rules, so nothing was written. The watchdog tries again later. |
+| TUN engine unavailable | The TUN engine could not carry the search's probes, for example while it was not running or had no uplink address yet, so the search did not start. The set waits in **Cooldown** for at least a minute. |
+| IPv6 under TUN | The set's **IP Version Filter** is IPv6, and Discovery under TUN tests IPv4 only. No heal runs until the filter changes or b4 runs the NFQUEUE engine. |
+| DSCP under TUN | The set has its own DSCP value, which Discovery under TUN cannot write into its probes. No heal runs until the set stops writing its own value or b4 runs the NFQUEUE engine. |
 
 ## Watched sets
 
