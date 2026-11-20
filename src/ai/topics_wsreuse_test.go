@@ -48,6 +48,9 @@ func TestWSReuseTopicSaysAFailedWarmIsSkippedForTenMinutes(t *testing.T) {
 	if strings.Contains(facts, "failures on b4's own side are not remembered") {
 		t.Errorf("tcp.wssize_reuse.enabled still says failures on b4's own side are not remembered, but a connect error from the router's own route or firewall is: %s", facts)
 	}
+	if !strings.Contains(facts, "After a warm fails in one of the ways in parentheses above,") || strings.Contains(facts, "in one of the ways listed above") {
+		t.Errorf("tcp.wssize_reuse.enabled does not limit the remembered failures to the list in parentheses; the cases listed after it (a skipped warm, an egress route that cannot be looked up, a failed pass, busy ports or slots) are not remembered: %s", facts)
+	}
 }
 
 func TestWSReuseTopicNamesWhatTheWarmNeedsBesidesTheServer(t *testing.T) {
