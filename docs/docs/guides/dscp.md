@@ -135,7 +135,7 @@ RouterOS reads the value with mangle rules. [Routing a set's traffic by its DSCP
 
 ## Finding a strategy for the set {#discovery}
 
-[Discovery for the set](../discovery.md#a-run-for-a-set) and the heals of the [watchdog](../watchdog.md) test strategies with the set's value, so on the set's route. A run for sites without a set tests the main route, also for the set's addresses. Under the [TUN engine](../discovery.md#tun), a run for the set and its heals do not start. A run for sites carries the set's value to the set's addresses, but its strategy is not written into the set: b4 counts it as tested without the set's value. When a change to the set's value, to **Set DSCP** or to its interface list moves the set's traffic to another path after a run, the run's strategy is not applied, and the set needs a new run.
+[Discovery for the set](../discovery.md#a-run-for-a-set) and the heals of the [watchdog](../watchdog.md) test strategies with the set's value, so on the set's route. A run for sites without a set tests the main route, also for the set's addresses. Under the [TUN engine](../discovery.md#tun), a run for the set and its heals do not start. There, a run for sites carries the set's value to the set's addresses, but its strategy is not written into the set: b4 counts it as tested without the set's value. When a change to the set's value, to **Set DSCP** or to its interface list moves the set's traffic to another path after a run, the run's strategy is not applied, and the set needs a new run.
 
 ## Checking the result
 
