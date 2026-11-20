@@ -11,6 +11,7 @@ import {
   DnsIcon,
   WarningIcon,
   VoiceIcon,
+  RoutingIcon,
 } from "@b4.icons";
 import { B4Badge } from "@b4.elements";
 
@@ -184,6 +185,7 @@ export const FlagBadges = ({ flags }: FlagBadgesProps) => {
   const isDuplicate = flags === "tcp-dup";
   const isTelegramBridge = flags === "mtproto-ws";
   const isVoiceExempt = flags === "voice-exempt";
+  const isReuseFallback = flags === "wssize-reuse-fallback";
   const isMtproto = flags === "mtproto" || !!flags?.startsWith("mtproto:");
   const mtprotoName = isMtproto
     ? (flags as string).slice("mtproto".length).replace(/^:/, "").trim()
@@ -198,6 +200,7 @@ export const FlagBadges = ({ flags }: FlagBadgesProps) => {
     !isMtproto &&
     !isTelegramBridge &&
     !isVoiceExempt &&
+    !isReuseFallback &&
     !dnsVerdict
   )
     return null;
@@ -259,6 +262,15 @@ export const FlagBadges = ({ flags }: FlagBadgesProps) => {
           icon={<VoiceIcon />}
           label="voice"
           title={t("connections.flags.voiceExempt")}
+          variant="outlined"
+          color="warning"
+        />
+      )}
+      {isReuseFallback && (
+        <B4Badge
+          icon={<RoutingIcon />}
+          label={t("connections.flags.wssizeReuseFallbackLabel")}
+          title={t("connections.flags.wssizeReuseFallback")}
           variant="outlined"
           color="warning"
         />

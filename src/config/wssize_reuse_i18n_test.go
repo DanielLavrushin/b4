@@ -10,6 +10,7 @@ import (
 
 var collectAndReuseStringKeys = []string{
 	"connections.flags.ipCollected",
+	"connections.flags.wssizeReuseFallback",
 	"sets.tcp.general.wssizeReuse",
 	"sets.tcp.general.ibdCollect",
 	"sets.targets.useCollectedIps",

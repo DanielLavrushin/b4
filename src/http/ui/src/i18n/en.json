@@ -3889,6 +3889,8 @@
       "ipBlocked": "Blocked by IP",
       "ipCollectedLabel": "collect",
       "ipCollected": "IP added to the shared collection pool for later connections",
+      "wssizeReuseFallbackLabel": "fallback",
+      "wssizeReuseFallback": "Reuse WSSIZE connection fell back: the warm or the relay after it failed, the warm was skipped, or no warm slot or port was free, so this set's strategy applied to the whole connection",
       "ipBanned": "Banned address: it did not answer any site name, so b4 reset the connection or, for QUIC, refused it",
       "ipBannedLabel": "ban",
       "dns": {
