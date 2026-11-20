@@ -512,6 +512,33 @@ func TestValidate_QueueFields(t *testing.T) {
 		}
 	})
 
+	t.Run("a TUN discovery flow mark that its carrier's re-sends would carry is refused", func(t *testing.T) {
+		cfg := NewConfig()
+		cfg.Queue.Mode = "tun"
+		cfg.System.Checker.DiscoveryFlowMark = 0x10008002
+		ve := mustValidationErr(t, cfg.Validate())
+		if findField(ve, "system.checker.discovery_flow_mark", "mark_conflict") == nil {
+			t.Errorf("flow mark 0x10008002 is the derived injected mark 0x8002 with the reinject bit, which the carrier's re-sends carry, yet it was accepted: %+v", ve.Fields)
+		}
+
+		for _, mode := range []string{"", "nfqueue"} {
+			cfg := NewConfig()
+			cfg.Queue.Mode = mode
+			cfg.System.Checker.DiscoveryFlowMark = 0x10008002
+			if err := cfg.Validate(); err != nil {
+				t.Errorf("queue mode %q sends Discovery's packets without the reinject bit, so the pair works there, yet it was rejected: %v", mode, err)
+			}
+		}
+
+		cfg = NewConfig()
+		cfg.Queue.Mode = "tun"
+		cfg.System.Checker.DiscoveryFlowMark = 0x100001
+		cfg.System.Checker.DiscoveryInjectedMark = 0x100002
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("explicit marks that do not alias were rejected in TUN mode: %v", err)
+		}
+	})
+
 	t.Run("invalid queue mode", func(t *testing.T) {
 		cfg := NewConfig()
 		cfg.Queue.Mode = "bogus"

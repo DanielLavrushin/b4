@@ -314,6 +314,9 @@ func (e *Engine) startDiscoveryCarrier(req DiscoveryCarrierRequest, proc packetP
 		return nil, errors.New("the TUN engine is stopping")
 	default:
 	}
+	if req.InjectedMark|engine.ReinjectMarkBit == req.FlowMark {
+		return nil, fmt.Errorf("Discovery's injected mark 0x%x with the reinject bit 0x%x equals its flow mark, so every packet the carrier re-sends would loop back into it; choose other Discovery marks", req.InjectedMark, engine.ReinjectMarkBit)
+	}
 	if e.routes == nil {
 		return nil, errors.New("the TUN engine has no routing set up")
 	}

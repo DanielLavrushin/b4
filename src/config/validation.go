@@ -673,6 +673,12 @@ func (c *Config) Validate() error {
 		v.add("queue.mark", "mark_conflict", "queue marks must be unique: mark, discovery_flow_mark, discovery_injected_mark", nil)
 		return v.result()
 	}
+	if c.Queue.Mode == "tun" && injectedMark|uint(engine.ReinjectMarkBit) == flowMark {
+		v.addf("system.checker.discovery_flow_mark", "mark_conflict", map[string]any{"mark": fmt.Sprintf("0x%x", flowMark)},
+			"discovery_flow_mark 0x%x is discovery_injected_mark 0x%x with the TUN reinject bit 0x%x, the mark of every packet the TUN Discovery carrier re-sends, so its probes would loop back into the carrier; choose a flow mark without that bit",
+			flowMark, injectedMark, uint(engine.ReinjectMarkBit))
+		return v.result()
+	}
 	if c.Queue.Mode != "tun" && !c.Queue.IsDiscovery {
 		warnQueueMarkWithInjectedBit(c.Queue.Mark)
 	}

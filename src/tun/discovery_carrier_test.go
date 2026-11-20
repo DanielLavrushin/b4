@@ -203,6 +203,26 @@ func TestTheCarrierRefusesWithoutAnUplinkSource(t *testing.T) {
 	}
 }
 
+func TestTheCarrierRefusesAFlowMarkItsResendsWouldCarry(t *testing.T) {
+	f := stubRules(t, stockRules)
+	_, opened := stubCarrierIO(t)
+	for _, capture := range []string{"ports", "default"} {
+		e := carrierEngine(capture, "203.0.113.2")
+		if _, err := e.startDiscoveryCarrier(DiscoveryCarrierRequest{FlowMark: 0x10008002, InjectedMark: 0x8002}, &laneProc{}); err == nil || !strings.Contains(err.Error(), "loop back") {
+			t.Errorf("%s capture: the re-sends carry 0x8002|0x10000000, the flow mark itself, so rule 81 would send them back into the carrier; the start must be refused, got %v", capture, err)
+		}
+	}
+	if *opened != 0 || len(adds(f.calls)) != 0 {
+		t.Errorf("a refusal must change nothing, opened %d, calls:\n%s", *opened, strings.Join(f.calls, "\n"))
+	}
+
+	c, err := carrierEngine("ports", "203.0.113.2").startDiscoveryCarrier(DiscoveryCarrierRequest{FlowMark: 0x8002, InjectedMark: 0x10008002}, &laneProc{})
+	if err != nil {
+		t.Fatalf("an injected mark that already carries the reinject bit re-sends with it, which is not the flow mark 0x8002, so the start must go ahead: %v", err)
+	}
+	c.Stop()
+}
+
 func TestTheCarrierRefusesOnAStoppedEngine(t *testing.T) {
 	stubRules(t, stockRules)
 	stubCarrierIO(t)
