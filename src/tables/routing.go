@@ -1569,6 +1569,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 				continue
 			}
 			routeRuleCache[set.Id] = cur
+			routeWarnRefusedWSReuseTProxy(set, cur)
 			retireOld()
 			newRoutingSets = append(newRoutingSets, set)
 		} else if err := routePrepareCollected(be, cfg, set, cur); err != nil {

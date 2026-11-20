@@ -25,6 +25,13 @@ func (st routeState) reuseDiverted() bool {
 	return st.mode == config.RoutingModeWSReuse && st.diverts && st.tproxied
 }
 
+func routeWarnRefusedWSReuseTProxy(set *config.SetConfig, st routeState) {
+	if st.mode != config.RoutingModeWSReuse || !st.diverts || st.tproxied {
+		return
+	}
+	log.Warnf("Routing: set '%s' reuses WSSIZE, but the firewall refused its TPROXY rule for TCP/443, so b4 does not count on its TCP/443 connections being diverted to the reuse relay: those that reach b4's packet queue get the set's own TCP strategy. b4 tries the rule again when it next rebuilds the set's rules", set.Name)
+}
+
 func routePublishWSReuseDivertsLocked() {
 	diverted := make(map[string]struct{})
 	for id, st := range routeRuleCache {

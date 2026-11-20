@@ -359,3 +359,44 @@ func TestAMissingIP6TablesBinaryLeavesAReuseSetDiverted(t *testing.T) {
 		t.Fatal("a reuse set is published as undiverted because ip6tables is missing, although no IPv6 packet reaches b4's queue without it and the IPv4 TPROXY rule went in")
 	}
 }
+
+func TestARefusedReuseTProxyRuleIsWarnedForTheSet(t *testing.T) {
+	const warning = "Routing: set 'reuse' reuses WSSIZE, but the firewall refused its TPROXY rule for TCP/443"
+	for _, engine := range []string{backendIPTables, backendNFTables} {
+		t.Run(engine, func(t *testing.T) {
+			refusedTProxyRig(t, engine, func([]string) bool { return false })
+			inner := run
+			run = func(args ...string) (string, error) {
+				v6 := args[0] == backendIP6Tables || slices.Contains(args, "ip6")
+				tproxy := slices.Contains(args, "TPROXY") || slices.Contains(args, "tproxy")
+				add := slices.Contains(args, "-A") || len(args) > 2 && args[0] == "nft" && args[1] == "add" && args[2] == "rule"
+				if v6 && tproxy && add {
+					return "Error: Could not process rule: No such file or directory", errors.New("exit status 1")
+				}
+				return inner(args...)
+			}
+			runLogged = runLoggedExec
+			buf := captureTablesLog(t)
+			cfg := refusedTProxyConfig(t, true)
+			RoutingSyncConfig(cfg)
+			if _, cached := routeRuleCache["reuse"]; !cached || WSReuseDiverts("reuse") {
+				t.Fatalf("setup: cached=%v diverted=%v, want the set installed and undiverted", cached, WSReuseDiverts("reuse"))
+			}
+			if n := strings.Count(buf.String(), warning); n != 1 {
+				t.Fatalf("the firewall refused the set's IPv6 TPROXY rule with an output that b4 logs only at Trace, and %d warnings name the set, want 1; log:\n%s", n, buf.String())
+			}
+			RoutingSyncConfig(cfg)
+			if n := strings.Count(buf.String(), warning); n != 1 {
+				t.Fatalf("an unchanged second sync, which does not rebuild the set, warned again: %d warnings, want 1", n)
+			}
+		})
+	}
+	t.Run("nothing refused", func(t *testing.T) {
+		refusedTProxyRig(t, backendNFTables, func([]string) bool { return false })
+		buf := captureTablesLog(t)
+		RoutingSyncConfig(refusedTProxyConfig(t, true))
+		if !WSReuseDiverts("reuse") || strings.Contains(buf.String(), warning) {
+			t.Fatalf("a reuse set whose TPROXY rules all went in: diverted=%v, warned=%v, want diverted and no warning", WSReuseDiverts("reuse"), strings.Contains(buf.String(), warning))
+		}
+	})
+}
