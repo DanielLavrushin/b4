@@ -33,6 +33,10 @@ func familyForgetGatewayWarnings() {
 		routeGatewayWarned.Delete(k)
 		return true
 	})
+	routeWSReuseUndivertedWarned.Range(func(k, _ any) bool {
+		routeWSReuseUndivertedWarned.Delete(k)
+		return true
+	})
 }
 
 func familyResetGlobals(t *testing.T) {
@@ -46,6 +50,7 @@ func familyResetGlobals(t *testing.T) {
 	addCheck, delCheck := routeAddSourceCheckRule, routeDelSourceCheckRule
 	hostIfaces, linkType := routeHostIfaces, routeLinkType
 	marks := routeMarksByIface.Load()
+	diverted := routeWSReuseDiverted.Load()
 	routeMu.Lock()
 	synced := routeSyncedCfg
 	routeSyncedCfg = nil
@@ -75,10 +80,12 @@ func familyResetGlobals(t *testing.T) {
 		routeSyncedCfg = synced
 		routeMu.Unlock()
 		routeMarksByIface.Store(marks)
+		routeWSReuseDiverted.Store(diverted)
 	})
 	routeEngine = nil
 	routeRuleCache = make(map[string]routeState)
 	routeMarksByIface.Store(&map[string][]uint32{})
+	routeWSReuseDiverted.Store(&map[string]struct{}{})
 	routeIfaceAuto = make(map[string]routeState)
 	routeRefreshedAt = make(map[string]time.Time)
 	routeCollectedApplied = make(map[string]map[string][]string)

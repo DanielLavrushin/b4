@@ -62,6 +62,7 @@ type routeState struct {
 	gwV6        string
 	gwPeersV4   []string
 	tproxyPort  int
+	diverts     bool
 	upstreamKey string
 	udpPorts    string
 	sourcesKey  string
@@ -171,6 +172,7 @@ func routePublishMarksLocked() {
 		}
 	}
 	routeMarksByIface.Store(&marks)
+	routePublishWSReuseDivertsLocked()
 }
 
 func RoutedIfaceMarks(iface string) []uint32 {
@@ -1492,6 +1494,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 		}
 	}
 	routeProbeCollectedConnmark(be, desired)
+	reuseDiverts := routeProbeWSReuseDiversion(be, desired)
 
 	var newRoutingSets []*config.SetConfig
 	var retargetedSets []*config.SetConfig
@@ -1506,6 +1509,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 
 		cur := buildRouteState(cfg, set)
 		cur.set = set
+		cur.diverts = cur.mode == config.RoutingModeWSReuse && reuseDiverts
 		if config.IsTelegramBridgeSet(set) {
 			v4, v6 := telegramBridgeListenerFamilies()
 			cur.ipv4 = cur.ipv4 && v4
@@ -1523,7 +1527,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 		previous := routeState{}
 		hadPrevious := false
 		if old, ok := routeRuleCache[set.Id]; ok {
-			if !routeStateEqual(old, cur) {
+			if !routeStateEqual(old, cur) || old.diverts != cur.diverts {
 				previous, hadPrevious = old, true
 				retireOld = routeCleanupForRebuild(be, old, cur)
 				delete(routeRuleCache, set.Id)

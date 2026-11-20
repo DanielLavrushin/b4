@@ -20,6 +20,7 @@ import (
 	"github.com/daniellavrushin/b4/sni"
 	"github.com/daniellavrushin/b4/sock"
 	"github.com/daniellavrushin/b4/stun"
+	"github.com/daniellavrushin/b4/tables"
 	"github.com/daniellavrushin/b4/utils"
 	"github.com/florianl/go-nfqueue"
 )
@@ -182,10 +183,10 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 
 	switch pkt.proto {
 	case 6:
-		if set.ReusesWSSize() {
-			return vc.accept()
-		}
 		if len(pkt.raw) >= pkt.ihl+TCPHeaderMinLen {
+			if set.ReusesWSSize() && binary.BigEndian.Uint16(pkt.raw[pkt.ihl+2:]) == 443 && wsReuseDiverts(set.Id) {
+				return vc.accept()
+			}
 			return w.handleTCPPacket(vc, pkt, cfg, matcher, matched, set, st, stPrefix)
 		}
 	case 17:
@@ -196,6 +197,8 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 
 	return vc.accept()
 }
+
+var wsReuseDiverts = tables.WSReuseDiverts
 
 const maxInjectInflight = 512
 
