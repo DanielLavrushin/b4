@@ -69,7 +69,7 @@ func collectAndReuseStrings(t *testing.T, locale string) map[string]string {
 }
 
 func TestRussianCollectAndReuseStringsHaveNoEnglishTerms(t *testing.T) {
-	banned := []string{"tuple", "reuse", "firewall", "source port", "source device", "hub", "collect", "listener"}
+	banned := []string{"tuple", "reuse", "firewall", "source port", "source device", "handshake", "hub", "collect", "listener"}
 	for key, text := range collectAndReuseStrings(t, "ru") {
 		lower := strings.ToLower(text)
 		for _, word := range banned {

@@ -1938,7 +1938,7 @@
         "mssClamp": "MSS Clamping",
         "mssEnable": "Включить MSS для сета",
         "mssEnableDesc": "Переопределить TCP MSS для соединений, попадающих под IP, GeoIP, ASN, собранные IP или устройства этого сета",
-        "mssScopeHint": "MSS выставляется в TCP SYN, до TLS handshake. Поэтому область действия ограничена IP / GeoIP / ASN / собранными IP / исходным устройством. Фильтры по SNI домену, GeoSite и версии TLS в MSS clamping не участвуют.",
+        "mssScopeHint": "MSS выставляется в TCP SYN, до TLS-рукопожатия. Поэтому область действия ограничена IP / GeoIP / ASN / собранными IP / исходным устройством. Фильтры по SNI домену, GeoSite и версии TLS в MSS clamping не участвуют.",
         "mssScopeRequired": "Перед включением MSS добавьте в сет цель по IP, GeoIP, ASN или исходному устройству либо включите «Использовать собранные IP».",
         "mssAppliesTo": "Область: IPs {{ips}}  Devices {{macs}}",
         "mssSize": "Размер MSS (байт)",
