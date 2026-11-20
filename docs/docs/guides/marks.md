@@ -594,7 +594,9 @@ default marks by the queue-mark rule, since they have every bit of the queue mar
 flow or injected mark that lacks one of those bits by a rule for that mark. On the whole default route, priority 81 comes ahead of the main table and its default
 route into `b4tun0`. During a run, a packet of another service whose mark is exactly the flow
 mark goes into the device too. Every 5 seconds b4 checks the device, its route, these rules
-and the uplink address. A missing one, or a changed uplink address, stops the run. A device, table or rules left behind by a crash are
+and the uplink address, and with port capture that `B4_TUN` still returns the run's marks. A
+missing one, a changed uplink address, or a change to Discovery's marks during the run that
+leaves the run's marks to capture stops the run. A device, table or rules left behind by a crash are
 removed when the TUN engine next starts, before its own rules.
 
 ## Routing rules and tables

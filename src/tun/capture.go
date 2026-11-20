@@ -319,6 +319,13 @@ func discoveryCaptureReturns(queueMark, flow, injected uint) [][]string {
 	return specs
 }
 
+func discoveryMarkReturned(queueMark, flow, injected, mark uint) bool {
+	bare := injected &^ engine.ReinjectMarkBit
+	return mark&queueMark == queueMark ||
+		(flow != 0 && mark == flow) ||
+		(bare != 0 && mark&^engine.ReinjectMarkBit == bare)
+}
+
 func (r *routeManager) captureChainRules(excl, local []string) []captureRule {
 	rules := []captureRule{
 		{spec: []string{"-m", "mark", "--mark", fmt.Sprintf("0x%x/0x%x", r.mark, r.mark), "-j", "RETURN"}},

@@ -61,7 +61,7 @@ Only the outgoing packets of the router's own connections pass through a TUN dev
 
 The device sees no DNS answers, and a heal skips the DNS phase. Before the strategies, the run therefore resolves the IPv4 addresses of every domain it has no address for, through the resolver its fetches use. A strategy part that acts on the first packet of a connection, which carries no name, such as a fake SYN, then applies from the first connection to each address. These addresses are used only for matching during the run and never reach a set.
 
-A run does not start while the TUN engine is not running or has no uplink address. Every 5 seconds the run checks its device, its route, its rules and the uplink address. When one of them is gone or the uplink address changes, the run stops as after a rewrite of b4's DSCP rules, and its results cannot be applied. A device or rules left behind by a crash are removed the next time the TUN engine starts.
+A run does not start while the TUN engine is not running or has no uplink address. Every 5 seconds the run checks its device, its route, its rules and the uplink address, and with port capture that `B4_TUN` still returns its marks. When one of them is gone, the uplink address changes, or a change to Discovery's marks during the run leaves its marks to port capture, the run stops as after a rewrite of b4's DSCP rules, and its results cannot be applied. A device or rules left behind by a crash are removed the next time the TUN engine starts.
 
 ## A run for a set
 

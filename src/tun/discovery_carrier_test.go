@@ -399,7 +399,11 @@ func stubKernel(t *testing.T) *fakeKernel {
 		case cmd == "ip rule show":
 			return k.ruleShow(), nil
 		case strings.HasPrefix(cmd, "ip rule add fwmark "):
-			k.rules = append(k.rules, args[len(args)-1]+":\tfrom all fwmark "+strings.TrimSuffix(args[4], "/0xffffffff")+" lookup "+args[6]+"\n")
+			suppress := ""
+			if slices.Contains(args, "suppress_prefixlength") {
+				suppress = " suppress_prefixlength 0"
+			}
+			k.rules = append(k.rules, args[len(args)-1]+":\tfrom all fwmark "+strings.TrimSuffix(args[4], "/0xffffffff")+" lookup "+args[6]+suppress+"\n")
 			return "", nil
 		case len(args) == 10 && strings.HasPrefix(cmd, "ip route replace default dev "):
 			k.route[args[9]] = "default dev " + args[5] + " scope link src " + args[7] + "\n"
@@ -412,6 +416,81 @@ func stubKernel(t *testing.T) *fakeKernel {
 		return "", nil
 	}
 	return k
+}
+
+func TestTheCarrierStopsWhenAMidRunMarkChangeLeavesItsMarksToPortCapture(t *testing.T) {
+	cases := []struct {
+		name               string
+		capture            string
+		runFlow, runInj    uint
+		saveFlow, saveInj  uint
+		wantLost           bool
+		wantMarkInTheError string
+	}{
+		{"explicit marks replaced", "ports", 0x100001, 0x100002, 0x200001, 0x200002, true, "0x100001"},
+		{"only the injected mark replaced", "ports", 0x100001, 0x100002, 0x100001, 0x200002, true, "0x100002"},
+		{"marks under the queue mark", "ports", 0x8001, 0x8002, 0x200001, 0x200002, false, ""},
+		{"an unrelated save", "ports", 0x100001, 0x100002, 0x100001, 0x100002, false, ""},
+		{"whole-default capture", "default", 0x100001, 0x100002, 0x200001, 0x200002, false, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stubKernel(t)
+			stubCarrierIO(t)
+			carrierReconcileEvery = 2 * time.Millisecond
+			origExists := carrierDeviceExists
+			carrierDeviceExists = func(string) bool { return true }
+			t.Cleanup(func() { carrierDeviceExists = origExists })
+			e := carrierEngine(tc.capture, "203.0.113.2")
+			e.routes.mark = 0x8000
+			e.routes.discoveryFlow, e.routes.discoveryInjected = tc.runFlow, tc.runInj
+
+			var mu sync.Mutex
+			var lost []error
+			c, err := e.startDiscoveryCarrier(DiscoveryCarrierRequest{FlowMark: tc.runFlow, InjectedMark: tc.runInj, Lost: func(err error) {
+				mu.Lock()
+				lost = append(lost, err)
+				mu.Unlock()
+			}}, &laneProc{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			losses := func() []error {
+				mu.Lock()
+				defer mu.Unlock()
+				return append([]error(nil), lost...)
+			}
+			time.Sleep(40 * time.Millisecond)
+			if got := losses(); len(got) != 0 {
+				c.Stop()
+				t.Fatalf("a carrier whose marks the chain returns was reported lost: %v", got)
+			}
+
+			p := e.routes.captureParams()
+			p.discoveryFlow, p.discoveryInjected = tc.saveFlow, tc.saveInj
+			e.routes.updateCapture(p)
+			deadline := time.Now().Add(2 * time.Second)
+			for tc.wantLost && len(losses()) == 0 && time.Now().Before(deadline) {
+				time.Sleep(2 * time.Millisecond)
+			}
+			time.Sleep(40 * time.Millisecond)
+			c.Stop()
+
+			got := losses()
+			if !tc.wantLost {
+				if len(got) != 0 {
+					t.Errorf("the run's marks are still kept out of capture, but the carrier was reported lost: %v", got)
+				}
+				return
+			}
+			if len(got) != 1 {
+				t.Fatalf("a mark change that leaves the run's packets to port capture must stop the run exactly once, got %v", got)
+			}
+			if msg := got[0].Error(); !strings.Contains(msg, "Discovery marks were changed") || !strings.Contains(msg, tc.wantMarkInTheError) {
+				t.Errorf("the loss must name the mark change and the uncovered mark %s, got %q", tc.wantMarkInTheError, msg)
+			}
+		})
+	}
 }
 
 func TestTheCarrierReportsALostRuleRouteOrSourceOnceAndNothingWhileIntact(t *testing.T) {

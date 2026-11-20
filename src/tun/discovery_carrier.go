@@ -142,6 +142,20 @@ func (r *routeManager) carrierRouting() carrierRouting {
 	}
 }
 
+func (r *routeManager) carrierMarksCaptured(flow, injected uint) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.resolvedCapture != "ports" {
+		return nil
+	}
+	for _, mark := range []uint{flow, injected, injected | engine.ReinjectMarkBit} {
+		if !discoveryMarkReturned(r.mark, r.discoveryFlow, r.discoveryInjected, mark) {
+			return fmt.Errorf("the Discovery marks were changed during the run, and %s no longer returns the run's mark 0x%x, so its packets would enter %s", tunCaptureChain, mark, r.tunName)
+		}
+	}
+	return nil
+}
+
 func (cr carrierRouting) engineTables() map[int]bool {
 	avoid := map[int]bool{xrayUITproxyTable: true}
 	for _, t := range []int{cr.routeTable, cr.captureTable, captureTableFor(cr.routeTable), cr.explicit} {
@@ -271,6 +285,8 @@ type DiscoveryCarrier struct {
 	rules    []carrierRule
 	table    int
 	src      string
+	flow     uint
+	injected uint
 	lost     func(error)
 	lostOnce sync.Once
 	quit     chan struct{}
@@ -319,13 +335,15 @@ func (e *Engine) startDiscoveryCarrier(req DiscoveryCarrierRequest, proc packetP
 	}
 
 	c := &DiscoveryCarrier{
-		name:   name,
-		proc:   proc,
-		routes: e.routes,
-		table:  table,
-		src:    cr.src,
-		lost:   req.Lost,
-		quit:   make(chan struct{}),
+		name:     name,
+		proc:     proc,
+		routes:   e.routes,
+		table:    table,
+		src:      cr.src,
+		flow:     req.FlowMark,
+		injected: req.InjectedMark,
+		lost:     req.Lost,
+		quit:     make(chan struct{}),
 	}
 	if err := c.setup(e, req, cr); err != nil {
 		c.Stop()
@@ -464,6 +482,9 @@ func (c *DiscoveryCarrier) reconcileLoop() {
 }
 
 func (c *DiscoveryCarrier) check() error {
+	if err := c.routes.carrierMarksCaptured(c.flow, c.injected); err != nil {
+		return err
+	}
 	if !carrierDeviceExists(c.name) {
 		return fmt.Errorf("the Discovery carrier device %s is gone", c.name)
 	}
