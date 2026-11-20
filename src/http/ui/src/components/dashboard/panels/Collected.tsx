@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { colors, fonts } from "@design";
 import { ClearIcon } from "@b4.icons";
 import { B4Dialog } from "@common/B4Dialog";
+import { formatInteger } from "@common/charts";
 import { apiPost } from "@api/apiClient";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { describeApiError } from "@utils";
@@ -11,6 +12,7 @@ import type { CollectedEntry } from "@models/metrics";
 import { useMetricsFrame } from "@/stores/useMetrics";
 import { PanelCard } from "./PanelCard";
 import { ShowMore, visibleRows } from "./ShowMore";
+import { TimeLeft } from "./TimeLeft";
 import { emptySx, listSx, rowSx } from "./styles";
 
 interface ClearResult { success: boolean; cleared: number }
@@ -19,11 +21,12 @@ export const clearCollected = (ip?: string) =>
 const EMPTY: readonly CollectedEntry[] = [];
 
 function CollectedPanelView() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { showSuccess, showError } = useSnackbar();
   const listId = useId();
   const rev = useMetricsFrame((f) => f.collected?.rev) ?? 0;
   const items = useMetricsFrame((f) => f.collected?.items) ?? EMPTY;
+  const refused = useMetricsFrame((f) => f.collected?.refused) ?? 0;
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -68,7 +71,10 @@ function CollectedPanelView() {
                       <Box component="span" sx={{ fontFamily: fonts.mono, fontSize: 12, color: colors.text.primary, overflowWrap: "anywhere" }}>{entry.ip}</Box>
                       {entry.host && <Box component="span" title={entry.host} sx={{ fontSize: 12, minWidth: 0, color: colors.text.secondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.host}</Box>}
                     </Box>
-                    {entry.set && <Box sx={{ fontSize: 12, color: colors.text.secondary, overflowWrap: "anywhere" }}>{t("dashboard.collected.set", { set: entry.set })}</Box>}
+                    <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", columnGap: "14px", rowGap: "2px", fontSize: 12, color: colors.text.secondary, minWidth: 0 }}>
+                      {entry.set && <Box component="span" sx={{ minWidth: 0, overflowWrap: "anywhere" }}>{t("dashboard.collected.set", { set: entry.set })}</Box>}
+                      <TimeLeft until={entry.until} strings="dashboard.collected" />
+                    </Box>
                   </Box>
                   <Tooltip title={t("dashboard.collected.removeHint")} describeChild>
                     <span><Button size="small" disabled={busy} onClick={() => void remove(entry.ip)}
@@ -82,6 +88,11 @@ function CollectedPanelView() {
             </Box>
             <ShowMore total={rows.length} expanded={expanded} onToggle={() => setExpanded((value) => !value)} controls={listId} />
           </>
+        )}
+        {refused > 0 && (
+          <Box sx={{ ...rowSx, fontSize: 12, lineHeight: 1.5, color: colors.state.warning }}>
+            {t("dashboard.collected.refused", { count: refused, value: formatInteger(refused, i18n.language) })}
+          </Box>
         )}
       </PanelCard>
       <B4Dialog open={confirmOpen} onClose={() => { if (!busy) setConfirmOpen(false); }}

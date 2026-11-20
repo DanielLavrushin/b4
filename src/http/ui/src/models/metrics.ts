@@ -145,11 +145,13 @@ export interface CollectedEntry {
   host: string;
   set: string;
   since: number;
+  until: number;
 }
 
 export interface CollectedList {
   rev: number;
   items: CollectedEntry[];
+  refused: number;
 }
 
 export interface BanEntry {

@@ -497,3 +497,47 @@ func TestCollectedPoolStringsSayWhichAnswersDropAnAddress(t *testing.T) {
 		}
 	}
 }
+
+func collectedUIString(t *testing.T, locale, path string) string {
+	t.Helper()
+	raw, err := os.ReadFile("../http/ui/src/i18n/" + locale + ".json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var node any
+	if err := json.Unmarshal(raw, &node); err != nil {
+		t.Fatal(err)
+	}
+	for _, part := range strings.Split(path, ".") {
+		node, _ = node.(map[string]any)[part]
+	}
+	text, _ := node.(string)
+	return text
+}
+
+func TestCollectedTargetStringSaysRoutingAndReuseSetsTakeEveryConnection(t *testing.T) {
+	for locale, phrases := range map[string][]string{
+		"en": {"takes every connection to a collected address", "whatever the site name and the set order", "WSSIZE reuse takes TCP/443 only"},
+		"ru": {"забирает каждое соединение к собранному адресу", "независимо от имени сайта и порядка сетов", "забирает только TCP/443"},
+	} {
+		text := collectedUIString(t, locale, "sets.targets.useCollectedIpsDesc")
+		for _, phrase := range phrases {
+			if !strings.Contains(text, phrase) {
+				t.Errorf("%s sets.targets.useCollectedIpsDesc must say that a set routing through its proxy or interface, or reusing WSSIZE on TCP/443, takes every connection to a collected address whatever the site name and the set order; missing %q in %q", locale, phrase, text)
+			}
+		}
+	}
+}
+
+func TestCollectedPoolFullStringNamesTheLimit(t *testing.T) {
+	limit := fmt.Sprint(maxCollectedIPs)
+	for locale, forms := range map[string][]string{"en": {"one", "other"}, "ru": {"one", "few", "many", "other"}} {
+		for _, form := range forms {
+			path := "dashboard.collected.refused_" + form
+			text := collectedUIString(t, locale, path)
+			if !strings.Contains(text, limit) || !strings.Contains(text, "{{value}}") {
+				t.Errorf("%s %s must give the refusal count and the pool limit %s from maxCollectedIPs, got %q", locale, path, limit, text)
+			}
+		}
+	}
+}

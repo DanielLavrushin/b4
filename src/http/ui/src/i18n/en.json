@@ -1125,7 +1125,12 @@
       "cleared": "Collected pool cleared.",
       "removeFailed": "Could not update the collected pool: {{error}}",
       "confirmTitle": "Clear collected IPs?",
-      "confirmBody": "Remove all addresses from the collected pool now? Each one otherwise leaves 6 hours after it was collected, and two new silent connections in a row can add it again."
+      "confirmBody": "Remove all addresses from the collected pool now? Each one otherwise leaves 6 hours after it was collected, and two new silent connections in a row can add it again.",
+      "left": "{{duration}} left",
+      "expiring": "expiring",
+      "endsAt": "Leaves the pool at {{time}}, or earlier when an answer from its server removes it",
+      "refused_one": "Since b4 started, {{value}} collection was refused because the pool was full; it holds at most 1024 addresses.",
+      "refused_other": "Since b4 started, {{value}} collections were refused because the pool was full; it holds at most 1024 addresses."
     },
     "bans": {
       "title": "Banned addresses",
@@ -1791,7 +1796,7 @@
       "deviceNoDestination": "Source devices narrow who this set applies to; they do not select traffic on their own. With routing on and no domain, IP or ASN target, this set steers nothing. To send everything from these devices, turn on \"Match any IP address\" on the IP addresses tab.",
       "catchAllIpsPartial": "This set holds {{present}}, but not {{missing}}. Turn the switch on to cover every address, or add the missing entry below.",
       "useCollectedIps": "Use collected IPs",
-      "useCollectedIpsDesc": "Adds candidates from the shared detected-IP pool to this set’s IP targets. An address stays in the pool for 6 hours after it was collected, or less if its server answers a connection that IP block detection watches in a set that does not use collected IPs, unless a set that uses collected IPs sends that connection through its proxy, its interface or WSSIZE reuse. The pool is cleared when b4 restarts."
+      "useCollectedIpsDesc": "Adds candidates from the shared detected-IP pool to this set’s IP targets. A set that sends traffic through its proxy, its interface or WSSIZE reuse takes every connection to a collected address from the devices it applies to, whatever the site name and the set order; WSSIZE reuse takes TCP/443 only. An address stays in the pool for 6 hours after it was collected, or less if its server answers a connection that IP block detection watches in a set that does not use collected IPs, unless a set that uses collected IPs sends that connection through its proxy, its interface or WSSIZE reuse. The pool is cleared when b4 restarts."
     },
     "tcp": {
       "sectionTitle": "TCP Configuration",

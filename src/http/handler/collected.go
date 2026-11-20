@@ -28,7 +28,7 @@ func (api *API) RegisterCollectedIPsApi() {
 }
 
 // @Summary List collected IP addresses
-// @Description Returns the current shared collected pool, sorted by collection time, latest first. Addresses are runtime candidates, not bans. since is wall-clock milliseconds.
+// @Description Returns the current shared collected pool, sorted by collection time, latest first. Addresses are runtime candidates, not bans. since and until are wall-clock milliseconds: until is when the address leaves the pool unless an answer removes it earlier.
 // @Tags CollectedIPs
 // @Produce json
 // @Success 200 {object} CollectedIPsResponse

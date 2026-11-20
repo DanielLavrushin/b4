@@ -209,9 +209,9 @@ function banList(v: unknown): BanList | undefined {
 function collectedList(v: unknown): CollectedList | undefined {
   if (!isObj(v)) return undefined;
   const items: CollectedEntry[] = objects(v.items).map((o) => ({
-    ip: str(o.ip), host: str(o.host), set: str(o.set), since: num(o.since),
+    ip: str(o.ip), host: str(o.host), set: str(o.set), since: num(o.since), until: num(o.until),
   }));
-  return { rev: num(v.rev), items };
+  return { rev: num(v.rev), items, refused: num(v.refused) };
 }
 
 function event(o: Obj): B4Event {
