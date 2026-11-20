@@ -95,3 +95,48 @@ func TestReuseSetKeepsItsStrategyWithoutDiversion(t *testing.T) {
 		}
 	}
 }
+
+func TestADivertedReuseSetPassesOnlyItsOwnFamiliesUntouched(t *testing.T) {
+	saved := wsReuseDiverts
+	t.Cleanup(func() { wsReuseDiverts = saved })
+	wsReuseDiverts = func(id string) bool { return id == "reuse-family" }
+	for _, tc := range []struct {
+		name      string
+		version   string
+		ver       byte
+		untouched bool
+	}{
+		{"an IPv4-only set, an IPv6 SYN to an IPv6 address it lists", "4", IPv6, false},
+		{"an IPv6-only set, an IPv4 SYN to an IPv4 address it lists", "6", IPv4, false},
+		{"an IPv4-only set, an IPv4 SYN", "4", IPv4, true},
+		{"a set of both families, an IPv6 SYN", "", IPv6, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, set := wsFixture()
+			set.Id = "reuse-family"
+			set.TCP.WSSize.Cutoff = ""
+			set.Targets.IPVersion = tc.version
+			set.Targets.IpsToMatch = []string{"1.2.3.4", "2001:db8::2"}
+			set.TCP.WSSizeReuse.Enabled = true
+			cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled = true, true
+			cfg.BuildSetPortRanges()
+			cfg.BuildTCPPortMap()
+			w := newTestWorker(t, cfg)
+			p := synWithOptions(tc.ver, []byte{3, 3, 7, 0}, nil, 100)
+			l3 := 20
+			if tc.ver == IPv6 {
+				l3 = IPv6HeaderLen
+			}
+			binary.BigEndian.PutUint16(p[l3+2:l3+4], 443)
+			if tc.ver == IPv6 {
+				sock.FixTCPChecksumV6(p)
+			} else {
+				sock.FixTCPChecksum(p)
+			}
+			w.dispatch(&verdictCtx{q: newFakeModQueue()}, p)
+			if untouched := p[l3+22] == 7; untouched != tc.untouched {
+				t.Errorf("%s: passed untouched=%v, want %v; the set's firewall sets hold no address of a family its ip_version leaves out, so such a connection is never diverted to the relay and must get the set's strategy", tc.name, untouched, tc.untouched)
+			}
+		})
+	}
+}

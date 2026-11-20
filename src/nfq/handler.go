@@ -184,7 +184,7 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 	switch pkt.proto {
 	case 6:
 		if len(pkt.raw) >= pkt.ihl+TCPHeaderMinLen {
-			if set.ReusesWSSize() && binary.BigEndian.Uint16(pkt.raw[pkt.ihl+2:]) == 443 && wsReuseDiverts(set.Id) {
+			if set.ReusesWSSize() && set.MatchesIPVersion(pkt.ver) && binary.BigEndian.Uint16(pkt.raw[pkt.ihl+2:]) == 443 && wsReuseDiverts(set.Id) {
 				return vc.accept()
 			}
 			return w.handleTCPPacket(vc, pkt, cfg, matcher, matched, set, st, stPrefix)

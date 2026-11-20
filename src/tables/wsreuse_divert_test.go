@@ -439,7 +439,7 @@ func TestOnlyTheReuseSetsOwnFamiliesDecideItsDiversion(t *testing.T) {
 					t.Fatalf("setup: cached=%v, %d TPROXY adds tried and %d taken, want the view installed with a refused add", cached, len(*attempts), len(*added))
 				}
 				if WSReuseDiverts("reuse") != tc.diverted {
-					t.Fatalf("%s: diverted=%v, want %v; a family outside the set's ip_version never matches the set in b4's queue, so only the set's own families' TPROXY rules decide whether its TCP/443 is diverted", tc.name, WSReuseDiverts("reuse"), tc.diverted)
+					t.Fatalf("%s: diverted=%v, want %v; the set's firewall sets hold no address of a family its ip_version leaves out, and b4's queue passes only the set's own families untouched, so only those families' TPROXY rules decide whether its TCP/443 is diverted", tc.name, WSReuseDiverts("reuse"), tc.diverted)
 				}
 				st.collected = true
 				if _, routed := routeCollectedRouteOf(st); routed != tc.diverted {
