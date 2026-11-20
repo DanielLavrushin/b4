@@ -36,7 +36,7 @@ The card builds a TLS ClientHello for the name in **Domain**. Typing a name, suc
 
 The ClientHello is built on the router. No connection is made, and the name is not resolved or checked. An `http://` or `https://` prefix and a path are dropped, and the name is lowercased. Each name holds one payload per protocol: when the name already has a TLS payload, generated or uploaded, the tab keeps it and reports that it exists.
 
-A generated ClientHello takes 648 bytes plus the length of the name, so it fits one packet. Its random values are drawn when it is generated and stay the same in the saved file; generating the name again replaces them.
+A generated ClientHello takes 648 bytes plus the length of the name, so it fits one packet. Its random values are drawn when it is generated and stay the same in the saved file until the payload is deleted and generated again.
 
 ## Upload Custom Payload {#uploading-a-payload}
 
