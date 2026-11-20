@@ -79,19 +79,39 @@ func (c *Config) reuseRoutingSets(sets []*SetConfig) []*SetConfig {
 
 func (c *Config) validateWSReuse(v *validator) {
 	for i, set := range c.Sets {
+		refusals := len(v.fields)
 		reuse := &set.TCP.WSSizeReuse
 		if reuse.MaxAgeSeconds == 0 {
 			reuse.MaxAgeSeconds = DefaultWSReuseMaxAgeSeconds
 		}
 		if reuse.MaxAgeSeconds < 1 || reuse.MaxAgeSeconds > MaxWSReuseMaxAgeSeconds {
-			v.addf(fmt.Sprintf("sets[%d].tcp.wssize_reuse.max_age_seconds", i), "out_of_range", map[string]any{"value": reuse.MaxAgeSeconds, "min": 1, "max": MaxWSReuseMaxAgeSeconds}, "warm age must be between 1 and %d seconds", MaxWSReuseMaxAgeSeconds)
+			v.addf(fmt.Sprintf("sets[%d].tcp.wssize_reuse.max_age_seconds", i), "wssize_reuse_age_range", map[string]any{"set": set.Name, "value": reuse.MaxAgeSeconds, "min": 1, "max": MaxWSReuseMaxAgeSeconds}, "set %q: Reuse WSSIZE connection warm validity %d is outside 1-%d seconds", set.Name, reuse.MaxAgeSeconds, MaxWSReuseMaxAgeSeconds)
 		}
 		if !set.ReusesWSSize() {
 			continue
 		}
-		if !set.TCP.WSSize.Rewrites() || set.TCP.WSSize.Window == 0 || set.Routing.Enabled || set.TCP.Duplicate.Enabled || !set.DeclaresIPTargets() || set.Targets.DomainOnly || len(set.Targets.SNIDomains) > 0 || len(set.Targets.GeoSiteCategories) > 0 || set.Targets.TLSVersion != "" || set.Escalate.To != "" || !c.IsTCPPort(443) || !set.MatchesTCPDPort(443) {
-			v.addf(fmt.Sprintf("sets[%d].tcp.wssize_reuse", i), "wssize_reuse_unsupported", map[string]any{"set": set.Name}, "set %q: WSSIZE reuse needs NFQUEUE, firewall setup, real window rewriting, an IP/GeoIP/ASN target and TCP/443, without domain/TLS filters, routing, duplication or escalation", set.Name)
-		} else if cause := c.wsReuseInactiveCause(c.WSReuseInactiveReason()); cause != "" {
+		if !set.TCP.WSSize.Rewrites() || set.TCP.WSSize.Window == 0 {
+			v.addf(fmt.Sprintf("sets[%d].tcp.wssize.window", i), "wssize_reuse_window", map[string]any{"set": set.Name}, "set %q: Reuse WSSIZE connection needs tcp.wssize on with a window above 0", set.Name)
+		}
+		if !set.DeclaresIPTargets() {
+			v.addf(fmt.Sprintf("sets[%d].targets.ip", i), "wssize_reuse_targets", map[string]any{"set": set.Name}, "set %q: Reuse WSSIZE connection needs IP targets: addresses, GeoIP categories, ASNs or collected IPs", set.Name)
+		}
+		if t := &set.Targets; t.DomainOnly || len(t.SNIDomains) > 0 || len(t.GeoSiteCategories) > 0 {
+			v.addf(fmt.Sprintf("sets[%d].targets.sni_domains", i), "wssize_reuse_domains", map[string]any{"set": set.Name}, "set %q: Reuse WSSIZE connection does not work with domains, GeoSite categories or domain-only matching", set.Name)
+		}
+		if set.Targets.TLSVersion != "" {
+			v.addf(fmt.Sprintf("sets[%d].targets.tls", i), "wssize_reuse_tls", map[string]any{"set": set.Name}, "set %q: Reuse WSSIZE connection does not work with a TLS version filter", set.Name)
+		}
+		if !c.IsTCPPort(443) || !set.MatchesTCPDPort(443) {
+			v.addf(fmt.Sprintf("sets[%d].tcp.dport_filter", i), "wssize_reuse_port", map[string]any{"set": set.Name}, "set %q: Reuse WSSIZE connection needs TCP port 443, which the port filter leaves out", set.Name)
+		}
+		if set.Routing.Enabled || set.TCP.Duplicate.Enabled || set.Escalate.To != "" {
+			v.addf(fmt.Sprintf("sets[%d].tcp.wssize_reuse", i), "wssize_reuse_conflict", map[string]any{"set": set.Name}, "set %q: Reuse WSSIZE connection does not work together with routing, packet duplication or escalation in the same set", set.Name)
+		}
+		if len(v.fields) > refusals {
+			continue
+		}
+		if cause := c.wsReuseInactiveCause(c.WSReuseInactiveReason()); cause != "" {
 			warnEgressGatewayOnce("Set '%s': Reuse WSSIZE connection does nothing while %s; the set's connections get its usual strategy", set.Name, cause)
 		}
 	}

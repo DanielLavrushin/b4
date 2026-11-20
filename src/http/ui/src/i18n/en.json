@@ -4147,7 +4147,13 @@
     "wssize_unsupported": "Set \"{{set}}\": Real TCP window (wssize) does not work together with traffic routing or packet duplication in the same set.",
     "wssize_window_range": "Set \"{{set}}\": Window under Real TCP window (wssize) must be between {{min}} and {{max}}.",
     "wssize_scale_range": "Set \"{{set}}\": Window Scale under Real TCP window (wssize) must be between {{min}} and {{max}}.",
-    "wssize_reuse_unsupported": "WSSIZE reuse needs NFQUEUE, firewall setup, a nonzero real window and IP/GeoIP/ASN targets on TCP/443, without domain/TLS filters, routing, duplication or escalation.",
+    "wssize_reuse_window": "Set \"{{set}}\": Reuse WSSIZE connection needs Real TCP window (wssize) on, with a Window above 0.",
+    "wssize_reuse_targets": "Set \"{{set}}\": Reuse WSSIZE connection needs IP targets: Manual Bypass IPs, Bypass GeoIP Categories, Networks (ASN) or Use collected IPs.",
+    "wssize_reuse_domains": "Set \"{{set}}\": Reuse WSSIZE connection does not work with domain targets. Remove the bypass domains and GeoSite categories and turn Domain-only matching off.",
+    "wssize_reuse_tls": "Set \"{{set}}\": Reuse WSSIZE connection does not work while a TLS Version Filter is set.",
+    "wssize_reuse_port": "Set \"{{set}}\": Reuse WSSIZE connection needs TCP port 443, and the Port Filter leaves it out.",
+    "wssize_reuse_conflict": "Set \"{{set}}\": Reuse WSSIZE connection does not work together with traffic routing, packet duplication or escalation in the same set.",
+    "wssize_reuse_age_range": "Set \"{{set}}\": Warm validity under Reuse WSSIZE connection must be between {{min}} and {{max}} seconds.",
     "invalid_enum": "Select one of the supported values."
   },
   "hub": {

@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -131,6 +132,116 @@ func TestWSReuseRejectsUnsupportedPaths(t *testing.T) {
 	}
 }
 
+var wsReuseRefusalCodes = []string{
+	"wssize_reuse_window",
+	"wssize_reuse_targets",
+	"wssize_reuse_domains",
+	"wssize_reuse_tls",
+	"wssize_reuse_port",
+	"wssize_reuse_conflict",
+	"wssize_reuse_age_range",
+}
+
+func uiErrorStrings(t *testing.T, locale string) map[string]any {
+	t.Helper()
+	raw, err := os.ReadFile("../http/ui/src/i18n/" + locale + ".json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	errs, _ := doc["errors"].(map[string]any)
+	return errs
+}
+
+func TestWSReuseRefusalNamesTheSetAndTheCondition(t *testing.T) {
+	escalating := func(c *Config) {
+		other := NewSetConfig()
+		other.Id, other.Name, other.Enabled = "other", "Other", true
+		other.Targets.SNIDomains = []string{"example.net"}
+		other.Targets.DomainsToMatch = []string{"example.net"}
+		c.Sets = append(c.Sets, &other)
+		c.Sets[0].Escalate.To = "other"
+	}
+	for _, c := range []struct {
+		name  string
+		edit  func(*Config)
+		codes map[string]string
+	}{
+		{"a Window of 0", func(c *Config) { c.Sets[0].TCP.WSSize.Window = 0 }, map[string]string{"wssize_reuse_window": "sets[0].tcp.wssize.window"}},
+		{"Real TCP window off", func(c *Config) { c.Sets[0].TCP.WSSize.Enabled = false }, map[string]string{"wssize_reuse_window": "sets[0].tcp.wssize.window"}},
+		{"no IP targets", func(c *Config) { c.Sets[0].Targets.IPs = nil; c.Sets[0].Targets.IpsToMatch = nil }, map[string]string{"wssize_reuse_targets": "sets[0].targets.ip"}},
+		{"domain-only matching", func(c *Config) { c.Sets[0].Targets.DomainOnly = true }, map[string]string{"wssize_reuse_domains": "sets[0].targets.sni_domains"}},
+		{"a bypass domain", func(c *Config) { c.Sets[0].Targets.SNIDomains = []string{"example.org"} }, map[string]string{"wssize_reuse_domains": "sets[0].targets.sni_domains"}},
+		{"a TLS version filter", func(c *Config) { c.Sets[0].Targets.TLSVersion = "1.3" }, map[string]string{"wssize_reuse_tls": "sets[0].targets.tls"}},
+		{"a port filter without 443", func(c *Config) { c.Sets[0].TCP.DPortFilter = "8443" }, map[string]string{"wssize_reuse_port": "sets[0].tcp.dport_filter"}},
+		{"escalation to another set", escalating, map[string]string{"wssize_reuse_conflict": "sets[0].tcp.wssize_reuse"}},
+		{"a warm validity of -1", func(c *Config) { c.Sets[0].TCP.WSSizeReuse.MaxAgeSeconds = -1 }, map[string]string{"wssize_reuse_age_range": "sets[0].tcp.wssize_reuse.max_age_seconds"}},
+		{"a TLS version filter and a port filter together", func(c *Config) {
+			c.Sets[0].Targets.TLSVersion = "1.3"
+			c.Sets[0].TCP.DPortFilter = "8443"
+		}, map[string]string{"wssize_reuse_tls": "sets[0].targets.tls", "wssize_reuse_port": "sets[0].tcp.dport_filter"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := reuseConfig(t)
+			cfg.Sets[0].Name = "Video edges"
+			c.edit(cfg)
+			ve := mustValidationErr(t, cfg.Validate())
+			for code, path := range c.codes {
+				f := findField(ve, path, code)
+				if f == nil {
+					t.Errorf("%s: no %s at %s, got %+v", c.name, code, path, ve.Fields)
+					continue
+				}
+				if f.Params["set"] != "Video edges" || !strings.HasPrefix(f.Message, `set "Video edges": `) {
+					t.Errorf("%s: %s does not name the set: params %v, message %q", c.name, code, f.Params, f.Message)
+				}
+			}
+			for _, f := range ve.Fields {
+				if f.Code == "wssize_reuse_unsupported" {
+					t.Errorf("%s: still refused with the catch-all code wssize_reuse_unsupported: %q", c.name, f.Message)
+				}
+			}
+		})
+	}
+	refused := reuseConfig(t)
+	refused.Queue.Mode = "tun"
+	refused.Sets[0].TCP.WSSizeReuse.MaxAgeSeconds = -1
+	warnings := captureEgressGatewayWarnings(t)
+	if findField(mustValidationErr(t, refused.Validate()), "sets[0].tcp.wssize_reuse.max_age_seconds", "wssize_reuse_age_range") == nil {
+		t.Fatal("a warm validity of -1 under the TUN engine was not refused")
+	}
+	for _, line := range *warnings {
+		if strings.Contains(line, "Reuse WSSIZE connection") {
+			t.Errorf("a refused reuse set also got the engine warning: %q", line)
+		}
+	}
+	labels := map[string]map[string]string{
+		"en": {"wssize_reuse_tls": "TLS Version Filter", "wssize_reuse_targets": "Use collected IPs", "wssize_reuse_window": "Real TCP window (wssize)"},
+		"ru": {"wssize_reuse_tls": "«Фильтр версии TLS»", "wssize_reuse_targets": "«Использовать собранные IP»", "wssize_reuse_window": "«Окно реальных TCP-пакетов (wssize)»"},
+	}
+	for _, locale := range []string{"en", "ru"} {
+		errs := uiErrorStrings(t, locale)
+		if _, ok := errs["wssize_reuse_unsupported"]; ok {
+			t.Errorf("%s.json still has errors.wssize_reuse_unsupported, which nothing sends any more", locale)
+		}
+		for _, code := range wsReuseRefusalCodes {
+			s, _ := errs[code].(string)
+			if !strings.Contains(s, "{{set}}") {
+				t.Errorf("%s.json errors.%s does not name the set: %q", locale, code, s)
+			}
+			if label := labels[locale][code]; label != "" && !strings.Contains(s, label) {
+				t.Errorf("%s.json errors.%s does not name %s: %q", locale, code, label, s)
+			}
+		}
+		if s, _ := errs["wssize_reuse_age_range"].(string); !strings.Contains(s, "{{min}}") || !strings.Contains(s, "{{max}}") {
+			t.Errorf("%s.json errors.wssize_reuse_age_range does not give the range: %q", locale, s)
+		}
+	}
+}
+
 func TestWSReuseWarmAgeDefaultAndCap(t *testing.T) {
 	if got := NewSetConfig().TCP.WSSizeReuse.MaxAgeSeconds; got != 120 {
 		t.Fatalf("a new set's warm validity is %d s, want 120", got)
@@ -157,9 +268,9 @@ func TestWSReuseWarmAgeDefaultAndCap(t *testing.T) {
 			if err == nil {
 				t.Fatal("a warm validity above 300 s was accepted")
 			}
-			field := findField(mustValidationErr(t, err), "sets[0].tcp.wssize_reuse.max_age_seconds", "out_of_range")
-			if field == nil || field.Params["max"] != 300 {
-				t.Fatalf("got %v, want out_of_range at sets[0].tcp.wssize_reuse.max_age_seconds with max 300", err)
+			field := findField(mustValidationErr(t, err), "sets[0].tcp.wssize_reuse.max_age_seconds", "wssize_reuse_age_range")
+			if field == nil || field.Params["max"] != 300 || field.Params["set"] != c.Sets[0].Name {
+				t.Fatalf("got %v, want wssize_reuse_age_range at sets[0].tcp.wssize_reuse.max_age_seconds with max 300 and the set's name", err)
 			}
 		})
 	}
