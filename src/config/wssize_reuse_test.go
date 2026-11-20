@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -46,10 +47,69 @@ func TestWSReuseSparseAndOldConfig(t *testing.T) {
 	}
 }
 
+func TestWSReuseStaysOffWithoutNFQUEUEFirewall(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		edit   func(*Config)
+		reason string
+		warns  bool
+	}{
+		{"the TUN engine", func(c *Config) { c.Queue.Mode = "tun" }, "tun", true},
+		{"firewall setup skipped", func(c *Config) { c.System.Tables.SkipSetup = true }, "skip_setup", true},
+		{"a queue mark with the relay bit 0x40000", func(c *Config) { c.Queue.Mark = 0x48000 }, "queue_mark", true},
+		{"a queue mark with the relay bit 0x200000", func(c *Config) { c.Queue.Mark = 0x208000 }, "queue_mark", true},
+		{"a Discovery run", func(c *Config) { c.Queue.IsDiscovery = true }, "discovery", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := reuseConfig(t)
+			cfg.Sets[0].Name = "Video edges"
+			c.edit(cfg)
+			warnings := captureEgressGatewayWarnings(t)
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("%s: a reuse set was refused (%v); the set is valid, only the engine keeps reuse from working, so it must load and get its usual strategy", c.name, err)
+			}
+			if got := cfg.WSReuseInactiveReason(); got != c.reason {
+				t.Errorf("%s: inactive reason %q, want %q", c.name, got, c.reason)
+			}
+			if cfg.WSReuseActive(cfg.Sets[0]) {
+				t.Errorf("%s: reuse counts as active", c.name)
+			}
+			if view := cfg.RoutingSets()[0]; view.Routing.Enabled || view.Routing.Mode == RoutingModeWSReuse {
+				t.Errorf("%s: the routing view still diverts the set to the reuse relay (enabled=%v mode=%q)", c.name, view.Routing.Enabled, view.Routing.Mode)
+			}
+			if ids := wsReuseRoutingShape(cfg); len(ids) != 0 {
+				t.Errorf("%s: the firewall shape still lists reuse sets %v", c.name, ids)
+			}
+			warned := 0
+			for _, line := range *warnings {
+				if strings.Contains(line, "Reuse WSSIZE connection") {
+					warned++
+					if !strings.Contains(line, "'Video edges'") || !strings.Contains(line, "does nothing while") || !strings.Contains(line, "the set's connections get its usual strategy") {
+						t.Errorf("%s: the warning does not name the set, the cause and what its connections get: %q", c.name, line)
+					}
+				}
+			}
+			if want := map[bool]int{true: 1, false: 0}[c.warns]; warned != want {
+				t.Errorf("%s: %d Reuse WSSIZE connection warnings, want %d: %q", c.name, warned, want, *warnings)
+			}
+		})
+	}
+	active := reuseConfig(t)
+	warnings := captureEgressGatewayWarnings(t)
+	if err := active.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if active.WSReuseInactiveReason() != "" || !active.WSReuseActive(active.Sets[0]) || active.RoutingSets()[0].Routing.Mode != RoutingModeWSReuse || len(wsReuseRoutingShape(active)) != 1 || len(*warnings) != 0 {
+		t.Fatalf("an NFQUEUE engine with firewall setup does not keep reuse active: reason=%q warnings=%q", active.WSReuseInactiveReason(), *warnings)
+	}
+	active.Sets[0].TCP.WSSizeReuse.Enabled = false
+	if active.WSReuseActive(active.Sets[0]) {
+		t.Fatal("a set with reuse off counts as reusing")
+	}
+}
+
 func TestWSReuseRejectsUnsupportedPaths(t *testing.T) {
 	cases := map[string]func(*Config){
-		"tun":             func(c *Config) { c.Queue.Mode = "tun" },
-		"no firewall":     func(c *Config) { c.System.Tables.SkipSetup = true },
 		"no window":       func(c *Config) { c.Sets[0].TCP.WSSize.Window = 0 },
 		"off":             func(c *Config) { c.Sets[0].TCP.WSSize.Enabled = false },
 		"domain only":     func(c *Config) { c.Sets[0].Targets.DomainOnly = true },

@@ -537,7 +537,7 @@ func collectedTakenAway(cfg *config.Config, matcher *sni.SuffixSet, h helloWatch
 		return false
 	}
 	found, _, _ := matcher.MatchIPWithSourceDetail(h.dst, h.mac, func(set *config.SetConfig) bool {
-		return collectedRouteTakes(set, h)
+		return (!set.ReusesWSSize() || cfg.WSReuseActive(set)) && collectedRouteTakes(set, h)
 	})
 	return found
 }

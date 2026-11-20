@@ -101,6 +101,26 @@ func TestWSReuseTopicSaysAnyHTTPStatusWarms(t *testing.T) {
 	}
 }
 
+func TestWSReuseTopicSaysTheEngineLeavesReuseInactiveNotRefused(t *testing.T) {
+	facts := TopicFacts("tcp.wssize_reuse.enabled")
+	for _, want := range []string{
+		"Domain/TLS filters, routing, duplication and escalation are refused.",
+		"Under the TUN engine, with firewall setup skipped or a queue.mark overlapping 0x240000, reuse does nothing (one warning per set) and the set gets its usual strategy.",
+	} {
+		if !strings.Contains(facts, want) {
+			t.Errorf("tcp.wssize_reuse.enabled does not say %q: %s", want, facts)
+		}
+	}
+	if config.SelfDialRelayMark != 0x240000 {
+		t.Errorf("tcp.wssize_reuse.enabled names the relay mark 0x240000, but config.SelfDialRelayMark is 0x%x", config.SelfDialRelayMark)
+	}
+	for _, stale := range []string{"TUN are refused", "Requires NFQUEUE, firewall setup"} {
+		if strings.Contains(facts, stale) {
+			t.Errorf("tcp.wssize_reuse.enabled still says %q, but the TUN engine, skipped firewall setup and an overlapping queue mark now leave a reuse set loaded and inactive with a warning: %s", stale, facts)
+		}
+	}
+}
+
 func TestWSReuseTopicSaysARefusedTProxyRuleLeavesTheSetUndiverted(t *testing.T) {
 	facts := TopicFacts("tcp.wssize_reuse.enabled")
 	if !strings.Contains(facts, "when it refuses the set's TCP TPROXY rule for an enabled address family") {

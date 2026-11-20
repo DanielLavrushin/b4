@@ -259,3 +259,36 @@ func TestOnlyAnInstalledRouteTakesACollectedConnection(t *testing.T) {
 		})
 	}
 }
+
+func TestAnInactiveReuseConsumerTakesNoCollectedConnection(t *testing.T) {
+	device := helloWatch{dst: net.IPv4(203, 0, 113, 7), port: 443, ver: IPv4, client: net.IPv4(192, 168, 1, 50), scope: &ingressScope{resolved: true, name: "br0"}}
+	for _, c := range []struct {
+		name string
+		edit func(*config.Config)
+		want bool
+	}{
+		{"an active reuse consumer", nil, true},
+		{"the TUN engine", func(c *config.Config) { c.Queue.Mode = "tun" }, false},
+		{"firewall setup skipped", func(c *config.Config) { c.System.Tables.SkipSetup = true }, false},
+		{"a queue mark with the relay bit", func(c *config.Config) { c.Queue.Mark = 0x48000 }, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := config.NewConfig()
+			cfg.Queue.IPv4Enabled = true
+			set := readyConsumer(false)
+			set.Id, set.Enabled = "reuse-consumer", true
+			set.TCP.WSSizeReuse.Enabled = true
+			cfg.Sets = []*config.SetConfig{set}
+			if c.edit != nil {
+				c.edit(&cfg)
+			}
+			view := cfg.WithCollectedIPs([]string{"203.0.113.7"})
+			stubCollectedRoutes(t, func(id string) (tables.CollectedRoute, bool) {
+				return installedCollectedRoute(view, view.GetSetById(id))
+			})
+			if got := collectedTakenAway(view, buildMatcher(view), device); got != c.want {
+				t.Errorf("%s: taken=%v, want %v with a diversion still published for the set; an inactive reuse set diverts nothing, so an answer on the connection came over the uplink", c.name, got, c.want)
+			}
+		})
+	}
+}

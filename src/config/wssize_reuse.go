@@ -9,10 +9,42 @@ func (s *SetConfig) ReusesWSSize() bool {
 	return s != nil && s.Enabled && s.TCP.WSSizeReuse.Enabled
 }
 
+func (c *Config) WSReuseInactiveReason() string {
+	switch {
+	case c == nil:
+		return ""
+	case c.Queue.IsDiscovery:
+		return "discovery"
+	case c.Queue.Mode == "tun":
+		return "tun"
+	case c.System.Tables.SkipSetup:
+		return "skip_setup"
+	case c.MainInjectedMark()&uint(SelfDialRelayMark) != 0:
+		return "queue_mark"
+	}
+	return ""
+}
+
+func (c *Config) WSReuseActive(set *SetConfig) bool {
+	return c != nil && set.ReusesWSSize() && c.WSReuseInactiveReason() == ""
+}
+
+func (c *Config) wsReuseInactiveCause(reason string) string {
+	switch reason {
+	case "tun":
+		return "the engine is TUN"
+	case "skip_setup":
+		return "Skip IPTables/NFTables Setup is on"
+	case "queue_mark":
+		return fmt.Sprintf("the queue mark 0x%x shares bits with 0x%x, the mark of its relay connections", c.MainInjectedMark(), SelfDialRelayMark)
+	}
+	return ""
+}
+
 func (c *Config) reuseRoutingSets(sets []*SetConfig) []*SetConfig {
 	var out []*SetConfig
 	for i, set := range sets {
-		if !set.ReusesWSSize() || c.Queue.IsDiscovery || c.Queue.Mode == "tun" {
+		if !c.WSReuseActive(set) {
 			if out != nil {
 				out = append(out, set)
 			}
@@ -57,8 +89,10 @@ func (c *Config) validateWSReuse(v *validator) {
 		if !set.ReusesWSSize() {
 			continue
 		}
-		if c.MainInjectedMark()&uint(SelfDialRelayMark) != 0 || c.Queue.IsDiscovery || c.Queue.Mode == "tun" || c.System.Tables.SkipSetup || !set.TCP.WSSize.Rewrites() || set.TCP.WSSize.Window == 0 || set.Routing.Enabled || set.TCP.Duplicate.Enabled || !set.DeclaresIPTargets() || set.Targets.DomainOnly || len(set.Targets.SNIDomains) > 0 || len(set.Targets.GeoSiteCategories) > 0 || set.Targets.TLSVersion != "" || set.Escalate.To != "" || !c.IsTCPPort(443) || !set.MatchesTCPDPort(443) {
+		if !set.TCP.WSSize.Rewrites() || set.TCP.WSSize.Window == 0 || set.Routing.Enabled || set.TCP.Duplicate.Enabled || !set.DeclaresIPTargets() || set.Targets.DomainOnly || len(set.Targets.SNIDomains) > 0 || len(set.Targets.GeoSiteCategories) > 0 || set.Targets.TLSVersion != "" || set.Escalate.To != "" || !c.IsTCPPort(443) || !set.MatchesTCPDPort(443) {
 			v.addf(fmt.Sprintf("sets[%d].tcp.wssize_reuse", i), "wssize_reuse_unsupported", map[string]any{"set": set.Name}, "set %q: WSSIZE reuse needs NFQUEUE, firewall setup, real window rewriting, an IP/GeoIP/ASN target and TCP/443, without domain/TLS filters, routing, duplication or escalation", set.Name)
+		} else if cause := c.wsReuseInactiveCause(c.WSReuseInactiveReason()); cause != "" {
+			warnEgressGatewayOnce("Set '%s': Reuse WSSIZE connection does nothing while %s; the set's connections get its usual strategy", set.Name, cause)
 		}
 	}
 }
@@ -66,7 +100,7 @@ func (c *Config) validateWSReuse(v *validator) {
 func wsReuseRoutingShape(c *Config) []string {
 	var ids []string
 	for _, set := range c.Sets {
-		if set.ReusesWSSize() {
+		if c.WSReuseActive(set) {
 			ids = append(ids, set.Id)
 		}
 	}

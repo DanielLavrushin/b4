@@ -172,7 +172,7 @@ func reuseSet(cfg *config.Config, id string, target netip.AddrPort) *config.SetC
 		return nil
 	}
 	for _, set := range cfg.Sets {
-		if set.Id == id && set.ReusesWSSize() && set.MatchesTCPDPort(443) && containsTarget(set, target.Addr()) {
+		if set.Id == id && cfg.WSReuseActive(set) && set.MatchesTCPDPort(443) && containsTarget(set, target.Addr()) {
 			return set
 		}
 	}

@@ -646,6 +646,42 @@ func TestFallbackReResolvesTheSet(t *testing.T) {
 	})
 }
 
+func TestAnInactiveReuseSetIsNeitherWarmedNorRelayed(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		edit func(*config.Config)
+	}{
+		{"the TUN engine", func(c *config.Config) { c.Queue.Mode = "tun" }},
+		{"firewall setup skipped", func(c *config.Config) { c.System.Tables.SkipSetup = true }},
+		{"a queue mark with the relay bit", func(c *config.Config) { c.Queue.Mark = 0x48000 }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			s, cfg, set, count := serviceFixture(t)
+			idle := serviceDial(t, s, set)
+			idle.Close()
+			if count.Load() != 1 || len(s.leases) != 1 {
+				t.Fatalf("setup: an active reuse set warmed %d times and holds %d leases, want 1 and 1", count.Load(), len(s.leases))
+			}
+			next := *cfg
+			c.edit(&next)
+			s.UpdateConfig(&next)
+			if len(s.leases) != 0 {
+				t.Errorf("%s: a save that keeps reuse from working left %d idle leases", c.name, len(s.leases))
+			}
+			target := netip.MustParseAddrPort("203.0.113.2:443")
+			if conn, err := s.Dial(context.Background(), next.Sets[0], "192.0.2.10", "warm.example.org", target); conn != nil || !errors.Is(err, ErrTarget) {
+				t.Errorf("%s: Dial got %T, %v, want ErrTarget; reuse does nothing here", c.name, conn, err)
+			}
+			if conn, err := s.Fallback(context.Background(), next.Sets[0], "192.0.2.10", "warm.example.org", target); conn != nil || !errors.Is(err, ErrTarget) {
+				t.Errorf("%s: Fallback got %T, %v, want ErrTarget; reuse does nothing here", c.name, conn, err)
+			}
+			if count.Load() != 1 {
+				t.Errorf("%s: %d warms, want only the setup's one", c.name, count.Load())
+			}
+		})
+	}
+}
+
 func TestFallbackDialerRelaysThroughSetStrategy(t *testing.T) {
 	s, _, set, count := serviceFixture(t)
 	direct := recordDirect(t, s)
