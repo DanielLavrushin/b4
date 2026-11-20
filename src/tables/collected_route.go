@@ -36,7 +36,7 @@ func routeCollectedRouteOf(st routeState) (CollectedRoute, bool) {
 			route.Port = uint16(ports[0])
 		}
 		return route, true
-	case st.iface == "" || !routeIfaceWasSeen(st.iface):
+	case st.iface == "" || !routeIfaceSeen[st.iface]:
 		return route, false
 	}
 	route.Router = st.routerOut

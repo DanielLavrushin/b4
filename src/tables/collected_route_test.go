@@ -57,3 +57,29 @@ func TestTheCollectedRoutesFollowWhatTheRulesTake(t *testing.T) {
 		}
 	}
 }
+
+func TestACollectedPublishNeverMarksAnInterfaceSeenWithoutItsRule(t *testing.T) {
+	familyResetGlobals(t)
+	seen, routes := routeIfaceSeen, routeSetRoutes.Load()
+	t.Cleanup(func() {
+		routeMu.Lock()
+		routeIfaceSeen = seen
+		routeMu.Unlock()
+		routeSetRoutes.Store(routes)
+	})
+	routeMu.Lock()
+	routeIfaceSeen = map[string]bool{}
+	routeRuleCache = map[string]routeState{"late": {setID: "late", mode: config.RoutingModeInterface, iface: "lo", mark: 0x2a, table: 200, collected: true, ipv4: true, routerOut: true}}
+	routeMu.Unlock()
+	for publish := 1; publish <= 2; publish++ {
+		routeMu.Lock()
+		routePublishMarksLocked()
+		marked := routeIfaceSeen["lo"]
+		routeMu.Unlock()
+		route, _ := RoutingSetRoute("late")
+		_, taken := CollectedRouteOf("late")
+		if marked || !route.RuleMissing || taken {
+			t.Errorf("publish %d: interface marked seen=%v, RuleMissing=%v, collected route taken=%v; want false, true, false: no sync has added the set's ip rule for lo, so its connections leave by the uplink and b4's Telegram path must not trust a rule that is not there", publish, marked, route.RuleMissing, taken)
+		}
+	}
+}
