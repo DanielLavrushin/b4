@@ -990,6 +990,7 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "A field a set in \"sets\" leaves out takes its set default.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4089,6 +4090,7 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "A field the body leaves out takes its set default, the value a new set gets in the web interface. A set created without \"enabled\" is enabled.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4356,7 +4358,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "When the body carries the \"revision\" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before.",
+                "description": "The body replaces the whole set. It must carry \"name\", \"enabled\" and \"targets\", otherwise the write is refused with 400 validation_failed and the set is left as it was. Any other field the body leaves out takes its set default, not the value the set had. When the body carries the \"revision\" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4390,6 +4392,12 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handler.SetWithRevision"
+                        }
+                    },
+                    "400": {
+                        "description": "code: validation_failed",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
                         }
                     },
                     "404": {

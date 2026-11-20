@@ -584,7 +584,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		geoScheduler = geodat.NewScheduler(
 			func() geodat.GeoDatConfig { return cfgPtr.Load().System.Geo },
 			func(ctx context.Context, dest, siteURL, ipURL string) error {
-				_, _, _, err := apiHandler.RefreshGeodat(ctx, dest, siteURL, ipURL)
+				_, _, _, _, err := apiHandler.RefreshGeodat(ctx, dest, siteURL, ipURL)
 				return err
 			},
 			func(ts string) {

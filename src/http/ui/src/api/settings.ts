@@ -6,6 +6,7 @@ import {
   GeodatFileType,
   GeodatRemoveResult,
   GeodatSource,
+  GeodatUploadResult,
   SystemAddresses,
   SystemInfo,
 } from "@b4.settings";
@@ -40,10 +41,7 @@ export const geodatApi = {
     formData.append("file", file);
     formData.append("type", type);
     formData.append("destination_path", destPath);
-    return apiUpload<{ success: boolean; message: string; path: string; size: number }>(
-      "/api/geodat/upload",
-      formData,
-    );
+    return apiUpload<GeodatUploadResult>("/api/geodat/upload", formData);
   },
 };
 

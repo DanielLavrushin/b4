@@ -230,6 +230,27 @@ func findSharedTableGatewayClashes(sets []*SetConfig) []sharedTableGatewayClash 
 	return out
 }
 
+func (s *SetConfig) defaultEmptyModes() {
+	d := &DefaultSetConfig
+	for _, f := range []struct {
+		value *string
+		def   string
+	}{
+		{&s.TCP.Desync.Mode, d.TCP.Desync.Mode},
+		{&s.TCP.Win.Mode, d.TCP.Win.Mode},
+		{&s.TCP.Incoming.Mode, d.TCP.Incoming.Mode},
+		{&s.TCP.Incoming.Strategy, d.TCP.Incoming.Strategy},
+		{&s.Faking.SNIMutation.Mode, d.Faking.SNIMutation.Mode},
+		{&s.Fragmentation.Strategy, d.Fragmentation.Strategy},
+		{&s.UDP.FakingStrategy, d.UDP.FakingStrategy},
+		{&s.Routing.BlockAction, d.Routing.BlockAction},
+	} {
+		if *f.value == "" {
+			*f.value = f.def
+		}
+	}
+}
+
 func (c *Config) Validate() error {
 	v := &validator{}
 	c.System.WebServer.IsEnabled = c.System.WebServer.Port > 0 && c.System.WebServer.Port <= 65535
@@ -286,6 +307,7 @@ func (c *Config) Validate() error {
 	c.System.IPHealth.RepeatBanTTLSec = clampBanSec(c.System.IPHealth.RepeatBanTTLSec, DefaultIPRepeatBanTTLSec, MaxIPRepeatBanTTLSec)
 
 	for setIdx, set := range c.Sets {
+		set.defaultEmptyModes()
 		ws := &set.TCP.WSSize
 		ws.Cutoff = NormalizeWSSizeCutoff(ws.Cutoff)
 		if ws.StripScale {

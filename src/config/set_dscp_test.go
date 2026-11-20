@@ -324,7 +324,7 @@ func TestSetDSCPSparseRoundTrip(t *testing.T) {
 		}
 
 		back := NewConfig()
-		if err := back.decodeFile(data); err != nil {
+		if err := back.DecodeWithSetDefaults(data); err != nil {
 			t.Fatalf("%+v: decode: %v", tc.dscp, err)
 		}
 		if len(back.Sets) != 1 || back.Sets[0].DSCP != tc.dscp {
