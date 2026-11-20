@@ -1,8 +1,11 @@
 package ai
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/daniellavrushin/b4/config"
 )
 
 func TestWSReuseTopicSaysWhatEndsARelay(t *testing.T) {
@@ -12,5 +15,18 @@ func TestWSReuseTopicSaysWhatEndsARelay(t *testing.T) {
 	}
 	if strings.Contains(facts, "never interrupted or refreshed") {
 		t.Errorf("tcp.wssize_reuse.max_age_seconds still claims active connections are never interrupted or refreshed, which a shutdown contradicts: %s", facts)
+	}
+}
+
+func TestWSReuseAgeTopicStatesTheDefaultAndTheCap(t *testing.T) {
+	facts := TopicFacts("tcp.wssize_reuse.max_age_seconds")
+	for _, want := range []string{
+		fmt.Sprintf("default %d, range 1-%d;", config.DefaultWSReuseMaxAgeSeconds, config.MaxWSReuseMaxAgeSeconds),
+		fmt.Sprintf("a value above %d is refused on every set", config.MaxWSReuseMaxAgeSeconds),
+		"warms a new source port",
+	} {
+		if !strings.Contains(facts, want) {
+			t.Errorf("tcp.wssize_reuse.max_age_seconds does not say %q: %s", want, facts)
+		}
 	}
 }

@@ -49,10 +49,10 @@ func (c *Config) validateWSReuse(v *validator) {
 	for i, set := range c.Sets {
 		reuse := &set.TCP.WSSizeReuse
 		if reuse.MaxAgeSeconds == 0 {
-			reuse.MaxAgeSeconds = 300
+			reuse.MaxAgeSeconds = DefaultWSReuseMaxAgeSeconds
 		}
-		if reuse.MaxAgeSeconds < 1 || reuse.MaxAgeSeconds > 86400 {
-			v.addf(fmt.Sprintf("sets[%d].tcp.wssize_reuse.max_age_seconds", i), "out_of_range", map[string]any{"value": reuse.MaxAgeSeconds, "min": 1, "max": 86400}, "warm age must be between 1 and 86400 seconds")
+		if reuse.MaxAgeSeconds < 1 || reuse.MaxAgeSeconds > MaxWSReuseMaxAgeSeconds {
+			v.addf(fmt.Sprintf("sets[%d].tcp.wssize_reuse.max_age_seconds", i), "out_of_range", map[string]any{"value": reuse.MaxAgeSeconds, "min": 1, "max": MaxWSReuseMaxAgeSeconds}, "warm age must be between 1 and %d seconds", MaxWSReuseMaxAgeSeconds)
 		}
 		if !set.ReusesWSSize() {
 			continue

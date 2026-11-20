@@ -30,7 +30,7 @@ func TestWSReuseNeverCrossesHub(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if imported.Set.TCP.WSSizeReuse.Enabled || imported.Set.TCP.WSSizeReuse.MaxAgeSeconds != 300 {
+	if imported.Set.TCP.WSSizeReuse.Enabled || imported.Set.TCP.WSSizeReuse.MaxAgeSeconds != config.DefaultWSReuseMaxAgeSeconds {
 		t.Fatal("crafted import enabled local reuse")
 	}
 	if !imported.Set.TCP.WSSize.Enabled {

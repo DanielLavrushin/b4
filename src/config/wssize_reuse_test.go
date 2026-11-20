@@ -31,7 +31,7 @@ func TestWSReuseSparseAndOldConfig(t *testing.T) {
 	if err := next.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if !next.Sets[0].ReusesWSSize() || next.Sets[0].TCP.WSSizeReuse.MaxAgeSeconds != 300 {
+	if !next.Sets[0].ReusesWSSize() || next.Sets[0].TCP.WSSizeReuse.MaxAgeSeconds != DefaultWSReuseMaxAgeSeconds {
 		t.Fatalf("round trip: %+v", next.Sets[0].TCP)
 	}
 	legacy := NewConfig()
@@ -58,7 +58,7 @@ func TestWSReuseRejectsUnsupportedPaths(t *testing.T) {
 		"no address":      func(c *Config) { c.Sets[0].Targets.IPs = nil; c.Sets[0].Targets.IpsToMatch = nil },
 		"fresh set ports": func(c *Config) { c.Sets[0].TCP.DPortFilter = "8443" },
 		"negative age":    func(c *Config) { c.Sets[0].TCP.WSSizeReuse.MaxAgeSeconds = -1 },
-		"large age":       func(c *Config) { c.Sets[0].TCP.WSSizeReuse.MaxAgeSeconds = 86401 },
+		"large age":       func(c *Config) { c.Sets[0].TCP.WSSizeReuse.MaxAgeSeconds = MaxWSReuseMaxAgeSeconds + 1 },
 	}
 	for name, change := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -66,6 +66,40 @@ func TestWSReuseRejectsUnsupportedPaths(t *testing.T) {
 			change(c)
 			if err := c.Validate(); err == nil {
 				t.Fatal("accepted unsupported configuration")
+			}
+		})
+	}
+}
+
+func TestWSReuseWarmAgeDefaultAndCap(t *testing.T) {
+	if got := NewSetConfig().TCP.WSSizeReuse.MaxAgeSeconds; got != 120 {
+		t.Fatalf("a new set's warm validity is %d s, want 120", got)
+	}
+	unset := reuseConfig(t)
+	unset.Sets[0].TCP.WSSizeReuse.MaxAgeSeconds = 0
+	if err := unset.Validate(); err != nil || unset.Sets[0].TCP.WSSizeReuse.MaxAgeSeconds != 120 {
+		t.Fatalf("an unset warm validity became %d s (%v), want 120", unset.Sets[0].TCP.WSSizeReuse.MaxAgeSeconds, err)
+	}
+	top := reuseConfig(t)
+	top.Sets[0].TCP.WSSizeReuse.MaxAgeSeconds = 300
+	if err := top.Validate(); err != nil {
+		t.Fatalf("a warm validity of 300 s was refused: %v", err)
+	}
+	for name, change := range map[string]func(*SetConfig){
+		"reusing set at 301":     func(s *SetConfig) { s.TCP.WSSizeReuse.MaxAgeSeconds = 301 },
+		"reuse off at 301":       func(s *SetConfig) { s.TCP.WSSizeReuse.Enabled = false; s.TCP.WSSizeReuse.MaxAgeSeconds = 301 },
+		"disabled set at 100000": func(s *SetConfig) { s.Enabled = false; s.TCP.WSSizeReuse.MaxAgeSeconds = 100000 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := reuseConfig(t)
+			change(c.Sets[0])
+			err := c.Validate()
+			if err == nil {
+				t.Fatal("a warm validity above 300 s was accepted")
+			}
+			field := findField(mustValidationErr(t, err), "sets[0].tcp.wssize_reuse.max_age_seconds", "out_of_range")
+			if field == nil || field.Params["max"] != 300 {
+				t.Fatalf("got %v, want out_of_range at sets[0].tcp.wssize_reuse.max_age_seconds with max 300", err)
 			}
 		})
 	}
@@ -90,7 +124,7 @@ func TestWSReuseRoutingViewAndApply(t *testing.T) {
 		t.Fatal("enabling reuse did not request firewall refresh")
 	}
 	age := c.Clone()
-	age.Sets[0].TCP.WSSizeReuse.MaxAgeSeconds = 301
+	age.Sets[0].TCP.WSSizeReuse.MaxAgeSeconds = 200
 	if FirewallRefreshNeeded(c, age) {
 		t.Fatal("age change rebuilt firewall")
 	}
@@ -102,7 +136,7 @@ func TestWSReuseRoutingViewAndApply(t *testing.T) {
 		t.Fatal("discovered strategy enabled interception")
 	}
 	set.AdoptStrategy(&from)
-	if !set.ReusesWSSize() || set.TCP.WSSizeReuse.MaxAgeSeconds != 300 || set.TCP.WSSize.Window != 1 {
+	if !set.ReusesWSSize() || set.TCP.WSSizeReuse.MaxAgeSeconds != DefaultWSReuseMaxAgeSeconds || set.TCP.WSSize.Window != 1 {
 		t.Fatal("adopting strategy replaced local reuse policy")
 	}
 }

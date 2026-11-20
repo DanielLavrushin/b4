@@ -1867,7 +1867,7 @@
         "wssizeReuse": "Reuse WSSIZE connection",
         "wssizeReuseDesc": "Warm a server tuple, then relay client TLS unchanged. TCP/443, NFQUEUE and IP/GeoIP/ASN targets only; no domain or TLS filters. Requires TLS SNI and a server with /generate_204. Not used by Discovery or shared through Hub.",
         "wssizeReuseAge": "Warm validity (seconds)",
-        "wssizeReuseAgeDesc": "Default 300. Rewarm before reusing a free tuple after this age. Active connections are never interrupted.",
+        "wssizeReuseAgeDesc": "Default 120, at most 300. How long a warmed source port keeps taking new connections, counted from the start of its warm-up. After that, the next connection warms a new source port. The age never cuts a connection that is already relayed.",
         "wssizeReuseAlert": "The small window and this set's TCP strategy apply only to the warm connection. Client TLS uses a new connection with its normal Window Scale; b4 chooses the backend source port. Requires TPROXY; QUIC is not relayed.",
         "ibdAction": "Detected IP action",
         "ibdBlock": "Block detected IPs",

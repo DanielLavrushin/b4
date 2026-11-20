@@ -277,6 +277,11 @@ const (
 
 const MaxDisorderSplitPosition = 1460
 
+const (
+	DefaultWSReuseMaxAgeSeconds = 120
+	MaxWSReuseMaxAgeSeconds     = 300
+)
+
 type WSSizeReuseConfig struct {
 	Enabled       bool `json:"enabled"`
 	MaxAgeSeconds int  `json:"max_age_seconds"`

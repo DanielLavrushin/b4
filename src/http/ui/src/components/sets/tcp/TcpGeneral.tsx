@@ -43,7 +43,7 @@ export const TcpGeneral = ({
     strip_scale: false,
     ...config.tcp.wssize,
   };
-  const reuse = config.tcp.wssize_reuse ?? { enabled: false, max_age_seconds: 300 };
+  const reuse = config.tcp.wssize_reuse ?? { enabled: false, max_age_seconds: 120 };
   const dup = config.tcp.duplicate ?? { enabled: false, count: 3 };
   const wsConflict = (config.routing?.enabled ?? false) || dup.enabled;
   const wsTun = ws.enabled && !wsConflict && tunEngine;
@@ -341,7 +341,7 @@ export const TcpGeneral = ({
                   helperText={t("sets.tcp.general.wssizeReuseAgeDesc")}
                   value={reuse.max_age_seconds}
                   min={1}
-                  max={86400}
+                  max={300}
                   path="tcp.wssize_reuse.max_age_seconds"
                   onChange={(value) => onChange("tcp.wssize_reuse.max_age_seconds", value)}
                   aiTopic="tcp.wssize_reuse.max_age_seconds"
