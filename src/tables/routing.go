@@ -64,6 +64,8 @@ type routeState struct {
 	tproxyPort  int
 	diverts     bool
 	tproxied    bool
+	reuseV4     bool
+	reuseV6     bool
 	upstreamKey string
 	udpPorts    string
 	sourcesKey  string
@@ -650,6 +652,9 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		st.upstreamKey = fmt.Sprintf("%s:%d|%s|udp=%t", set.Routing.Upstream.Host, set.Routing.Upstream.Port, set.Routing.Upstream.Username, set.Routing.Upstream.UDP)
 		st.udpPorts = set.RoutedUDPPortSpec()
 		st.quicReject = mode == config.RoutingModeProxy && st.udpPorts == "" && (!set.Routing.Upstream.UDP || set.BlocksQUIC())
+		if mode == config.RoutingModeWSReuse {
+			st.reuseV4, st.reuseV6 = set.MatchesIPVersion(4), set.MatchesIPVersion(6)
+		}
 	} else {
 		mark, table := routeResolveIDs(cfg, set)
 		st.mark = mark
@@ -687,6 +692,8 @@ func routeStateSameConfig(a, b routeState) bool {
 		a.udpPorts == b.udpPorts &&
 		a.blockAction == b.blockAction &&
 		a.quicReject == b.quicReject &&
+		a.reuseV4 == b.reuseV4 &&
+		a.reuseV6 == b.reuseV6 &&
 		a.sourcesKey == b.sourcesKey &&
 		a.deviceKey == b.deviceKey &&
 		a.srcScoped == b.srcScoped &&

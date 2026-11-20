@@ -401,6 +401,65 @@ func TestARefusedReuseTProxyRuleIsWarnedForTheSet(t *testing.T) {
 	})
 }
 
+func TestAnIPVersionSaveJudgesAReuseSetsDiversionAgain(t *testing.T) {
+	const warning = "Routing: set 'reuse' reuses WSSIZE, but the firewall refused its TPROXY rule for TCP/443"
+	v6Rule := func(args []string) bool {
+		return args[0] == backendIP6Tables || slices.Contains(args, "ip6")
+	}
+	sync := func(t *testing.T, version string) {
+		t.Helper()
+		cfg := familyTestConfig(true, true)
+		set := config.NewSetConfig()
+		set.Id, set.Name, set.Enabled = "reuse", "reuse", true
+		set.Targets.IPs = []string{"203.0.113.2", "2001:db8::2"}
+		set.Targets.IpsToMatch = set.Targets.IPs
+		set.Targets.IPVersion = version
+		set.TCP.WSSize = config.WSSizeConfig{Enabled: true, Window: 1, Scale: 1}
+		set.TCP.WSSizeReuse.Enabled = true
+		cfg.Sets = []*config.SetConfig{&set}
+		if err := cfg.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		RoutingSyncConfig(cfg)
+	}
+	for _, engine := range []string{backendIPTables, backendNFTables} {
+		t.Run(engine, func(t *testing.T) {
+			attempts, _ := refusedTProxyRig(t, engine, v6Rule)
+			buf := captureTablesLog(t)
+			sync(t, "4")
+			if !WSReuseDiverts("reuse") || strings.Contains(buf.String(), warning) {
+				t.Fatalf("setup: an IPv4-only reuse set with its IPv6 TPROXY rule refused: diverted=%v warned=%v, want diverted and no warning", WSReuseDiverts("reuse"), strings.Contains(buf.String(), warning))
+			}
+			for _, step := range []struct {
+				version  string
+				diverted bool
+				warnings int
+			}{
+				{"", false, 1},
+				{"6", false, 2},
+				{"4", true, 2},
+			} {
+				tried := len(*attempts)
+				sync(t, step.version)
+				if len(*attempts) == tried {
+					t.Fatalf("a save that changed only ip_version to %q tried no TPROXY add: the set was not rebuilt, so it keeps the diversion judged for the old families", step.version)
+				}
+				if WSReuseDiverts("reuse") != step.diverted {
+					t.Fatalf("after a save to ip_version %q with the IPv6 TPROXY rule refused: diverted=%v, want %v; a stale diversion passes the set's IPv6 TCP/443 untouched with no relay and no strategy", step.version, WSReuseDiverts("reuse"), step.diverted)
+				}
+				st := routeRuleCache["reuse"]
+				st.collected = true
+				if _, routed := routeCollectedRouteOf(st); routed != step.diverted {
+					t.Fatalf("after a save to ip_version %q: the collected route view says routed=%v, want %v", step.version, routed, step.diverted)
+				}
+				if n := strings.Count(buf.String(), warning); n != step.warnings {
+					t.Fatalf("after a save to ip_version %q: %d warnings name the set, want %d; log:\n%s", step.version, n, step.warnings, buf.String())
+				}
+			}
+		})
+	}
+}
+
 func TestOnlyTheReuseSetsOwnFamiliesDecideItsDiversion(t *testing.T) {
 	v6Rule := func(args []string) bool {
 		return args[0] == backendIP6Tables || slices.Contains(args, "ip6")
