@@ -16,6 +16,8 @@ var collectAndReuseStringKeys = []string{
 	"sets.targets.useCollectedIps",
 	"dashboard.collected.",
 	"errors.wssize_reuse_",
+	"sets.tcp.general.mssScope",
+	"settings.Devices.forgetDialog.mssBlocked",
 }
 
 func flattenUIStrings(prefix string, node any, out map[string]string) {
@@ -67,7 +69,7 @@ func collectAndReuseStrings(t *testing.T, locale string) map[string]string {
 }
 
 func TestRussianCollectAndReuseStringsHaveNoEnglishTerms(t *testing.T) {
-	banned := []string{"tuple", "reuse", "firewall", "source port", "hub", "collect", "listener"}
+	banned := []string{"tuple", "reuse", "firewall", "source port", "source device", "hub", "collect", "listener"}
 	for key, text := range collectAndReuseStrings(t, "ru") {
 		lower := strings.ToLower(text)
 		for _, word := range banned {
