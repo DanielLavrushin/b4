@@ -2,9 +2,11 @@ package tproxy
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/socks5"
+	"github.com/daniellavrushin/b4/warmtuple"
 	"golang.org/x/sys/unix"
 )
 
@@ -45,12 +48,18 @@ func (l *Listener) serveWSReuse(client net.Conn, ip net.IP, port int, given *sni
 	if err != nil {
 		return
 	}
+	release, ok := l.Warm.AcquireClient()
+	if !ok {
+		l.noteWarmSlotsFull()
+		return
+	}
 	warmCtx, stopWatch := watchWarmClient(l.ctx, client)
 	backend, err := l.Warm.Dial(warmCtx, set, owner, sniffed.host, netip.AddrPortFrom(target.Unmap(), uint16(port)))
+	release()
 	stopWatch()
 	listening := stop()
 	if err != nil {
-		log.Warnf("WSSIZE reuse [%s]: %s: %v", l.SetName, sniffed.host, err)
+		l.noteWarmFailure(sniffed.host, err)
 		return
 	}
 	defer backend.Close()
@@ -63,6 +72,42 @@ func (l *Listener) serveWSReuse(client net.Conn, ip net.IP, port int, given *sni
 		return
 	}
 	_ = socks5.Relay(client, backend)
+}
+
+const warmWarnInterval = time.Minute
+
+type warnLimiter struct {
+	count atomic.Int64
+	last  atomic.Int64
+}
+
+func (w *warnLimiter) note(now time.Time) (int64, bool) {
+	n := w.count.Add(1)
+	last := w.last.Load()
+	if last != 0 && now.UnixNano()-last < int64(warmWarnInterval) {
+		return n, false
+	}
+	return n, w.last.CompareAndSwap(last, now.UnixNano())
+}
+
+func (l *Listener) noteWarmSlotsFull() {
+	if n, warn := l.warmSlotsFull.note(time.Now()); warn {
+		log.Warnf("WSSIZE reuse [%s]: every warm slot is busy, %d connections closed without a relay so far", l.SetName, n)
+		return
+	}
+	log.Tracef("WSSIZE reuse [%s]: every warm slot is busy, a connection was closed", l.SetName)
+}
+
+func (l *Listener) noteWarmFailure(host string, err error) {
+	if !errors.Is(err, warmtuple.ErrCapacity) {
+		log.Warnf("WSSIZE reuse [%s]: %s: %v", l.SetName, host, err)
+		return
+	}
+	if n, warn := l.warmPortsLeased.note(time.Now()); warn {
+		log.Warnf("WSSIZE reuse [%s]: %s: %v, %d connections closed without a relay so far", l.SetName, host, err, n)
+		return
+	}
+	log.Tracef("WSSIZE reuse [%s]: %s: %v", l.SetName, host, err)
 }
 
 var warmClientPoll = unix.Poll

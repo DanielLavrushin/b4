@@ -8,11 +8,15 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/warmtuple"
 	"golang.org/x/sys/unix"
 )
 
@@ -295,5 +299,233 @@ func TestWSReuseListenerStopAbortsPendingWarm(t *testing.T) {
 	a.SetReadDeadline(time.Now().Add(time.Second))
 	if _, err := a.Read(make([]byte, 1)); err == nil || errors.Is(err, os.ErrDeadlineExceeded) {
 		t.Fatalf("the client was left open after the listener stop aborted its warm: %v", err)
+	}
+}
+
+type slotTestDialer struct {
+	slots    chan struct{}
+	err      error
+	acquired atomic.Int32
+	released atomic.Int32
+	dials    atomic.Int32
+	mu       sync.Mutex
+	servers  []net.Conn
+}
+
+func (d *slotTestDialer) Dial(context.Context, *config.SetConfig, string, string, netip.AddrPort) (net.Conn, error) {
+	d.dials.Add(1)
+	if d.err != nil {
+		return nil, d.err
+	}
+	c, s := net.Pipe()
+	d.mu.Lock()
+	d.servers = append(d.servers, s)
+	d.mu.Unlock()
+	go func() { _, _ = io.Copy(io.Discard, s) }()
+	return c, nil
+}
+
+func (d *slotTestDialer) AcquireClient() (func(), bool) {
+	select {
+	case d.slots <- struct{}{}:
+		d.acquired.Add(1)
+		var once sync.Once
+		return func() { once.Do(func() { <-d.slots; d.released.Add(1) }) }, true
+	default:
+		return nil, false
+	}
+}
+
+func (d *slotTestDialer) closeServers() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, s := range d.servers {
+		_ = s.Close()
+	}
+}
+
+type addressedConn struct {
+	net.Conn
+	local, remote net.Addr
+}
+
+func (c addressedConn) LocalAddr() net.Addr  { return c.local }
+func (c addressedConn) RemoteAddr() net.Addr { return c.remote }
+
+type queuedListener struct {
+	conns chan net.Conn
+	done  chan struct{}
+	once  sync.Once
+}
+
+func (q *queuedListener) Accept() (net.Conn, error) {
+	select {
+	case c := <-q.conns:
+		return c, nil
+	case <-q.done:
+		return nil, net.ErrClosed
+	}
+}
+
+func (q *queuedListener) Close() error {
+	q.once.Do(func() { close(q.done) })
+	return nil
+}
+
+func (q *queuedListener) Addr() net.Addr { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 1} }
+
+type reuseAcceptRig struct {
+	l       *Listener
+	ln      *queuedListener
+	hello   []byte
+	clients []net.Conn
+}
+
+func startReuseAcceptRig(t *testing.T, warm *slotTestDialer) *reuseAcceptRig {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	set := config.NewSetConfig()
+	set.Enabled = true
+	set.TCP.WSSizeReuse.Enabled = true
+	l := &Listener{ctx: ctx, cancel: cancel, WSReuse: true, Warm: warm, SetName: "reuse"}
+	l.set.Store(&set)
+	r := &reuseAcceptRig{l: l, ln: &queuedListener{conns: make(chan net.Conn), done: make(chan struct{})}, hello: realClientHello(t, "video.example.org")}
+	loopDone := make(chan struct{})
+	go func() { defer close(loopDone); l.acceptLoop(r.ln, "v4") }()
+	t.Cleanup(func() {
+		_ = r.ln.Close()
+		<-loopDone
+		for _, c := range r.clients {
+			_ = c.Close()
+		}
+		warm.closeServers()
+		cancel()
+		if !waitUntil(2*time.Second, func() bool { return l.Active() == 0 }) {
+			t.Errorf("%d reuse connections still served after the clients and servers closed", l.Active())
+		}
+	})
+	return r
+}
+
+func (r *reuseAcceptRig) connect(port int) net.Conn {
+	a, b := net.Pipe()
+	r.clients = append(r.clients, a)
+	r.ln.conns <- addressedConn{Conn: b, local: &net.TCPAddr{IP: net.ParseIP("203.0.113.2"), Port: 443}, remote: &net.TCPAddr{IP: net.ParseIP("192.0.2.10"), Port: port}}
+	go func() { _, _ = a.Write(r.hello) }()
+	return a
+}
+
+func waitUntil(limit time.Duration, cond func() bool) bool {
+	deadline := time.Now().Add(limit)
+	for !cond() {
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return true
+}
+
+func TestWSReuseLongRelayDoesNotHoldAWarmSlot(t *testing.T) {
+	d := &slotTestDialer{slots: make(chan struct{}, 1)}
+	r := startReuseAcceptRig(t, d)
+	r.connect(50001)
+	if !waitUntil(2*time.Second, func() bool { return d.dials.Load() == 1 && d.released.Load() >= 1 }) {
+		t.Fatalf("the first connection's relay still holds the only warm slot after its warm: dials=%d acquired=%d released=%d", d.dials.Load(), d.acquired.Load(), d.released.Load())
+	}
+	r.connect(50002)
+	if !waitUntil(2*time.Second, func() bool { return d.dials.Load() == 2 && d.released.Load() == 2 }) {
+		t.Fatalf("a second connection was not warmed while the first one relays: dials=%d acquired=%d released=%d", d.dials.Load(), d.acquired.Load(), d.released.Load())
+	}
+	if got := r.l.Active(); got != 2 {
+		t.Fatalf("%d connections relayed, want both", got)
+	}
+}
+
+type lockedLog struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedLog) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedLog) warnings(substr string) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	n := 0
+	for _, line := range strings.Split(b.buf.String(), "\n") {
+		if strings.Contains(line, "[WARN]") && strings.Contains(line, substr) {
+			n++
+		}
+	}
+	return n
+}
+
+func captureWarnings(t *testing.T) *lockedLog {
+	t.Helper()
+	previous := log.Level(log.CurLevel.Load())
+	out := &lockedLog{}
+	log.Init(out, log.LevelInfo, true)
+	t.Cleanup(func() { log.Init(os.Stderr, previous, true) })
+	return out
+}
+
+func TestWSReuseWarmSlotsFullClosesAndCounts(t *testing.T) {
+	logged := captureWarnings(t)
+	d := &slotTestDialer{slots: make(chan struct{})}
+	r := startReuseAcceptRig(t, d)
+	for i := 0; i < 2; i++ {
+		client := r.connect(50001 + i)
+		client.SetReadDeadline(time.Now().Add(2 * time.Second))
+		if _, err := client.Read(make([]byte, 1)); err == nil || errors.Is(err, os.ErrDeadlineExceeded) {
+			t.Fatalf("connection %d was left open with every warm slot busy: %v", i+1, err)
+		}
+	}
+	if d.dials.Load() != 0 {
+		t.Fatalf("%d warms dialed without a warm slot", d.dials.Load())
+	}
+	if got := r.l.warmSlotsFull.count.Load(); got != 2 {
+		t.Fatalf("%d connections counted as refused for busy warm slots, want 2", got)
+	}
+	if n := logged.warnings("every warm slot is busy"); n != 1 {
+		t.Fatalf("%d warnings for 2 connections refused within a minute, want 1", n)
+	}
+}
+
+func serveReuseOnce(l *Listener) {
+	a, b := net.Pipe()
+	defer a.Close()
+	defer b.Close()
+	l.serveWSReuse(reuseTestClient{b}, net.ParseIP("203.0.113.2"), 443, &sniffResult{host: "video.example.org", tlsVersion: 0x0304, prefix: []byte("hello")})
+}
+
+func TestWSReuseLeasedPortsWarnOncePerMinute(t *testing.T) {
+	logged := captureWarnings(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	set := config.NewSetConfig()
+	set.Enabled = true
+	set.TCP.WSSizeReuse.Enabled = true
+	d := &slotTestDialer{slots: make(chan struct{}, 1), err: warmtuple.ErrCapacity}
+	l := &Listener{ctx: ctx, Warm: d, SetName: "reuse"}
+	l.set.Store(&set)
+	for i := 0; i < 3; i++ {
+		serveReuseOnce(l)
+	}
+	if d.dials.Load() != 3 {
+		t.Fatalf("%d warms tried, want 3", d.dials.Load())
+	}
+	if n := logged.warnings(warmtuple.ErrCapacity.Error()); n != 1 {
+		t.Fatalf("%d warnings for 3 connections refused within a minute because every warm port is leased, want 1", n)
+	}
+	d.err = errors.New("tls: handshake failure")
+	serveReuseOnce(l)
+	serveReuseOnce(l)
+	if n := logged.warnings("handshake failure"); n != 2 {
+		t.Fatalf("%d warnings for 2 failed warms, want 2: only the leased-port refusal is rate-limited", n)
 	}
 }

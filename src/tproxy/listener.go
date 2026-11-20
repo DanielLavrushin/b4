@@ -119,6 +119,9 @@ type Listener struct {
 
 	activeConns atomic.Int64
 
+	warmSlotsFull   warnLimiter
+	warmPortsLeased warnLimiter
+
 	upstreamFails    atomic.Int64
 	upstreamLastWarn atomic.Int64
 	upstreamLastFail atomic.Pointer[time.Time]
@@ -332,20 +335,7 @@ func (l *Listener) acceptLoop(ln net.Listener, family string) {
 			time.Sleep(50 * time.Millisecond)
 			continue
 		}
-		if l.WSReuse {
-			if l.Warm == nil {
-				_ = conn.Close()
-				continue
-			}
-			release, ok := l.Warm.AcquireClient()
-			if !ok {
-				_ = conn.Close()
-				continue
-			}
-			go func() { defer release(); l.handle(conn) }()
-		} else {
-			go l.handle(conn)
-		}
+		go l.handle(conn)
 	}
 }
 
