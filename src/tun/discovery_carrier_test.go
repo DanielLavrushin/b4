@@ -203,22 +203,34 @@ func TestTheCarrierRefusesWithoutAnUplinkSource(t *testing.T) {
 	}
 }
 
-func TestTheCarrierRefusesAFlowMarkItsResendsWouldCarry(t *testing.T) {
+func TestTheCarrierRefusesDiscoveryMarksWithTUNReservedBits(t *testing.T) {
 	f := stubRules(t, stockRules)
 	_, opened := stubCarrierIO(t)
-	for _, capture := range []string{"ports", "default"} {
-		e := carrierEngine(capture, "203.0.113.2")
-		if _, err := e.startDiscoveryCarrier(DiscoveryCarrierRequest{FlowMark: 0x10008002, InjectedMark: 0x8002}, &laneProc{}); err == nil || !strings.Contains(err.Error(), "loop back") {
-			t.Errorf("%s capture: the re-sends carry 0x8002|0x10000000, the flow mark itself, so rule 81 would send them back into the carrier; the start must be refused, got %v", capture, err)
+	for _, tc := range []struct {
+		name           string
+		flow, injected uint
+	}{
+		{"steer bit in the flow mark, probes go into b4tun0", 0x40008001, 0x8002},
+		{"steer bit in the injected mark, re-sends go into b4tun0", 0x8001, 0x40008002},
+		{"client bit in the flow mark", 0x20008001, 0x8002},
+		{"client bit in the injected mark", 0x8001, 0x20008002},
+		{"reinject bit in the flow mark, the re-sends' own mark", 0x10008002, 0x8002},
+		{"reinject bit in the injected mark", 0x8001, 0x10008002},
+	} {
+		for _, capture := range []string{"ports", "default"} {
+			e := carrierEngine(capture, "203.0.113.2")
+			if _, err := e.startDiscoveryCarrier(DiscoveryCarrierRequest{FlowMark: tc.flow, InjectedMark: tc.injected}, &laneProc{}); err == nil || !strings.Contains(err.Error(), "reserves") {
+				t.Errorf("%s, %s capture: marks 0x%x/0x%x must be refused, got %v", tc.name, capture, tc.flow, tc.injected, err)
+			}
 		}
 	}
 	if *opened != 0 || len(adds(f.calls)) != 0 {
 		t.Errorf("a refusal must change nothing, opened %d, calls:\n%s", *opened, strings.Join(f.calls, "\n"))
 	}
 
-	c, err := carrierEngine("ports", "203.0.113.2").startDiscoveryCarrier(DiscoveryCarrierRequest{FlowMark: 0x8002, InjectedMark: 0x10008002}, &laneProc{})
+	c, err := carrierEngine("ports", "203.0.113.2").startDiscoveryCarrier(DiscoveryCarrierRequest{FlowMark: 0x100001, InjectedMark: 0x100002}, &laneProc{})
 	if err != nil {
-		t.Fatalf("an injected mark that already carries the reinject bit re-sends with it, which is not the flow mark 0x8002, so the start must go ahead: %v", err)
+		t.Fatalf("explicit marks clear of the reserved bits must start: %v", err)
 	}
 	c.Stop()
 }

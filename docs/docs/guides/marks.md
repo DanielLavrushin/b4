@@ -538,9 +538,9 @@ only rule 100 is added.
 Discovery's probe connections carry the flow mark, the queue mark plus 1 by default; the
 packets Discovery sends carry the injected mark, the queue mark plus 2. Both are compared as
 whole 32-bit values. They are set by `system.checker.discovery_flow_mark` and
-`system.checker.discovery_injected_mark` in the configuration file. In TUN mode the flow mark
-cannot be the injected mark with `0x10000000` added, the mark of the packets b4 sends for a
-run. The default values have bits under `0x27fff`, so no routing set routes Discovery's traffic. The rules below exist
+`system.checker.discovery_injected_mark` in the configuration file. Under the TUN engine a run
+does not start while either mark has a bit of `0x70000000`, the marks TUN reserves for its own
+packets, and b4 logs a warning when it loads or saves such marks in TUN mode. The default values have bits under `0x27fff`, so no routing set routes Discovery's traffic. The rules below exist
 while a run is active, including runs the watchdog or the MCP server start. Which of them a
 run gets follows the engine b4 is running, not the saved `queue.mode`.
 

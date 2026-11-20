@@ -31,6 +31,7 @@ const (
 	carrierTableFirst         = 60
 	carrierTableFloor         = 32
 	carrierExactMask          = "0xffffffff"
+	carrierReservedMarkBits   = uint(engine.TunSteerMark | engine.ClientMark | engine.ReinjectMarkBit)
 )
 
 var (
@@ -314,8 +315,9 @@ func (e *Engine) startDiscoveryCarrier(req DiscoveryCarrierRequest, proc packetP
 		return nil, errors.New("the TUN engine is stopping")
 	default:
 	}
-	if req.InjectedMark|engine.ReinjectMarkBit == req.FlowMark {
-		return nil, fmt.Errorf("Discovery's injected mark 0x%x with the reinject bit 0x%x equals its flow mark, so every packet the carrier re-sends would loop back into it; choose other Discovery marks", req.InjectedMark, engine.ReinjectMarkBit)
+	if bits := (req.FlowMark | req.InjectedMark) & carrierReservedMarkBits; bits != 0 {
+		return nil, fmt.Errorf("Discovery's flow mark 0x%x or injected mark 0x%x has bits 0x%x of the marks the TUN engine reserves (0x%x steer, 0x%x client, 0x%x reinject), which would send its probes or the packets the carrier re-sends past the carrier; choose Discovery marks without them",
+			req.FlowMark, req.InjectedMark, bits, uint(engine.TunSteerMark), uint(engine.ClientMark), uint(engine.ReinjectMarkBit))
 	}
 	if e.routes == nil {
 		return nil, errors.New("the TUN engine has no routing set up")

@@ -673,11 +673,8 @@ func (c *Config) Validate() error {
 		v.add("queue.mark", "mark_conflict", "queue marks must be unique: mark, discovery_flow_mark, discovery_injected_mark", nil)
 		return v.result()
 	}
-	if c.Queue.Mode == "tun" && injectedMark|uint(engine.ReinjectMarkBit) == flowMark {
-		v.addf("system.checker.discovery_flow_mark", "mark_conflict", map[string]any{"mark": fmt.Sprintf("0x%x", flowMark)},
-			"discovery_flow_mark 0x%x is discovery_injected_mark 0x%x with the TUN reinject bit 0x%x, the mark of every packet the TUN Discovery carrier re-sends, so its probes would loop back into the carrier; choose a flow mark without that bit",
-			flowMark, injectedMark, uint(engine.ReinjectMarkBit))
-		return v.result()
+	if c.Queue.Mode == "tun" {
+		warnDiscoveryMarksWithTUNBits(flowMark, injectedMark)
 	}
 	if c.Queue.Mode != "tun" && !c.Queue.IsDiscovery {
 		warnQueueMarkWithInjectedBit(c.Queue.Mark)
@@ -735,6 +732,18 @@ func warnQueueMarkWithInjectedBit(mark uint) {
 		return
 	}
 	log.Warnf("queue.mark 0x%x has bit 0x%x, the bit b4 adds to the packets it sends into a client's connection, so b4 cannot tell those connections from its own: their SYN-ACKs and resets skip b4, and RST protection, RST escalation and TTL learning miss every connection b4 changed. Choose a queue mark without that bit", mark, uint(engine.InjectedMarkBit))
+}
+
+var tunBitsWarnedMarks atomic.Uint64
+
+func warnDiscoveryMarksWithTUNBits(flow, injected uint) {
+	const reserved = uint(engine.TunSteerMark | engine.ClientMark | engine.ReinjectMarkBit)
+	key := uint64(flow)<<32 | uint64(injected)
+	if (flow|injected)&reserved == 0 || tunBitsWarnedMarks.Swap(key) == key {
+		return
+	}
+	log.Warnf("system.checker.discovery_flow_mark 0x%x or discovery_injected_mark 0x%x has bits of 0x%x, the marks the TUN engine reserves (0x%x steer, 0x%x client, 0x%x reinject), so under the TUN engine Discovery's probes or re-sends would go past its carrier, and every Discovery run and watchdog heal is refused. Choose Discovery marks without those bits",
+		flow, injected, reserved, uint(engine.TunSteerMark), uint(engine.ClientMark), uint(engine.ReinjectMarkBit))
 }
 
 func normalizeSetASNs(v *validator, setIdx int, set *SetConfig) bool {
