@@ -637,7 +637,7 @@
         "inSets": "sets: {{names}}",
         "filterWarning": "Device Filtering then has no device selected, so DPI bypass applies to every device.",
         "setWarning": "Set {{name}} then has no source devices left and applies to every device.",
-        "mssBlocked": "Set {{name}} uses MSS Clamping, which needs a source device or an IP, GeoIP or ASN target. Without its source devices the set has neither, and b4 cannot save it. Turn off MSS Clamping in the set or add such a target first.",
+        "mssBlocked": "Set {{name}} uses MSS Clamping, which needs a source device, an IP, GeoIP or ASN target, or Use collected IPs. Without its source devices the set has none of these, and b4 cannot save it. Turn off MSS Clamping in the set or add such a target first.",
         "confirm": "Forget ({{count}})"
       }
     },
@@ -1847,9 +1847,9 @@
         "rstTtlToleranceHelper": "Maximum allowed difference between the server's reference TTL and an incoming RST packet's TTL",
         "mssClamp": "MSS Clamping",
         "mssEnable": "Enable per-set MSS",
-        "mssEnableDesc": "Override TCP MSS for connections matching this set's IP, GeoIP, ASN or device targets",
-        "mssScopeHint": "MSS is set on the TCP SYN, before the TLS handshake. It can only be scoped by IP / GeoIP / ASN / source device. SNI domain, GeoSite and TLS version filters do not participate in MSS clamping.",
-        "mssScopeRequired": "Add an IP, GeoIP, ASN or source device target before enabling per-set MSS.",
+        "mssEnableDesc": "Override TCP MSS for connections matching this set's IP, GeoIP, ASN, collected IP or device targets",
+        "mssScopeHint": "MSS is set on the TCP SYN, before the TLS handshake. It can only be scoped by IP / GeoIP / ASN / collected IPs / source device. SNI domain, GeoSite and TLS version filters do not participate in MSS clamping.",
+        "mssScopeRequired": "Add an IP, GeoIP, ASN or source device target, or turn on Use collected IPs, before enabling per-set MSS.",
         "mssAppliesTo": "Scope: IPs {{ips}}  Devices {{macs}}",
         "mssSize": "MSS size (bytes)",
         "mssSizeHelper": "Typical TSPU workaround for Smart TVs on YouTube: 88",

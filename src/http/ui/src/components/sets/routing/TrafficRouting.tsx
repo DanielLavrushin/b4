@@ -12,7 +12,7 @@ import {
 } from "@b4.elements";
 import { B4SetConfig, RouterTraffic, RoutingMode } from "@models/config";
 import { colors } from "@design";
-import { DscpEnvironment } from "@utils";
+import { DscpEnvironment, declaresIpTargets } from "@utils";
 import { Trans, useTranslation } from "react-i18next";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import * as ipaddr from "ipaddr.js";
@@ -132,10 +132,7 @@ export const TrafficRouting = ({
     routing.egress_interface,
   );
   const routesAnyIP =
-    !config.targets.domain_only ||
-    (config.targets.ip?.length ?? 0) > 0 ||
-    (config.targets.geoip_categories?.length ?? 0) > 0 ||
-    (config.targets.asns?.length ?? 0) > 0;
+    !config.targets.domain_only || declaresIpTargets(config.targets);
   const strategyHandedOff =
     isInterface && egressIsEncapsulated && routesAnyIP;
 

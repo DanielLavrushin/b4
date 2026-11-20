@@ -22,6 +22,7 @@ import {
   UDP_FAKE_PAYLOAD_PRESET_2,
 } from "@models/config";
 import { useCaptures } from "@b4.capture";
+import { declaresIpTargets } from "@utils";
 import { udpPortRouting } from "./routing/portRouting";
 import { useTranslation, Trans } from "react-i18next";
 import {
@@ -123,10 +124,7 @@ export const UdpSettings = ({
     config.targets?.sni_domains?.length > 0 ||
     config.targets?.geosite_categories?.length > 0;
 
-  const hasIPTargets =
-    (config.targets?.ip?.length ?? 0) > 0 ||
-    (config.targets?.geoip_categories?.length ?? 0) > 0 ||
-    (config.targets?.asns?.length ?? 0) > 0;
+  const hasIPTargets = declaresIpTargets(config.targets);
 
   const hasUdpPortFilter = (config.udp.dport_filter ?? "").trim() !== "";
   const hasNonDomainTargets = hasIPTargets || hasUdpPortFilter;

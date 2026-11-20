@@ -12,7 +12,7 @@ import {
   B4Hint,
 } from "@b4.elements";
 import { B4Switch } from "@common/B4Switch";
-import { portFilterCovers } from "@utils";
+import { declaresIpTargets, mssClampIpScope, portFilterCovers } from "@utils";
 import { Trans, useTranslation } from "react-i18next";
 
 interface TcpGeneralProps {
@@ -80,15 +80,12 @@ export const TcpGeneral = ({
     ...config.tcp.rst_protection,
   };
   const mss: MSSClampConfig = config.mss_clamp ?? { enabled: false, size: 88 };
-  const hasIPScope =
-    !!config.targets.use_collected_ips ||
-    (config.targets?.ip?.length ?? 0) > 0 ||
-    (config.targets?.geoip_categories?.length ?? 0) > 0 ||
-    (config.targets?.asns?.length ?? 0) > 0;
+  const declaresIPs = declaresIpTargets(config.targets);
+  const hasIPScope = mssClampIpScope(config.targets);
   const hasMACScope = (config.targets?.source_devices?.length ?? 0) > 0;
   const mssScopeOk = hasIPScope || hasMACScope;
   const hasDestinationTargets =
-    hasIPScope ||
+    declaresIPs ||
     (config.targets?.sni_domains?.length ?? 0) > 0 ||
     (config.targets?.geosite_categories?.length ?? 0) > 0;
   const wsDomainOnly =
@@ -97,7 +94,7 @@ export const TcpGeneral = ({
     !wsTun &&
     (config.targets?.domain_only ?? false) &&
     hasDestinationTargets &&
-    !hasIPScope;
+    !declaresIPs;
   const hasPortFilter = (config.tcp.dport_filter ?? "").trim() !== "";
   const portFilterSkipsHttps =
     hasDestinationTargets &&

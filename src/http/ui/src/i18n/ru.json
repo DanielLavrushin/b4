@@ -642,7 +642,7 @@
         "inSets": "сеты: {{names}}",
         "filterWarning": "В фильтрации устройств не останется выбранных устройств, и обход DPI будет применяться ко всем устройствам.",
         "setWarning": "У сета {{name}} не останется исходных устройств, и он будет применяться ко всем устройствам.",
-        "mssBlocked": "Сет {{name}} использует MSS Clamping, которому нужно исходное устройство или цель IP, GeoIP или ASN. Без исходных устройств у сета не останется ни того, ни другого, и b4 не сможет его сохранить. Сначала выключите в сете MSS Clamping или добавьте такую цель.",
+        "mssBlocked": "Сет {{name}} использует MSS Clamping, которому нужно исходное устройство, цель IP, GeoIP или ASN либо «Использовать собранные IP». Без исходных устройств у сета не останется ничего из этого, и b4 не сможет его сохранить. Сначала выключите в сете MSS Clamping или добавьте такую цель.",
         "confirm": "Забыть ({{count}})"
       }
     },
@@ -1930,9 +1930,9 @@
         "rstTtlToleranceHelper": "Максимально допустимая разница между TTL сервера и TTL входящего RST пакета",
         "mssClamp": "MSS Clamping",
         "mssEnable": "Включить MSS для сета",
-        "mssEnableDesc": "Переопределить TCP MSS для соединений, попадающих под IP, GeoIP, ASN или устройства этого сета",
-        "mssScopeHint": "MSS выставляется в TCP SYN, до TLS handshake. Поэтому область действия ограничена IP / GeoIP / ASN / source device. Фильтры по SNI домену, GeoSite и версии TLS в MSS clamping не участвуют.",
-        "mssScopeRequired": "Перед включением MSS добавьте в сет цель по IP, GeoIP, ASN или source device.",
+        "mssEnableDesc": "Переопределить TCP MSS для соединений, попадающих под IP, GeoIP, ASN, собранные IP или устройства этого сета",
+        "mssScopeHint": "MSS выставляется в TCP SYN, до TLS handshake. Поэтому область действия ограничена IP / GeoIP / ASN / собранными IP / source device. Фильтры по SNI домену, GeoSite и версии TLS в MSS clamping не участвуют.",
+        "mssScopeRequired": "Перед включением MSS добавьте в сет цель по IP, GeoIP, ASN или source device либо включите «Использовать собранные IP».",
         "mssAppliesTo": "Область: IPs {{ips}}  Devices {{macs}}",
         "mssSize": "Размер MSS (байт)",
         "mssSizeHelper": "Типичный обход ТСПУ для Smart TV на YouTube: 88",
