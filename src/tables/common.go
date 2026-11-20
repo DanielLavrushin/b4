@@ -115,6 +115,7 @@ func addRules(cfg *config.Config) error {
 func clearRules(cfg *config.Config) error {
 	defer revertCollectedAccounting()
 	captureCollectedForget()
+	captureCollectedForgetPool()
 	if cfg.System.Tables.SkipSetup {
 		return nil
 	}

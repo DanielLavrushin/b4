@@ -2,6 +2,7 @@ package tables
 
 import (
 	"fmt"
+	"net/netip"
 	"slices"
 	"sort"
 	"strings"
@@ -18,6 +19,58 @@ type captureCollectedSet struct {
 }
 
 var captureCollectedApplied = map[string]*captureCollectedSet{}
+
+type captureCollectedPool struct {
+	addrs [2][]string
+	known [2]bool
+}
+
+var captureCollectedSynced *captureCollectedPool
+
+func captureCollectedPoolOf(cfg *config.Config) *captureCollectedPool {
+	pool := &captureCollectedPool{}
+	seen := make(map[string]bool)
+	for _, set := range cfg.Sets {
+		if set == nil || !set.Enabled || !set.Targets.UseCollectedIPs || cfg.Queue.IsDiscovery {
+			continue
+		}
+		for family, version := range [2]uint8{4, 6} {
+			if cfg.IPFamilyEnabled(version == 6) && set.MatchesIPVersion(version) {
+				pool.known[family] = true
+			}
+		}
+		for _, raw := range set.Targets.CollectedIPs {
+			ip, err := netip.ParseAddr(raw)
+			if err != nil || seen[raw] {
+				continue
+			}
+			seen[raw] = true
+			family := 0
+			if ip.Is6() {
+				family = 1
+			}
+			pool.addrs[family] = append(pool.addrs[family], raw)
+		}
+	}
+	return pool
+}
+
+func captureCollectedFilled(cfg *config.Config) *config.Config {
+	synced := captureCollectedSynced
+	if synced == nil {
+		return cfg
+	}
+	current := captureCollectedPoolOf(cfg)
+	var ips []string
+	for family := range synced.addrs {
+		if synced.known[family] {
+			ips = append(ips, synced.addrs[family]...)
+		} else {
+			ips = append(ips, current.addrs[family]...)
+		}
+	}
+	return cfg.WithCollectedIPs(ips)
+}
 
 func captureCollectedMSSName(setIdx int, v6 bool) string {
 	if v6 {
@@ -38,7 +91,7 @@ func captureCollectedEmitted(cfg *config.Config) bool {
 }
 
 func captureCollectedMSSEntries(cfg *config.Config, e config.SetMSSClampEntry, v6 bool) []string {
-	set := mssClampEntrySet(cfg, e)
+	set := mssClampEntrySet(captureCollectedFilled(cfg), e)
 	if set == nil {
 		return nil
 	}
@@ -53,8 +106,16 @@ func captureCollectedDupEntries(cfg *config.Config, v6 bool) ([]string, bool) {
 	return v4s, used
 }
 
+func captureCollectedDupFill(cfg *config.Config, v6 bool) ([]string, bool) {
+	return captureCollectedDupEntries(captureCollectedFilled(cfg), v6)
+}
+
 func captureCollectedForget() {
 	captureCollectedApplied = map[string]*captureCollectedSet{}
+}
+
+func captureCollectedForgetPool() {
+	captureCollectedSynced = nil
 }
 
 func captureCollectedRecord(name string, set *captureCollectedSet) {
@@ -76,7 +137,11 @@ func captureCollectedDesired(cfg *config.Config, s *captureCollectedSet) []strin
 func SyncCollectedCaptureSets(cfg *config.Config) error {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
-	if cfg == nil || cfg.System.Tables.SkipSetup || rulesAppliedCfg == nil || len(captureCollectedApplied) == 0 {
+	if cfg == nil || cfg.System.Tables.SkipSetup || rulesAppliedCfg == nil {
+		return nil
+	}
+	captureCollectedSynced = captureCollectedPoolOf(cfg)
+	if len(captureCollectedApplied) == 0 {
 		return nil
 	}
 	names := make([]string, 0, len(captureCollectedApplied))

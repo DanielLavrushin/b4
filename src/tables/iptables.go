@@ -981,7 +981,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 			rules = append(rules, dupQueueRules(dupSetName)...)
 		}
 		collectedV6 := dupSetFamily == "inet6"
-		if collectedDup, used := captureCollectedDupEntries(cfg, collectedV6); used && captureCollectedEmitted(cfg) {
+		if collectedDup, used := captureCollectedDupFill(cfg, collectedV6); used && captureCollectedEmitted(cfg) {
 			collectedName := captureCollectedDupName(collectedV6)
 			if reason := manager.ipsetUnusable(ipt, teardown); reason != "" {
 				if !teardown {

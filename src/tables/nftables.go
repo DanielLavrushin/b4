@@ -564,7 +564,7 @@ func (n *NFTablesManager) addDuplicateQueueRules(tcpPortExpr string) error {
 		nfproto string
 		addr    string
 	}{{false, cfg.Queue.IPv4Enabled, "ipv4", "ip"}, {true, cfg.Queue.IPv6Enabled, "ipv6", "ip6"}} {
-		entries, used := captureCollectedDupEntries(cfg, family.v6)
+		entries, used := captureCollectedDupFill(cfg, family.v6)
 		if !used || !family.enabled {
 			continue
 		}

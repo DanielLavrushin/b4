@@ -2,6 +2,7 @@ package tables
 
 import (
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,12 +15,12 @@ import (
 func captureCollectedKeep(t *testing.T) {
 	t.Helper()
 	rulesMu.Lock()
-	saved := captureCollectedApplied
-	captureCollectedApplied = map[string]*captureCollectedSet{}
+	saved, synced := captureCollectedApplied, captureCollectedSynced
+	captureCollectedApplied, captureCollectedSynced = map[string]*captureCollectedSet{}, nil
 	rulesMu.Unlock()
 	t.Cleanup(func() {
 		rulesMu.Lock()
-		captureCollectedApplied = saved
+		captureCollectedApplied, captureCollectedSynced = saved, synced
 		rulesMu.Unlock()
 	})
 }
@@ -457,4 +458,185 @@ func TestTheMonitorChecksTheCollectedCaptureRules(t *testing.T) {
 			t.Fatal("only the static set's rule is left, yet the check passes for the capture set")
 		}
 	})
+}
+
+const (
+	captureSyncedA  = "203.0.113.7"
+	captureSyncedB  = "203.0.113.8"
+	captureSyncedC6 = "2001:db8::8"
+)
+
+func captureCollectedRestore(t *testing.T, backend string, published *config.Config) {
+	t.Helper()
+	m, ptr := newLockTestMonitor(t)
+	m.backend = backend
+	ptr.Store(published)
+	rulesMu.Lock()
+	err := m.restoreRules(m.config())
+	rulesMu.Unlock()
+	if err != nil {
+		t.Fatalf("the monitor's restore failed: %v", err)
+	}
+}
+
+func captureCollectedFilledWith(lines []string, name, addr string) bool {
+	return slices.ContainsFunc(lines, func(line string) bool {
+		return strings.Contains(line, name) && strings.Contains(line, addr) && !strings.Contains(line, "del")
+	})
+}
+
+func captureCollectedWant(t *testing.T, when string, want map[string][]string) {
+	t.Helper()
+	for _, name := range slices.Sorted(maps.Keys(want)) {
+		if got := captureCollectedEntries(name); !slices.Equal(got, want[name]) {
+			t.Errorf("%s: %s is recorded with %q, want %q", when, name, got, want[name])
+		}
+	}
+}
+
+func TestARestoreDuringACollectedInstallKeepsTheAddressesItAlreadySynced(t *testing.T) {
+	for _, backend := range []string{backendIPTables, backendNFTables} {
+		t.Run(backend, func(t *testing.T) {
+			h := newGoldenHost(t)
+			goldenIsolate(t, h)
+			captureCollectedKeep(t)
+			run = refuseDeletes(run)
+			cfg := captureCollectedTestConfig(backend)
+			published := cfg.WithCollectedIPs([]string{captureSyncedA})
+			if err := AddRules(published); err != nil {
+				t.Fatal(err)
+			}
+			if err := SyncCollectedCaptureSets(cfg.WithCollectedIPs([]string{captureSyncedA, captureSyncedB, captureSyncedC6})); err != nil {
+				t.Fatal(err)
+			}
+			h.take()
+			captureCollectedRestore(t, backend, published)
+			lines := h.take()
+			captureCollectedWant(t, "a restore between the install's capture step and its publish", map[string][]string{
+				"b4_mss_0_v4c": {captureSyncedA, captureSyncedB},
+				"b4_mss_0_v6c": {captureSyncedC6},
+				"b4_dup_v4c":   {captureSyncedA, captureSyncedB},
+				"b4_dup_v6c":   {captureSyncedC6},
+			})
+			for _, name := range []string{"b4_mss_0_v4c", "b4_dup_v4c"} {
+				if !captureCollectedFilledWith(lines, name, captureSyncedB) {
+					t.Errorf("the restore rebuilt %s without %s, which the install had already synced; nothing but the next pool change would put it back:\n%s", name, captureSyncedB, strings.Join(lines, "\n"))
+				}
+			}
+		})
+	}
+}
+
+func TestARolledBackCollectedInstallLeavesTheRestoreWithThePublishedPool(t *testing.T) {
+	for _, backend := range []string{backendIPTables, backendNFTables} {
+		t.Run(backend, func(t *testing.T) {
+			h := newGoldenHost(t)
+			goldenIsolate(t, h)
+			captureCollectedKeep(t)
+			run = refuseDeletes(run)
+			cfg := captureCollectedTestConfig(backend)
+			published := cfg.WithCollectedIPs([]string{captureSyncedA})
+			if err := AddRules(published); err != nil {
+				t.Fatal(err)
+			}
+			if err := SyncCollectedCaptureSets(cfg.WithCollectedIPs([]string{captureSyncedA, captureSyncedB})); err != nil {
+				t.Fatal(err)
+			}
+			_ = SyncCollectedCaptureSets(published)
+			h.take()
+			captureCollectedRestore(t, backend, published)
+			lines := h.take()
+			captureCollectedWant(t, "a restore after the installer's rollback re-synced the published pool", map[string][]string{
+				"b4_mss_0_v4c": {captureSyncedA},
+				"b4_dup_v4c":   {captureSyncedA},
+			})
+			for _, name := range []string{"b4_mss_0_v4c", "b4_dup_v4c"} {
+				if captureCollectedFilledWith(lines, name, captureSyncedB) {
+					t.Errorf("the restore put %s back into %s, although the rollback had synced the published pool without it:\n%s", captureSyncedB, name, strings.Join(lines, "\n"))
+				}
+			}
+
+			if err := SyncCollectedCaptureSets(cfg.WithCollectedIPs([]string{captureSyncedA, captureSyncedB})); err != nil {
+				t.Fatal(err)
+			}
+			if err := ClearRules(published); err != nil {
+				t.Fatal(err)
+			}
+			if err := AddRules(published); err != nil {
+				t.Fatal(err)
+			}
+			captureCollectedWant(t, "a build after ClearRules", map[string][]string{
+				"b4_mss_0_v4c": {captureSyncedA},
+				"b4_dup_v4c":   {captureSyncedA},
+			})
+		})
+	}
+}
+
+func TestACaptureRebuildTakesAFamilyTheLastSyncHadNoConsumerForFromTheView(t *testing.T) {
+	for _, backend := range []string{backendIPTables, backendNFTables} {
+		t.Run(backend, func(t *testing.T) {
+			h := newGoldenHost(t)
+			goldenIsolate(t, h)
+			captureCollectedKeep(t)
+			run = refuseDeletes(run)
+			cfg := captureCollectedTestConfig(backend)
+			for _, set := range cfg.Sets {
+				set.Targets.IPVersion = "4"
+			}
+			if err := AddRules(cfg.WithCollectedIPs([]string{captureSyncedA, captureSyncedC6})); err != nil {
+				t.Fatal(err)
+			}
+			if err := SyncCollectedCaptureSets(cfg.WithCollectedIPs([]string{captureSyncedA, captureSyncedB, captureSyncedC6})); err != nil {
+				t.Fatal(err)
+			}
+			both := captureCollectedTestConfig(backend)
+			if err := AddRules(both.WithCollectedIPs([]string{captureSyncedA, captureSyncedC6})); err != nil {
+				t.Fatal(err)
+			}
+			captureCollectedWant(t, "a rebuild whose sets now take IPv6 too", map[string][]string{
+				"b4_mss_0_v4c": {captureSyncedA, captureSyncedB},
+				"b4_mss_0_v6c": {captureSyncedC6},
+				"b4_dup_v4c":   {captureSyncedA, captureSyncedB},
+				"b4_dup_v6c":   {captureSyncedC6},
+			})
+		})
+	}
+}
+
+func TestACaptureRebuildUsesAPoolSyncedWhileNoCaptureSetExisted(t *testing.T) {
+	for _, backend := range []string{backendIPTables, backendNFTables} {
+		t.Run(backend, func(t *testing.T) {
+			h := newGoldenHost(t)
+			goldenIsolate(t, h)
+			captureCollectedKeep(t)
+			run = refuseDeletes(run)
+			cfg := captureCollectedTestConfig(backend)
+			if err := AddRules(cfg.WithCollectedIPs([]string{captureSyncedA})); err != nil {
+				t.Fatal(err)
+			}
+			if err := SyncCollectedCaptureSets(cfg.WithCollectedIPs([]string{captureSyncedA})); err != nil {
+				t.Fatal(err)
+			}
+			bare := captureCollectedTestConfig(backend)
+			bare.Sets[0].MSSClamp.Enabled = false
+			bare.Sets[1].TCP.Duplicate.Enabled = false
+			if err := AddRules(bare.WithCollectedIPs([]string{captureSyncedA})); err != nil {
+				t.Fatal(err)
+			}
+			if names := captureCollectedNames(); len(names) != 0 {
+				t.Fatalf("setup: without a clamp or duplication set the build kept the capture sets %v", names)
+			}
+			if err := SyncCollectedCaptureSets(bare.WithCollectedIPs([]string{captureSyncedA, captureSyncedB})); err != nil {
+				t.Fatal(err)
+			}
+			if err := AddRules(cfg.WithCollectedIPs([]string{captureSyncedA})); err != nil {
+				t.Fatal(err)
+			}
+			captureCollectedWant(t, "a rebuild after a sync that found no capture set", map[string][]string{
+				"b4_mss_0_v4c": {captureSyncedA, captureSyncedB},
+				"b4_dup_v4c":   {captureSyncedA, captureSyncedB},
+			})
+		})
+	}
 }
