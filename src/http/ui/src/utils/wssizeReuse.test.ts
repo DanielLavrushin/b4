@@ -54,6 +54,15 @@ void test("a reuse set Go accepts has no issue", () => {
   assert.deepEqual(issues((s) => (s.tcp.dport_filter = "400-500")), []);
 });
 
+void test("the port refusal follows the filter b4 saves, not the text typed", () => {
+  for (const filter of ["80,443-443", "80,400-70000", "8443,0x1bb"]) {
+    assert.deepEqual(issues((s) => (s.tcp.dport_filter = filter)), ["port"], filter);
+  }
+  for (const filter of ["x-y", "500-400", "70000", "443-443"]) {
+    assert.deepEqual(issues((s) => (s.tcp.dport_filter = filter)), [], filter);
+  }
+});
+
 void test("each condition validateWSReuse refuses is an issue, in its order", () => {
   assert.deepEqual(issues((s) => (s.tcp.wssize = { enabled: true, window: 0, scale: 0 })), ["window"]);
   assert.deepEqual(issues((s) => (s.tcp.wssize = { enabled: false, window: 1, scale: 0 })), ["window"]);
