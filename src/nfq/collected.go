@@ -1139,6 +1139,9 @@ func (t *destStateTracker) NoteCollectedServerPacket(key string, tcp []byte, pay
 		t.unwatchLocked(h.key)
 		return
 	}
+	if tcp[13]&0x02 != 0 {
+		return
+	}
 	if tcp[13]&0x10 != 0 && h.clientHelloLen > 0 {
 		acked := binary.BigEndian.Uint32(tcp[8:12]) - h.clientHelloSeq
 		sent := h.clientSentEnd - h.clientHelloSeq

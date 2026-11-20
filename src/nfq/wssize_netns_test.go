@@ -51,7 +51,7 @@ func netnsWSStartLANClient(t *testing.T) int {
 		_, _ = cmd.Process.Wait()
 	})
 	pid := cmd.Process.Pid
-	self, _ := os.Readlink("/proc/thread-self/ns/net")
+	self, _ := os.Readlink(netnsHoldThreadNS())
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		other, err := os.Readlink(fmt.Sprintf("/proc/%d/ns/net", pid))
