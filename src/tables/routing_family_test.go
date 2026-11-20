@@ -51,6 +51,7 @@ func familyResetGlobals(t *testing.T) {
 	hostIfaces, linkType := routeHostIfaces, routeLinkType
 	marks := routeMarksByIface.Load()
 	diverted := routeWSReuseDiverted.Load()
+	collectedRoutes := routeCollectedRoutes.Load()
 	routeMu.Lock()
 	synced := routeSyncedCfg
 	routeSyncedCfg = nil
@@ -81,11 +82,13 @@ func familyResetGlobals(t *testing.T) {
 		routeMu.Unlock()
 		routeMarksByIface.Store(marks)
 		routeWSReuseDiverted.Store(diverted)
+		routeCollectedRoutes.Store(collectedRoutes)
 	})
 	routeEngine = nil
 	routeRuleCache = make(map[string]routeState)
 	routeMarksByIface.Store(&map[string][]uint32{})
 	routeWSReuseDiverted.Store(&map[string]struct{}{})
+	routeCollectedRoutes.Store(&map[string]CollectedRoute{})
 	routeIfaceAuto = make(map[string]routeState)
 	routeRefreshedAt = make(map[string]time.Time)
 	routeCollectedApplied = make(map[string]map[string][]string)

@@ -173,6 +173,7 @@ func routePublishMarksLocked() {
 	}
 	routeMarksByIface.Store(&marks)
 	routePublishWSReuseDivertsLocked()
+	routePublishCollectedRoutesLocked()
 }
 
 func RoutedIfaceMarks(iface string) []uint32 {
@@ -2716,6 +2717,7 @@ func routeReinstallForInterface(cfg *config.Config, iface string, stopped func()
 		routeWarnEgressLoopRisk(set, st)
 		count++
 	}
+	routePublishMarksLocked()
 	routeMu.Unlock()
 
 	if count > 0 {

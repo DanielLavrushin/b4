@@ -34,6 +34,7 @@ func newCollectReadyRig(t *testing.T, sets ...*config.SetConfig) *collectCountRi
 	t.Helper()
 	r := &collectCountRig{flows: make(map[ctnl.Tuple]*ctnl.Flow), start: time.Now()}
 	r.w = newInjectingWorker(t, sets...)
+	routesAsInstalled(t, r.w)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	r.p = &Pool{Workers: []*Worker{r.w}, state: &runtimeState{tlsCache: r.w.tlsCache}, collectedBase: r.w.getConfig(), collectedCtx: ctx, collectedCancel: cancel, collectedInstall: oneStepInstaller(func(context.Context, *config.Config) error {

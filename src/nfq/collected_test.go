@@ -43,6 +43,7 @@ func unseededCollectedRig(t *testing.T, install func(context.Context, *config.Co
 	consumer.Targets.UseCollectedIPs = true
 	consumer.Targets.IPPriority = true
 	w := newInjectingWorker(t, append([]*config.SetConfig{&consumer, &producer}, extra...)...)
+	routesAsInstalled(t, w)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	p := &Pool{Workers: []*Worker{w}, state: &runtimeState{tlsCache: w.tlsCache}, collectedBase: w.getConfig(), collectedCtx: ctx, collectedCancel: cancel, collectedInstall: oneStepInstaller(install)}

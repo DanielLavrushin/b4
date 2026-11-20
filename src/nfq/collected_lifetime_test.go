@@ -471,7 +471,10 @@ func TestCollectedPoolStringsStateTheExpiry(t *testing.T) {
 }
 
 func TestCollectedPoolStringsSayWhichAnswersDropAnAddress(t *testing.T) {
-	for locale, phrase := range map[string]string{"en": "a connection that IP block detection watches", "ru": "на соединение, которое отслеживает обнаружение блокировки по IP"} {
+	for locale, phrases := range map[string][]string{
+		"en": {"a connection that IP block detection watches", "unless a set that uses collected IPs sends that connection through its proxy, its interface or WSSIZE reuse"},
+		"ru": {"на соединение, которое отслеживает обнаружение блокировки по IP", "кроме соединения, которое сет с собранными IP направляет через свой прокси, свой интерфейс или повторное использование соединения WSSIZE"},
+	} {
 		raw, err := os.ReadFile("../http/ui/src/i18n/" + locale + ".json")
 		if err != nil {
 			t.Fatal(err)
@@ -486,8 +489,10 @@ func TestCollectedPoolStringsSayWhichAnswersDropAnAddress(t *testing.T) {
 				node, _ = node.(map[string]any)[part]
 			}
 			text, _ := node.(string)
-			if !strings.Contains(text, phrase) {
-				t.Errorf("%s %s must say that only an answer on a connection IP Block Detection watches drops an address, got %q", locale, path, text)
+			for _, phrase := range phrases {
+				if !strings.Contains(text, phrase) {
+					t.Errorf("%s %s must say that only an answer on a connection IP Block Detection watches drops an address, and not one on a connection a consumer routes or reuses elsewhere; missing %q in %q", locale, path, phrase, text)
+				}
 			}
 		}
 	}

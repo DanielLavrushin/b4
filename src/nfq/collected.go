@@ -506,12 +506,31 @@ func collectedConsumerTakesAway(consumer *config.SetConfig, port uint16) bool {
 	return consumer.RoutingDivertsPackets() && !config.RoutingIsBlock(consumer.Routing.Mode) || consumer.ReusesWSSize() && port == 443
 }
 
+var collectedRouteOf = tables.CollectedRouteOf
+
+func collectedRouteTakes(set *config.SetConfig, h helloWatch) bool {
+	if !set.Targets.UseCollectedIPs {
+		return false
+	}
+	route, routed := collectedRouteOf(set.Id)
+	if !routed || route.Port != 0 && route.Port != h.port {
+		return false
+	}
+	if h.ver == IPv6 && !route.IPv6 || h.ver != IPv6 && !route.IPv4 || set.ReusesWSSize() && !set.MatchesIPVersion(h.ver) {
+		return false
+	}
+	if h.scope != nil && h.scope.router || hostAddress(h.client) {
+		return route.Router
+	}
+	return set.ReusesWSSize() || collectedSourceAllowed(set, h.scope)
+}
+
 func collectedTakenAway(cfg *config.Config, matcher *sni.SuffixSet, h helloWatch) bool {
-	if cfg == nil || matcher == nil || !cfg.IPFamilyEnabled(h.ver == IPv6) {
+	if cfg == nil || matcher == nil {
 		return false
 	}
 	found, _, _ := matcher.MatchIPWithSourceDetail(h.dst, h.mac, func(set *config.SetConfig) bool {
-		return set.Targets.UseCollectedIPs && collectedConsumerTakesAway(set, h.port) && set.MatchesTCPDPort(h.port) && collectedSourceAllowed(set, h.scope)
+		return collectedRouteTakes(set, h)
 	})
 	return found
 }
