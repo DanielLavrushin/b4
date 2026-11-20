@@ -70,7 +70,8 @@ UI checks, from `src/http/ui/`:
 
 ```sh
 pnpm build          # vite build only: esbuild strips types without checking them
-npx tsc --noEmit    # the type check; run it after any TS change
+npx tsc --noEmit    # the app's type check, without *.test.ts; run it after any TS change
+pnpm test           # helper tests: tsc on tsconfig.test.json, then node --test on esbuild bundles of src/**/*.test.ts
 pnpm lint           # oxlint --type-aware --fix: rewrites files; pnpm exec oxlint --type-aware only checks
 ```
 

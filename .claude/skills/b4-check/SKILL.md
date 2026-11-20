@@ -8,8 +8,9 @@ argument-hint: "[base-ref]"
 
 No GitHub workflow runs on pull requests. `go test` for `src/` and `hub/` and the router UI's
 vite build run only inside the release workflow, the docs build only after a push to `main`,
-and nothing in this repository's CI runs `tsc`, oxlint or `make test-netns`. A type error, a
-broken routing rule or a missing Russian string merges silently. This check is the gate.
+and nothing in this repository's CI runs `tsc`, oxlint, the UI helper tests or
+`make test-netns`. A type error, a broken routing rule or a missing Russian string merges
+silently. This check is the gate.
 
 ## 1. Mechanical checks
 
@@ -45,6 +46,10 @@ wait for each result.
   before its build.
 - `make gen-defaults` comes before the router UI's `tsc`. Its output,
   `src/http/ui/src/models/defaults.json`, is gitignored, so a fresh checkout lacks it.
+- `pnpm -C src/http/ui test` runs the router UI's helper tests: `tsc` on `tsconfig.test.json`,
+  then every `src/**/*.test.ts` bundled with esbuild and run by `node --test`. The `tsc` run
+  before it skips the test files, which `tsconfig.json` excludes, so a type error in a test
+  shows only here.
 - `go -C src test ./...` takes several minutes. Give it a long timeout rather than a filter.
 - `make test-netns` builds the routing and conntrack tests and runs them in an unprivileged
   network namespace (`unshare -Urnm`). Where user namespaces are off, report it as not run
