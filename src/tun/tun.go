@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -251,7 +252,7 @@ func (e *Engine) serve(src io.Reader, worker packetProcessor, forward func([]byt
 		default:
 		}
 
-		raw, stripe, ticket, err := e.readNext(src, buf)
+		raw, stripe, err := e.readNext(src, buf)
 		if err != nil {
 			select {
 			case <-e.quit:
@@ -262,75 +263,79 @@ func (e *Engine) serve(src io.Reader, worker packetProcessor, forward func([]byt
 			time.Sleep(10 * time.Millisecond)
 			continue
 		}
-		if len(raw) == 0 {
-			continue
-		}
 
-		if stripe != nil {
-			stripe.wait(ticket)
-		}
-		if pass, dir := e.processPacket(worker, raw); pass {
-			forward(raw, dir)
-		}
-		if stripe != nil {
-			stripe.done()
+		for len(raw) > 0 {
+			if pass, dir := e.processPacket(worker, raw); pass {
+				forward(raw, dir)
+			}
+			if stripe == nil {
+				break
+			}
+			raw = stripe.next()
 		}
 	}
 }
 
-func (e *Engine) readNext(src io.Reader, buf []byte) ([]byte, *flowStripe, uint64, error) {
+func (e *Engine) readNext(src io.Reader, buf []byte) ([]byte, *flowStripe, error) {
 	e.readMu.Lock()
 	defer e.readMu.Unlock()
 
 	n, err := src.Read(buf)
 	if err != nil || n <= 0 {
-		return nil, nil, 0, err
+		return nil, nil, err
 	}
 	raw := buf[:n]
 	h, ok := tcpFlowHash(raw)
 	if !ok {
-		return raw, nil, 0, nil
+		return raw, nil, nil
 	}
 	stripe := &e.stripes[h%flowStripes]
-	return raw, stripe, stripe.take(), nil
+	own, queued := stripe.admit(raw)
+	switch {
+	case own:
+		return raw, stripe, nil
+	case queued:
+		return nil, nil, nil
+	}
+	return raw, nil, nil
 }
 
 type flowStripe struct {
 	mu      sync.Mutex
-	turn    *sync.Cond
-	next    uint64
-	serving uint64
+	busy    bool
+	pending [][]byte
 }
 
-func (s *flowStripe) take() uint64 {
+func (s *flowStripe) admit(raw []byte) (own, queued bool) {
 	s.mu.Lock()
-	ticket := s.next
-	s.next++
-	s.mu.Unlock()
-	return ticket
+	defer s.mu.Unlock()
+	switch {
+	case !s.busy:
+		s.busy = true
+		return true, false
+	case len(s.pending) < stripeBacklog:
+		s.pending = append(s.pending, slices.Clone(raw))
+		return false, true
+	}
+	return false, false
 }
 
-func (s *flowStripe) wait(ticket uint64) {
+func (s *flowStripe) next() []byte {
 	s.mu.Lock()
-	if s.turn == nil {
-		s.turn = sync.NewCond(&s.mu)
+	defer s.mu.Unlock()
+	if len(s.pending) == 0 {
+		s.busy, s.pending = false, nil
+		return nil
 	}
-	for s.serving != ticket {
-		s.turn.Wait()
-	}
-	s.mu.Unlock()
+	raw := s.pending[0]
+	s.pending = s.pending[1:]
+	return raw
 }
 
-func (s *flowStripe) done() {
-	s.mu.Lock()
-	s.serving++
-	if s.turn != nil {
-		s.turn.Broadcast()
-	}
-	s.mu.Unlock()
-}
-
-const flowStripes = 256
+const (
+	flowStripes   = 256
+	stripeBacklog = 32
+)
 
 func tcpFlowHash(raw []byte) (uint32, bool) {
 	var addrs, ports []byte
