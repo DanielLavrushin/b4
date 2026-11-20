@@ -118,6 +118,7 @@ func (w *Worker) handleQueued(vc *verdictCtx, a nfqueue.Attribute, mark uint) in
 	if a.Mark != nil && (config.IsTelegramBridgeMark(*a.Mark) || config.IsSelfDialSkipMark(*a.Mark)) {
 		return vc.accept()
 	}
+	vc.selfDialed = a.Mark != nil && *a.Mark&config.SelfDialMark != 0
 	if a.Mark != nil && config.IsTelegramSetMark(*a.Mark) {
 		vc.telegramSet = w.getConfig().TelegramUpstreamSet()
 		if vc.telegramSet != nil {
@@ -190,7 +191,7 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 	switch pkt.proto {
 	case 6:
 		if len(pkt.raw) >= pkt.ihl+TCPHeaderMinLen {
-			if set.ReusesWSSize() && set.MatchesIPVersion(pkt.ver) && binary.BigEndian.Uint16(pkt.raw[pkt.ihl+2:]) == 443 && wsReuseDiverts(set.Id) {
+			if !vc.selfDialed && set.ReusesWSSize() && set.MatchesIPVersion(pkt.ver) && binary.BigEndian.Uint16(pkt.raw[pkt.ihl+2:]) == 443 && wsReuseDiverts(set.Id) {
 				return vc.accept()
 			}
 			return w.handleTCPPacket(vc, pkt, cfg, matcher, matched, set, st, stPrefix)

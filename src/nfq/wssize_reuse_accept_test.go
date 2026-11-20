@@ -8,6 +8,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/sock"
 	"github.com/daniellavrushin/b4/warmtuple"
+	"github.com/florianl/go-nfqueue"
 )
 
 func reuseSetSYNRewritten(t *testing.T, dport uint16, edit func(*config.SetConfig)) bool {
@@ -136,6 +137,63 @@ func TestADivertedReuseSetPassesOnlyItsOwnFamiliesUntouched(t *testing.T) {
 			w.dispatch(&verdictCtx{q: newFakeModQueue()}, p)
 			if untouched := p[l3+22] == 7; untouched != tc.untouched {
 				t.Errorf("%s: passed untouched=%v, want %v; the set's firewall sets hold no address of a family its ip_version leaves out, so such a connection is never diverted to the relay and must get the set's strategy", tc.name, untouched, tc.untouched)
+			}
+		})
+	}
+}
+
+func reuseSetOwnDialVerdict(t *testing.T, telegram bool, mark *uint32, dst [4]byte) int {
+	t.Helper()
+	saved := wsReuseDiverts
+	t.Cleanup(func() { wsReuseDiverts = saved })
+	set := newTelegramSet()
+	if !telegram {
+		set.Id, set.Name = "reuse-own", "reuse-own"
+	}
+	wsReuseDiverts = func(id string) bool { return id == set.Id }
+	set.Targets.IpsToMatch = []string{"1.2.3.4"}
+	set.TCP.WSSize = config.WSSizeConfig{Enabled: true, Window: 1, Scale: 1}
+	set.TCP.WSSizeReuse.Enabled = true
+	w := newInjectingWorker(t, &set)
+	if telegram {
+		w.getConfig().System.MTProto.UpstreamSet = set.Id
+	}
+	idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
+	stubInjectRoute(t, idx["eth7"], true)
+	hello := ytimgHello()
+	copy(hello[16:20], dst[:])
+	sock.FixIPv4Checksum(hello[:20])
+	sock.FixTCPChecksum(hello)
+	id, out := uint32(1), idx["eth7"]
+	a := nfqueue.Attribute{PacketID: &id, Payload: &hello, Mark: mark, OutDev: &out}
+	if mark != nil {
+		uid := uint32(0)
+		a.UID = &uid
+	}
+	q := newFakeQueue()
+	w.handleQueued(&verdictCtx{id: id, q: q}, a, uint(w.getConfig().Queue.Mark))
+	return q.now(t)
+}
+
+func TestBsOwnDialsToADivertedReuseSetGetItsStrategy(t *testing.T) {
+	telegramMark, selfMark := config.TelegramSetDialMark, config.SelfDialMark
+	listed, unlisted := [4]byte{1, 2, 3, 4}, [4]byte{5, 6, 7, 8}
+	for _, c := range []struct {
+		name     string
+		telegram bool
+		mark     *uint32
+		dst      [4]byte
+		want     int
+	}{
+		{"b4's own Telegram connection to an address the Telegram set lists", true, &telegramMark, listed, nfqueue.NfDrop},
+		{"b4's own Telegram connection to an address the Telegram set does not list", true, &telegramMark, unlisted, nfqueue.NfDrop},
+		{"another of b4's own connections to an address the set lists", false, &selfMark, listed, nfqueue.NfDrop},
+		{"a device connection to an address the set lists", false, nil, listed, nfqueue.NfAccept},
+		{"a device connection to an address the Telegram set lists", true, nil, listed, nfqueue.NfAccept},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := reuseSetOwnDialVerdict(t, c.telegram, c.mark, c.dst); got != c.want {
+				t.Errorf("%s: verdict %d, want %d; every reuse rule returns on b4's own dial bit 0x%x, so such a connection never reaches the reuse relay and only the queue can give it the set's strategy, while a device connection is the relay's", c.name, got, c.want, config.SelfDialMark)
 			}
 		})
 	}
