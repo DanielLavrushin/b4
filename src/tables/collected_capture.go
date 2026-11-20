@@ -87,7 +87,7 @@ func captureCollectedDupName(v6 bool) string {
 }
 
 func captureCollectedEmitted(cfg *config.Config) bool {
-	return cfg.Queue.Mode != "tun"
+	return cfg.Queue.Mode != "tun" && !config.RunningEngineTUN()
 }
 
 func captureCollectedMSSEntries(cfg *config.Config, e config.SetMSSClampEntry, v6 bool) []string {

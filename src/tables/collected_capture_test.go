@@ -389,6 +389,26 @@ func TestTheTUNMonitorAcceptsAClampOnCollectedAddressesAlone(t *testing.T) {
 	}
 }
 
+func TestTheRunningTUNEngineGetsNoCollectedCaptureSetsWithNFQUEUESaved(t *testing.T) {
+	config.SetRunningEngineTUN(true)
+	t.Cleanup(func() { config.SetRunningEngineTUN(false) })
+	h := newGoldenHost(t)
+	goldenIsolate(t, h)
+	captureCollectedKeep(t)
+	run = refuseDeletes(run)
+	cfg := captureCollectedTestConfig(backendIPTables)
+	cfg.Queue.Mode = "nfqueue"
+	h.take()
+	if err := ApplyMSSClampOnly(cfg.WithCollectedIPs([]string{"203.0.113.7"})); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range h.take() {
+		if strings.Contains(line, "_v4c") || strings.Contains(line, "_v6c") {
+			t.Errorf("with queue.mode saved as nfqueue and the TUN engine still running, the MSS clamp emitted a collected capture set; Collect does nothing until the restart: %q", line)
+		}
+	}
+}
+
 func TestTUNGetsNoCollectedCaptureSets(t *testing.T) {
 	h := newGoldenHost(t)
 	goldenIsolate(t, h)
