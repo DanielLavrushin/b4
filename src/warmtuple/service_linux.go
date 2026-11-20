@@ -20,6 +20,7 @@ import (
 
 const firstPort, lastPort = 63000, 63999
 const idleRetention = 2 * time.Minute
+const tupleCooling = 10 * time.Minute
 const coolingPrune = 2048
 
 type serviceKey struct {
@@ -148,14 +149,14 @@ func (s *Service) discardLocked(l *serviceLease, now time.Time) {
 			}
 		}
 	}
-	s.cooling[coolKey{port: l.port, source: l.key.source, target: l.key.target}] = now.Add(idleRetention)
+	s.cooling[coolKey{port: l.port, source: l.key.source, target: l.key.target}] = now.Add(tupleCooling)
 	_ = l.manager.Close()
 }
 
 func (s *Service) reserveLocked(key serviceKey, set *config.SetConfig, source netip.Addr) (*serviceLease, error) {
 	now := time.Now()
 	for _, l := range s.leases {
-		if !l.busy && (!s.keepsLease(l) || now.Sub(l.idle) >= idleRetention) {
+		if !l.busy && (!s.keepsLease(l) || now.Sub(l.idle) >= idleRetention || l.manager.agedOut(l.port, now)) {
 			s.discardLocked(l, now)
 		}
 	}
@@ -245,19 +246,13 @@ func (c *serviceConn) Close() error {
 	var err error
 	c.once.Do(func() {
 		err = c.Conn.Close()
-		if c.received.Load() == 0 {
-			m := c.lease.manager
-			m.mu.Lock()
-			delete(m.warmed, c.lease.port)
-			m.mu.Unlock()
-		}
 		s := c.service
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		c.lease.busy = false
 		c.lease.idle = time.Now()
-		if s.closed || !s.keepsLease(c.lease) {
-			s.discardLocked(c.lease, time.Now())
+		if s.closed || !s.keepsLease(c.lease) || c.received.Load() == 0 {
+			s.discardLocked(c.lease, c.lease.idle)
 		}
 	})
 	return err

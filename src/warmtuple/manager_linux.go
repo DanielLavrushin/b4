@@ -210,14 +210,19 @@ func (m *Manager) DialContext(ctx context.Context, dest string) (net.Conn, error
 	}()
 	started := time.Now()
 	m.mu.Lock()
-	fresh := m.cfg.WarmAge > 0 && time.Since(m.warmed[l.port]) < m.cfg.WarmAge
+	_, stamped := m.warmed[l.port]
 	m.mu.Unlock()
-	if !fresh {
-		err = m.runWarm(ctx, l)
+	warmed := false
+	if !stamped {
+		var stamp time.Time
+		stamp, err = m.runWarm(ctx, l)
 		if err == nil {
 			m.mu.Lock()
-			m.warmed[l.port] = time.Now()
+			if _, ok := m.warmed[l.port]; !ok {
+				m.warmed[l.port] = stamp
+			}
 			m.mu.Unlock()
+			warmed = true
 		}
 	}
 	warmDuration := time.Since(started)
@@ -227,7 +232,7 @@ func (m *Manager) DialContext(ctx context.Context, dest string) (net.Conn, error
 	started = time.Now()
 	passCtx, passCancel := context.WithTimeout(ctx, m.cfg.ReuseTimeout)
 	defer passCancel()
-	if !fresh {
+	if warmed {
 		settle := time.NewTimer(m.cfg.ReconnectDelay)
 		select {
 		case <-passCtx.Done():
@@ -240,7 +245,7 @@ func (m *Manager) DialContext(ctx context.Context, dest string) (net.Conn, error
 	if err != nil {
 		return nil, fmt.Errorf("same-tuple reconnect: %w", err)
 	}
-	c := &Conn{Conn: raw, lease: l, Warmed: !fresh, WarmDuration: warmDuration, ReuseDuration: time.Since(started)}
+	c := &Conn{Conn: raw, lease: l, Warmed: warmed, WarmDuration: warmDuration, ReuseDuration: time.Since(started)}
 	if err := l.track(c); err != nil {
 		return nil, err
 	}
@@ -257,27 +262,35 @@ func (m *Manager) DialContext(ctx context.Context, dest string) (net.Conn, error
 	return c, nil
 }
 
-func (m *Manager) runWarm(ctx context.Context, l *lease) error {
+func (m *Manager) agedOut(port uint16, now time.Time) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	stamp, ok := m.warmed[port]
+	return ok && (m.cfg.WarmAge <= 0 || now.Sub(stamp) >= m.cfg.WarmAge)
+}
+
+func (m *Manager) runWarm(ctx context.Context, l *lease) (time.Time, error) {
 	if m.capture != nil {
 		release, err := m.capture()
 		if err != nil {
-			return err
+			return time.Time{}, err
 		}
 		defer release()
 	}
 	ctx, cancel := context.WithTimeout(ctx, m.cfg.WarmTimeout)
 	defer cancel()
+	started := time.Now()
 	c, err := m.connect(ctx, l.port, m.cfg.WarmMark)
 	if err != nil {
-		return err
+		return started, err
 	}
 	defer c.Close()
 	if err := l.track(c); err != nil {
-		return err
+		return started, err
 	}
 	stop := context.AfterFunc(ctx, func() { c.Close() })
 	defer stop()
-	return m.warm(ctx, c)
+	return started, m.warm(ctx, c)
 }
 
 func (m *Manager) connect(ctx context.Context, port uint16, mark uint32) (net.Conn, error) {

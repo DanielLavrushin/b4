@@ -64,16 +64,24 @@ func TestIdleLeaseReuseAndAge(t *testing.T) {
 		t.Fatal("a fresh free tuple was not reused")
 	}
 	second.Close()
+	aged := second.(*serviceConn).lease
 	s.mu.Lock()
 	for _, l := range s.leases {
 		l.manager.mu.Lock()
-		l.manager.warmed[l.port] = time.Now().Add(-301 * time.Second)
+		l.manager.warmed[l.port] = time.Now().Add(-l.manager.cfg.WarmAge - time.Second)
 		l.manager.mu.Unlock()
 	}
 	s.mu.Unlock()
 	third := serviceDial(t, s, set)
-	if third.LocalAddr().String() != local || count.Load() != 2 {
-		t.Fatal("stale free tuple was not warmed again")
+	if third.LocalAddr().String() == local || count.Load() != 2 {
+		t.Fatalf("after its age the free tuple %s gave %s with %d warms, want a warm on a new source port", local, third.LocalAddr(), count.Load())
+	}
+	s.mu.Lock()
+	until := s.cooling[coolKey{port: aged.port, source: aged.key.source, target: aged.key.target}]
+	_, kept := s.leases[aged.port]
+	s.mu.Unlock()
+	if kept || time.Until(until) <= 9*time.Minute {
+		t.Fatalf("the aged tuple is kept=%t and cools for %s, want it dropped and cooling about 10 minutes for its destination", kept, time.Until(until))
 	}
 	if s.flows.Active() != 0 {
 		t.Fatal("profile survived warm completion")
@@ -264,6 +272,9 @@ func TestRouteChangeAndSilentPassInvalidateCache(t *testing.T) {
 	third := serviceDial(t, s, set)
 	if count.Load() != 3 {
 		t.Fatal("silent failed pass retained warm status")
+	}
+	if third.LocalAddr().String() == second.LocalAddr().String() {
+		t.Fatalf("after a silent pass the next connection warmed the same tuple %s again, want a new source port", third.LocalAddr())
 	}
 	third.Close()
 }

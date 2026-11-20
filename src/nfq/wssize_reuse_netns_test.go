@@ -668,8 +668,8 @@ func warmTransparentBinary(t *testing.T, binary, backend string, ipv6 bool, vers
 		}
 		request()
 		rewarm, pass := nextReuseRecord(t, reads), nextReuseRecord(t, reads)
-		if rewarm.err != nil || pass.err != nil || rewarm.method != "HEAD" || pass.method != "GET" || rewarm.peer != warm.peer || pass.peer != warm.peer {
-			t.Fatalf("stale cache: %+v %+v", rewarm, pass)
+		if rewarm.err != nil || pass.err != nil || rewarm.method != "HEAD" || pass.method != "GET" || rewarm.peer == warm.peer || pass.peer != rewarm.peer {
+			t.Fatalf("aged cache, want a warm and its pass on a new source port: %+v %+v", rewarm, pass)
 		}
 		expectedSYNs = 5
 	}
@@ -693,7 +693,7 @@ func warmTransparentBinary(t *testing.T, binary, backend string, ipv6 bool, vers
 		t.Fatal("wire tuple changed")
 	}
 	if exerciseCache {
-		if syns[2].window == 1 || syns[3].window != 1 || syns[4].window == 1 || syns[2].sport != syns[0].sport || syns[3].sport != syns[0].sport || syns[4].sport != syns[0].sport {
+		if syns[2].window == 1 || syns[3].window != 1 || syns[4].window == 1 || syns[2].sport != syns[0].sport || syns[3].sport == syns[0].sport || syns[4].sport != syns[3].sport {
 			t.Fatalf("cached/rewarm SYN sequence: %+v", syns)
 		}
 	}

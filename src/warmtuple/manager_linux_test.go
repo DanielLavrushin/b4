@@ -176,6 +176,76 @@ func TestFreshTupleSkipsReconnectSettle(t *testing.T) {
 	}
 }
 
+func TestWarmAgeCountsFromTheWarmSYN(t *testing.T) {
+	cfg := fixture()
+	cfg.WarmAge = time.Minute
+	m := fakeManager(t, cfg)
+	var connects []time.Time
+	m.dial = func(_ context.Context, port uint16, _ uint32) (net.Conn, error) {
+		connects = append(connects, time.Now())
+		return fakeSocket(t, cfg, port), nil
+	}
+	m.warm = func(context.Context, net.Conn) error {
+		time.Sleep(50 * time.Millisecond)
+		return nil
+	}
+	c, err := m.DialContext(context.Background(), cfg.Host+":443")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	m.mu.Lock()
+	stamp, ok := m.warmed[cfg.FirstPort]
+	m.mu.Unlock()
+	if !ok || len(connects) == 0 || stamp.After(connects[0]) {
+		t.Fatalf("the warm age starts %s after the warm's connect, want it to start no later than the SYN", stamp.Sub(connects[0]))
+	}
+}
+
+func TestStampedTupleIsNeverWarmedAgain(t *testing.T) {
+	cfg := fixture()
+	cfg.WarmAge = time.Nanosecond
+	m := fakeManager(t, cfg)
+	var warms atomic.Int32
+	m.warm = func(context.Context, net.Conn) error { warms.Add(1); return nil }
+	for i := range 2 {
+		c, err := m.DialContext(context.Background(), cfg.Host+":443")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if warmed := c.(*Conn).Warmed; warmed != (i == 0) {
+			t.Fatalf("call %d reported warmed=%t", i+1, warmed)
+		}
+		c.Close()
+	}
+	if warms.Load() != 1 {
+		t.Fatalf("a tuple past its age was warmed %d times, want once: an aged tuple is replaced, never warmed again", warms.Load())
+	}
+}
+
+func TestAgedOutCountsFromTheStamp(t *testing.T) {
+	cfg := fixture()
+	cfg.WarmAge = time.Minute
+	m := fakeManager(t, cfg)
+	now := time.Now()
+	if m.agedOut(cfg.FirstPort, now) {
+		t.Fatal("a tuple that was never warmed counts as aged")
+	}
+	m.warmed[cfg.FirstPort] = now.Add(-cfg.WarmAge + time.Second)
+	if m.agedOut(cfg.FirstPort, now) {
+		t.Fatal("a tuple inside its age counts as aged")
+	}
+	m.warmed[cfg.FirstPort] = now.Add(-cfg.WarmAge)
+	if !m.agedOut(cfg.FirstPort, now) {
+		t.Fatal("a tuple at its age is still fresh")
+	}
+	m.cfg.WarmAge = 0
+	m.warmed[cfg.FirstPort] = now
+	if !m.agedOut(cfg.FirstPort, now) {
+		t.Fatal("without a warm age a warmed tuple is still fresh")
+	}
+}
+
 func TestFailuresNeverFallbackAndReleaseTheLease(t *testing.T) {
 	for _, phase := range []string{"warm", "tuple", "reuse", "cancel"} {
 		t.Run(phase, func(t *testing.T) {
