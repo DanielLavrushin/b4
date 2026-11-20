@@ -88,7 +88,7 @@ them on the packets they take. Bit 16 is left free for XrayUI's `0x10000`.
 | The DNS queries b4 sends for clients (a set's DNS redirect, DNS over TCP) and its lookups through a set's resolver, including the lookup of a DoH resolver's host name for either | The queue mark |
 | The DPI Detector's checks, except its fetches through b4 and its lookups through the system resolver; health probes of pinned DNS answers and of unreachable addresses; the public address lookup; the fetches that bypass b4 in the MCP tool `b4_test_domain_now` and in the test of an applied Community Hub set | The queue mark |
 | Transparent listeners of proxy sets and every connection they open, to the upstream or, with **Fall back to direct on upstream failure**, directly; TCP connections of b4's SOCKS5 server to a domain name a proxy set targets, which go through the set's upstream; connections of the MTProto proxy and Telegram over WebSocket to Telegram and the address lists they download; the MTProto proxy's forward to its fake SNI domain; Community Hub, ipinfo and RIPEstat requests | `0x40000`. When a Community Hub sync cannot connect, b4 retries it with the queue mark; if that retry connects, later Hub requests keep the queue mark until a sync cannot connect with it and a retry with `0x40000` can |
-| Connections through Cloudflare-proxied domains or a custom WebSocket domain, and to a Cloudflare Worker | `0x240000`; `0x40000` for the Worker when **Let sets process Worker connections** is on |
+| Connections through Cloudflare-proxied domains or a custom WebSocket domain, and to a Cloudflare Worker | `0x240000`; `0x40000` for the Cloudflare-proxied domains and the custom WebSocket domain when **Let sets process CF proxy connections** is on, and for the Worker when **Let sets process Worker connections** is on |
 | Connections of the MTProto proxy and Telegram over WebSocket to Telegram on every route, their connection test, the address and domain lists they download, and the direct connections of a Telegram over WebSocket set, while a **Telegram set** is chosen and b4 runs in NFQUEUE mode | `0x4040000` for a set without routing, and `0x240000` for its Worker connections unless **Let sets process Worker connections** is on; `0x240000` with the set's route mark for a set routed through an interface; none of their own for a proxy set, whose listener opens them through the upstream |
 | Discovery probes and their name lookups; the packets Discovery sends | The flow mark; the injected mark, with `0x20000000` added on packets sent back toward the probes. By default the queue mark plus 1 and plus 2, and `0x20008002` toward the probes |
 | Watchdog checks; the fetches through b4 of the DPI Detector, `b4_test_domain_now` and the Hub set test; connections b4's SOCKS5 server opens to other destinations; every other lookup through the system resolver, including the names of the other connections above and a set's domains when the set has no resolver of its own, or when the lookup through its resolvers fails and **Fail closed when no resolver is reachable** is off; GeoIP and GeoSite downloads, update checks and downloads, the device vendor database, AI assistant requests | None |
@@ -107,7 +107,7 @@ packet processing and through every set that carries the router's own traffic.
 | Routing sets, the router's own packets (`b4r_*_out`) | Its mark has bit `0x40000` or any bit under `0x27fff`. A packet with every bit of the queue mark is left alone as well, after a set routed through an interface has given it the set's mark when its destination is in the set; a set that leaves the router's own traffic alone and lists its devices only by IP address does this only for packets from those addresses. The IPv4 ICMP redirects that a set with a gateway drops, as [sets routed through an interface](#sets-routed-through-an-interface) describes, are dropped whatever their mark |
 | QUIC refusal of a proxy set with **Route UDP through upstream** off or **Block QUIC (force TCP)** on, for forwarded packets (`b4r_*_q`) and the router's own (`b4r_*_qo`) | Its mark has every bit of the queue mark, or bit `0x40000`; in `b4r_*_q` also when it comes from a device outside the set's source devices |
 | Block sets | Never: they test no mark, only the destination and, when the set has them, its source interfaces and source devices |
-| TUN capture (`B4_TUN`) | Its mark has every bit of the queue mark or bit `0x20000000`, matches `0x240000/0x8efd8000`, or has `0x24bab` as its bits under `0x27fff`; on iptables also when its destination is in a routing set other than a block set. A packet to a network in which the router has an IPv4 address of its own is left alone as well, unless it is UDP DNS or a TCP reset the chain captures; while b4 captures only the router's own connections, such a packet is always left alone, except a UDP DNS query to the uplink gateway |
+| TUN capture (`B4_TUN`) | Its mark has every bit of the queue mark or bit `0x20000000`, matches `0x240000/0x8efd8000`, or has `0x24bab` as its bits under `0x27fff`; on iptables also when its destination is in a routing set other than a block set. b4's own connections with `0x40000` are captured like any other. A packet to a network in which the router has an IPv4 address of its own is left alone as well, unless it is UDP DNS or a TCP reset the chain captures; while b4 captures only the router's own connections, such a packet is always left alone, except a UDP DNS query to the uplink gateway |
 | TUN on the whole default route | Only packets with bit `0x10000000`, and with bit `0x20000000` when `ip` accepts `suppress_prefixlength`, leave by b4's rules; every other packet that follows the default route enters `b4tun0` |
 | **NAT Masquerade** (`b4_masq`, `B4_MASQ`) | Its mark has bit `0x20000000`. On iptables that `RETURN` sits at the top of nat `POSTROUTING`, so such a packet skips every later rule there, other services' included |
 | **Set DSCP** and the sets' own DSCP values (`B4_DSCP`, `inet b4_dscp`) | Its mark has bit `0x20000000`, it leaves through `lo`, or it travels in the reply direction of its connection. On iptables the jump to `B4_DSCP` sits at the top of mangle `POSTROUTING`; on nftables `inet b4_dscp` runs in postrouting at priority 150. The sets' values are written in the same chain or table, after the **Set DSCP** value, by rules that choose the value by the destination address alone |
@@ -468,9 +468,10 @@ route with no strategy at all.
 `0x240000/0x8efd8000`: `0x240000` exactly, apart from bits under `0x71027fff`. A mark of
 another service that only shares bit `0x200000` with it does not take a packet out of packet
 processing. The MTProto proxy and Telegram over WebSocket put `0x240000` on their connections through
-Cloudflare-proxied domains or a custom WebSocket domain, and to a Cloudflare Worker unless
-**Let sets process Worker connections** is on; see
-[DPI processing](../telegram/websocket-bridge.md#dpi-processing).
+Cloudflare-proxied domains or a custom WebSocket domain unless **Let sets process CF proxy
+connections** is on, and on those to a Cloudflare Worker unless **Let sets process Worker
+connections** is on; with a switch on, those connections carry `0x40000`, in NFQUEUE and in
+TUN mode. See [DPI processing](../telegram/websocket-bridge.md#dpi-processing).
 
 While a set is chosen under **Telegram set** on the Telegram page, the MTProto proxy and
 Telegram over WebSocket put `0x4040000`, `0x40000` with bit `0x4000000`, on all their
@@ -487,7 +488,8 @@ the routing chains return on `0x40000`, and the set's `ip rule` takes them to it
 installs that rule and table for the chosen set even when it has no targets. For a proxy
 set, b4 hands them to the set's listener, which opens them through the upstream as it does for
 the SOCKS5 server. In TUN mode b4 reads packets without their mark and does not use
-`0x4040000`; see [Telegram upstream](../telegram/upstream.md).
+`0x4040000`; there the Cloudflare routes follow the two switches above. See
+[Telegram upstream](../telegram/upstream.md).
 
 Lookups and probes carrying the queue mark skip packet processing, and proxy sets leave
 them alone. The DPI Detector's direct mode uses the queue mark to measure the network
@@ -530,6 +532,14 @@ without its default route, the second in the uplink table, which holds the uplin
 route and is chosen from 97 down to 62 in the same way, or is `queue.tun.route_table`
 itself. Rules 88, 89 and 99 need an `ip` that accepts `suppress_prefixlength`; without it
 only rule 100 is added.
+
+With port capture, b4's own connections enter `b4tun0` by their destination port like any
+other router connection, except those that `B4_TUN` returns. Among them, the connections of
+the MTProto proxy and Telegram over WebSocket to Cloudflare-proxied domains, a custom WebSocket
+domain or a Cloudflare Worker carry `0x240000` and stay out, unless the route's switch on the
+[Telegram upstream](../telegram/upstream.md) card gives them `0x40000`; see
+[connections b4 opens itself](#connections-b4-opens-itself). These rules cover IPv4 only, so an
+IPv6 connection to such a route is never processed in TUN mode.
 
 ## Discovery
 

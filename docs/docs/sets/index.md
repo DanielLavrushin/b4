@@ -38,7 +38,7 @@ A click on a card opens the set in the editor.
 | Name and targets | The set's name and a summary of its targets. |
 | Route line | What the set does with the traffic it matches: **Default route** for a set that only applies a bypass strategy, the interface or `socks5` proxy it routes through, **Telegram bridge**, or `block` with the block action. |
 | Facet rail | The marks along the top of the card: **Target**, **Split**, **Fake**, **Route**, **DNS** and **Escalate**. A mark opens a summary of that part of the set, with a link to its tab in the editor. **Compare across sets** above the list opens the same part on every card at once. |
-| Badges | **escalates to** names the [backup set](./escalation.md), and **fallback for** names the sets that use this one as their backup. **N ASN unresolved** means an [ASN](./targets.md#asn) has no prefixes yet. **Watchdog** appears while **Keep this set working with the watchdog** is on for the set, and opens the [watchdog](../watchdog.md) page. **Imported shared set** and **Community set** mark a set that came from someone else. |
+| Badges | **escalates to** names the [backup set](./escalation.md), and **fallback for** names the sets that use this one as their backup. **N ASN unresolved** means an [ASN](./targets.md#asn) has no prefixes yet. **Watchdog** appears while **Keep this set working with the watchdog** is on for the set, and opens the [watchdog](../watchdog.md) page. **Imported shared set** and **Community set** mark a set that came from someone else. **Telegram set** marks the [Telegram set](../telegram/upstream.md#telegram-set) and opens its settings; while that set does not apply, the badge names the reason instead. |
 
 The menu at the top right of a card holds:
 

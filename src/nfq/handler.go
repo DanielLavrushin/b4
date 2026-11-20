@@ -791,7 +791,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			w.tlsCache.DecideHeld(connKey, helloGen, matcher, pkt.srcMac, decided, heldHello)
 		}
 
-		if matched && !matchedSNI && set != nil && !set.MatchesTLSVersion(tlsVersion) {
+		if matched && !matchedSNI && set != nil && !(hold.pinned && hold.keeps(set)) && !set.MatchesTLSVersion(tlsVersion) {
 			clearMatch()
 		}
 

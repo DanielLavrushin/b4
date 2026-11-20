@@ -6,7 +6,8 @@ All notable changes to b4 are recorded in this file.
 
 ### Added
 
-- A **Telegram set** under **Telegram upstream (shared)** takes b4's own connections to Telegram, the CF proxy domains included: its strategy, or its interface or proxy route; **Create a Telegram set** adds one. [#615](https://github.com/DanielLavrushin/b4/issues/615)
+- A **Telegram set** under **Telegram upstream (shared)** takes b4's own connections to Telegram, the CF proxy domains included: its strategy, or its interface or proxy route; **Create a Telegram set** adds one, and a **Telegram set** badge marks it on the **Sets** page. [#615](https://github.com/DanielLavrushin/b4/issues/615), [#640](https://github.com/DanielLavrushin/b4/issues/640)
+- **Let sets process CF proxy connections** under **Telegram upstream (shared)** lets a set covering the CF proxy domains or a custom WebSocket domain process b4's connections to them, in TUN mode too, and **DPI processing now** shows what handles each route. [#639](https://github.com/DanielLavrushin/b4/issues/639)
 - After an **Update** or **Upload** on the **Geo Databases** page, the card lists the sets with categories that match nothing in the new file, and the set editor marks a category absent from the file in red with the reason on hover. [#620](https://github.com/DanielLavrushin/b4/issues/620)
 
 ### Changed
