@@ -90,9 +90,7 @@ func TestNetnsDiscoveryCarrierCarriesOnlyRemoteProbesAndLeavesNothingBehind(t *t
 		{"default, local at 200", "default", 200, []int{carrierGuardPrio, carrierFlowPrio, carrierInjectedMainPrio, carrierInjectedUplinkPrio}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.localAt != 0 {
-				netnsMoveLocalRule(t, tc.localAt)
-			}
+			netnsMoveLocalRule(t, tc.localAt)
 			e := carrierEngine(tc.capture, "203.0.113.2")
 			e.routes.outIface = "b4dcwan0"
 			lane := &carrierNetnsLane{}
