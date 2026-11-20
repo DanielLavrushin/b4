@@ -306,6 +306,15 @@ func takesCells() []takesCell {
 			s.Targets.SourceDevices, s.Targets.SourceDevicesExclude = []string{"02:00:00:00:00:99"}, true
 		}, true, false, 443)
 		add("device 443, consumer on the device's interface", kind, func(_ *config.Config, s *config.SetConfig, _ string) { s.Routing.SourceInterfaces = []string{takesLAN} }, false, false, 443)
+		add("device 443, consumer on the device's interface and scoped to the device", kind, func(_ *config.Config, s *config.SetConfig, mac string) {
+			s.Routing.SourceInterfaces, s.Targets.SourceDevices = []string{takesLAN}, []string{mac}
+		}, false, false, 443)
+		add("router 443, consumer on the LAN interface", kind, func(_ *config.Config, s *config.SetConfig, _ string) {
+			s.Routing.SourceInterfaces, s.Routing.RouterTraffic = []string{takesLAN}, config.RouterTrafficInclude
+		}, true, false, 443)
+		add("router IPv6 443", kind, func(_ *config.Config, s *config.SetConfig, _ string) {
+			s.Targets.IpsToMatch, s.Routing.RouterTraffic = []string{takesTarget6 + "/128"}, config.RouterTrafficInclude
+		}, true, true, 443)
 		add("device 443, consumer on another interface", kind, func(_ *config.Config, s *config.SetConfig, _ string) { s.Routing.SourceInterfaces = []string{"b4kz"} }, false, false, 443)
 		add("device IPv6 443", kind, func(_ *config.Config, s *config.SetConfig, _ string) {
 			s.Targets.IpsToMatch = []string{takesTarget6 + "/128"}

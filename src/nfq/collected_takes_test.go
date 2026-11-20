@@ -16,7 +16,9 @@ func installedCollectedRoute(cfg *config.Config, set *config.SetConfig) (tables.
 	route := tables.CollectedRoute{IPv4: cfg.Queue.IPv4Enabled, IPv6: cfg.Queue.IPv6Enabled}
 	switch {
 	case set.ReusesWSSize():
-		route.Router, route.Port = !set.RoutingSourceScoped(), 443
+		view := *set
+		view.Routing = config.RoutingConfig{}
+		route.Router, route.Port = !view.RoutingSourceScoped(), 443
 	case !set.Routing.Enabled || config.RoutingIsBlock(set.Routing.Mode):
 		return route, false
 	case config.RoutingUsesTProxy(set.RoutingModeOrDefault()):
