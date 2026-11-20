@@ -328,8 +328,14 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 
 func routeInstallProxyRule(be routeBackend, cfg *config.Config, set *config.SetConfig, st routeState, sources []string, tproxied *bool) error {
 	*tproxied = true
-	tcp := func(added bool) {
-		*tproxied = *tproxied && added
+	tcp := func(v6, added bool) {
+		version := uint8(4)
+		if v6 {
+			version = 6
+		}
+		if set.MatchesIPVersion(version) {
+			*tproxied = *tproxied && added
+		}
 	}
 	if st.table <= 0 {
 		return fmt.Errorf("no free routing table for transparent proxying")
@@ -414,7 +420,7 @@ func routeInstallProxyRule(be routeBackend, cfg *config.Config, set *config.SetC
 			return err
 		}
 		if byAddress && cfg.Queue.IPv4Enabled {
-			tcp(addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources, "tcp", proxyModePorts(st.mode)...))
+			tcp(false, addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources, "tcp", proxyModePorts(st.mode)...))
 			if st.quicReject {
 				addQUICPassRuleNft(st.chainPre, false, st.setV4, sources)
 			}
@@ -423,7 +429,7 @@ func routeInstallProxyRule(be routeBackend, cfg *config.Config, set *config.SetC
 			}
 		}
 		if byAddress && cfg.Queue.IPv6Enabled {
-			tcp(addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "tcp", proxyModePorts(st.mode)...))
+			tcp(true, addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "tcp", proxyModePorts(st.mode)...))
 			if st.quicReject {
 				addQUICPassRuleNft(st.chainPre, true, st.setV6, sources)
 			}
@@ -446,7 +452,7 @@ func routeInstallProxyRule(be routeBackend, cfg *config.Config, set *config.SetC
 			return err
 		}
 		if byAddress && cfg.Queue.IPv4Enabled {
-			tcp(addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "tcp", proxyModePorts(st.mode)...))
+			tcp(false, addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "tcp", proxyModePorts(st.mode)...))
 			if st.quicReject {
 				addQUICPassRuleIpt(false, st.chainPre, st.setV4, sources, legacy)
 			}
@@ -458,7 +464,7 @@ func routeInstallProxyRule(be routeBackend, cfg *config.Config, set *config.SetC
 			}
 		}
 		if byAddress && cfg.Queue.IPv6Enabled {
-			tcp(addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy, "tcp", proxyModePorts(st.mode)...))
+			tcp(true, addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy, "tcp", proxyModePorts(st.mode)...))
 			if st.quicReject {
 				addQUICPassRuleIpt(true, st.chainPre, st.setV6, sources, legacy)
 			}

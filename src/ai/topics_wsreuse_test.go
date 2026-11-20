@@ -103,6 +103,9 @@ func TestWSReuseTopicSaysARefusedTProxyRuleLeavesTheSetUndiverted(t *testing.T) 
 	if !strings.Contains(facts, "when it refuses the set's TCP TPROXY rule for an enabled address family") {
 		t.Errorf("tcp.wssize_reuse.enabled does not say what a refused TPROXY rule does: %s", facts)
 	}
+	if !strings.Contains(facts, "for an enabled address family its ip_version allows,") {
+		t.Errorf("tcp.wssize_reuse.enabled does not say that only a refused rule for a family the set's ip_version allows leaves it undiverted: %s", facts)
+	}
 	if !strings.Contains(facts, "b4 logs a warning for the set and tries the rule again") || strings.Contains(facts, "b4 logs that rule") {
 		t.Errorf("tcp.wssize_reuse.enabled does not say that a refused TPROXY rule gets a warning for the set; the rule itself is logged only at Trace when the refusal reads 'No such file or directory': %s", facts)
 	}

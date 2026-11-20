@@ -400,3 +400,52 @@ func TestARefusedReuseTProxyRuleIsWarnedForTheSet(t *testing.T) {
 		}
 	})
 }
+
+func TestOnlyTheReuseSetsOwnFamiliesDecideItsDiversion(t *testing.T) {
+	v6Rule := func(args []string) bool {
+		return args[0] == backendIP6Tables || slices.Contains(args, "ip6")
+	}
+	v4Rule := func(args []string) bool { return !v6Rule(args) }
+	for _, engine := range []string{backendIPTables, backendNFTables} {
+		for _, tc := range []struct {
+			name     string
+			version  string
+			refuse   func([]string) bool
+			diverted bool
+		}{
+			{"an IPv4-only set, the IPv6 rule refused", "4", v6Rule, true},
+			{"an IPv6-only set, the IPv4 rule refused", "6", v4Rule, true},
+			{"an IPv4-only set, the IPv4 rule refused", "4", v4Rule, false},
+			{"an IPv6-only set, the IPv6 rule refused", "6", v6Rule, false},
+			{"a set of both families, the IPv6 rule refused", "", v6Rule, false},
+		} {
+			t.Run(engine+", "+tc.name, func(t *testing.T) {
+				attempts, added := refusedTProxyRig(t, engine, tc.refuse)
+				cfg := familyTestConfig(true, true)
+				set := config.NewSetConfig()
+				set.Id, set.Name, set.Enabled = "reuse", "reuse", true
+				set.Targets.IPs = []string{"203.0.113.2", "2001:db8::2"}
+				set.Targets.IpsToMatch = set.Targets.IPs
+				set.Targets.IPVersion = tc.version
+				set.TCP.WSSize = config.WSSizeConfig{Enabled: true, Window: 1, Scale: 1}
+				set.TCP.WSSizeReuse.Enabled = true
+				cfg.Sets = []*config.SetConfig{&set}
+				if err := cfg.Validate(); err != nil {
+					t.Fatal(err)
+				}
+				RoutingSyncConfig(cfg)
+				st, cached := routeRuleCache["reuse"]
+				if !cached || len(*attempts) == len(*added) {
+					t.Fatalf("setup: cached=%v, %d TPROXY adds tried and %d taken, want the view installed with a refused add", cached, len(*attempts), len(*added))
+				}
+				if WSReuseDiverts("reuse") != tc.diverted {
+					t.Fatalf("%s: diverted=%v, want %v; a family outside the set's ip_version never matches the set in b4's queue, so only the set's own families' TPROXY rules decide whether its TCP/443 is diverted", tc.name, WSReuseDiverts("reuse"), tc.diverted)
+				}
+				st.collected = true
+				if _, routed := routeCollectedRouteOf(st); routed != tc.diverted {
+					t.Fatalf("%s: the collected route view says routed=%v, want %v", tc.name, routed, tc.diverted)
+				}
+			})
+		}
+	}
+}
