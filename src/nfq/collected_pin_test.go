@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/sni"
 	"github.com/florianl/go-nfqueue"
 )
 
@@ -234,6 +235,52 @@ func TestALearnedSetThatTakesAListedAddressKeepsTheConnectionAcrossASaveAndAPubl
 			if v := queuedVerdict(t, w, pinnedHello(unlisted), nil, idx["eth7"], 0); v != nfqueue.NfDrop {
 				d, _ := w.tlsCache.Decision(pinnedConnKey)
 				t.Errorf("%s: a resent ClientHello got verdict %d after a collected publish, want the learned set's drop as before it (recorded set %q); the set that lists the address without IP priority never had the connection", name, v, d.priorSet)
+			}
+		})
+	}
+}
+
+func TestARecordedSetSurvivesAPublishBetweenTheDecisionAndTheRecord(t *testing.T) {
+	set := newFragmentingYTImagesSet()
+	set.Id, set.Name = "plain", "plain"
+	set.Targets.DomainOnly = false
+	set.Targets.DomainsToMatch = nil
+	onPort(&set, "443")
+	for _, c := range []struct {
+		name    string
+		between func(w *Worker, old *sni.SuffixSet, gen uint64)
+		pinned  bool
+		want    string
+	}{
+		{"a collected publish", func(w *Worker, old *sni.SuffixSet, _ uint64) {
+			next := buildMatcher(w.getConfig())
+			next.KeepConnectionPolicy(old)
+			w.tlsCache.PublishCollected(next)
+			w.matcher.Store(next)
+		}, true, "plain"},
+		{"a save", func(w *Worker, _ *sni.SuffixSet, _ uint64) {
+			w.tlsCache.ForgetDecisions(buildMatcher(w.getConfig()))
+		}, false, ""},
+		{"a save and a decision under its sets", func(w *Worker, _ *sni.SuffixSet, gen uint64) {
+			next := buildMatcher(w.getConfig())
+			w.tlsCache.ForgetDecisions(next)
+			w.tlsCache.DecideHeld(pinnedConnKey, gen, next, "", nil, false, nil)
+		}, false, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			w := newInjectingWorker(t, &set)
+			old := w.getMatcher()
+			w.tlsCache.ForgetDecisions(old)
+			gen := w.tlsCache.Store(pinnedConnKey, "unlisted.example.net", 0x0303, 1000, 7, 100)
+			w.tlsCache.DecideHeld(pinnedConnKey, gen, old, "", nil, false, nil)
+			c.between(w, old, gen)
+			w.tlsCache.RecordPrior(pinnedConnKey, gen, old, &set)
+			d, ok := w.tlsCache.Decision(pinnedConnKey)
+			if !ok {
+				t.Fatal("setup: the connection has no decision")
+			}
+			if d.collectedPinned != c.pinned || d.priorSet != c.want {
+				t.Errorf("%s between the re-decision and its record: pinned=%v recorded set %q, want pinned=%v recorded set %q", c.name, d.collectedPinned, d.priorSet, c.pinned, c.want)
 			}
 		})
 	}

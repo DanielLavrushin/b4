@@ -189,7 +189,7 @@ func (c *tlsInfoCache) RecordPrior(connKey string, gen uint64, matcher *sni.Suff
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if info, exists := c.conns[connKey]; exists && info.gen == gen && info.decidedBy == matcher && info.set == nil {
+	if info, exists := c.conns[connKey]; exists && info.gen == gen && matcher.SameConnectionPolicy(info.decidedBy) && info.set == nil {
 		info.priorSet = ""
 		if prior != nil {
 			info.priorSet = prior.Id
