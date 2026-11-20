@@ -3,6 +3,7 @@ package warmtuple
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/netip"
 	"sync/atomic"
@@ -182,6 +183,70 @@ func TestServiceClientBudget(t *testing.T) {
 		t.Fatal("client slots leaked")
 	}
 	release()
+}
+
+func TestFailedWarmsCoolOnlyTheirDestination(t *testing.T) {
+	s, _, set, count := serviceFixture(t)
+	set.Targets.IPs = []string{"203.0.113.2", "203.0.113.3"}
+	set.Targets.IpsToMatch = set.Targets.IPs
+	failing := netip.MustParseAddrPort("203.0.113.2:443")
+	s.newManager = func(c Config) (*Manager, error) {
+		c.ReconnectDelay = 20 * time.Millisecond
+		m := fakeManager(t, c)
+		m.warm = func(context.Context, net.Conn) error {
+			if c.Target == failing {
+				return errors.New("warm HTTP status 404, expected 204")
+			}
+			count.Add(1)
+			return nil
+		}
+		return m, nil
+	}
+	failures := 0
+	for i := 0; i <= lastPort-firstPort; i++ {
+		c, err := s.Dial(context.Background(), set, "192.0.2.10", fmt.Sprintf("site%d.example.org", i), failing)
+		if err == nil {
+			c.Close()
+			continue
+		}
+		failures++
+	}
+	if failures != lastPort-firstPort+1 {
+		t.Fatalf("%d of %d warms to the failing address failed", failures, lastPort-firstPort+1)
+	}
+	c, err := s.Dial(context.Background(), set, "192.0.2.11", "warm.example.org", netip.MustParseAddrPort("203.0.113.3:443"))
+	if err != nil {
+		t.Fatalf("after %d failed warms to %s, a warm to another address got: %v", failures, failing, err)
+	}
+	defer c.Close()
+	backend, ok := c.(*serviceConn)
+	if !ok {
+		t.Fatalf("the other address got a %T, not a warmed pass", c)
+	}
+	pass, ok := backend.Conn.(*Conn)
+	if !ok || !pass.Warmed || count.Load() != 1 {
+		t.Fatalf("the other address got %T warmed=%t after %d good warms, want a pass on a tuple warmed by this call", backend.Conn, ok && pass.Warmed, count.Load())
+	}
+}
+
+func TestCoolingDropsExpiredEntriesPastItsLimit(t *testing.T) {
+	s, _, set, _ := serviceFixture(t)
+	c := serviceDial(t, s, set)
+	lease := c.(*serviceConn).lease
+	c.Close()
+	expired := time.Now().Add(-time.Second)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range coolingPrune {
+		s.cooling[coolKey{port: firstPort, source: lease.key.source, target: netip.AddrPortFrom(netip.AddrFrom4([4]byte{198, 18, byte(i >> 8), byte(i)}), 443)}] = expired
+	}
+	s.discardLocked(lease, time.Now())
+	if len(s.cooling) != 1 {
+		t.Fatalf("%d cooling entries after a discard past the limit, want only the new one", len(s.cooling))
+	}
+	if until := s.cooling[coolKey{port: lease.port, source: lease.key.source, target: lease.key.target}]; !time.Now().Before(until) {
+		t.Fatal("the discarded tuple is not cooling for its destination")
+	}
 }
 
 func TestRouteChangeAndSilentPassInvalidateCache(t *testing.T) {

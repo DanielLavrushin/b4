@@ -20,11 +20,18 @@ import (
 
 const firstPort, lastPort = 63000, 63999
 const idleRetention = 2 * time.Minute
+const coolingPrune = 2048
 
 type serviceKey struct {
 	owner, set, host, route string
 	source                  netip.Addr
 	target                  netip.AddrPort
+}
+
+type coolKey struct {
+	port   uint16
+	source netip.Addr
+	target netip.AddrPort
 }
 
 type serviceLease struct {
@@ -45,7 +52,7 @@ type Service struct {
 	closed     bool
 	next       uint16
 	leases     map[uint16]*serviceLease
-	cooling    map[uint16]time.Time
+	cooling    map[coolKey]time.Time
 	pending    map[*serviceLease]context.CancelFunc
 	source     func(context.Context, netip.AddrPort) (netip.Addr, error)
 	route      func(context.Context, netip.AddrPort, netip.Addr) (string, error)
@@ -61,7 +68,7 @@ type serviceConn struct {
 }
 
 func NewService(flows *Flows) *Service {
-	return &Service{clients: make(chan struct{}, 256), flows: flows, next: firstPort, leases: make(map[uint16]*serviceLease), cooling: make(map[uint16]time.Time), pending: make(map[*serviceLease]context.CancelFunc), source: routeSource, route: routeFingerprint, newManager: New}
+	return &Service{clients: make(chan struct{}, 256), flows: flows, next: firstPort, leases: make(map[uint16]*serviceLease), cooling: make(map[coolKey]time.Time), pending: make(map[*serviceLease]context.CancelFunc), source: routeSource, route: routeFingerprint, newManager: New}
 }
 
 func routeSource(ctx context.Context, target netip.AddrPort) (netip.Addr, error) {
@@ -122,27 +129,34 @@ func (s *Service) UpdateConfig(cfg *config.Config) {
 			cancel()
 		}
 	}
-	for port, l := range s.leases {
+	now := time.Now()
+	for _, l := range s.leases {
 		if !l.busy && !s.keepsLease(l) {
-			s.discardLocked(port, time.Now())
+			s.discardLocked(l, now)
 		}
 	}
 }
 
-func (s *Service) discardLocked(port uint16, now time.Time) {
-	l := s.leases[port]
-	delete(s.leases, port)
-	s.cooling[port] = now.Add(idleRetention)
-	if l != nil {
-		_ = l.manager.Close()
+func (s *Service) discardLocked(l *serviceLease, now time.Time) {
+	if s.leases[l.port] == l {
+		delete(s.leases, l.port)
 	}
+	if len(s.cooling) >= coolingPrune {
+		for key, until := range s.cooling {
+			if !now.Before(until) {
+				delete(s.cooling, key)
+			}
+		}
+	}
+	s.cooling[coolKey{port: l.port, source: l.key.source, target: l.key.target}] = now.Add(idleRetention)
+	_ = l.manager.Close()
 }
 
 func (s *Service) reserveLocked(key serviceKey, set *config.SetConfig, source netip.Addr) (*serviceLease, error) {
 	now := time.Now()
-	for port, l := range s.leases {
+	for _, l := range s.leases {
 		if !l.busy && (!s.keepsLease(l) || now.Sub(l.idle) >= idleRetention) {
-			s.discardLocked(port, now)
+			s.discardLocked(l, now)
 		}
 	}
 	for _, l := range s.leases {
@@ -157,10 +171,9 @@ func (s *Service) reserveLocked(key serviceKey, set *config.SetConfig, source ne
 		if s.next > lastPort {
 			s.next = firstPort
 		}
-		if s.leases[port] != nil || now.Before(s.cooling[port]) {
+		if s.leases[port] != nil || now.Before(s.cooling[coolKey{port: port, source: source, target: key.target}]) {
 			continue
 		}
-		delete(s.cooling, port)
 		m, err := s.newManager(Config{Host: key.host, Target: key.target, Source: source, FirstPort: port, LastPort: port,
 			WarmAge: time.Duration(set.TCP.WSSizeReuse.MaxAgeSeconds) * time.Second, WarmMark: config.SelfDialMark,
 			WarmTimeout: 15 * time.Second, ReuseTimeout: 5 * time.Second, RetryInterval: 50 * time.Millisecond, ReconnectDelay: time.Second, CompactHello: true})
@@ -219,7 +232,7 @@ func (s *Service) Dial(ctx context.Context, set *config.SetConfig, owner, host s
 		err = errors.New("warm configuration changed")
 	}
 	if err != nil {
-		s.discardLocked(l.port, time.Now())
+		s.discardLocked(l, time.Now())
 		s.mu.Unlock()
 		return nil, err
 	}
@@ -244,7 +257,7 @@ func (c *serviceConn) Close() error {
 		c.lease.busy = false
 		c.lease.idle = time.Now()
 		if s.closed || !s.keepsLease(c.lease) {
-			s.discardLocked(c.lease.port, time.Now())
+			s.discardLocked(c.lease, time.Now())
 		}
 	})
 	return err
