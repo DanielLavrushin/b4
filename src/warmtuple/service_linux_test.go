@@ -41,6 +41,7 @@ func serviceFixture(t *testing.T) (*Service, *config.Config, *config.SetConfig, 
 	s.source = func(context.Context, netip.AddrPort) (netip.Addr, error) {
 		return netip.MustParseAddr("203.0.113.1"), nil
 	}
+	s.timestamps = func() bool { return true }
 	count := &atomic.Int32{}
 	s.newManager = func(c Config) (*Manager, error) {
 		c.ReconnectDelay = 20 * time.Millisecond
@@ -796,6 +797,63 @@ func TestFailureMemoryIsBounded(t *testing.T) {
 	s.rememberFailureLocked(failureKey{target: target, host: "fresh.example.org"}, now)
 	if len(s.failures) != 1 {
 		t.Fatalf("%d remembered failures after a record into a memory of expired ones, want 1", len(s.failures))
+	}
+}
+
+func TestServiceSkipsWarmWithoutTCPTimestamps(t *testing.T) {
+	logged := captureWarnings(t)
+	s, _, set, count := serviceFixture(t)
+	var managers atomic.Int32
+	newManager := s.newManager
+	s.newManager = func(c Config) (*Manager, error) {
+		managers.Add(1)
+		return newManager(c)
+	}
+	s.timestamps = func() bool { return false }
+	direct := recordDirect(t, s)
+	for range 3 {
+		dialExpectingFallback(t, s, set, "warm.example.org")
+	}
+	s.mu.Lock()
+	leases, cooling := len(s.leases), len(s.cooling)
+	s.mu.Unlock()
+	if managers.Load() != 0 || count.Load() != 0 || leases != 0 || cooling != 0 || s.failureCount() != 0 || direct.calls() != 3 {
+		t.Fatalf("with net.ipv4.tcp_timestamps at 0, 3 connections built %d warm managers, ran %d warms, left %d leases, %d cooling ports and %d remembered failures and fell back %d times, want only 3 fallbacks", managers.Load(), count.Load(), leases, cooling, s.failureCount(), direct.calls())
+	}
+	if n := logged.warnings("net.ipv4.tcp_timestamps is 0"); n != 1 {
+		t.Fatalf("%d warnings for 3 connections without TCP timestamps, want 1", n)
+	}
+	limiter := s.limiter(warnKey{set: set.Id, kind: "timestamps"})
+	limiter.last.Store(time.Now().Add(-2 * time.Minute).UnixNano())
+	dialExpectingFallback(t, s, set, "warm.example.org")
+	if n := logged.warnings("net.ipv4.tcp_timestamps is 0"); n != 1 {
+		t.Fatalf("%d warnings 2 minutes after the first, want the warning at most every 10 minutes", n)
+	}
+	limiter.last.Store(time.Now().Add(-11 * time.Minute).UnixNano())
+	dialExpectingFallback(t, s, set, "warm.example.org")
+	if n := logged.warnings("net.ipv4.tcp_timestamps is 0"); n != 2 {
+		t.Fatalf("%d warnings 11 minutes after the first, want a second one", n)
+	}
+	s.timestamps = func() bool { return true }
+	c := serviceDial(t, s, set)
+	if pass, ok := c.(*serviceConn); !ok || !pass.Conn.(*Conn).Warmed || count.Load() != 1 {
+		t.Fatalf("after net.ipv4.tcp_timestamps came back on the next connection got %T with %d warms, want a warmed pass", c, count.Load())
+	}
+}
+
+func TestAWarmWithoutTimestampsIsRemembered(t *testing.T) {
+	s, _, set, count := serviceFixture(t)
+	s.newManager = func(c Config) (*Manager, error) {
+		c.ReconnectDelay = 20 * time.Millisecond
+		m := fakeManager(t, c)
+		m.warm = func(context.Context, net.Conn) error { count.Add(1); return nil }
+		m.timestamped = func(net.Conn) (bool, error) { return false, nil }
+		return m, nil
+	}
+	recordDirect(t, s)
+	dialExpectingFallback(t, s, set, "warm.example.org")
+	if count.Load() != 0 || s.failureCount() != 1 {
+		t.Fatalf("a warm connection without TCP timestamps ran %d TLS warms and left %d remembered failures, want none and 1", count.Load(), s.failureCount())
 	}
 }
 

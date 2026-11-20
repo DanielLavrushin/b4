@@ -26,7 +26,11 @@ var (
 	ErrClosed   = errors.New("warm-tuple manager is closed")
 	ErrTarget   = errors.New("destination is outside the fixed warm-tuple selector")
 	ErrWarm     = errors.New("the server failed the warm")
+
+	ErrNoTimestamps = errors.New("the warm connection did not negotiate TCP timestamps, so the same-tuple reconnect over the warm's TIME_WAIT would fail with EADDRNOTAVAIL")
 )
+
+const tcpiOptTimestamps = 1
 
 type warmError struct{ error }
 
@@ -56,17 +60,18 @@ type Config struct {
 }
 
 type Manager struct {
-	cfg     Config
-	ctx     context.Context
-	cancel  context.CancelFunc
-	mu      sync.Mutex
-	closed  bool
-	leases  map[uint16]*lease
-	warmed  map[uint16]time.Time
-	next    uint16
-	dial    func(context.Context, uint16, uint32) (net.Conn, error)
-	warm    func(context.Context, net.Conn) error
-	capture func() (func(), error)
+	cfg         Config
+	ctx         context.Context
+	cancel      context.CancelFunc
+	mu          sync.Mutex
+	closed      bool
+	leases      map[uint16]*lease
+	warmed      map[uint16]time.Time
+	next        uint16
+	dial        func(context.Context, uint16, uint32) (net.Conn, error)
+	warm        func(context.Context, net.Conn) error
+	timestamped func(net.Conn) (bool, error)
+	capture     func() (func(), error)
 }
 
 type lease struct {
@@ -108,7 +113,7 @@ func New(cfg Config) (*Manager, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &Manager{cfg: cfg, ctx: ctx, cancel: cancel, leases: make(map[uint16]*lease), warmed: make(map[uint16]time.Time), next: cfg.FirstPort}
-	m.dial, m.warm = m.dialSocket, m.warmTLS
+	m.dial, m.warm, m.timestamped = m.dialSocket, m.warmTLS, negotiatedTimestamps
 	return m, nil
 }
 
@@ -303,6 +308,9 @@ func (m *Manager) runWarm(ctx context.Context, l *lease) (time.Time, error) {
 	if err := l.track(c); err != nil {
 		return started, err
 	}
+	if negotiated, err := m.timestamped(c); err == nil && !negotiated {
+		return started, warmError{ErrNoTimestamps}
+	}
 	stop := context.AfterFunc(ctx, func() { c.Close() })
 	defer stop()
 	if err := m.warm(ctx, c); err != nil {
@@ -312,9 +320,10 @@ func (m *Manager) runWarm(ctx context.Context, l *lease) (time.Time, error) {
 }
 
 func (m *Manager) connect(ctx context.Context, port uint16, mark uint32) (net.Conn, error) {
+	var last error
 	for {
-		if err := ctx.Err(); err != nil {
-			return nil, err
+		if ctx.Err() != nil {
+			return nil, m.heldPortError(ctx, port, last)
 		}
 		c, err := m.dial(ctx, port, mark)
 		if err == nil {
@@ -329,14 +338,47 @@ func (m *Manager) connect(ctx context.Context, port uint16, mark uint32) (net.Co
 		if !errors.Is(err, unix.EADDRINUSE) && !errors.Is(err, unix.EADDRNOTAVAIL) {
 			return nil, connectError{err}
 		}
+		last = err
 		timer := time.NewTimer(m.cfg.RetryInterval)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return nil, ctx.Err()
+			return nil, m.heldPortError(ctx, port, last)
 		case <-timer.C:
 		}
 	}
+}
+
+func (m *Manager) heldPortError(ctx context.Context, port uint16, last error) error {
+	switch {
+	case last == nil:
+		return ctx.Err()
+	case errors.Is(last, unix.EADDRNOTAVAIL):
+		return fmt.Errorf("source port %d to %s is still held by an earlier connection on this tuple (EADDRNOTAVAIL): TIME_WAIT without TCP timestamps, or the previous connection has not closed: %w; last attempt: %w", port, m.cfg.Target, ctx.Err(), last)
+	}
+	return fmt.Errorf("%w; last attempt: %w", ctx.Err(), last)
+}
+
+func negotiatedTimestamps(c net.Conn) (bool, error) {
+	sc, ok := c.(syscall.Conn)
+	if !ok {
+		return false, errors.New("the warm connection has no socket")
+	}
+	raw, err := sc.SyscallConn()
+	if err != nil {
+		return false, err
+	}
+	var info *unix.TCPInfo
+	var sockErr error
+	if err := raw.Control(func(fd uintptr) {
+		info, sockErr = unix.GetsockoptTCPInfo(int(fd), unix.IPPROTO_TCP, unix.TCP_INFO)
+	}); err != nil {
+		return false, err
+	}
+	if sockErr != nil {
+		return false, sockErr
+	}
+	return info.Options&tcpiOptTimestamps != 0, nil
 }
 
 func (m *Manager) dialSocket(ctx context.Context, port uint16, mark uint32) (net.Conn, error) {

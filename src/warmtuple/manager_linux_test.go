@@ -5,6 +5,9 @@ import (
 	"errors"
 	"net"
 	"net/netip"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -61,6 +64,7 @@ func fakeManager(t *testing.T, cfg Config) *Manager {
 		return fakeSocket(t, cfg, port), nil
 	}
 	m.warm = func(context.Context, net.Conn) error { return nil }
+	m.timestamped = func(net.Conn) (bool, error) { return true, nil }
 	return m
 }
 
@@ -280,7 +284,8 @@ func TestFailuresNeverFallbackAndReleaseTheLease(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 			defer cancel()
-			if c, err := m.DialContext(ctx, "warm.example.org:443"); err == nil || c != nil {
+			c, err := m.DialContext(ctx, "warm.example.org:443")
+			if err == nil || c != nil {
 				t.Fatal("failure returned a pass connection")
 			}
 			if phase != "reuse" && calls.Load() != 1 {
@@ -289,10 +294,99 @@ func TestFailuresNeverFallbackAndReleaseTheLease(t *testing.T) {
 			if phase == "reuse" && calls.Load() < 3 {
 				t.Fatal("TIME_WAIT bind failures were not retried")
 			}
+			if phase == "reuse" && (!errors.Is(err, unix.EADDRNOTAVAIL) || !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "EADDRNOTAVAIL") || !strings.Contains(err.Error(), "TCP timestamps")) {
+				t.Fatalf("a reconnect that kept getting EADDRNOTAVAIL ended with %q, want it to name EADDRNOTAVAIL and what holds the tuple, and to wrap both the deadline and the last connect error", err)
+			}
 			if m.Active() != 0 {
 				t.Fatal("failure leaked a lease")
 			}
 		})
+	}
+}
+
+func TestWarmWithoutTimestampsStopsBeforeTLS(t *testing.T) {
+	cfg := fixture()
+	m := fakeManager(t, cfg)
+	var warms, dials atomic.Int32
+	var sockets []*fakeConn
+	m.dial = func(_ context.Context, port uint16, _ uint32) (net.Conn, error) {
+		dials.Add(1)
+		c := fakeSocket(t, cfg, port)
+		sockets = append(sockets, c)
+		return c, nil
+	}
+	m.warm = func(context.Context, net.Conn) error { warms.Add(1); return nil }
+	m.timestamped = func(net.Conn) (bool, error) { return false, nil }
+	c, err := m.DialContext(context.Background(), cfg.Host+":443")
+	if c != nil || !errors.Is(err, ErrNoTimestamps) || !errors.Is(err, ErrWarm) {
+		t.Fatalf("a warm connection without TCP timestamps gave %v, %v, want ErrNoTimestamps counted as a failed warm", c, err)
+	}
+	if warms.Load() != 0 || dials.Load() != 1 || !sockets[0].closed.Load() || m.Active() != 0 {
+		t.Fatalf("without TCP timestamps the manager ran %d warms over %d sockets with the warm socket closed=%t and %d leases, want no TLS, one closed socket and no lease", warms.Load(), dials.Load(), sockets[0].closed.Load(), m.Active())
+	}
+	m.timestamped = func(net.Conn) (bool, error) { return false, errors.New("getsockopt: operation not supported") }
+	c, err = m.DialContext(context.Background(), cfg.Host+":443")
+	if err != nil {
+		t.Fatalf("an unreadable TCP_INFO blocked the warm: %v", err)
+	}
+	defer c.Close()
+	if warms.Load() != 1 || !c.(*Conn).Warmed {
+		t.Fatalf("an unreadable TCP_INFO gave %d warms, want the warm to run", warms.Load())
+	}
+}
+
+func TestNegotiatedTimestampsReadsTCPInfo(t *testing.T) {
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			close(accepted)
+			return
+		}
+		accepted <- c
+	}()
+	c, err := net.Dial("tcp4", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if peer, ok := <-accepted; ok {
+		defer peer.Close()
+	}
+	sysctl, err := os.ReadFile("/proc/sys/net/ipv4/tcp_timestamps")
+	if err != nil {
+		t.Skipf("cannot read net.ipv4.tcp_timestamps: %v", err)
+	}
+	got, err := negotiatedTimestamps(c)
+	if want := strings.TrimSpace(string(sysctl)) != "0"; err != nil || got != want {
+		t.Fatalf("TCP_INFO gave timestamps=%t, %v on a loopback connection with net.ipv4.tcp_timestamps=%s, want %t", got, err, strings.TrimSpace(string(sysctl)), want)
+	}
+	a, b := net.Pipe()
+	defer a.Close()
+	defer b.Close()
+	if _, err := negotiatedTimestamps(a); err == nil {
+		t.Fatal("a connection without a socket reported its TCP options")
+	}
+}
+
+func TestTCPTimestampsSysctl(t *testing.T) {
+	dir := t.TempDir()
+	for value, want := range map[string]bool{"0\n": false, "1\n": true, "2\n": true} {
+		path := filepath.Join(dir, "tcp_timestamps")
+		if err := os.WriteFile(path, []byte(value), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := tcpTimestampsOn(path); got != want {
+			t.Fatalf("net.ipv4.tcp_timestamps=%q reads as on=%t, want %t", strings.TrimSpace(value), got, want)
+		}
+	}
+	if !tcpTimestampsOn(filepath.Join(dir, "missing")) {
+		t.Fatal("an unreadable net.ipv4.tcp_timestamps counts as off, want on so the warm still runs")
 	}
 }
 

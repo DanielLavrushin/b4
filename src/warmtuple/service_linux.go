@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"os"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -27,10 +29,14 @@ const fallbackDialTimeout = 10 * time.Second
 const fallbackWarnInterval = time.Minute
 const failureRetention = 10 * time.Minute
 const maxFailures = 4096
+const skipWarnInterval = 10 * time.Minute
+const tcpTimestampsSysctl = "/proc/sys/net/ipv4/tcp_timestamps"
 
 var ErrFallbackCapacity = errors.New("every fallback relay slot is in use")
 
 var errRecentWarmFailure = errors.New("the warm to this address and name failed less than 10 minutes ago")
+
+var errTCPTimestampsOff = errors.New("net.ipv4.tcp_timestamps is 0; reusing a warmed tuple needs TCP timestamps (the reconnect fails with EADDRNOTAVAIL)")
 
 type failureKey struct {
 	target netip.Addr
@@ -65,10 +71,10 @@ type warnLimiter struct {
 	last  atomic.Int64
 }
 
-func (w *warnLimiter) note(now time.Time) (int64, bool) {
+func (w *warnLimiter) note(now time.Time, every time.Duration) (int64, bool) {
 	n := w.count.Add(1)
 	last := w.last.Load()
-	if last != 0 && now.UnixNano()-last < int64(fallbackWarnInterval) {
+	if last != 0 && now.UnixNano()-last < int64(every) {
 		return n, false
 	}
 	return n, w.last.CompareAndSwap(last, now.UnixNano())
@@ -95,6 +101,7 @@ type Service struct {
 	route      func(context.Context, netip.AddrPort, netip.Addr) (string, error)
 	newManager func(Config) (*Manager, error)
 	direct     directDialer
+	timestamps func() bool
 }
 
 type serviceConn struct {
@@ -109,7 +116,19 @@ func NewService(flows *Flows) *Service {
 	ctx, stop := context.WithCancel(context.Background())
 	return &Service{clients: make(chan struct{}, 256), ctx: ctx, stop: stop, flows: flows, next: firstPort, leases: make(map[uint16]*serviceLease), cooling: make(map[coolKey]time.Time),
 		pending: make(map[*serviceLease]context.CancelFunc), directs: make(map[*directConn]struct{}), failures: make(map[failureKey]time.Time), warnings: make(map[warnKey]*warnLimiter),
-		source: routeSource, route: routeFingerprint, newManager: New, direct: dialDirect}
+		source: routeSource, route: routeFingerprint, newManager: New, direct: dialDirect, timestamps: func() bool { return tcpTimestampsOn(tcpTimestampsSysctl) }}
+}
+
+func tcpTimestampsOn(path string) bool {
+	value, err := os.ReadFile(path)
+	return err != nil || strings.TrimSpace(string(value)) != "0"
+}
+
+func (s *Service) skipWarm() error {
+	if !s.timestamps() {
+		return errTCPTimestampsOff
+	}
+	return nil
 }
 
 func routeSource(ctx context.Context, target netip.AddrPort) (netip.Addr, error) {
@@ -237,6 +256,9 @@ func (s *Service) Dial(ctx context.Context, set *config.SetConfig, owner, host s
 	source, err := s.source(ctx, target)
 	if err != nil {
 		return nil, fmt.Errorf("warm route: %w", err)
+	}
+	if err := s.skipWarm(); err != nil {
+		return s.fallBackAfter(ctx, set.Id, host, source, target, err)
 	}
 	egress, err := s.route(ctx, target, source)
 	if err != nil {
@@ -402,14 +424,20 @@ func (s *Service) noteFallback(set *config.SetConfig, host string, target netip.
 	switch {
 	case errors.Is(cause, errRecentWarmFailure):
 		log.Tracef("WSSIZE reuse [%s]: %s (%s): %v, relayed with the set's strategy without reuse", set.Name, host, target.Addr(), cause)
+	case errors.Is(cause, errTCPTimestampsOff):
+		if n, warn := s.limiter(warnKey{set: set.Id, kind: "timestamps"}).note(time.Now(), skipWarnInterval); warn {
+			log.Warnf("WSSIZE reuse [%s]: %v, so the set uses its strategy without reuse; %d connections relayed that way so far", set.Name, cause, n)
+			return
+		}
+		log.Tracef("WSSIZE reuse [%s]: %s: %v, relayed with the set's strategy without reuse", set.Name, host, cause)
 	case errors.Is(cause, ErrWarm):
-		if n, warn := s.limiter(warnKey{set: set.Id, kind: "warm"}).note(time.Now()); warn {
+		if n, warn := s.limiter(warnKey{set: set.Id, kind: "warm"}).note(time.Now(), fallbackWarnInterval); warn {
 			log.Warnf("WSSIZE reuse [%s]: warm to %s (%s) failed: %v; connections to that address and name use the set's strategy without reuse for 10 minutes, %d failed warms so far", set.Name, target.Addr(), host, cause, n)
 			return
 		}
 		log.Tracef("WSSIZE reuse [%s]: warm to %s (%s) failed: %v; relayed with the set's strategy without reuse for 10 minutes", set.Name, target.Addr(), host, cause)
 	case errors.Is(cause, ErrCapacity):
-		if n, warn := s.limiter(warnKey{set: set.Id, kind: "capacity"}).note(time.Now()); warn {
+		if n, warn := s.limiter(warnKey{set: set.Id, kind: "capacity"}).note(time.Now(), fallbackWarnInterval); warn {
 			log.Warnf("WSSIZE reuse [%s]: %s: %v, %d connections relayed with the set's strategy without reuse so far", set.Name, host, cause, n)
 			return
 		}
