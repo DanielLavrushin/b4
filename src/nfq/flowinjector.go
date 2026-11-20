@@ -12,8 +12,9 @@ import (
 )
 
 type flowJob struct {
-	run    func() func()
-	finish func(after func())
+	run     func() func()
+	finish  func(after func())
+	stopped func() bool
 }
 
 type flowQueue struct {
@@ -66,7 +67,10 @@ func (f *flowInjector) drain(key string, q *flowQueue) {
 		job := q.jobs[0]
 		f.mu.Unlock()
 
-		after := job.run()
+		var after func()
+		if job.stopped == nil || !job.stopped() {
+			after = job.run()
+		}
 
 		f.mu.Lock()
 		q.jobs[0] = flowJob{}
@@ -106,7 +110,8 @@ func (f *flowInjector) pending() int {
 func (w *Worker) flowJob(run func() func()) flowJob {
 	w.wg.Add(1)
 	return flowJob{
-		run: run,
+		run:     run,
+		stopped: func() bool { return w.ctx != nil && w.ctx.Err() != nil },
 		finish: func(after func()) {
 			if after == nil {
 				injectRelease()
