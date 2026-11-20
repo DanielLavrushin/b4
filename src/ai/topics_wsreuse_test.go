@@ -39,7 +39,24 @@ func TestWSReuseTopicSaysAFailedWarmIsSkippedForTenMinutes(t *testing.T) {
 	for _, want := range []string{
 		"that address and SNI name skip the warm for 10 minutes",
 		"any saved settings change other than collected addresses forgets these failures",
-		"A failed pass after a good warm and failures on b4's own side are not remembered.",
+		"a connect error is, even one from the router's own route or firewall",
+	} {
+		if !strings.Contains(facts, want) {
+			t.Errorf("tcp.wssize_reuse.enabled does not say %q: %s", want, facts)
+		}
+	}
+	if strings.Contains(facts, "failures on b4's own side are not remembered") {
+		t.Errorf("tcp.wssize_reuse.enabled still says failures on b4's own side are not remembered, but a connect error from the router's own route or firewall is: %s", facts)
+	}
+}
+
+func TestWSReuseTopicNamesWhatTheWarmNeedsBesidesTheServer(t *testing.T) {
+	facts := TopicFacts("tcp.wssize_reuse.enabled")
+	for _, want := range []string{
+		"net.ipv4.tcp_timestamps not 0, and negotiated by the server",
+		"CA certificates in the system store or under /opt/etc/ssl",
+		"no TCP timestamps from the server",
+		"its egress route cannot be looked up",
 	} {
 		if !strings.Contains(facts, want) {
 			t.Errorf("tcp.wssize_reuse.enabled does not say %q: %s", want, facts)
