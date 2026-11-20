@@ -34,7 +34,7 @@ func ytimgHelloV6() []byte {
 	return makeV6TCPPacket(buildClientHello("i.ytimg.com", 16, 0xAB), 1000)
 }
 
-func TestThePacketsB4SendsIntoItsTelegramConnectionsCarryTheirMark(t *testing.T) {
+func TestThePacketsB4SendsIntoItsOwnConnectionsCarryTheirDialMark(t *testing.T) {
 	for _, c := range []struct {
 		name     string
 		tune     func(*config.SetConfig)
@@ -57,11 +57,13 @@ func TestThePacketsB4SendsIntoItsTelegramConnectionsCarryTheirMark(t *testing.T)
 		for _, flow := range []struct {
 			name     string
 			mark     *uint32
+			owner    *uint32
 			telegram bool
 		}{
-			{"b4's own Telegram connection", markOf(config.TelegramSetDialMark), true},
-			{"another connection b4 opens itself", markOf(config.SelfDialMark), false},
-			{"a device's connection", nil, false},
+			{"b4's own Telegram connection", markOf(config.TelegramSetDialMark), nil, true},
+			{"another connection b4 opens itself", markOf(config.SelfDialMark), routerSocket(), true},
+			{"a forwarded connection whose mark has bit 0x40000", markOf(config.SelfDialMark), nil, false},
+			{"a device's connection", nil, nil, false},
 		} {
 			t.Run(c.name+"/"+flow.name, func(t *testing.T) {
 				other := newFragmentingYTImagesSet()
@@ -75,7 +77,7 @@ func TestThePacketsB4SendsIntoItsTelegramConnectionsCarryTheirMark(t *testing.T)
 				idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
 				stubInjectRoute(t, idx["eth7"], true)
 
-				if got := queuedVerdict(t, w, c.hello(), flow.mark, idx["eth7"], 0); got != nfqueue.NfDrop {
+				if got := queuedVerdictFrom(t, w, c.hello(), flow.mark, flow.owner, idx["eth7"], 0); got != nfqueue.NfDrop {
 					t.Fatalf("verdict %d, want the drop of a packet b4 sends on itself", got)
 				}
 				plain, marked := ordinary(), viaTelegram()
@@ -84,8 +86,8 @@ func TestThePacketsB4SendsIntoItsTelegramConnectionsCarryTheirMark(t *testing.T)
 					want, wrong = marked, plain
 				}
 				if len(want) != c.sent || len(wrong) != 0 {
-					t.Fatalf("%d packets left by the socket with the Telegram set's dial mark and %d by the ordinary injector, want %d by the %s one: %s", len(marked), len(plain), c.sent, map[bool]string{true: "Telegram", false: "ordinary"}[flow.telegram],
-						map[bool]string{true: "a routing set that lists the Telegram address would take them while the connection leaves by the uplink", false: "only b4's own Telegram connections carry that mark"}[flow.telegram])
+					t.Fatalf("%d packets left by the socket with the dial mark and %d by the ordinary injector, want %d by the %s one: %s", len(marked), len(plain), c.sent, map[bool]string{true: "dial mark", false: "ordinary"}[flow.telegram],
+						map[bool]string{true: "the routing sets skip the connection's packets on bit 0x40000, so a routing set that lists the address would take these while the connection leaves by the uplink", false: "a forwarded connection already took its route before it reached the queue, whatever its mark"}[flow.telegram])
 				}
 				if c.fragment {
 					later := 0
@@ -105,6 +107,25 @@ func TestThePacketsB4SendsIntoItsTelegramConnectionsCarryTheirMark(t *testing.T)
 
 func markOf(m uint32) *uint32 {
 	return &m
+}
+
+func routerSocket() *uint32 {
+	return markOf(0)
+}
+
+func queuedVerdictFrom(t *testing.T, w *Worker, raw []byte, mark, owner *uint32, out, in uint32) int {
+	t.Helper()
+	id := uint32(1)
+	a := nfqueue.Attribute{PacketID: &id, Payload: &raw, Mark: mark, UID: owner}
+	if out != 0 {
+		a.OutDev = &out
+	}
+	if in != 0 {
+		a.InDev = &in
+	}
+	q := newFakeQueue()
+	w.handleQueued(&verdictCtx{id: id, q: q}, a, uint(w.getConfig().Queue.Mark))
+	return q.now(t)
 }
 
 func TestAnInterfaceSetThatLearnedTheTelegramAddressLeavesItsPacketsToTheTelegramSet(t *testing.T) {
@@ -131,6 +152,48 @@ func TestAnInterfaceSetThatLearnedTheTelegramAddressLeavesItsPacketsToTheTelegra
 	}
 }
 
+func TestThePacketsB4SendsIntoARelayConnectionLeaveWithItWhateverInterfaceSetHoldsTheAddress(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		iface   string
+		learned bool
+	}{
+		{"the set routed through a second uplink applies its strategy", "eth8", false},
+		{"a strategy set applies while the set routed through a second uplink learned the address", "eth8", true},
+		{"a strategy set applies while the set routed through a WireGuard tunnel learned the address", "wgt0", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			routed := newFragmentingYTImagesSet()
+			sets := []*config.SetConfig{&routed}
+			if c.learned {
+				strategy := newFragmentingYTImagesSet()
+				routed = newPassiveSet()
+				routed.Targets.DomainsToMatch = []string{"example.org"}
+				sets = []*config.SetConfig{&strategy, &routed}
+			}
+			routed.Id, routed.Name = "routed", "Routed"
+			routed.Targets.DomainOnly = false
+			routed.Routing.Enabled = true
+			routed.Routing.Mode = config.RoutingModeInterface
+			routed.Routing.EgressInterface = c.iface
+			w := newInjectingWorker(t, sets...)
+			if c.learned {
+				w.getMatcher().LearnIPToDomain(net.ParseIP("1.2.3.4"), "i.ytimg.com", &routed)
+			}
+			ordinary, viaDialMark := captureTelegramInjected(t, w)
+			idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
+			stubInjectRoute(t, idx["eth7"], true)
+
+			if got := queuedVerdictFrom(t, w, ytimgHello(), markOf(config.SelfDialMark), routerSocket(), idx["eth7"], 0); got != nfqueue.NfDrop {
+				t.Fatalf("verdict %d, want the drop of a ClientHello b4 splits itself", got)
+			}
+			if plain, marked := ordinary(), viaDialMark(); len(plain) != 0 || len(marked) != 2 {
+				t.Fatalf("%d split segments left by the socket with the dial mark and %d by the ordinary injector, want both by the first: the relay connection carries 0x40000 and leaves by the uplink, while with the injector mark alone the routing chain sends its segments through %s", len(marked), len(plain), c.iface)
+			}
+		})
+	}
+}
+
 func telegramServerReply(payload []byte) []byte {
 	pkt := makeV4TCPPacket(payload, 5000)
 	copy(pkt[12:16], []byte{1, 2, 3, 4})
@@ -141,16 +204,20 @@ func telegramServerReply(payload []byte) []byte {
 	return pkt
 }
 
-func TestWhatAReplyMakesB4SendIntoItsTelegramConnectionCarriesTheDialMark(t *testing.T) {
+func TestWhatAReplyMakesB4SendIntoItsOwnConnectionCarriesTheDialMark(t *testing.T) {
 	for _, c := range []struct {
 		name     string
 		mode     string
 		mark     *uint32
+		owner    *uint32
 		telegram bool
 	}{
-		{"fakes toward the server of b4's own Telegram connection", "fake", markOf(config.TelegramSetDialMark), true},
-		{"resets toward the server of b4's own Telegram connection", "reset", markOf(config.TelegramSetDialMark), true},
-		{"fakes toward the server of a device's connection in the Telegram set", "fake", nil, false},
+		{"fakes toward the server of b4's own Telegram connection", "fake", markOf(config.TelegramSetDialMark), nil, true},
+		{"resets toward the server of b4's own Telegram connection", "reset", markOf(config.TelegramSetDialMark), nil, true},
+		{"fakes toward the server of another connection b4 opens itself", "fake", markOf(config.SelfDialMark), routerSocket(), true},
+		{"resets toward the server of another connection b4 opens itself", "reset", markOf(config.SelfDialMark), routerSocket(), true},
+		{"fakes toward the server of a forwarded connection whose mark has bit 0x40000", "fake", markOf(config.SelfDialMark), nil, false},
+		{"fakes toward the server of a device's connection in the Telegram set", "fake", nil, nil, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			telegram := newTelegramSet()
@@ -165,7 +232,7 @@ func TestWhatAReplyMakesB4SendIntoItsTelegramConnectionCarriesTheDialMark(t *tes
 			idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
 			stubInjectRoute(t, idx["eth7"], true)
 
-			queuedVerdict(t, w, ytimgHello(), c.mark, idx["eth7"], 0)
+			queuedVerdictFrom(t, w, ytimgHello(), c.mark, c.owner, idx["eth7"], 0)
 			_, _ = ordinary(), viaTelegram()
 			if bound := w.connTracker.GetSetForIncoming("10.0.0.1", 12345, "1.2.3.4", 443); bound == nil || bound.Id != telegram.Id {
 				t.Fatalf("the connection is bound to %v, want the Telegram set, or its replies trigger nothing", bound)
@@ -182,27 +249,34 @@ func TestWhatAReplyMakesB4SendIntoItsTelegramConnectionCarriesTheDialMark(t *tes
 				want, wrong = marked, plain
 			}
 			if len(want) != 1 || len(wrong) != 0 {
-				t.Fatalf("%d packets left by the socket with the Telegram set's dial mark and %d by the ordinary injector, want 1 by the %s one: %s", len(marked), len(plain), map[bool]string{true: "Telegram", false: "ordinary"}[c.telegram],
-					map[bool]string{true: "a reply arrived after the outgoing side went quiet, and with the injector mark alone a routing set that lists the Telegram address takes the packet away from the connection", false: "a device's connection carries no dial mark, whatever set it matched"}[c.telegram])
+				t.Fatalf("%d packets left by the socket with the dial mark and %d by the ordinary injector, want 1 by the %s one: %s", len(marked), len(plain), map[bool]string{true: "dial mark", false: "ordinary"}[c.telegram],
+					map[bool]string{true: "a reply arrived after the outgoing side went quiet, and with the injector mark alone a routing set that lists the server's address takes the packet away from the connection", false: "a forwarded connection already took its route before it reached the queue, whatever its mark or set"}[c.telegram])
 			}
 		})
 	}
 }
 
-func TestOnlyB4sOwnTelegramConnectionsAreNoted(t *testing.T) {
+func TestOnlyConnectionsB4OpensItselfAreNoted(t *testing.T) {
 	telegramInjected := uint32(0x8000) | engine.InjectedMarkBit | config.TelegramSetDialMark
+	const anyVerdict = -1
 	for _, c := range []struct {
-		name    string
-		chosen  bool
-		mark    uint32
-		verdict int
-		noted   bool
-		explain string
+		name     string
+		chosen   bool
+		mark     uint32
+		owner    *uint32
+		arriving bool
+		verdict  int
+		noted    bool
+		explain  string
 	}{
-		{"b4's own Telegram connection", true, config.TelegramSetDialMark, nfqueue.NfDrop, true, "its injected packets must leave with its dial mark"},
-		{"the Telegram bit without a Telegram set", false, config.TelegramSetDialMark, nfqueue.NfDrop, false, "without the set the bit means nothing"},
-		{"another connection b4 opens itself", true, config.SelfDialMark, nfqueue.NfDrop, false, "only the Telegram set's connections carry its mark"},
-		{"a packet b4 sent into its Telegram connection, queued again", true, telegramInjected, nfqueue.NfAccept, false, "b4's own output is not a new Telegram connection, or every injected packet is injected again"},
+		{"b4's own Telegram connection", true, config.TelegramSetDialMark, nil, false, nfqueue.NfDrop, true, "its injected packets must leave with its dial mark"},
+		{"the Telegram bit without a Telegram set, from a router socket", false, config.TelegramSetDialMark, routerSocket(), false, nfqueue.NfDrop, true, "the routing sets skip its packets on bit 0x40000, so they must skip the ones b4 sends into it"},
+		{"another connection b4 opens itself", true, config.SelfDialMark, routerSocket(), false, nfqueue.NfDrop, true, "the routing sets skip its packets on bit 0x40000, so they must skip the ones b4 sends into it"},
+		{"a forwarded connection whose mark has bit 0x40000", true, config.SelfDialMark, nil, false, nfqueue.NfDrop, false, "another service marked it after it took its route, so the ones b4 sends into it must take the same route"},
+		{"a KeeneticOS hotspot device's connection", false, 0x0ffffaaa, nil, false, anyVerdict, false, "the hotspot mark has bit 0x40000, but the connection is a device's"},
+		{"a packet arriving for a router socket, with bit 0x40000", true, config.SelfDialMark, routerSocket(), true, anyVerdict, false, "only a packet a router socket sends opens a connection of b4's own"},
+		{"a device's connection", true, 0, nil, false, nfqueue.NfDrop, false, "its packets carry no dial mark, so the ones b4 sends into it follow the same rules"},
+		{"a packet b4 sent into its Telegram connection, queued again", true, telegramInjected, nil, false, nfqueue.NfAccept, false, "b4's own output is not a new connection of its own, or every injected packet is injected again"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			other := newFragmentingYTImagesSet()
@@ -215,11 +289,15 @@ func TestOnlyB4sOwnTelegramConnectionsAreNoted(t *testing.T) {
 			idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
 			stubInjectRoute(t, idx["eth7"], true)
 			hello := ytimgHello()
-			if got := queuedVerdict(t, w, hello, markOf(c.mark), idx["eth7"], 0); got != c.verdict {
+			out, in := idx["eth7"], uint32(0)
+			if c.arriving {
+				out, in = 0, idx["eth7"]
+			}
+			if got := queuedVerdictFrom(t, w, hello, markOf(c.mark), c.owner, out, in); c.verdict != anyVerdict && got != c.verdict {
 				t.Fatalf("verdict %d, want %d: %s", got, c.verdict, c.explain)
 			}
 			if got := w.telegramFlows.carries(hello); got != c.noted {
-				t.Fatalf("flow noted for the Telegram injector: %v, want %v: %s", got, c.noted, c.explain)
+				t.Fatalf("flow noted for the dial-mark injector: %v, want %v: %s", got, c.noted, c.explain)
 			}
 		})
 	}

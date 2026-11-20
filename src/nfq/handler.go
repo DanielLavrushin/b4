@@ -78,6 +78,14 @@ func localQueueMarked(a nfqueue.Attribute, queueMark uint32, cfg *config.Config)
 	return cfg == nil || (m != uint32(cfg.DiscoveryFlowMark()) && m != uint32(cfg.DiscoveryInjectedMark()))
 }
 
+func routerSelfDial(a nfqueue.Attribute) bool {
+	if a.UID == nil || a.Mark == nil || *a.Mark&config.SelfDialMark == 0 {
+		return false
+	}
+	_, role := packetIfaceIndex(a)
+	return role == ifaceLeaving
+}
+
 func (w *Worker) handlePacket(q *nfqueue.Nfqueue, a nfqueue.Attribute, mark uint) int {
 	if a.PacketID == nil || a.Payload == nil || len(*a.Payload) == 0 {
 		if a.PacketID != nil && q != nil {
@@ -118,9 +126,10 @@ func (w *Worker) handleQueued(vc *verdictCtx, a nfqueue.Attribute, mark uint) in
 	}
 	if a.Mark != nil && config.IsTelegramSetMark(*a.Mark) {
 		vc.telegramSet = w.getConfig().TelegramUpstreamSet()
-		if vc.telegramSet != nil {
-			w.telegramFlows.note(*a.Payload, time.Now())
-		}
+	}
+	if vc.telegramSet != nil || routerSelfDial(a) {
+		vc.selfDial = true
+		w.telegramFlows.note(*a.Payload, time.Now())
 	}
 
 	if !w.matchesInterface(a) {
@@ -668,7 +677,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 
 		if set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.Active() {
-			w.connTracker.RegisterOutgoing(connKey, set, vc.telegramSet != nil)
+			w.connTracker.RegisterOutgoing(connKey, set, vc.selfDial)
 		}
 
 		vc.drop()
@@ -1006,7 +1015,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 
 		if !foreignEgress && (set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.Active() || addressHolds) {
-			w.connTracker.RegisterOutgoing(connKey, set, vc.telegramSet != nil)
+			w.connTracker.RegisterOutgoing(connKey, set, vc.selfDial)
 			if isAck && !isSyn && !isRst && cfg.IsTCPPort(dport) && set.TCP.RSTProtection.Enabled {
 				w.connTracker.MarkEstablished(connKey)
 			}

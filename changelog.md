@@ -21,6 +21,7 @@ All notable changes to b4 are recorded in this file.
 - A set added or changed through the API by a script, not in the web interface, could start sending fake packets nobody had turned on, and changing just one setting this way wiped the set's name and targets. [#527](https://github.com/DanielLavrushin/b4/issues/527)
 - When the interface a set routes to went away, the log said the set's traffic would not leave by the normal uplink, although without **Kill switch** it did.
 - A connection of a set routed into a tunnel such as WireGuard was logged as `routed->` on the **Logs** page even when it left by another interface, as for a KeeneticOS device in an internet access policy.
+- With **Let sets process Worker connections** on, b4's connection to the Cloudflare Worker broke when a set routed through an interface held the Worker's address.
 
 ## [1.92.0] - 2026-11-17
 

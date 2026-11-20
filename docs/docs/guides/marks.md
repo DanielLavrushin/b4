@@ -52,7 +52,7 @@ rule without a mask, such as nftables `meta mark set 0x00021546` or iptables
 | 21 | `0x200000` | b4's own connections whose outgoing packets packet processing leaves alone; b4 recognizes them by the whole of `0x240000`, not by this bit | Fixed, carried together with bit 18 as `0x240000` |
 | 24 | `0x1000000` | A proxy set's TCP packet that the router sent itself | Fixed, added to the set's mark |
 | 25 | `0x2000000` | NFQUEUE mode: the packets b4 sends into a connection from its raw sockets, such as fakes, split segments and re-sent SYNs; see [connections b4 sends packets into](#connections-b4-sends-packets-into) | Fixed, added to the queue mark |
-| 26 | `0x4000000` | b4's own connections to Telegram while a **Telegram set** is chosen, and the packets b4 sends into them; see [connections b4 opens itself](#connections-b4-opens-itself) | Fixed, carried together with bit 18 as `0x4040000` |
+| 26 | `0x4000000` | b4's own connections to Telegram while a **Telegram set** is chosen, and in NFQUEUE mode the packets b4 sends into the TCP connections it opens itself; see [connections b4 opens itself](#connections-b4-opens-itself) | Fixed, carried together with bit 18 as `0x4040000` |
 | 28 | `0x10000000` | TUN mode: packets b4 writes back | Fixed, added to the queue mark |
 | 29 | `0x20000000` | Packets b4 sends toward a device on the network | Fixed; added to the queue mark in NFQUEUE mode, and to Discovery's injected mark on the packets a Discovery run sends back toward its probes |
 | 30 | `0x40000000` | TUN mode: packets steered into `b4tun0`; unused when the default route itself points at `b4tun0` | Fixed |
@@ -83,7 +83,7 @@ them on the packets they take. Bit 16 is left free for XrayUI's `0x10000`.
 
 | Sockets | Mark |
 | --- | --- |
-| Raw sockets for fakes, split segments and packets b4 sends back out | In NFQUEUE mode the queue mark with `0x2000000` added, `0x2008000` by default, and with `0x4040000` added as well for the packets sent into a connection that carries `0x4040000`, `0x6048000` by default; in TUN mode the queue mark with `0x10000000` added, `0x10008000` by default |
+| Raw sockets for fakes, split segments and packets b4 sends back out | In NFQUEUE mode the queue mark with `0x2000000` added, `0x2008000` by default, and with `0x4040000` added as well for the packets sent into a TCP connection b4 opens itself (see [Connections b4 sends packets into](#connections-b4-sends-packets-into)), `0x6048000` by default; in TUN mode the queue mark with `0x10000000` added, `0x10008000` by default |
 | Raw sockets for packets toward a device: DNS answers b4 builds, resets, ICMP; in TUN mode also the DNS answers and reply packets it captured and writes back | The queue mark with `0x20000000` added, `0x20008000` by default; `0x20000000` alone in TUN mode |
 | The DNS queries b4 sends for clients (a set's DNS redirect, DNS over TCP) and its lookups through a set's resolver, including the lookup of a DoH resolver's host name for either | The queue mark |
 | The DPI Detector's checks, except its fetches through b4 and its lookups through the system resolver; health probes of pinned DNS answers and of unreachable addresses; the public address lookup; the fetches that bypass b4 in the MCP tool `b4_test_domain_now` and in the test of an applied Community Hub set | The queue mark |
@@ -168,11 +168,10 @@ that has bit `0x2000000` or `0x20000000` itself, the rules do not tell such pack
 In the queue chains `b4_chain` and `B4` and in the rules that queue or copy DNS queries, a
 mark reads as b4's own when it has every bit of the queue mark and no other bit outside
 `0x77067fff`. Those are the bits b4 itself may add to its own packets, `0x4040000` among them
-on the packets it sends into its own connections to Telegram while a **Telegram set** is
-chosen. With the default queue
+on the packets it sends into the TCP connections it opens itself. With the default queue
 mark this is the match `0x8000/0x88f98000`. A queue mark that has bit `0x40000` or
-`0x4000000` keeps that bit in the match. b4's own Telegram connection itself, `0x4040000`
-without the queue mark, does not read as b4's own and still reaches the queue. The
+`0x4000000` keeps that bit in the match. A connection b4 opens itself, `0x40000` or
+`0x4040000` without the queue mark, does not read as b4's own and still reaches the queue. The
 `0xffffaaa` that KeeneticOS writes has every bit of the default queue mark and bits outside
 `0x77067fff`. These rules do not take it for b4's own.
 
@@ -287,12 +286,14 @@ socket on the router, and the return for b4's own connections does not take them
 the socket match it does, and none of the connection's replies reach b4, the SYN-ACK and
 resets included.
 
-Into a connection that carries `0x4040000`, the mark of b4's own connections for the
-**Telegram set**, b4 sends these packets with `0x4040000` added as well, `0x6048000` by
-default. The routing chains return on its bit `0x40000` as they do on the connection's own
-packets, so the fakes and split segments leave by the same route as the connection, even when
-a set routed through an interface lists the Telegram address among its targets or b4 has
-learned it for the set's domains. The queue chains still read the mark as b4's own; see
+Into a TCP connection b4 opens itself, b4 sends these packets with `0x4040000` added as well,
+`0x6048000` by default. b4 tells such a connection by `0x4040000` while a **Telegram set** is
+chosen, and by bit `0x40000` on a packet that a socket on the router sends. On kernels before
+3.14, which do not report the socket owner of a packet, only the first applies. The routing
+chains return on bit `0x40000` as they do on the connection's own packets, so the fakes and
+split segments leave by the same route as the connection, even when a set routed through an
+interface lists the connection's address among its targets or b4 has learned it for the set's
+domains. The queue chains still read the mark as b4's own; see
 [The queue mark](#the-queue-mark). b4 tells these packets by the addresses and ports of the
 connection, and a later IP fragment, which carries no ports, by its addresses alone.
 
