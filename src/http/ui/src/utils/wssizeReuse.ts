@@ -26,6 +26,9 @@ const DEFAULT_QUEUE_MARK = 0x8000;
 
 export const effectiveQueueMark = (mark?: number) => mark || DEFAULT_QUEUE_MARK;
 
+export const reuseTunEngine = (savedMode: string | undefined, runningTun: boolean) =>
+  savedMode === "tun" || runningTun;
+
 export const isWSSizeReuseRefusal = (
   issue: WSSizeReuseIssue,
 ): issue is WSSizeReuseRefusal =>

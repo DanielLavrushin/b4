@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type { B4SetConfig } from "../models/config";
 import {
   isWSSizeReuseRefusal,
+  reuseTunEngine,
   wssizeReuseIssues,
   type WSSizeReuseEnv,
   type WSSizeReuseIssue,
@@ -137,4 +138,12 @@ void test("refusals stop the save and the engine reasons do not", () => {
   for (const issue of ["tun", "skip_setup", "queue_mark"] as const) {
     assert.equal(isWSSizeReuseRefusal(issue), false, issue);
   }
+});
+
+void test("the TUN reason follows the running engine until a saved engine change applies", () => {
+  assert.equal(reuseTunEngine("nfqueue", true), true, "NFQUEUE saved, TUN still running");
+  assert.equal(reuseTunEngine("", true), true, "default saved, TUN still running");
+  assert.equal(reuseTunEngine("tun", false), true, "TUN saved, NFQUEUE still running");
+  assert.equal(reuseTunEngine("nfqueue", false), false, "NFQUEUE saved and running");
+  assert.equal(reuseTunEngine(undefined, false), false, "nothing saved, NFQUEUE running");
 });
