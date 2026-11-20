@@ -16,8 +16,9 @@ Where each kind of test belongs:
 ## Requirements
 
 `qemu-system-x86`, `qemu-utils`, `xorriso`, `openssh-client`, `curl`, `flock` (util-linux), for
-the `routeros` guest also `unzip`, and for `lab test` and `lab ab` also `go` and `git`. With access to `/dev/kvm` a guest runs at close to native speed;
-without it QEMU falls back to emulation and is much slower.
+the `routeros` guest also `unzip`, for the arm64 guests (`be7000`) also `qemu-system-arm` and
+`qemu-efi-aarch64`, and for `lab test` and `lab ab` also `go` and `git`. With access to `/dev/kvm` a guest of the host's own architecture runs at close to native speed;
+without it, and always for an arm64 guest on an x86 host, QEMU emulates the CPU and is much slower.
 
 ## Quick start
 
@@ -46,6 +47,8 @@ memory in MB and its CPU count for one `lab up`.
 | `debian8` | 3.16 | iptables 1.4.21, iproute2 3.16, ipset 6.23 | The oldest kernels b4 meets. It takes an identical `ip rule` a second time instead of refusing it, and has no `/proc/thread-self` |
 | `debian9` | 4.9 | iptables 1.6.0, iproute2 4.9, ipset 6.30 | A kernel between the old and the current ones: it refuses a duplicate rule, unlike `debian8`, but `ip rule del` without a mask still deletes a rule stored with one, as on `debian8` |
 | `routeros` | 5.6.3 (RouterOS 7.25.1) | The MikroTik community b4 container: Alpine, OpenRC, iptables 1.8.13 legacy and iproute2 | b4 as MikroTik users run it, in a container on RouterOS: the TUN engine, the `local` rule at 200, a kernel without `dummy` links. See [The RouterOS guest](#the-routeros-guest) |
+| `be7000` | 5.4 (arm64) | The stock root filesystem of the Xiaomi BE7000 (RC06) firmware 1.1.16 as a chroot: iptables 1.6.2 legacy, BusyBox 1.25.1, iproute2 5.11, ipset 6.38, musl | b4 as it runs on that router, where NFQUEUE is missing and only the TUN engine works. See [The BE7000 guest](#the-be7000-guest) |
+| `be7000-noconnbytes` | 5.4 (arm64) | As `be7000`, without `xt_connbytes` | The TUN engine on the whole default route, which it falls back to without `xt_connbytes` |
 
 `nft` is not installed in either Debian guest, their versions being too old for b4's nftables
 backend, so tests of that backend skip or fail there. Both Debian guests have `iptables-legacy` and
@@ -102,6 +105,11 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go -C src build -o ../out/b4.lab .
 toolkit/labs/lab push debian8 out/b4.lab b4.json /root/lab
 toolkit/labs/lab run debian8 toolkit/labs/scripts/b4-netns.sh /root/lab/b4.lab /root/lab/b4.json --verbose=debug
 ```
+
+On an arm64 guest build with `GOARCH=arm64`. Two options go before the binary: `--root <dir>`
+runs b4 inside that root filesystem, and the binary and config paths are then paths inside it
+(see [The BE7000 guest](#the-be7000-guest)); `--uplink` gives the namespace a dummy uplink
+`wan0`, 198.51.100.1/24, with a default route through it, which the TUN engine needs to start.
 
 `scripts/b4-netns.sh` starts the binary in a network and mount namespace of its own inside
 the guest and stays in the foreground until b4 exits. It makes the mounts private first: on a
@@ -167,6 +175,69 @@ Measured inside the container on RouterOS 7.25.1:
 With the legacy firewall about 85 netns tests of `./tables/` fail there on main as well, and
 the nftables ones skip: compare with `lab ab`.
 
+## The BE7000 guest
+
+`lab up be7000` builds a stand-in for the Xiaomi BE7000 (RC06), a router whose stock firmware
+has no NFQUEUE, so b4 runs only its TUN engine there. QEMU cannot boot that firmware: its
+kernel is Qualcomm's own build for the IPQ9574. The guest pairs an arm64 kernel of the same
+version with the firmware's own userland:
+
+1. boots Ubuntu 20.04 for arm64 (kernel 5.4.0-216) under UEFI, holds the kernel packages and
+   turns off unattended upgrades;
+2. downloads stock firmware 1.1.16 (checksum pinned in `guests/be7000.env`), cuts its UBI
+   image out, rebuilds the squashfs root filesystem from it (checksums pinned in
+   `guests/be7000.provision.sh`) and unpacks it to `/xiaomi`;
+3. hides every netfilter module of the guest's kernel that the firmware kernel has neither as
+   a module nor built in, from the module list and the embedded kernel config of that firmware,
+   and loads the rest at boot;
+4. builds an `xt_mark` with the firmware's MARK target. Xiaomi patched it with a return flag
+   (`--set-mark-return`), so its iptables sends a 16-byte MARK rule that an upstream kernel
+   refuses (`MARK.2 target: invalid size 8 (kernel) != (user) 16`); without this module no
+   rule that steers into the TUN device installs.
+
+`lab test` and `lab ab` run the tests inside `/xiaomi` (`GUEST_CHROOT`), so `iptables`, `ip`,
+`ipset` and the shell tools a test calls are the firmware's. To run b4 there:
+
+```sh
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go -C src build -o ../out/b4.arm64 .
+toolkit/labs/lab push be7000 out/b4.arm64 b4.json /xiaomi/root/lab
+toolkit/labs/lab run be7000 toolkit/labs/scripts/b4-netns.sh --root /xiaomi --uplink /root/lab/b4.arm64 /root/lab/b4.json
+```
+
+with `"queue": {"mode": "tun"}` in `b4.json` and its `system.logging.directory` inside the
+root filesystem, outside `/tmp`.
+
+The firmware links `/var` to `/tmp` and `/run` to `/tmp/run`, and its iptables takes its lock
+at `/var/run/xtables.lock`, so a run mounts a `/tmp` of its own inside the root filesystem and
+creates `/tmp/run` there.
+
+Measured on the guest:
+
+- The firmware's tools run there: iptables 1.6.2, ipset 6.38, iproute2 5.11.0, BusyBox
+  1.25.1. Of the guest kernel's netfilter modules 141 load at boot, the 111 the firmware lacks
+  are hidden, among them `xt_NFQUEUE`, `xt_hashlimit`, `xt_NFLOG` and `ip6table_raw`, and
+  `xt_mark` is replaced. `nfnetlink_queue` stays, as the firmware has it built in.
+- The TUN netns tests of `./tun/` all pass inside the chroot. b4's TUN engine in port-capture
+  mode builds its whole `B4_TUN` chain with the firmware's iptables, and that iptables lists
+  it in full with `-S`, `-L` and `iptables-save`; so does b4 1.82.3.
+- With b4 running in port-capture mode, a SYN to port 443 marked `0x240000` leaves by the
+  uplink without entering the TUN device, while one marked `0x40000` or unmarked enters it
+  and b4 sends it on.
+- On `be7000-noconnbytes` b4 warns that `xt_connbytes` is missing and points the default
+  route at the TUN device (ip rules 88, 89, 99 and 100) and builds no `B4_TUN` chain. A SYN
+  marked `0x240000` enters the TUN device there like an unmarked one.
+- `iptables -t mangle -F` under a running b4, as a firmware's firewall reload may do, empties
+  `B4_TUN`: b4 1.82.3 puts back only the jumps and leaves the chain empty, while a current
+  build rebuilds the chain within one monitor interval (the rebuild came with 1.83.0).
+- The guest's kernel has no `/proc/net/nf_conntrack`, which the firmware kernel has, so b4
+  reports per-device source attribution as unavailable here.
+- A first `lab up` took about seven minutes once the Ubuntu image and the firmware were in the
+  cache; downloading them adds their size, about 615 MB and 38 MB.
+
+What it cannot show: Qualcomm's other kernel patches and the NSS/ECM offload, Xiaomi's own
+services and their firewall reloads (none run in the chroot), Wi-Fi, and the speed of the
+real CPU.
+
 ## Adding a guest
 
 Add `guests/<name>.env`:
@@ -192,6 +263,18 @@ GUEST_PROVISION=<name>.provision.sh
   in `~/.cache/b4-lab/instances/<name>/console.log`.
 - `GUEST_PROVISION` runs once as root after the first boot. `debian-archive.provision.sh`
   points an end-of-life Debian at `archive.debian.org` and installs what b4's tests use.
+  `GUEST_PROVISION_ARGS` reaches it as `LAB_PROVISION_ARGS`; `be7000.provision.sh` takes
+  those words as more modules to hide.
+- `GUEST_FILE_URL` and `GUEST_FILE_SHA256` name one more file, such as a firmware image, that
+  `lab up` downloads into its cache once, checks and copies to `/root/lab-files/` before
+  provisioning. `GUEST_PUSH` lists files in `guests/` that it copies there too, such as the
+  source of the module `be7000.provision.sh` builds.
+- `GUEST_GOARCH=arm64` starts the guest with `qemu-system-aarch64` on QEMU's `virt` machine
+  under UEFI (`LAB_EFI_CODE` and `LAB_EFI_VARS` point at firmware files other than
+  `/usr/share/AAVMF/`), and builds the test binaries for arm64.
+- `GUEST_CHROOT` is a root filesystem inside the guest that `lab test` and `lab ab` run the
+  tests in.
+- A guest file may source another and change a few values, as `be7000-noconnbytes.env` does.
 - `GUEST_KIND=routeros` makes a RouterOS guest instead: `IMAGE_URL` is a CHR `.img.zip`, with
   `PACKAGES_URL` and `PACKAGES_SHA256` for the matching `all_packages-x86` bundle and
   `CONTAINER_IMAGE` for the image RouterOS pulls. The REST paths and parameters it uses change
@@ -209,8 +292,9 @@ taken between the check and the start. Run it after any change here; `b4-check` 
 - Guests reach the internet through QEMU's user networking: outbound only, TCP and UDP, no
   ICMP. Nothing in a guest sits behind a DPI, so a lab says how b4's rules behave, never
   whether a strategy works.
-- x86-64 guests only: the script starts `qemu-system-x86_64`. The `routeros` guest is CHR on
-  x86, not the ARM RouterOS of most MikroTik routers; the kernel version is the same.
+- An arm64 guest runs on an emulated CPU when the host is x86, several times slower than KVM:
+  fine for rules and tests, not for timing or throughput. The `routeros` guest is CHR on x86,
+  not the ARM RouterOS of most MikroTik routers; the kernel version is the same.
 - CHR runs on its free licence, which caps upload at 1 Mbit/s per interface.
 - The `routeros` guest's container image is a third-party build whose tags are rebuilt in
   place, and every container start installs packages from Alpine's mirrors, as the image does

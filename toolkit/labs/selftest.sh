@@ -28,6 +28,11 @@ printf '%s\n' "\$command" >> "$T/ssh.log"
 case "\$command" in
 *change.test*) side=change ;;
 *base.test*) side=base ;;
+"LAB_PROVISION_ARGS="*" sh -s")
+	echo "\$command" >> "$T/provision.log"
+	[ -e "$T/provision-fails" ] && exit 1
+	exit 0
+	;;
 "sh -s -- "*) exec sh -c "\$command" ;;
 "sh -s")
 	echo attempt >> "$T/provision.log"
@@ -45,6 +50,12 @@ cat > "$T/bin/scp" <<EOF
 for arg in "\$@"; do
 	printf '%s\n' "\$arg"
 done > "$T/scp.args"
+cat "$T/scp.args" >> "$T/scp.log"
+EOF
+cat > "$T/bin/chroot" <<EOF
+#!/bin/sh
+echo "chroot \$*" >> "$T/guest.log"
+echo PASS
 EOF
 cat > "$T/bin/go" <<EOF
 #!/bin/sh
@@ -208,7 +219,12 @@ while [ "$#" -gt 0 ]; do
 done
 exit 0
 EOF
-printf '#!/bin/sh\nexit 0\n' > "$T/bin/ip"
+cat > "$T/bin/ip" <<EOF
+#!/bin/sh
+echo "ip \$*" >> "$T/guest.log"
+exit 0
+EOF
+sed 's/qemu-system-x86_64/qemu-system-aarch64/g' "$T/bin/qemu-system-x86_64" > "$T/bin/qemu-system-aarch64"
 cat > "$T/bin/qemu-img" <<'EOF'
 #!/bin/sh
 for a in "$@"; do
@@ -643,6 +659,81 @@ check "down: shuts RouterOS down through its REST API" 0 "ros1 stopped" \
 grep -q "^POST http://127.0.0.1:2232/rest/system/shutdown$" "$T/rest.log" ||
 	fail "down: RouterOS was not asked to shut down on its REST port"
 ! grep -qx poweroff "$T/ssh.args" || fail "down: poweroff went to the b4 container instead of RouterOS"
+
+mkdir -p "$T/root/proc" "$T/root/root/lab"
+cp "$T/guest.bin" "$T/root/root/lab/b4"
+: > "$T/root/root/lab/b4.json"
+: > "$T/guest.log"
+check "netns-test.sh: runs the test binary inside a root filesystem" 0 "PASS" \
+	sh "$LAB_DIR/scripts/netns-test.sh" "$T/guest.bin" TestNetns 1 "$T/root"
+grep -qF "chroot $T/root /lab/guest.bin -test.run TestNetns" "$T/guest.log" ||
+	fail "netns-test.sh: the test binary did not run inside the root filesystem"
+grep -qF "mount -t tmpfs tmpfs $T/root/tmp" "$T/guest.log" ||
+	fail "netns-test.sh: the root filesystem keeps the /tmp of the guest's disk"
+check "netns-test.sh: refuses a root that is not a root filesystem" 1 "is not a root filesystem" \
+	sh "$LAB_DIR/scripts/netns-test.sh" "$T/guest.bin" TestNetns 1 "$T/nowhere"
+: > "$T/guest.log"
+check "b4-netns.sh: runs b4 inside a root filesystem with a dummy uplink" 0 "PASS" \
+	sh "$LAB_DIR/scripts/b4-netns.sh" --root "$T/root" --uplink /root/lab/b4 /root/lab/b4.json
+grep -qF "chroot $T/root /root/lab/b4 --config=/root/lab/b4.json" "$T/guest.log" ||
+	fail "b4-netns.sh: b4 did not run inside the root filesystem"
+grep -qF "ip link add wan0 type dummy" "$T/guest.log" && grep -qF "ip route add default via 198.51.100.254 dev wan0 onlink" "$T/guest.log" ||
+	fail "b4-netns.sh: --uplink made no uplink with a default route"
+check "b4-netns.sh: refuses a root that is not a root filesystem" 1 "is not a root filesystem" \
+	sh "$LAB_DIR/scripts/b4-netns.sh" --root "$T/nowhere" /root/lab/b4 /root/lab/b4.json
+
+mkdir -p "$T/home/instances/armfake"
+echo 2240 > "$T/home/instances/armfake/port"
+echo root > "$T/home/instances/armfake/user"
+echo be7000 > "$T/home/instances/armfake/guest"
+"$T/idle" -name b4-lab-armfake -end &
+echo $! > "$T/home/instances/armfake/pid"
+echo $! >> "$T/pids"
+remote change 0 \
+	'=== RUN   TestNetnsA' \
+	'--- PASS: TestNetnsA (0.10s)' \
+	'PASS'
+: > "$T/ssh.log"
+check "test: a guest's root filesystem reaches netns-test.sh" 0 "1 pass, 0 fail, 0 skip" \
+	lab test armfake
+grep -qF "1 '/xiaomi'" "$T/ssh.log" || fail "test: the run was not told to use the guest's root filesystem"
+
+arm="$T/arm"
+mkdir -p "$arm/images" "$arm/keys"
+cp "$T/home/keys/id_ed25519" "$T/home/keys/id_ed25519.pub" "$arm/keys/"
+. "$LAB_DIR/guests/be7000.env"
+: > "$arm/images/$(basename "$IMAGE_URL")"
+: > "$arm/images/$(basename "$GUEST_FILE_URL")"
+echo code > "$T/efi-code"
+echo vars > "$T/efi-vars"
+: > "$T/provision.log"
+: > "$T/scp.log"
+check "up: an arm64 guest starts under UEFI with an EFI vars file of its own" 0 "armup is up" \
+	env B4_LAB_HOME="$arm" LAB_EFI_CODE="$T/efi-code" LAB_EFI_VARS="$T/efi-vars" sh "$LAB_DIR/lab" up be7000 armup
+armargs="$(grep -e '-name b4-lab-armup ' "$T/qemu.args" | tail -n 1)"
+case "$armargs" in
+*"-machine virt,"*"file=$T/efi-code"*"file=$arm/instances/armup/efivars.fd"*) ;;
+*) fail "up: the arm64 guest did not start on the virt machine with the EFI code and a vars file of its own: $armargs" ;;
+esac
+[ "$(cat "$arm/instances/armup/efivars.fd" 2>/dev/null)" = vars ] || fail "up: the arm64 instance has no copy of the EFI vars file"
+grep -qxF "$arm/images/$(basename "$GUEST_FILE_URL")" "$T/scp.log" ||
+	fail "up: the guest's downloaded file was not copied in before provisioning"
+grep -qxF "$LAB_DIR/guests/be7000-xt_mark.c" "$T/scp.log" ||
+	fail "up: the files the guest pushes were not copied in before provisioning"
+grep -qx attempt "$T/provision.log" || fail "up: the arm64 guest was not provisioned"
+check "up: a guest's provisioning arguments reach its script" 0 "armnocb is up" \
+	env B4_LAB_HOME="$arm" LAB_EFI_CODE="$T/efi-code" LAB_EFI_VARS="$T/efi-vars" sh "$LAB_DIR/lab" up be7000-noconnbytes armnocb
+grep -qxF "LAB_PROVISION_ARGS='xt_connbytes' sh -s" "$T/provision.log" ||
+	fail "up: the provisioning did not get the guest's arguments"
+check "up: an arm64 guest without its EFI files is refused" 1 "boots UEFI from" \
+	env B4_LAB_HOME="$arm" LAB_EFI_CODE="$T/no-efi-code" LAB_EFI_VARS="$T/efi-vars" sh "$LAB_DIR/lab" up be7000 armnoefi
+copy="$T/labcopy"
+mkdir -p "$copy/guests"
+cp "$LAB_DIR/lab" "$copy/lab"
+cp "$LAB_DIR/guests/be7000.provision.sh" "$copy/guests/"
+sed 's/^GUEST_PUSH=.*/GUEST_PUSH="missing.c"/' "$LAB_DIR/guests/be7000.env" > "$copy/guests/pushless.env"
+check "up: a guest that pushes a file it does not have is refused" 1 "pushes missing.c" \
+	env B4_LAB_HOME="$arm" LAB_EFI_CODE="$T/efi-code" LAB_EFI_VARS="$T/efi-vars" sh "$copy/lab" up pushless pushless
 
 [ "$failed" -eq 0 ] || {
 	echo "lab selftest: $failed failed"
