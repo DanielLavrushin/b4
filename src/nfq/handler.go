@@ -78,6 +78,10 @@ func localQueueMarked(a nfqueue.Attribute, queueMark uint32, cfg *config.Config)
 	return cfg == nil || (m != uint32(cfg.DiscoveryFlowMark()) && m != uint32(cfg.DiscoveryInjectedMark()))
 }
 
+func telegramSetDial(m uint32) bool {
+	return m&^config.SelfDialSkipTransitBits == config.TelegramSetDialMark
+}
+
 func routerSelfDial(a nfqueue.Attribute) bool {
 	if a.UID == nil || a.Mark == nil || *a.Mark&config.SelfDialMark == 0 {
 		return false
@@ -124,7 +128,7 @@ func (w *Worker) handleQueued(vc *verdictCtx, a nfqueue.Attribute, mark uint) in
 	if a.Mark != nil && (config.IsTelegramBridgeMark(*a.Mark) || config.IsSelfDialSkipMark(*a.Mark)) {
 		return vc.accept()
 	}
-	if a.Mark != nil && config.IsTelegramSetMark(*a.Mark) {
+	if a.Mark != nil && telegramSetDial(*a.Mark) {
 		vc.telegramSet = w.getConfig().TelegramUpstreamSet()
 	}
 	if vc.telegramSet != nil || routerSelfDial(a) {

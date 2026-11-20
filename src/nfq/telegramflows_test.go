@@ -274,6 +274,7 @@ func TestOnlyConnectionsB4OpensItselfAreNoted(t *testing.T) {
 		{"another connection b4 opens itself", true, config.SelfDialMark, routerSocket(), false, nfqueue.NfDrop, true, "the routing sets skip its packets on bit 0x40000, so they must skip the ones b4 sends into it"},
 		{"a forwarded connection whose mark has bit 0x40000", true, config.SelfDialMark, nil, false, nfqueue.NfDrop, false, "another service marked it after it took its route, so the ones b4 sends into it must take the same route"},
 		{"a KeeneticOS hotspot device's connection", false, 0x0ffffaaa, nil, false, anyVerdict, false, "the hotspot mark has bit 0x40000, but the connection is a device's"},
+		{"a KeeneticOS hotspot device's connection with a Telegram set chosen", true, 0x0ffffaaa, nil, false, anyVerdict, false, "the hotspot mark holds the Telegram set's bits among many others, but the connection is a device's"},
 		{"a packet arriving for a router socket, with bit 0x40000", true, config.SelfDialMark, routerSocket(), true, anyVerdict, false, "only a packet a router socket sends opens a connection of b4's own"},
 		{"a device's connection", true, 0, nil, false, nfqueue.NfDrop, false, "its packets carry no dial mark, so the ones b4 sends into it follow the same rules"},
 		{"a packet b4 sent into its Telegram connection, queued again", true, telegramInjected, nil, false, nfqueue.NfAccept, false, "b4's own output is not a new connection of its own, or every injected packet is injected again"},

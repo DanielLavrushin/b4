@@ -39,6 +39,7 @@ func TestTheTelegramSetTakesBsOwnTelegramConnections(t *testing.T) {
 		{"a disabled Telegram set", "telegram", true, config.TelegramSetDialMark, nfqueue.NfAccept, "YT images", "a disabled set handles nothing, so ordinary matching takes over"},
 		{"no Telegram set chosen", "", false, config.TelegramSetDialMark, nfqueue.NfAccept, "YT images", "without the setting the bit means nothing"},
 		{"the chosen set no longer exists", "gone", false, config.TelegramSetDialMark, nfqueue.NfAccept, "YT images", "a missing set handles nothing"},
+		{"a device's connection with the KeeneticOS hotspot mark", "telegram", false, 0x0ffffaaa, nfqueue.NfAccept, "YT images", "the hotspot mark holds the Telegram set's bits among many others, and a device's connection is matched as before"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			other := newPassiveSet()
