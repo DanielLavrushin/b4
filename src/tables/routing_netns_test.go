@@ -368,6 +368,22 @@ func netnsEgressMatrix(t *testing.T, engine string) {
 			want:  netnsPrimary,
 			why:   "b4's own dials stay on the main table so they are not pulled into a set's egress",
 		},
+		{
+			name:  "packet the TUN engine re-sends",
+			mark:  0x8000 | 0x10000000,
+			sport: 41004,
+			dport: 443,
+			want:  netnsSecondary,
+			why:   "the TUN engine re-sends a captured connection's packets with the queue mark, and they follow the set like the connection",
+		},
+		{
+			name:  "packet the TUN engine re-sends into a connection b4 opened for the Telegram set",
+			mark:  0x8000 | 0x10000000 | config.TelegramSetDialMark,
+			sport: 41005,
+			dport: 443,
+			want:  netnsPrimary,
+			why:   "the connection carries 0x4040000 and stays on the main table, so the packets the TUN engine re-sends into it must stay there too",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			netnsZeroCounters(t)

@@ -40,6 +40,7 @@ type verdictCtx struct {
 	keep           sni.SetFilter
 	telegramSet    *config.SetConfig
 	selfDial       bool
+	tunEntry       bool
 	hellos         *pendingHelloCache
 	helloKey       string
 	held           *helloHold
@@ -167,6 +168,7 @@ func (w *Worker) InitSender() error {
 			return err
 		}
 		w.clientSock = cs
+		w.openTUNTelegramInjector(reinjectMark)
 	} else {
 		cs, err := sock.NewSenderWithMark(reinjectMark | engine.ClientMark)
 		if err != nil {
@@ -201,10 +203,7 @@ func (w *Worker) ProcessPacketDir(raw []byte, dir engine.Direction) engine.Packe
 	if len(raw) == 0 {
 		return engine.VerdictAccept
 	}
-	vc := &verdictCtx{verdict: engine.VerdictAccept, dir: dir}
-	if set := w.ownTelegramSet(raw); set != nil {
-		vc.telegramSet, vc.selfDial = set, true
-	}
+	vc := &verdictCtx{verdict: engine.VerdictAccept, dir: dir, tunEntry: true}
 	w.dispatch(vc, raw)
 	if vc.dropsFlow() {
 		return engine.VerdictDropFlow
