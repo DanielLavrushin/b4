@@ -399,6 +399,8 @@ type DiscoverySuite struct {
 	tlsVersion      string // "auto", "tls12", "tls13"
 	ipVersion       string // "auto", "ipv4", "ipv6"
 	flowMark        uint
+	carrier         bool
+	carrierSeeds    map[string][]string
 
 	trusted           endpoint.Endpoint
 	dnsServerOverride string

@@ -93,6 +93,7 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 					log.Tracef("Discovery: CDN %s - loaded %d domains, %d IPs", ds.Domain, len(domains), len(ips))
 				}
 			}
+			testSet.Targets.IpsToMatch = plusMatchIPs(testSet.Targets.IpsToMatch, ds.cdnCarrierIPs(ds.Domain))
 		} else {
 			var ipsToAdd []string
 			dnsResult := ds.dnsResults[ds.Domain]
@@ -119,6 +120,7 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 				testSet.Targets.IpsToMatch = cidrIPs
 				log.Tracef("Discovery: added %d IPs to test config: %v", len(cidrIPs), cidrIPs)
 			}
+			testSet.Targets.IpsToMatch = plusMatchIPs(testSet.Targets.IpsToMatch, ds.seedsFor(ds.Domain))
 		}
 	}
 
@@ -216,6 +218,7 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 				log.Tracef("Discovery: CDN - loaded %d domains, %d IPs", len(domains), len(ips))
 			}
 		}
+		testSet.Targets.IpsToMatch = plusMatchIPs(testSet.Targets.IpsToMatch, ds.seedsFor(allDomains...))
 	}
 
 	return &config.Config{
@@ -246,7 +249,7 @@ func (ds *DiscoverySuite) scopePresetToDomains(preset string, set *config.SetCon
 	scoped.Targets.DomainsToMatch = ds.withECHCoverNames(domains)
 	scoped.Targets.GeoIpCategories, scoped.Targets.GeoSiteCategories = ds.geoCategoriesFor(domains)
 	scoped.Targets.IPs = ds.targetIPsFor(domains)
-	scoped.Targets.IpsToMatch = scoped.Targets.IPs
+	scoped.Targets.IpsToMatch = plusMatchIPs(scoped.Targets.IPs, ds.seedsFor(domains...))
 	scoped.Targets.ASNs = []string{}
 	pins, elsewhere := ds.settledElsewhere(preset, domains, ds.pinsFor(domains))
 	scoped.DNS.Pins = pins

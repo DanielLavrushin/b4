@@ -163,10 +163,19 @@ func (w *Watchdog) healSet(id string) {
 		w.mu.Unlock()
 		return
 	}
+	switch reason := tunRefusal(err); reason {
+	case ReasonIPv6UnsupportedTUN, ReasonDSCPUnsupportedTUN:
+		w.healImpossible(id, reason, err)
+		return
+	case ReasonTUNCarrierUnavailable:
+		w.healWaitsForCarrier(id, err)
+		return
+	}
 	if err != nil {
 		w.healFailed(id, ReasonStartFailed, fmt.Sprintf("discovery could not start: %v", err))
 		return
 	}
+	w.carrierWaitEnded(id)
 	log.Infof("[WATCHDOG] set %q: started a discovery run for %s", set.Name, strings.Join(urls, ", "))
 
 	verdict, dscpPath, outcome := w.awaitSetRun(id, suiteID, key)
@@ -493,8 +502,7 @@ func (w *Watchdog) healSucceeded(id, preset string, results map[string]URLWatchS
 	st.LastHealPreset = preset
 	st.LastCheck = now
 	st.ConsecutiveFailures = 0
-	st.HealFailures = 0
-	st.gaveUp = false
+	st.clearGiveUp()
 	st.queuedRevision = ""
 	st.Interval = intervalOr(wdCfg.IntervalSec, 300)
 	st.CooldownUntil = now.Add(time.Duration(wdCfg.Cooldown) * time.Second)
@@ -541,6 +549,109 @@ func (w *Watchdog) healFailedWithResults(id, reason, detail string, results map[
 	}
 	st.Status = SetStatusCooldown
 	log.Warnf("[WATCHDOG] set %q: heal failed (%s: %s), cooldown %ds", st.SetName, reason, detail, wdCfg.Cooldown)
+}
+
+func tunRefusal(err error) string {
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, discovery.ErrIPv6UnsupportedTUN):
+		return ReasonIPv6UnsupportedTUN
+	case errors.Is(err, discovery.ErrDSCPUnsupportedTUN):
+		return ReasonDSCPUnsupportedTUN
+	case errors.Is(err, discovery.ErrTUNCarrierUnavailable):
+		return ReasonTUNCarrierUnavailable
+	}
+	return ""
+}
+
+func healStillBlocked(cfg *config.Config, set *config.SetConfig, reason string) bool {
+	if set == nil {
+		return false
+	}
+	switch reason {
+	case ReasonIPv6UnsupportedTUN:
+		_, ipVersion := discovery.SetRunVersions(set, "", "")
+		return ipVersion == "ipv6"
+	case ReasonDSCPUnsupportedTUN:
+		return cfg.ProbeDSCP(set) != nil
+	}
+	return false
+}
+
+func blockedSetting(reason string) string {
+	if reason == ReasonIPv6UnsupportedTUN {
+		return "IP version"
+	}
+	return "DSCP setting"
+}
+
+func (w *Watchdog) healImpossible(id, reason string, cause error) {
+	wdCfg := w.cfgPtr.Load().System.Checker.Watchdog
+	now := w.clock()
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	st := w.setStates[id]
+	if st == nil {
+		return
+	}
+	defer st.settleURLChange()
+	entered := !st.gaveUp
+	st.gaveUp = true
+	st.blockReason = reason
+	st.Status = SetStatusGaveUp
+	st.Reason = reason
+	st.LastError = fmt.Sprintf("discovery could not start: %v", cause)
+	st.ConsecutiveFailures = 0
+	st.queuedRevision = ""
+	st.Interval = intervalOr(wdCfg.FailureInterval, 60)
+	st.CooldownUntil = now.Add(time.Duration(wdCfg.Cooldown) * time.Second)
+	log.Infof("[WATCHDOG] set %q: no heal can run for it under the TUN engine (%v); checks go on, and automatic heals resume once its %s changes or b4 runs the NFQUEUE engine",
+		st.SetName, cause, blockedSetting(reason))
+	if entered {
+		metrics.GetMetricsCollector().Event(metrics.LevelWarning, metrics.EventWatchdogGaveUp,
+			map[string]string{"set_id": id, "set": st.SetName, "reason": reason},
+			fmt.Sprintf("Watchdog gave up on set %q: its heals cannot run under the TUN engine (%s)", st.SetName, reason))
+	}
+}
+
+func carrierRetryAfter(cooldownSec int) time.Duration {
+	if d := time.Duration(cooldownSec) * time.Second; d > carrierRetryFloor {
+		return d
+	}
+	return carrierRetryFloor
+}
+
+func (w *Watchdog) healWaitsForCarrier(id string, cause error) {
+	wdCfg := w.cfgPtr.Load().System.Checker.Watchdog
+	now := w.clock()
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	st := w.setStates[id]
+	if st == nil {
+		return
+	}
+	defer st.settleURLChange()
+	retry := carrierRetryAfter(wdCfg.Cooldown)
+	st.Status = SetStatusCooldown
+	st.Reason = ReasonTUNCarrierUnavailable
+	st.LastError = fmt.Sprintf("discovery could not start: %v", cause)
+	st.ConsecutiveFailures = 0
+	st.queuedRevision = ""
+	st.Interval = intervalOr(wdCfg.FailureInterval, 60)
+	st.CooldownUntil = now.Add(retry)
+	if !st.carrierWaitLogged {
+		st.carrierWaitLogged = true
+		log.Infof("[WATCHDOG] set %q: the heal waits, %v; checks resume after %ds and a heal is queued again while the set still fails", st.SetName, cause, int(retry/time.Second))
+	}
+}
+
+func (w *Watchdog) carrierWaitEnded(id string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if st := w.setStates[id]; st != nil {
+		st.carrierWaitLogged = false
+	}
 }
 
 func (w *Watchdog) healEdited(id string) {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
@@ -14,6 +15,9 @@ import (
 var (
 	ErrDiscoveryAlreadyRunning = errors.New("discovery is already running")
 	ErrDSCPRulesPending        = tables.ErrDiscoveryDSCPPending
+	ErrTUNCarrierUnavailable   = errors.New("discovery cannot carry its probes through the TUN engine")
+	ErrIPv6UnsupportedTUN      = errors.New("discovery under the TUN engine tests IPv4 only, like the TUN engine itself")
+	ErrDSCPUnsupportedTUN      = errors.New("discovery under the TUN engine cannot write a set's own DSCP value into its probes, so it cannot test the network path that set's traffic takes")
 )
 
 type poolStopper interface {
@@ -28,6 +32,7 @@ type runtimeState struct {
 	discoveryFlowMark uint
 	discoveryInjMark  uint
 	activeSuiteID     string
+	carrier           bool
 	stopping          bool
 	lostErr           error
 	wg                sync.WaitGroup
@@ -38,6 +43,7 @@ type StartResult struct {
 	FlowMark uint
 	DSCP     *config.DSCPProbe
 	Path     *config.DSCPPath
+	Carrier  bool
 }
 
 type StartSuiteOptions struct {
@@ -59,8 +65,10 @@ type StartSuiteOptions struct {
 }
 
 type Runtime struct {
-	mu    sync.Mutex
-	state *runtimeState
+	mu        sync.Mutex
+	state     *runtimeState
+	carrier   CarrierFactory
+	tunEngine atomic.Bool
 }
 
 func NewRuntime() *Runtime {
@@ -79,6 +87,9 @@ func (m *Runtime) Start(cfg *config.Config, dscp *config.DSCPProbe) (*StartResul
 
 	if m.state != nil {
 		return nil, ErrDiscoveryAlreadyRunning
+	}
+	if m.usesTUNCarrier() {
+		return m.startCarrier(cfg, dscp)
 	}
 
 	mainStart := cfg.Queue.StartNum
@@ -218,6 +229,9 @@ func (s *CheckSuite) recordStamp(asked, stamped *config.DSCPProbe, path *config.
 }
 
 func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteOptions) (*DiscoverySuite, error) {
+	if m.usesTUNCarrier() && opts.IPVersion == "ipv6" {
+		return nil, ErrIPv6UnsupportedTUN
+	}
 	dscp := probeForRun(opts.DSCP, opts.IPVersion)
 	runtimeState, err := m.Start(cfg, dscp)
 	if err != nil {
@@ -247,8 +261,12 @@ func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteO
 	suite.stopWhenCovered = opts.StopWhenCovered
 	suite.dnsServerOverride = opts.DNSServer
 	suite.runPins = opts.Pins
+	suite.carrier = runtimeState.Carrier
 
 	log.GetDiscoveryHub().Reset()
+	if suite.carrier {
+		noteCarrierRun()
+	}
 	m.activateSuite(suite.CheckSuite)
 
 	m.launchSuite(suite.Id, func() {
@@ -297,11 +315,19 @@ func (m *Runtime) Stop(suiteID string) {
 
 	state.wg.Wait()
 
-	state.pool.Stop()
-	if state.clearRules != nil {
-		state.clearRules()
+	if state.carrier {
+		if state.clearRules != nil {
+			state.clearRules()
+		}
+		state.pool.Stop()
+		log.Infof("Discovery runtime stopped: TUN carrier")
+	} else {
+		state.pool.Stop()
+		if state.clearRules != nil {
+			state.clearRules()
+		}
+		log.Infof("Discovery runtime stopped: queue=%d-%d", state.discoveryStartNum, state.discoveryStartNum+state.discoveryThreads-1)
 	}
-	log.Infof("Discovery runtime stopped: queue=%d-%d", state.discoveryStartNum, state.discoveryStartNum+state.discoveryThreads-1)
 
 	m.mu.Lock()
 	m.state = nil

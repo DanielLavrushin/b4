@@ -3336,6 +3336,9 @@ func routeMarkMatchesOwn(cfg *config.Config, mark uint32) bool {
 	if bits := routeQueueBypassMark(cfg) & routeSetMarkMask; bits != 0 && mark == bits {
 		return true
 	}
+	if cfg.RouteMarkReserved(mark) {
+		return true
+	}
 	return markOverlaps(mark, map[uint32]struct{}{SelfDialMark: {}})
 }
 
@@ -3358,6 +3361,9 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 		case set.Routing.FWMark == q&routeSetMarkMask:
 			log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which equals the bits of the queue mark 0x%x under the routing mark mask 0x%x, so every packet b4 injects would follow the set's ip rule; a mark is assigned instead",
 				set.Name, set.Routing.FWMark, q, routeSetMarkMask)
+		case cfg.RouteMarkReserved(set.Routing.FWMark):
+			log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which equals the bits of a Discovery mark under the routing mark mask 0x%x, so Discovery's probes or the packets it sends would follow the set's ip rule; a mark is assigned instead",
+				set.Name, set.Routing.FWMark, routeSetMarkMask)
 		case set.Routing.FWMark&^routeSetMarkMask != 0:
 			log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which has bits outside the routing mark mask 0x%x that b4 cannot carry through its firewall rules, so a mark is assigned instead",
 				set.Name, set.Routing.FWMark, routeSetMarkMask)

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/discovery"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/nfq"
@@ -74,6 +75,7 @@ func startTUNEngine(cfg *config.Config, pool *nfq.Pool, tproxyMgr *tproxy.Manage
 	log.Infof("Starting TUN engine (device: %s, out: %s, threads: %d)",
 		cfg.Queue.TUN.DeviceName, cfg.Queue.TUN.OutInterface, cfg.Queue.Threads)
 	tables.SetTUNDevice(cfg.Queue.TUN.Device())
+	tables.SetTUNCarrierDevice(b4tun.DiscoveryDeviceName(cfg))
 
 	skipTables := cfg.System.Tables.SkipSetup
 	if !skipTables {
@@ -124,6 +126,21 @@ func startTUNEngine(cfg *config.Config, pool *nfq.Pool, tproxyMgr *tproxy.Manage
 		tables.RoutingSyncConfig(cfg)
 	}
 	return tunEngine, nil
+}
+
+func tunDiscoveryCarrier(e *b4tun.Engine) discovery.CarrierFactory {
+	return func(req discovery.CarrierRequest) (discovery.Carrier, error) {
+		c, err := e.StartDiscoveryCarrier(b4tun.DiscoveryCarrierRequest{
+			FlowMark:     req.FlowMark,
+			InjectedMark: req.InjectedMark,
+			Worker:       req.Worker,
+			Lost:         req.Lost,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	}
 }
 
 func startNFQueueEngine(cfg *config.Config, pool *nfq.Pool, tproxyMgr *tproxy.Manager, mc *metrics.MetricsCollector) error {

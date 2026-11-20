@@ -31,6 +31,7 @@ var (
 	rulesLastRestore  atomic.Pointer[time.Time]
 
 	tunDevice         atomic.Pointer[string]
+	tunCarrierDevice  atomic.Pointer[string]
 	tunFirewallClosed atomic.Bool
 )
 
@@ -38,11 +39,27 @@ func SetTUNDevice(name string) {
 	tunDevice.Store(&name)
 }
 
+func SetTUNCarrierDevice(name string) {
+	tunCarrierDevice.Store(&name)
+}
+
 func activeTUNDevice() string {
 	if p := tunDevice.Load(); p != nil {
 		return *p
 	}
 	return ""
+}
+
+func tunNATExemptDevices() []string {
+	dev := activeTUNDevice()
+	if dev == "" {
+		return nil
+	}
+	out := []string{dev}
+	if p := tunCarrierDevice.Load(); p != nil && *p != "" && *p != dev {
+		out = append(out, *p)
+	}
+	return out
 }
 
 func ClearTUNFirewall(cfg *config.Config) {

@@ -57,7 +57,7 @@ Discovery addresses describe the local network and stay on the router. A set sha
 | The set is not limited to specific devices by an include list | The switch turns off when the set is saved. The router's own check carries no device MAC and never matches such a set. |
 | The set targets domains or GeoSite categories | The switch stays on, but the set is not checked. A set of only IP addresses, GeoIP categories or ASNs cannot be checked by name. |
 
-A caption under the switch names the condition that fails.
+A caption under the switch names the condition that fails. Under the [TUN engine](../discovery.md#tun), a caption also notes a set with its own DSCP value: the watchdog checks such a set but cannot heal it.
 
 Once the set is saved with the switch on and **Enable Watchdog** is on, the tab shows its watchdog status and the time of the last check. It also shows the last heal with the strategy it wrote, and **Open the watchdog**. On the **Sets** page, the card of a watched set carries a **Watchdog** badge coloured by the status.
 
