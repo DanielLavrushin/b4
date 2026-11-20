@@ -9,8 +9,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/daniellavrushin/b4/netprobe"
 )
 
 const (
@@ -279,7 +277,7 @@ func (b *cfBalancer) refreshFromURL(url string) error {
 		return err
 	}
 	req.Header.Set("User-Agent", "b4-mtproto")
-	cli := netprobe.HTTPClient(int(selfDialMark()), 10*time.Second)
+	cli := telegramHTTPClient(10 * time.Second)
 	defer cli.CloseIdleConnections()
 	resp, err := cli.Do(req)
 	if err != nil {

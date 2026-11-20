@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -84,6 +85,24 @@ func TestDialNamedRetriesWithTheAddressWhenTheNameIsRefused(t *testing.T) {
 	}
 	if second.atyp != 1 || second.host != "127.0.0.1" {
 		t.Fatalf("retry CONNECT: atyp %d host %q, want the address", second.atyp, second.host)
+	}
+}
+
+func TestDialNamedDoesNotRetryAnAddressTheUpstreamRefused(t *testing.T) {
+	up := startMockSocks(t, 0, func(byte) byte { return 4 })
+	l := newTestListener(t, up.port(), fakeNames{})
+
+	_, err := l.DialNamed("149.154.167.51", 443)
+	if !socks5.IsConnectRejected(err) {
+		t.Fatalf("DialNamed: %v, want the upstream's refusal", err)
+	}
+	if r := up.next(t); r.atyp != 1 || r.host != "149.154.167.51" {
+		t.Fatalf("CONNECT: atyp %d host %q", r.atyp, r.host)
+	}
+	select {
+	case r := <-up.reqs:
+		t.Fatalf("a refused address was resolved and asked again as %q; the retry is for a refused name only", r.host)
+	case <-time.After(300 * time.Millisecond):
 	}
 }
 
@@ -238,6 +257,34 @@ func withSetDNS(t *testing.T, l *Listener, strict bool, answer func(host string)
 	return &used
 }
 
+func TestDialNamedSendsAnAddressToTheUpstreamWithoutAskingTheSetsDNS(t *testing.T) {
+	for _, tc := range []struct {
+		addr string
+		atyp byte
+	}{{"149.154.167.51", 1}, {"2001:67c:4e8:f004::a", 4}} {
+		t.Run(tc.addr, func(t *testing.T) {
+			up := startMockSocks(t, 0, func(byte) byte { return 0 })
+			l := newTestListener(t, up.port(), fakeNames{})
+			l.UseDomain = false
+			used := withSetDNS(t, l, true, func(host string) ([]net.IP, error) {
+				return nil, dns.ErrNoAddress
+			})
+
+			conn, err := l.DialNamed(tc.addr, 443)
+			if err != nil {
+				t.Fatalf("an address failed before the upstream was asked, so fail_open could not help either: %v", err)
+			}
+			conn.Close()
+			if r := up.next(t); r.atyp != tc.atyp || r.host != tc.addr {
+				t.Fatalf("upstream got atyp %d host %q, want the address itself", r.atyp, r.host)
+			}
+			if len(*used) != 0 {
+				t.Fatalf("the set's DNS was asked to resolve an address: %+v", *used)
+			}
+		})
+	}
+}
+
 func TestDialNamedResolvesThroughTheSetsDNSServer(t *testing.T) {
 	up := startMockSocks(t, 0, func(byte) byte { return 0 })
 	l := newTestListener(t, up.port(), fakeNames{})
@@ -384,5 +431,63 @@ func TestDialNamedHoldsTheRetriedAddressForTheLoopGuard(t *testing.T) {
 	conn.Close()
 	if l.relaying(addrKeys) || l.relaying(relayKeys("tcp", 443, "localhost")) {
 		t.Fatal("the relay keys outlived the connection")
+	}
+}
+
+func TestDialNamedByFailsOpenInsideTheDeadlineWhenTheUpstreamStalls(t *testing.T) {
+	stall, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var held []net.Conn
+	t.Cleanup(func() {
+		stall.Close()
+		mu.Lock()
+		for _, c := range held {
+			c.Close()
+		}
+		mu.Unlock()
+	})
+	go func() {
+		for {
+			c, err := stall.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			held = append(held, c)
+			mu.Unlock()
+		}
+	}()
+	direct, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer direct.Close()
+	go func() {
+		c, err := direct.Accept()
+		if err != nil {
+			return
+		}
+		_, _ = c.Write([]byte("direct"))
+		c.Close()
+	}()
+
+	l := newTestListener(t, stall.Addr().(*net.TCPAddr).Port, fakeNames{})
+	l.Upstream.Timeout = 5 * time.Second
+	l.FailOpen = true
+	start := time.Now()
+	conn, err := l.DialNamedBy("127.0.0.1", direct.Addr().(*net.TCPAddr).Port, start.Add(600*time.Millisecond))
+	took := time.Since(start)
+	if err != nil {
+		t.Fatalf("an upstream that never answers the greeting left no time to fail open: %v after %v", err, took)
+	}
+	defer conn.Close()
+	if took > time.Second {
+		t.Fatalf("the fail-open dial took %v past a 600 ms deadline", took)
+	}
+	if got, _ := io.ReadAll(conn); string(got) != "direct" {
+		t.Fatalf("fail-open reached %q, want the direct server", got)
 	}
 }

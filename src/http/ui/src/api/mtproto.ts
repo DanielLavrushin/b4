@@ -22,7 +22,7 @@ export interface TransportProbeResult {
 }
 
 export interface TransportProbeHandlers {
-  onPlan: (routes: string[]) => void;
+  onPlan: (routes: string[], telegramSet: string) => void;
   onStart: (index: number) => void;
   onResult: (index: number, result: TransportProbeResult) => void;
 }
@@ -44,9 +44,14 @@ const dispatchProbeEvent = (
   handlers: TransportProbeHandlers,
 ) => {
   switch (event) {
-    case "plan":
-      handlers.onPlan((JSON.parse(data) as { routes: string[] }).routes);
+    case "plan": {
+      const plan = JSON.parse(data) as {
+        routes: string[];
+        telegram_set?: string;
+      };
+      handlers.onPlan(plan.routes, plan.telegram_set ?? "");
       return;
+    }
     case "start":
       handlers.onStart((JSON.parse(data) as { index: number }).index);
       return;

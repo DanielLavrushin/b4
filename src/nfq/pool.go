@@ -114,6 +114,7 @@ func NewPool(cfg *config.Config) *Pool {
 		w.pinHealth = state.pinHealth
 		w.goodIPs = state.goodIPs
 		w.bans = state.bans
+		w.telegramFlows = state.telegram
 		ws = append(ws, w)
 	}
 

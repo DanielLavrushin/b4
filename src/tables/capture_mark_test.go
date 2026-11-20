@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/engine"
 )
 
@@ -146,12 +147,55 @@ func TestTheOwnPacketReturnLeavesAnotherServicesMarkToTheQueue(t *testing.T) {
 	}
 }
 
-func TestAFullMaskOwnPacketMarkIsWrittenTheWayIptablesListsIt(t *testing.T) {
-	own := iptOwnPacketMark(0x73027fff)
-	if own != "0x73027fff" {
-		t.Fatalf("own-packet match %q, want %q: iptables lists a match whose mask is full without the mask", own, "0x73027fff")
+func TestTheOwnPacketReturnTakesWhatB4SendsIntoItsTelegramConnections(t *testing.T) {
+	inj, dial := uint64(engine.InjectedMarkBit), uint64(config.TelegramSetDialMark)
+	for _, queue := range []uint{0, 0x400000, 0x8001, 0x48000, 0x4008000, 0x4000000, 0x4040000} {
+		cfg := config.NewConfig()
+		cfg.Queue.Mark = queue
+		q := uint64(queue)
+		if q == 0 {
+			q = 0x8000
+		}
+		ipt := iptMarkReturn(iptOwnPacketMark(queue))
+		nftMask, nftValue := nftOwnPacketMark(queue)
+		mask, err1 := strconv.ParseUint(nftMask, 0, 32)
+		value, err2 := strconv.ParseUint(nftValue, 0, 32)
+		if err1 != nil || err2 != nil {
+			t.Fatalf("queue mark %#x: nft match %s == %s does not parse", queue, nftMask, nftValue)
+		}
+		for _, p := range []struct {
+			name string
+			mark uint64
+			want bool
+			moot bool
+		}{
+			{"a packet b4 sends into one of its Telegram connections", q | inj | dial, true, false},
+			{"a packet b4 sends into another connection", q | inj, true, false},
+			{"b4's own lookup", q, true, false},
+			{"b4's own Telegram connection", dial, false, cfg.TelegramSetMarkConflict()},
+			{"another connection b4 opens itself", uint64(config.SelfDialMark), false, false},
+			{"a KeeneticOS hotspot mark", 0x0ffffaaa, false, false},
+			{"no mark", 0, false, false},
+		} {
+			if p.moot {
+				continue
+			}
+			if got := markMatches(t, ipt, p.mark); got != p.want {
+				t.Errorf("queue mark %#x, iptables %q: %s (%#x) returned as b4's own = %v, want %v", queue, ipt, p.name, p.mark, got, p.want)
+			}
+			if got := p.mark&mask == value; got != p.want {
+				t.Errorf("queue mark %#x, nftables mark & %s == %s: %s (%#x) returned as b4's own = %v, want %v", queue, nftMask, nftValue, p.name, p.mark, got, p.want)
+			}
+		}
 	}
-	listing := "-N B4\n-A B4 -m mark --mark 0x73027fff -j RETURN\n"
+}
+
+func TestAFullMaskOwnPacketMarkIsWrittenTheWayIptablesListsIt(t *testing.T) {
+	own := iptOwnPacketMark(0x77067fff)
+	if own != "0x77067fff" {
+		t.Fatalf("own-packet match %q, want %q: iptables lists a match whose mask is full without the mask", own, "0x77067fff")
+	}
+	listing := "-N B4\n-A B4 -m mark --mark 0x77067fff -j RETURN\n"
 	if !iptListingHasMarkReturn(listing, iptChainName, own) {
 		t.Fatal("the monitor does not find the return as iptables lists it, so it would restore the rules on every check")
 	}
@@ -163,10 +207,10 @@ func TestCaptureChainLetsB4sOwnPacketsThroughFirst(t *testing.T) {
 		mark uint
 		want string
 	}{
-		{"default mark", 0, "-m mark --mark 0x8000/0x8cfd8000 -j RETURN"},
-		{"configured mark", 0x400000, "-m mark --mark 0x400000/0x8cfd8000 -j RETURN"},
-		{"configured mark with a route bit", 0x8001, "-m mark --mark 0x8001/0x8cfd8001 -j RETURN"},
-		{"configured mark holding every bit b4 adds", 0x73027fff, "-m mark --mark 0x73027fff -j RETURN"},
+		{"default mark", 0, "-m mark --mark 0x8000/0x88f98000 -j RETURN"},
+		{"configured mark", 0x400000, "-m mark --mark 0x400000/0x88f98000 -j RETURN"},
+		{"configured mark with a route bit", 0x8001, "-m mark --mark 0x8001/0x88f98001 -j RETURN"},
+		{"configured mark holding every bit b4 adds", 0x77067fff, "-m mark --mark 0x77067fff -j RETURN"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			manager := dnsQueryTestManager(t, nil)

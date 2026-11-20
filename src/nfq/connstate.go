@@ -23,6 +23,7 @@ type connInfo struct {
 	rstCount      int
 	serverHasOpts bool
 	established   bool
+	telegram      bool
 }
 
 type tlsInfo struct {
@@ -698,10 +699,12 @@ type runtimeState struct {
 	pinHealth    *pinHealth
 	goodIPs      *iphealth.KnownGood
 	bans         *ipBans
+	telegram     *telegramFlows
 }
 
 func newRuntimeState() *runtimeState {
 	return &runtimeState{
+		telegram:     newTelegramFlows(),
 		pendingHello: newPendingHelloCache(),
 		wssize:       newWSSizeCache(),
 		streams:      newStreamStartCache(),
@@ -729,7 +732,7 @@ func newRuntimeState() *runtimeState {
 	}
 }
 
-func (t *connStateTracker) RegisterOutgoing(connKey string, set *config.SetConfig) {
+func (t *connStateTracker) RegisterOutgoing(connKey string, set *config.SetConfig, telegram bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -752,10 +755,12 @@ func (t *connStateTracker) RegisterOutgoing(connKey string, set *config.SetConfi
 
 	if existing, ok := t.conns[connKey]; ok {
 		existing.set = set
+		existing.telegram = existing.telegram || telegram
 		existing.lastSeen = time.Now()
 	} else {
 		info := &connInfo{
 			set:      set,
+			telegram: telegram,
 			lastSeen: time.Now(),
 		}
 		if seen, ok := t.synAcks[connKey]; ok {
@@ -883,6 +888,11 @@ func (t *connStateTracker) ShouldDropOutboundRST(connKey string) bool {
 }
 
 func (t *connStateTracker) GetSetForIncoming(clientIP string, clientPort uint16, serverIP string, serverPort uint16) *config.SetConfig {
+	set, _ := t.incomingConn(clientIP, clientPort, serverIP, serverPort)
+	return set
+}
+
+func (t *connStateTracker) incomingConn(clientIP string, clientPort uint16, serverIP string, serverPort uint16) (*config.SetConfig, bool) {
 	outKey := fmt.Sprintf("%s:%d->%s:%d", clientIP, clientPort, serverIP, serverPort)
 
 	t.mu.Lock()
@@ -890,11 +900,11 @@ func (t *connStateTracker) GetSetForIncoming(clientIP string, clientPort uint16,
 
 	info, exists := t.conns[outKey]
 	if !exists || info.set == nil {
-		return nil
+		return nil, false
 	}
 
 	info.lastSeen = time.Now()
-	return info.set
+	return info.set, info.telegram
 }
 
 func (t *connStateTracker) TrackIncomingBytes(clientIP string, clientPort uint16, serverIP string, serverPort uint16, bytes uint64, inc *config.IncomingConfig) bool {

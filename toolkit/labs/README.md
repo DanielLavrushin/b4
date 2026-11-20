@@ -15,8 +15,8 @@ Where each kind of test belongs:
 
 ## Requirements
 
-`qemu-system-x86`, `qemu-utils`, `xorriso`, `openssh-client`, `curl`, `flock` (util-linux), and
-for `lab test` and `lab ab` also `go` and `git`. With access to `/dev/kvm` a guest runs at close to native speed;
+`qemu-system-x86`, `qemu-utils`, `xorriso`, `openssh-client`, `curl`, `flock` (util-linux), for
+the `routeros` guest also `unzip`, and for `lab test` and `lab ab` also `go` and `git`. With access to `/dev/kvm` a guest runs at close to native speed;
 without it QEMU falls back to emulation and is much slower.
 
 ## Quick start
@@ -45,9 +45,10 @@ memory in MB and its CPU count for one `lab up`.
 | --- | --- | --- | --- |
 | `debian8` | 3.16 | iptables 1.4.21, iproute2 3.16, ipset 6.23 | The oldest kernels b4 meets. It takes an identical `ip rule` a second time instead of refusing it, and has no `/proc/thread-self` |
 | `debian9` | 4.9 | iptables 1.6.0, iproute2 4.9, ipset 6.30 | A kernel between the old and the current ones: it refuses a duplicate rule, unlike `debian8`, but `ip rule del` without a mask still deletes a rule stored with one, as on `debian8` |
+| `routeros` | 5.6.3 (RouterOS 7.25.1) | The MikroTik community b4 container: Alpine, OpenRC, iptables 1.8.13 legacy and iproute2 | b4 as MikroTik users run it, in a container on RouterOS: the TUN engine, the `local` rule at 200, a kernel without `dummy` links. See [The RouterOS guest](#the-routeros-guest) |
 
-`nft` is not installed in either guest, their versions being too old for b4's nftables
-backend, so tests of that backend skip or fail there. Both guests have `iptables-legacy` and
+`nft` is not installed in either Debian guest, their versions being too old for b4's nftables
+backend, so tests of that backend skip or fail there. Both Debian guests have `iptables-legacy` and
 `ip6tables-legacy` as wrappers around their only iptables, so tests and configs that name
 that engine run.
 
@@ -112,6 +113,60 @@ the same for a test binary. `lab run <name> <script>` pipes any local script int
 is the way to drive a longer scenario: interfaces, a proxy set, rules deleted by hand, counts
 read back.
 
+## The RouterOS guest
+
+`lab up routeros` builds a MikroTik router in QEMU from RouterOS CHR, MikroTik's x86 build of
+RouterOS, and the b4 container that MikroTik users run on it:
+
+1. downloads CHR and its package bundle (checksums pinned) and installs the `container`
+   package;
+2. turns on container mode, which RouterOS accepts only after a power cycle: the lab stops
+   QEMU and starts it again;
+3. adds a veth on a bridge, as the MikroTik install guide does, masquerades the container
+   network and forwards two ports to the container: ssh and b4's web port;
+4. pulls the community image (`CONTAINER_IMAGE` in `guests/routeros.env`) from Docker Hub and
+   starts it with `guests/routeros-entry.sh`, which installs an sshd with the lab's key and
+   then runs the image's own entrypoint.
+
+The first start takes about two minutes with KVM. `lab ssh`, `run`, `push`, `pull`, `test` and
+`ab` reach a root shell inside the container. The instance's port is the container's ssh; the
+next three are RouterOS's ssh, its REST API (`admin` with an empty password) and b4's web
+port, and `lab up` prints them. `lab ros <name> <command>` runs a RouterOS command:
+
+```sh
+toolkit/labs/lab ros routeros '/container print'
+toolkit/labs/lab ros routeros '/ip firewall filter add chain=forward in-interface=lab-bridge protocol=tcp dst-port=443 content="youtube.com" action=drop'
+```
+
+The second line turns RouterOS into a crude DPI for the container: it drops every segment
+that carries the name, so an unsplit ClientHello fails and a split one passes.
+
+The image picks its firewall at every start. With `nf_tables` loaded, as on CHR, it removes
+iptables and iproute2 and uses nftables with busybox `ip`; without it, as on some ARMv7
+MikroTik routers, it installs iptables-legacy and iproute2. The lab forces the second, which the TUN
+engine needs: `LAB_ROS_FIREWALL=nft lab up routeros <name>` keeps the image's own choice for a
+new instance.
+
+b4 runs as the image's OpenRC service with `/etc/b4/b4.json`. To run a build of the checkout:
+
+```sh
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go -C src build -o ../out/b4.lab .
+toolkit/labs/lab push routeros out/b4.lab /root/lab
+toolkit/labs/lab ssh routeros 'cp /root/lab/b4.lab /bin/b4 && rc-service b4 restart'
+```
+
+Measured inside the container on RouterOS 7.25.1:
+
+- Every new network namespace starts with `200: from all lookup local`, not `0:`.
+- Links of type `dummy`, `macvlan`, `ipvlan`, `vlan`, `gre` and `ipip` cannot be made; `veth`
+  and `bridge` can. b4's TUN netns tests fall back to a veth; other tests that make a dummy
+  link fail.
+- iptables has no `socket` match and no `TPROXY` target, so proxy-set tests fail with
+  iptables. `/proc/net/nf_conntrack` does not exist; `/dev/net/tun` does.
+
+With the legacy firewall about 85 netns tests of `./tables/` fail there on main as well, and
+the nftables ones skip: compare with `lab ab`.
+
 ## Adding a guest
 
 Add `guests/<name>.env`:
@@ -137,6 +192,10 @@ GUEST_PROVISION=<name>.provision.sh
   in `~/.cache/b4-lab/instances/<name>/console.log`.
 - `GUEST_PROVISION` runs once as root after the first boot. `debian-archive.provision.sh`
   points an end-of-life Debian at `archive.debian.org` and installs what b4's tests use.
+- `GUEST_KIND=routeros` makes a RouterOS guest instead: `IMAGE_URL` is a CHR `.img.zip`, with
+  `PACKAGES_URL` and `PACKAGES_SHA256` for the matching `all_packages-x86` bundle and
+  `CONTAINER_IMAGE` for the image RouterOS pulls. The REST paths and parameters it uses change
+  between RouterOS versions, so a new CHR version needs one full `lab up` before it lands.
 
 ## Changing the lab
 
@@ -150,7 +209,12 @@ taken between the check and the start. Run it after any change here; `b4-check` 
 - Guests reach the internet through QEMU's user networking: outbound only, TCP and UDP, no
   ICMP. Nothing in a guest sits behind a DPI, so a lab says how b4's rules behave, never
   whether a strategy works.
-- x86-64 guests only: the script starts `qemu-system-x86_64`.
+- x86-64 guests only: the script starts `qemu-system-x86_64`. The `routeros` guest is CHR on
+  x86, not the ARM RouterOS of most MikroTik routers; the kernel version is the same.
+- CHR runs on its free licence, which caps upload at 1 Mbit/s per interface.
+- The `routeros` guest's container image is a third-party build whose tags are rebuilt in
+  place, and every container start installs packages from Alpine's mirrors, as the image does
+  on a real router.
 - A firmware's own behaviour, such as KeeneticOS rewriting its firewall or Broadcom's flow
   cache, exists only on the real device.
 - The packages `debian8` installs are not verified. Every key its apt trusts has expired, so

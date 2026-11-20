@@ -42,10 +42,50 @@ Telegram over WebSocket always uses **Auto (WebSocket → TCP)** and never the D
 | The handshake with Telegram's own edge is dropped for its names, while its address is reachable | A [fronting name](#fronting-name-for-the-ws-edge) |
 | Telegram's own edge does not answer at its default address | Another address in [Telegram WS edge IP](#telegram-ws-edge-ip) |
 | Direct TCP and the WebSocket routes are all blocked | A [DC Relay](./dc-relay.md) |
+| The CF proxy domains are blocked, while a set's strategy gets other sites through | A [Telegram set](#telegram-set) with that strategy |
 
 The log lines that identify each case are under [Telegram problems](./troubleshooting.md).
 
 ## Other settings on the card
+
+### Telegram set
+
+**Telegram set** names the set that handles b4's own connections to Telegram: the
+connections of the MTProto proxy and of Telegram over WebSocket on every route, the CF proxy
+pool, a custom WebSocket domain and Cloudflare Workers included, the connection test on this
+card, and the downloads of Telegram's address lists. No other set handles these connections,
+whatever it targets. The connections Telegram over WebSocket passes on go to a proxy set that
+lists them; those it sends directly go through the Telegram set. With **No set**, the default, they are processed as
+[DPI processing](./websocket-bridge.md#dpi-processing) describes.
+
+A set without routing applies its strategy to these connections on the ports b4 processes, 443
+and those in the sets' TCP port filters, within its own TCP port filter when it has one, so a
+DC Relay on other ports gets no strategy. It
+applies to the Worker connections only while **Let sets process Worker connections** is on. A set routed through an
+interface carries them on that interface's route, and a proxy set through its upstream; neither
+applies its strategy to them. With **Send domain name to upstream** on, the default, the upstream
+gets the host names; otherwise, and for a name pinned in the set, it gets the address the set's
+DNS settings give. The route is installed
+for the chosen set even when it has no targets of its own. **Test connection** uses the set
+once the choice is saved. Choosing another Telegram set, or changing the chosen set's routing,
+closes the open sessions of the MTProto proxy and of Telegram over WebSocket, and the clients reconnect on the
+new path.
+
+**Create a Telegram set** adds an enabled set named Telegram, with no targets and routing off,
+and selects it. Both are saved with **Save Changes**. The set's strategy is edited on the
+**Sets** page like any set's.
+
+The set applies while it is enabled, its routing is complete and b4 runs in NFQUEUE mode. A
+block set or a Telegram over WebSocket set cannot be chosen. When one of these does not hold,
+the card says why and the connections go as they would without a set. They do the same while
+the set's route is not in place, for example right after a change. When the route fails later,
+the set's own settings decide: the **Kill switch** of an interface set, **Fall back to direct on
+upstream failure** of a proxy set. The connections to the fake SNI website stay outside the set.
+
+With **Telegram over WebSocket** on, the connections that a proxy set's upstream running on
+the router opens to Telegram itself would loop back into that upstream. The bridge sends them
+out directly instead and logs a warning. The upstream stays out of the bridge when it marks its
+own traffic, see [Next to other services](../guides/marks.md#next-to-other-services).
 
 ### Custom WebSocket domain
 
@@ -53,11 +93,11 @@ A domain that relays WebSocket traffic to Telegram, for a self-hosted relay next
 
 ### Telegram WS edge IP
 
-Telegram's own WebSocket edge is reached at one address, `149.154.167.220`, for every data centre it serves. **Telegram WS edge IP (advanced)** replaces that address for a network where the default one does not answer. It takes a host or an IP address without a port. The custom WebSocket domain is not affected.
+Telegram's own WebSocket edge is reached at one address, `149.154.167.220`, for every data centre it serves. **Telegram WS edge IP**, under **Advanced** on the card, replaces that address for a network where the default one does not answer. It takes a host or an IP address without a port. The custom WebSocket domain is not affected.
 
 ### Fronting name for the WS edge
 
-Where DPI drops the handshake for the names of Telegram's edge while the edge's address stays reachable, b4 can present another name in the TLS handshake. **Fronting name for Telegram's WS edge (advanced)** sets that name, such as `sprinthost.ru`, the one tg-ws-proxy uses. The field is empty, and fronting off, by default. b4 tries the name only after a handshake under Telegram's own names went unanswered, and keeps a connection only when it ends on a `telegram.org` certificate.
+Where DPI drops the handshake for the names of Telegram's edge while the edge's address stays reachable, b4 can present another name in the TLS handshake. **Fronting name for Telegram's WS edge**, under **Advanced**, sets that name, such as `sprinthost.ru`, the one tg-ws-proxy uses. The field is empty, and fronting off, by default. b4 tries the name only after a handshake under Telegram's own names went unanswered, and keeps a connection only when it ends on a `telegram.org` certificate.
 
 Fronting does not help when the network blocks the edge's address outright, or when its DPI forwards the connection by the name it sees.
 

@@ -1,6 +1,6 @@
 ---
 name: b4-lab
-description: Test a b4 change on another kernel or userland in a QEMU guest from toolkit/labs - which rung a question belongs on (namespace tests, a lab guest, a test box), starting a guest, running the netns tests there against main (lab test, lab ab), running the real binary, reading the results, adding a guest, and what a lab cannot prove. Use when a change adds, deletes or reorders ip rules, routes or firewall rules and has to hold on old kernels or an old iptables, when asked for a smoke test without a real router, when a report names a kernel or an iptables version the development machine does not have, and before saying that a kernel-version case cannot be tested.
+description: Test a b4 change on another kernel or userland in a QEMU guest from toolkit/labs - which rung a question belongs on (namespace tests, a lab guest, a test box), starting a guest, running the netns tests there against main (lab test, lab ab), running the real binary, reading the results, adding a guest, and what a lab cannot prove. Use when a change adds, deletes or reorders ip rules, routes or firewall rules and has to hold on old kernels or an old iptables, when asked for a smoke test without a real router, when a report names a kernel or an iptables version the development machine does not have, when a question is about b4 in a MikroTik RouterOS container (the routeros guest: RouterOS CHR with the community b4 container), and before saying that a kernel-version case cannot be tested.
 argument-hint: "<guest> [test pattern]"
 ---
 
@@ -27,8 +27,9 @@ another.
 | --- | --- | --- | --- |
 | `debian8` | 3.16 | iptables 1.4.21, iproute2 3.16, ipset 6.23 | `ip rule add` takes an identical rule a second time. No `/proc/thread-self` |
 | `debian9` | 4.9 | iptables 1.6.0, iproute2 4.9, ipset 6.30 | `ip rule add` refuses a duplicate with `File exists` |
+| `routeros` | 5.6.3, RouterOS 7.25.1 CHR | The MikroTik community b4 container, iptables 1.8.13 legacy, iproute2 | Every new netns starts with `local` at 200; no `dummy`, `macvlan`, `vlan`, `gre` links; no iptables `socket` match or `TPROXY` target; no `/proc/net/nf_conntrack` |
 
-On both, `ip rule del fwmark V lookup T` without a mask deletes a rule stored as `V/<mask>`,
+On `debian8` and `debian9`, `ip rule del fwmark V lookup T` without a mask deletes a rule stored as `V/<mask>`,
 `nft` is not installed (tests of the nftables backend skip or fail), and `iptables-legacy` is
 a wrapper around the only iptables.
 
@@ -60,6 +61,24 @@ toolkit/labs/lab down debian8
 - In a worktree session every command has to be one plain call. `lab run <name> <script>`
   pipes a local script into the guest as root, so a scenario goes into a script file.
 
+## The RouterOS guest
+
+For MikroTik questions: b4 in the community container on RouterOS, as users run it, where the
+TUN engine runs when the router has no NFQUEUE. `lab up routeros` builds it from RouterOS CHR in about two
+minutes with KVM (`toolkit/labs/README.md`, "The RouterOS guest").
+
+- `lab ssh`, `run`, `push`, `pull`, `test` and `ab` reach root inside the container.
+  `lab ros routeros '<RouterOS command>'` reaches RouterOS itself, for the firewall, a
+  sniffer or `/log print`; the REST API answers on the instance's port plus two.
+- `lab test` and `lab ab` run there like on the Debian guests: `LAB_PKG=./tun/ toolkit/labs/lab
+  test routeros`. About 85 tables tests fail there on main as well, so use `ab` for tables.
+- b4 is the image's OpenRC service with `/etc/b4/b4.json`. Push a build, `cp` it over
+  `/bin/b4`, `rc-service b4 restart`; the web UI and API are on the instance's port plus three.
+- A content rule in RouterOS's forward chain plays the DPI for the container (README), so
+  Discovery and the watchdog can run end to end there, slowly, through the internet.
+- It is CHR on x86 and the container image is a third-party build: a result there is about
+  RouterOS's kernel and the image, not about an ARM router's hardware.
+
 ## Run the real binary
 
 When the question is what the service does over time (the monitor, a rebuild, a restart), run
@@ -82,11 +101,12 @@ it, save a set through the API to force a rebuild, count again.
 ## What a lab cannot show
 
 Merlin's and KeeneticOS's own firewall rewrites, Broadcom's flow cache, a firmware `ip` that
-differs from iproute2, and anything about a DPI. Say which rung a result comes from, and take
+differs from iproute2, ARM MikroTik hardware, and anything about a real DPI. Say which rung a result comes from, and take
 the question to a test box when it is about those.
 
 ## Adding a guest
 
 Add one when a real question needs it, not ahead of time: a cloud image with a pinned
-checksum, the seed kind it reads, a provision script (`toolkit/labs/README.md`, "Adding a
-guest"). Put what was measured on it in the README's guest table and in the table above.
+checksum, the seed kind it reads, a provision script, or `GUEST_KIND=routeros` for another
+RouterOS version, which needs one full `lab up` because RouterOS's REST paths change between
+versions (`toolkit/labs/README.md`, "Adding a guest"). Put what was measured on it in the README's guest table and in the table above.

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
@@ -172,5 +173,29 @@ func TestHandleMTProtoActiveClients(t *testing.T) {
 
 	if b := byID["b"]; b.ActiveConnections != 1 || b.ActiveIPCount != 1 {
 		t.Errorf("client b unexpected: conns=%d ips=%d", b.ActiveConnections, b.ActiveIPCount)
+	}
+}
+
+func TestASaveRestartsTheMTProtoProxyOnlyOnceTheRoutesAreSynced(t *testing.T) {
+	api := exposeTestAPI(t, nil)
+	var order []string
+	prevRouting, prevExposure := routingSyncFunc, exposureSyncFunc
+	prevServer, prevBridge := globalMTProtoServer, globalMTProtoBridge
+	routingSyncFunc = func(*config.Config) { order = append(order, "routing") }
+	exposureSyncFunc = func(*config.Config) { order = append(order, "exposure") }
+	globalMTProtoServer = refresherFunc(func(*config.Config) { order = append(order, "mtproto") })
+	globalMTProtoBridge = refresherFunc(func(*config.Config) { order = append(order, "bridge") })
+	t.Cleanup(func() {
+		routingSyncFunc, exposureSyncFunc = prevRouting, prevExposure
+		globalMTProtoServer, globalMTProtoBridge = prevServer, prevBridge
+	})
+
+	next := api.getCfg().Clone()
+	next.System.Logging.Instaflush = !next.System.Logging.Instaflush
+	if err := api.saveAndPushConfig(next); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if want := []string{"bridge", "routing", "mtproto", "exposure"}; !reflect.DeepEqual(order, want) {
+		t.Fatalf("the proxy restarted before the routes it dials over were synced, so the clients it drops reconnect outside the Telegram set's route: got %v, want %v", order, want)
 	}
 }

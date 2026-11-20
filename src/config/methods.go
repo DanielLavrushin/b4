@@ -319,6 +319,56 @@ func (c *Config) GetTargetsForSetWithCache(set *SetConfig, geositeDomains, geoip
 	return domains, ips, nil
 }
 
+func (c *Config) TelegramUpstreamSet() *SetConfig {
+	if c == nil || c.System.MTProto.UpstreamSet == "" || c.Queue.Mode == "tun" || c.TelegramSetMarkConflict() {
+		return nil
+	}
+	set := c.GetSetById(c.System.MTProto.UpstreamSet)
+	if set == nil || !set.Enabled || !CarriesTelegram(set) || set.RoutingIncomplete() {
+		return nil
+	}
+	return set
+}
+
+func (c *Config) IsTelegramUpstreamSet(set *SetConfig) bool {
+	chosen := c.TelegramUpstreamSet()
+	return chosen != nil && set != nil && chosen.Id == set.Id
+}
+
+func (set *SetConfig) RoutingIncomplete() bool {
+	if set == nil || !set.Routing.Enabled {
+		return false
+	}
+	switch set.RoutingModeOrDefault() {
+	case RoutingModeInterface:
+		return set.Routing.EgressInterface == ""
+	case RoutingModeProxy:
+		return set.Routing.Upstream.Port < 1
+	}
+	return false
+}
+
+func (set *SetConfig) TelegramRouteMode() string {
+	if set == nil || !set.Routing.Enabled {
+		return ""
+	}
+	return set.RoutingModeOrDefault()
+}
+
+func (c *Config) TelegramSetMarkConflict() bool {
+	if q := uint32(c.Queue.Mark); q != 0 && q&^TelegramSetDialMark == 0 {
+		return true
+	}
+	return IsTelegramSetMark(uint32(c.DiscoveryFlowMark())) || IsTelegramSetMark(uint32(c.DiscoveryInjectedMark()))
+}
+
+func CarriesTelegram(set *SetConfig) bool {
+	if set == nil {
+		return false
+	}
+	return !set.Routing.Enabled || (set.Routing.Mode != RoutingModeMTProtoWS && !RoutingIsBlock(set.Routing.Mode))
+}
+
 func (c *Config) GetSetById(id string) *SetConfig {
 	for _, set := range c.Sets {
 		if set.Id == id {

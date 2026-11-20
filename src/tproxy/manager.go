@@ -162,10 +162,7 @@ func (m *Manager) syncLocked(cfg *config.Config, retried bool) {
 	routingSets := cfg.RoutingSets()
 	desired := make(map[string]*config.SetConfig, len(routingSets))
 	for _, set := range routingSets {
-		if set == nil || !set.Enabled || !(set.RoutingDivertsPackets() || set.RoutesUDPByPort()) {
-			continue
-		}
-		if !config.RoutingUsesTProxy(set.Routing.Mode) {
+		if !wantsListener(cfg, set) {
 			continue
 		}
 		desired[set.Id] = set
@@ -202,6 +199,7 @@ func (m *Manager) syncLocked(cfg *config.Config, retried bool) {
 			continue
 		}
 		l.set.Store(set)
+		l.ownDials.Store(cfg.IsTelegramUpstreamSet(set))
 		l.SetDNSOptions(int(cfg.MainInjectedMark()), cfg.DNSQueryTimeout(), cfg.Queue.IPv6Enabled)
 	}
 
@@ -261,6 +259,13 @@ func (m *Manager) running() []*Listener {
 	return nil
 }
 
+func wantsListener(cfg *config.Config, set *config.SetConfig) bool {
+	if set == nil || !set.Enabled || !config.RoutingUsesTProxy(set.Routing.Mode) {
+		return false
+	}
+	return set.RoutingDivertsPackets() || set.RoutesUDPByPort() || (set.Routing.Enabled && cfg.IsTelegramUpstreamSet(set))
+}
+
 func (m *Manager) newListener(cfg *config.Config, set *config.SetConfig, bypassMark uint32) *Listener {
 	host := set.Routing.Upstream.Host
 	if host == "" {
@@ -290,6 +295,7 @@ func (m *Manager) newListener(cfg *config.Config, set *config.SetConfig, bypassM
 		guard:     newLoopGuard(host, set.Routing.Upstream.Port),
 	}
 	l.set.Store(set)
+	l.ownDials.Store(cfg.IsTelegramUpstreamSet(set))
 	l.SetDNSOptions(int(cfg.MainInjectedMark()), cfg.DNSQueryTimeout(), cfg.Queue.IPv6Enabled)
 	return l
 }
@@ -336,14 +342,27 @@ func (m *Manager) Stop() {
 	}
 }
 
+func (m *Manager) CanDialViaSet(setID string) bool {
+	for _, l := range m.running() {
+		if l.SetID == setID {
+			return !l.MTProtoWS
+		}
+	}
+	return false
+}
+
 func (m *Manager) DialViaSet(setID, host string, port int) (net.Conn, bool, error) {
+	return m.DialViaSetBy(setID, host, port, time.Time{})
+}
+
+func (m *Manager) DialViaSetBy(setID, host string, port int, by time.Time) (net.Conn, bool, error) {
 	m.mu.Lock()
 	l, ok := m.listeners[setID]
 	m.mu.Unlock()
 	if !ok || l.MTProtoWS {
 		return nil, false, nil
 	}
-	conn, err := l.DialNamed(host, port)
+	conn, err := l.DialNamedBy(host, port, by)
 	return conn, true, err
 }
 

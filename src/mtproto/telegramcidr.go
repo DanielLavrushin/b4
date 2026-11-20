@@ -17,7 +17,6 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/log"
-	"github.com/daniellavrushin/b4/netprobe"
 )
 
 const (
@@ -191,7 +190,7 @@ func writeTelegramCIDRCache(path, source string, at time.Time, prefixes []string
 }
 
 var telegramCIDRHTTPClient = func() *http.Client {
-	return netprobe.HTTPClient(int(selfDialMark()), telegramCIDRTimeout)
+	return telegramHTTPClient(telegramCIDRTimeout)
 }
 
 func downloadTelegramCIDRs(ctx context.Context, target string) ([]string, error) {

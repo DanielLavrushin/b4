@@ -85,6 +85,8 @@ type Worker struct {
 	sock             *sock.Sender
 	clientSock       *sock.Sender
 	lookupSock       *sock.Sender
+	telegramSock     *sock.Sender
+	telegramFlows    *telegramFlows
 	ipToMac          atomic.Value
 	tlsCache         *tlsInfoCache
 	wssize           *wsSizeCache

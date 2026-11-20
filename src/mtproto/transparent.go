@@ -66,11 +66,63 @@ type TransparentBridge struct {
 	dropped     atomic.Uint64
 	lastRelayed atomic.Int64
 
-	mu        sync.Mutex
-	pool      *cfWorkerPool
-	poolInit  bool
-	wsPool    *wsPool
-	wsPoolFor MTProtoUpstream
+	mu         sync.Mutex
+	pool       *cfWorkerPool
+	poolInit   bool
+	wsPool     *wsPool
+	wsPoolFor  MTProtoUpstream
+	wsPoolMark uint
+	wsPoolTG   string
+	wsPoolAcct telegramAccount
+
+	sessMu   sync.Mutex
+	sessions map[net.Conn]struct{}
+}
+
+var (
+	liveBridge   atomic.Pointer[TransparentBridge]
+	bridgeDialDC = dialObfuscatedDC
+)
+
+func (b *TransparentBridge) trackSession(client net.Conn) func() {
+	b.sessMu.Lock()
+	if b.sessions == nil {
+		b.sessions = make(map[net.Conn]struct{})
+	}
+	b.sessions[client] = struct{}{}
+	b.sessMu.Unlock()
+	return func() {
+		b.sessMu.Lock()
+		delete(b.sessions, client)
+		b.sessMu.Unlock()
+	}
+}
+
+func (b *TransparentBridge) closeSessions() int {
+	b.sessMu.Lock()
+	all := make([]net.Conn, 0, len(b.sessions))
+	for c := range b.sessions {
+		all = append(all, c)
+	}
+	b.sessMu.Unlock()
+	for _, c := range all {
+		_ = c.Close()
+	}
+	return len(all)
+}
+
+func (b *TransparentBridge) Track(client net.Conn) func() {
+	return b.trackSession(client)
+}
+
+func closeBridgeSessions() {
+	b := liveBridge.Load()
+	if b == nil {
+		return
+	}
+	if n := b.closeSessions(); n > 0 {
+		log.Infof("%s closed %d Telegram over WebSocket connection(s) so they reconnect on the new path of b4's own Telegram connections", tg(""), n)
+	}
 }
 
 func NewTransparentBridge(cfg *config.Config) *TransparentBridge {
@@ -82,15 +134,19 @@ func NewTransparentBridge(cfg *config.Config) *TransparentBridge {
 	}
 	b.cfg.Store(cfg)
 	setWorkerFollowsSets(cfg)
+	setTelegramSet(cfg)
+	liveBridge.Store(b)
 	return b
 }
 
 func (b *TransparentBridge) UpdateConfig(newCfg *config.Config) {
 	old := b.cfg.Swap(newCfg)
 	setWorkerFollowsSets(newCfg)
+	setTelegramSet(newCfg)
 	if old != nil &&
 		old.System.MTProto.CFWorkerDomain == newCfg.System.MTProto.CFWorkerDomain &&
-		old.Queue.Mark == newCfg.Queue.Mark {
+		old.Queue.Mark == newCfg.Queue.Mark &&
+		!telegramSetChanged(old, newCfg) {
 		return
 	}
 	b.mu.Lock()
@@ -136,12 +192,14 @@ func (b *TransparentBridge) getWSPool() *wsPool {
 	want := MTProtoUpstream{WSEndpointHost: mt.WSEndpointHost, WSCustomDomain: mt.WSCustomDomain, CFProxyEnabled: mt.CFProxyEnabled, FrontSNI: wsFrontName(mt.WSFrontSNI)}
 	b.mu.Lock()
 	var stale *wsPool
-	if shared != nil || (b.wsPool != nil && b.wsPoolFor != want) {
+	cfg := b.cfg.Load()
+	mark, tgKey, tgAcct := selfDialMark(), telegramSetKey(cfg), telegramSetAccount(cfg)
+	if shared != nil || (b.wsPool != nil && (b.wsPoolFor != want || b.wsPoolMark != mark || b.wsPoolTG != tgKey || b.wsPoolAcct != tgAcct)) {
 		stale, b.wsPool = b.wsPool, nil
 	}
 	if shared == nil && b.wsPool == nil {
-		b.wsPool = newWSPool(want, selfDialMark(), wsPoolDefaultSize)
-		b.wsPoolFor = want
+		b.wsPool = newWSPool(want, mark, wsPoolDefaultSize)
+		b.wsPoolFor, b.wsPoolMark, b.wsPoolTG, b.wsPoolAcct = want, mark, tgKey, tgAcct
 	}
 	own := b.wsPool
 	b.mu.Unlock()
@@ -246,7 +304,9 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 	mtCfg := bridgeUpstream(cfg)
 
 	target := dialTarget{ip: origIP.String(), port: origPort}
-	dcConn, info, err := dialObfuscatedDC(&mtCfg, cfg.Queue, dc, res.ProtoTag, &dialPools{ws: b.getWSPool(), worker: b.getPool()}, id, target)
+	untrack := b.trackSession(client)
+	defer untrack()
+	dcConn, info, err := bridgeDialDC(&mtCfg, cfg.Queue, dc, res.ProtoTag, &dialPools{ws: b.getWSPool(), worker: b.getPool()}, id, target)
 	if err != nil {
 		b.dialFailed.Add(1)
 		if shouldLogDialError(dc) {

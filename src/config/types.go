@@ -199,6 +199,14 @@ const SelfDialNoDPIBit = uint32(0x200000)
 
 const SelfDialRelayMark = SelfDialMark | SelfDialNoDPIBit
 
+const TelegramSetBit = uint32(0x4000000)
+
+const TelegramSetDialMark = SelfDialMark | TelegramSetBit
+
+func IsTelegramSetMark(m uint32) bool {
+	return m&TelegramSetDialMark == TelegramSetDialMark
+}
+
 const PerSetRouteMarkBits = uint32(0x27FFF)
 
 const RouterOwnProxyMarkBit = uint32(0x1000000)
@@ -622,6 +630,7 @@ type MTProtoConfig struct {
 	CFProxyURL        string          `json:"cfproxy_url" mcp:"deny"` // URL to refresh CF-proxy domain list; empty = built-in default
 	CFWorkerDomain    string          `json:"cfworker_domain"`        // user's Cloudflare Worker domain(s) (workers.dev), comma-separated; free per-user WS relay tried before the shared CF pool
 	CFWorkerDPI       bool            `json:"cfworker_dpi"`
+	UpstreamSet       string          `json:"upstream_set"`
 
 	DCFallbackEnabled bool   `json:"dc_fallback_enabled"`        // fetch the DC IP list from DCFallbackURL when Telegram's official endpoint is blocked
 	DCFallbackURL     string `json:"dc_fallback_url" mcp:"deny"` // fallback source for the Telegram DC list; empty = built-in default

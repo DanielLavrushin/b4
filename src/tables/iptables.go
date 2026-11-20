@@ -781,7 +781,7 @@ func ownPacketMark(mark uint) (value, mask uint32) {
 		mark = 0x8000
 	}
 	value = uint32(mark)
-	return value, (config.SelfDialSkipMatchMask &^ engine.InjectedMarkBit) | value
+	return value, (config.SelfDialSkipMatchMask &^ (engine.InjectedMarkBit | config.TelegramSetDialMark)) | value
 }
 
 func iptOwnPacketMark(mark uint) string {

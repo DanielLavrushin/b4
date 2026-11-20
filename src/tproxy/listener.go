@@ -35,6 +35,8 @@ const failOpenUserTimeout = 120 * time.Second
 
 const namedDialBudget = 20 * time.Second
 
+const failOpenDirectReserve = time.Second
+
 var setLookup dns.LookupFunc = dns.LookupIPs
 
 func setTCPUserTimeout(c net.Conn, d time.Duration) {
@@ -67,6 +69,7 @@ type MTProtoBridge interface {
 	FailOpenViaWorker(client net.Conn, origIP net.IP, origPort int) bool
 	FailOpenOrder(origIP net.IP, origPort int) (directFirst, workerFallback bool)
 	NoteFailOpenDirect(origIP net.IP, dialed bool, received int64)
+	Track(client net.Conn) func()
 }
 
 const (
@@ -97,6 +100,8 @@ type Listener struct {
 	dnsV6      atomic.Bool
 	guard      *loopGuard
 	loopWarn   sync.Once
+	ownDials   atomic.Bool
+	ownWarn    sync.Once
 	relayMu    sync.Mutex
 	relays     map[string]int
 	flights    map[[sha256.Size]byte][]*heldFlight
@@ -370,9 +375,13 @@ func (l *Listener) serve(client net.Conn, given *sniffResult) {
 		if r := client.RemoteAddr(); r != nil {
 			src = r.String()
 		}
-		log.LogConnectionStr("TCP", l.SetName, "", src, "",
-			net.JoinHostPort(origIP.String(), fmt.Sprintf("%d", origPort)),
-			from.MAC, "", "mtproto-ws")
+		dest := net.JoinHostPort(origIP.String(), strconv.Itoa(origPort))
+		if peer := l.ownDialUpstream(client, tcpAddr); peer != nil {
+			log.LogConnectionStr("TCP", l.SetName, "", src, "", dest, from.MAC, "", "direct")
+			peer.relayDirect(client, dest, nil)
+			return
+		}
+		log.LogConnectionStr("TCP", l.SetName, "", src, "", dest, from.MAC, "", "mtproto-ws")
 		if l.Bridge == nil {
 			l.failOpenDirect(client, origIP, origPort)
 			return
@@ -387,7 +396,8 @@ func (l *Listener) serve(client net.Conn, given *sniffResult) {
 			return
 		}
 		client = rest
-		dest := net.JoinHostPort(origIP.String(), strconv.Itoa(origPort))
+		untrack := l.Bridge.Track(client)
+		defer untrack()
 		directFirst, workerFallback := l.Bridge.FailOpenOrder(origIP, origPort)
 		if directFirst {
 			timeout := failOpenDirectTimeout
@@ -739,17 +749,31 @@ func (l *Listener) dnsServers() ([]dns.Server, *config.SetConfig, bool) {
 }
 
 func (l *Listener) DialNamed(host string, port int) (net.Conn, error) {
+	return l.DialNamedBy(host, port, time.Time{})
+}
+
+func (l *Listener) DialNamedBy(host string, port int, by time.Time) (net.Conn, error) {
 	servers, _, _ := l.dnsServers()
 	ctx, cancel := context.WithTimeout(l.ctx, namedDialBudget+2*dns.ServersBudget(servers, time.Duration(l.dnsTimeout.Load())))
 	defer cancel()
 	onion := isOnionName(host)
+	upCtx := ctx
+	if !by.IsZero() {
+		ctx, cancel = context.WithDeadline(ctx, by)
+		defer cancel()
+		upCtx = ctx
+		if l.FailOpen && !onion {
+			upCtx, cancel = context.WithDeadline(ctx, by.Add(-min(failOpenDirectReserve, time.Until(by)/3)))
+			defer cancel()
+		}
+	}
 	target, err := l.namedTarget(ctx, host)
 	if err != nil {
 		return nil, err
 	}
 	release := l.holdRelay(relayKeys("tcp", port, host, target))
-	upstream, err := l.dialUpstreamWithin(ctx, target, port)
-	if err != nil && target == host && !onion && socks5.IsConnectRejected(err) {
+	upstream, err := l.dialUpstreamWithin(upCtx, target, port)
+	if err != nil && target == host && !onion && net.ParseIP(host) == nil && socks5.IsConnectRejected(err) {
 		if addrs, rerr := l.resolveHost(ctx, host); rerr == nil {
 			log.Tracef("tproxy: upstream refused %s:%d on set %q (%v), retrying with %s", host, port, l.SetName, err, addrs[0])
 			target = addrs[0]
@@ -758,7 +782,7 @@ func (l *Listener) DialNamed(host string, port int) (net.Conn, error) {
 				addrRelease()
 				nameRelease()
 			}
-			upstream, err = l.dialUpstreamWithin(ctx, target, port)
+			upstream, err = l.dialUpstreamWithin(upCtx, target, port)
 		}
 	}
 	switch {
@@ -809,7 +833,7 @@ func isOnionName(host string) bool {
 }
 
 func (l *Listener) namedTarget(ctx context.Context, host string) (string, error) {
-	if isOnionName(host) || (l.UseDomain && len(l.pinnedAddresses(host)) == 0) {
+	if net.ParseIP(host) != nil || isOnionName(host) || (l.UseDomain && len(l.pinnedAddresses(host)) == 0) {
 		return host, nil
 	}
 	addrs, err := l.namedAddresses(ctx, host)
@@ -1026,6 +1050,30 @@ func (l *Listener) upstreamLoop(client, dst *net.TCPAddr) (string, bool) {
 	return owner, true
 }
 
+func (l *Listener) ownDialUpstream(client net.Conn, dst *net.TCPAddr) *Listener {
+	clientAddr, _ := client.RemoteAddr().(*net.TCPAddr)
+	if clientAddr == nil || dst == nil || l.peers == nil {
+		return nil
+	}
+	for _, peer := range l.peers() {
+		if peer == l || peer.MTProtoWS || !peer.ownDials.Load() || peer.guard == nil {
+			continue
+		}
+		name, pid, ok := peer.guard.fromUpstreamProcess(clientAddr, dst)
+		if !ok {
+			continue
+		}
+		owner := fmt.Sprintf("%s, pid %d", name, pid)
+		l.ownWarn.Do(func() {
+			log.Warnf("tproxy: Telegram over WebSocket catches the connections to Telegram of %s (%s), the upstream of the Telegram set %q; b4 sends them direct, otherwise they would loop back into that upstream. To avoid the extra hop, have the upstream mark its outbound traffic with bits under 0x27fff (in Xray, sockopt.mark 255), or choose a Telegram set routed through an interface",
+				peer.upstreamAddr(), owner, peer.SetName)
+		})
+		log.Tracef("tproxy: %s -> %s on set %q is the connection of %s, the upstream of the Telegram set %q, sent direct", clientAddr, dst, l.SetName, owner, peer.SetName)
+		return peer
+	}
+	return nil
+}
+
 func (l *Listener) warnUpstreamLoop(owner string) {
 	l.loopWarn.Do(func() {
 		log.Warnf("tproxy: set %q catches the connections of its own upstream %s (%s); b4 sends them direct, otherwise they would loop back into the upstream. Narrow the set's targets or mark the upstream's outbound traffic to avoid the extra hop",
@@ -1051,10 +1099,33 @@ func (l *Listener) relayDirect(client net.Conn, dest string, prefix []byte) {
 	l.relayDirectCounted(client, dest, prefix, 10*time.Second)
 }
 
-func (l *Listener) relayDirectCounted(client net.Conn, dest string, prefix []byte, timeout time.Duration) (bool, int64) {
+type TelegramDial func(ctx context.Context, dest string) (net.Conn, bool, error)
+
+var telegramDial atomic.Pointer[TelegramDial]
+
+func SetTelegramDial(dial TelegramDial) {
+	if dial == nil {
+		telegramDial.Store(nil)
+		return
+	}
+	telegramDial.Store(&dial)
+}
+
+func (l *Listener) dialDirectRelay(ctx context.Context, dest string, timeout time.Duration) (net.Conn, error) {
+	if l.MTProtoWS {
+		if dial := telegramDial.Load(); dial != nil {
+			if conn, handled, err := (*dial)(ctx, dest); handled {
+				return conn, err
+			}
+		}
+	}
 	dialer := markedDialer(timeout, l.Upstream.BypassMark)
+	return dialer.DialContext(ctx, "tcp", dest)
+}
+
+func (l *Listener) relayDirectCounted(client net.Conn, dest string, prefix []byte, timeout time.Duration) (bool, int64) {
 	ctx, cancel := context.WithTimeout(l.ctx, timeout)
-	direct, err := dialer.DialContext(ctx, "tcp", dest)
+	direct, err := l.dialDirectRelay(ctx, dest, timeout)
 	cancel()
 	if err != nil {
 		log.Tracef("tproxy: direct dial to %s on set %q failed: %v", dest, l.SetName, err)
