@@ -961,6 +961,93 @@
                 }
             }
         },
+        "/collected-ips": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the current shared collected pool, sorted by collection time, latest first. Addresses are runtime candidates, not bans. since and until are wall-clock milliseconds: until is when the address leaves the pool unless an answer removes it earlier.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "CollectedIPs"
+                ],
+                "summary": "List collected IP addresses",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.CollectedIPsResponse"
+                        }
+                    },
+                    "405": {
+                        "description": "Method not allowed",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/collected-ips/clear": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes one IP or clears the pool when ip is empty or the body is missing. Static targets remain. New detections can collect removed addresses again. A failed update retains the entry and returns an error.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "CollectedIPs"
+                ],
+                "summary": "Remove collected IP addresses",
+                "parameters": [
+                    {
+                        "description": "IP address to remove; empty clears all collected addresses",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.CollectedIPsClearRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.CollectedIPsClearResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_json or bad_request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    },
+                    "405": {
+                        "description": "Method not allowed",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "internal",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/config": {
             "get": {
                 "security": [
@@ -4843,7 +4930,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Installs b4 from a b4-linux-<arch>.tar.gz uploaded by the reader, for a\nnetwork where no download source can be reached. The archive is checked for\na b4 entry built for this machine before anything is replaced.",
+                "description": "Installs b4 from a b4-linux-\u003carch\u003e.tar.gz uploaded by the reader, for a\nnetwork where no download source can be reached. The archive is checked for\na b4 entry built for this machine before anything is replaced.",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -4857,7 +4944,7 @@
                 "parameters": [
                     {
                         "type": "file",
-                        "description": "b4-linux-<arch>.tar.gz release archive",
+                        "description": "b4-linux-\u003carch\u003e.tar.gz release archive",
                         "name": "file",
                         "in": "formData",
                         "required": true
@@ -5403,93 +5490,6 @@
                     }
                 }
             }
-        },
-        "/collected-ips": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "CollectedIPs"
-                ],
-                "summary": "List collected IP addresses",
-                "description": "Returns the current shared collected pool, sorted by collection time, latest first. Addresses are runtime candidates, not bans. since is wall-clock milliseconds.",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handler.CollectedIPsResponse"
-                        }
-                    },
-                    "405": {
-                        "description": "Method not allowed",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/collected-ips/clear": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "CollectedIPs"
-                ],
-                "summary": "Remove collected IP addresses",
-                "description": "Removes one IP or clears the pool when ip is empty or the body is missing. Static targets remain. New detections can collect removed addresses again. A failed update retains the entry and returns an error.",
-                "consumes": [
-                    "application/json"
-                ],
-                "parameters": [
-                    {
-                        "description": "IP address to remove; empty clears all collected addresses",
-                        "name": "body",
-                        "in": "body",
-                        "schema": {
-                            "$ref": "#/definitions/handler.CollectedIPsClearRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handler.CollectedIPsClearResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "invalid_json or bad_request",
-                        "schema": {
-                            "$ref": "#/definitions/handler.APIError"
-                        }
-                    },
-                    "500": {
-                        "description": "internal",
-                        "schema": {
-                            "$ref": "#/definitions/handler.APIError"
-                        }
-                    },
-                    "405": {
-                        "description": "Method not allowed",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
         }
     },
     "definitions": {
@@ -5911,23 +5911,23 @@
             "type": "object",
             "properties": {
                 "dns_threshold": {
-                    "description": "0 -> 2",
+                    "description": "0 -\u003e 2",
                     "type": "integer"
                 },
                 "rst_threshold": {
-                    "description": "0 -> 3",
+                    "description": "0 -\u003e 3",
                     "type": "integer"
                 },
                 "rst_window_sec": {
-                    "description": "0 -> 30",
+                    "description": "0 -\u003e 30",
                     "type": "integer"
                 },
                 "stall_threshold": {
-                    "description": "0 -> 3",
+                    "description": "0 -\u003e 3",
                     "type": "integer"
                 },
                 "stall_timeout_ms": {
-                    "description": "0 -> 3000",
+                    "description": "0 -\u003e 3000",
                     "type": "integer"
                 },
                 "to": {
@@ -5935,7 +5935,7 @@
                     "type": "string"
                 },
                 "ttl_sec": {
-                    "description": "0 -> 3600",
+                    "description": "0 -\u003e 3600",
                     "type": "integer"
                 }
             }
@@ -6195,7 +6195,7 @@
                     "type": "integer"
                 },
                 "max": {
-                    "description": "threshold max (KB), if 0 or eq MinKB -> uses MinKB",
+                    "description": "threshold max (KB), if 0 or eq MinKB -\u003e uses MinKB",
                     "type": "integer"
                 },
                 "min": {
@@ -7804,6 +7804,36 @@
                 }
             }
         },
+        "handler.CollectedIPsClearRequest": {
+            "type": "object",
+            "properties": {
+                "ip": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.CollectedIPsClearResponse": {
+            "type": "object",
+            "properties": {
+                "cleared": {
+                    "type": "integer"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "handler.CollectedIPsResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/metrics.CollectedEntry"
+                    }
+                }
+            }
+        },
         "handler.ConfigResponse": {
             "type": "object",
             "properties": {
@@ -9138,6 +9168,12 @@
                 },
                 "success": {
                     "type": "boolean"
+                },
+                "unmatched": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.GeodatUnmatched"
+                    }
                 }
             }
         },
@@ -9182,6 +9218,29 @@
                     "type": "string"
                 },
                 "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.GeodatUnmatched": {
+            "type": "object",
+            "properties": {
+                "geoip_categories": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "geosite_categories": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "set_id": {
+                    "type": "string"
+                },
+                "set_name": {
                     "type": "string"
                 }
             }
@@ -10688,6 +10747,43 @@
                 }
             }
         },
+        "metrics.CollectedEntry": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string"
+                },
+                "ip": {
+                    "type": "string"
+                },
+                "set": {
+                    "type": "string"
+                },
+                "since": {
+                    "type": "integer"
+                },
+                "until": {
+                    "type": "integer"
+                }
+            }
+        },
+        "metrics.CollectedList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/metrics.CollectedEntry"
+                    }
+                },
+                "refused": {
+                    "type": "integer"
+                },
+                "rev": {
+                    "type": "integer"
+                }
+            }
+        },
         "metrics.Conntrack": {
             "type": "object",
             "properties": {
@@ -10865,6 +10961,9 @@
                 "blocked": {
                     "$ref": "#/definitions/metrics.BlockedLists"
                 },
+                "collected": {
+                    "$ref": "#/definitions/metrics.CollectedList"
+                },
                 "devices": {
                     "$ref": "#/definitions/metrics.DeviceList"
                 },
@@ -10927,9 +11026,6 @@
                 },
                 "uptime_s": {
                     "type": "integer"
-                },
-                "collected": {
-                    "$ref": "#/definitions/metrics.CollectedList"
                 }
             }
         },
@@ -11430,67 +11526,6 @@
                     "items": {
                         "$ref": "#/definitions/watchdog.SetWatchStatus"
                     }
-                }
-            }
-        },
-        "metrics.CollectedEntry": {
-            "type": "object",
-            "properties": {
-                "ip": {
-                    "type": "string"
-                },
-                "host": {
-                    "type": "string"
-                },
-                "set": {
-                    "type": "string"
-                },
-                "since": {
-                    "type": "integer"
-                }
-            }
-        },
-        "metrics.CollectedList": {
-            "type": "object",
-            "properties": {
-                "rev": {
-                    "type": "integer"
-                },
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/metrics.CollectedEntry"
-                    }
-                }
-            }
-        },
-        "handler.CollectedIPsResponse": {
-            "type": "object",
-            "properties": {
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/metrics.CollectedEntry"
-                    }
-                }
-            }
-        },
-        "handler.CollectedIPsClearRequest": {
-            "type": "object",
-            "properties": {
-                "ip": {
-                    "type": "string"
-                }
-            }
-        },
-        "handler.CollectedIPsClearResponse": {
-            "type": "object",
-            "properties": {
-                "success": {
-                    "type": "boolean"
-                },
-                "cleared": {
-                    "type": "integer"
                 }
             }
         }
