@@ -24,6 +24,7 @@ cat > "$T/bin/ssh" <<EOF
 #!/bin/sh
 printf '%s\n' "\$@" > "$T/ssh.args"
 for arg in "\$@"; do command="\$arg"; done
+printf '%s\n' "\$command" >> "$T/ssh.log"
 case "\$command" in
 *change.test*) side=change ;;
 *base.test*) side=base ;;
@@ -98,6 +99,7 @@ name=""
 pidfile=""
 port=""
 seed=""
+echo "\$*" >> "$T/qemu.args"
 while [ "\$#" -gt 0 ]; do
 	case "\$1" in
 	-name) name="\$2" ;;
@@ -117,7 +119,7 @@ if [ -e "$T/qemu-broken" ]; then
 	echo "qemu-system-x86_64: no such machine" >&2
 	exit 1
 fi
-if [ ! -e "\$seed" ]; then
+if [ -n "\$seed" ] && [ ! -e "\$seed" ]; then
 	echo "qemu-system-x86_64: Could not open '\$seed': No such file or directory" >&2
 	exit 1
 fi
@@ -131,15 +133,52 @@ fi
 echo \$! > "\$pidfile"
 echo \$! >> "$T/pids"
 EOF
-cat > "$T/bin/curl" <<'EOF'
+cat > "$T/bin/curl" <<EOF
 #!/bin/sh
-while [ "$#" -gt 0 ]; do
-	[ "$1" = -o ] && out="$2"
+out=""
+method=GET
+url=""
+body=""
+while [ "\$#" -gt 0 ]; do
+	case "\$1" in
+	-o) out="\$2" ;;
+	-X) method="\$2" ;;
+	-d) body="\$2" ;;
+	http*) url="\$1" ;;
+	esac
 	shift
 done
-echo part1 > "$out"
+case "\$url" in
+*/rest/*)
+	echo "\$method \$url" >> "$T/rest.log"
+	[ "\$method" = PUT ] && printf '%s %s\n' "\$url" "\$body" >> "$T/rest.put"
+	case "\$url" in
+	*/rest/system/resource) echo '{"uptime":"1s"}' ;;
+	*/rest/user/ssh-keys) echo '[]' ;;
+	*/rest/system/package) echo '[{"name":"routeros"},{"name":"container"}]' ;;
+	*/rest/system/device-mode) echo '{"container":"true"}' ;;
+	*/rest/system/shutdown)
+		[ -f "$T/shutdown.pid" ] && kill "\$(cat "$T/shutdown.pid")"
+		echo '{}'
+		;;
+	*'?'*)
+		base="\${url%%\?*}"
+		pair="\${url#*\?}"
+		if [ -f "$T/rest.put" ] && grep -F -- "\$base {" "$T/rest.put" | grep -qF -- "\"\${pair%%=*}\":\"\${pair#*=}\""; then
+			echo '[{".id":"*1","name":"x"}]'
+		else
+			echo '[]'
+		fi
+		;;
+	*/rest/container/*) echo '{"running":"false"}' ;;
+	*) echo '{}' ;;
+	esac
+	exit 0
+	;;
+esac
+echo part1 > "\$out"
 sleep 1
-echo part2 >> "$out"
+echo part2 >> "\$out"
 EOF
 . "$LAB_DIR/guests/debian9.env"
 cat > "$T/bin/sha256sum" <<EOF
@@ -169,9 +208,28 @@ while [ "$#" -gt 0 ]; do
 done
 exit 0
 EOF
-for stub in ip qemu-img; do
-	printf '#!/bin/sh\nexit 0\n' > "$T/bin/$stub"
+printf '#!/bin/sh\nexit 0\n' > "$T/bin/ip"
+cat > "$T/bin/qemu-img" <<'EOF'
+#!/bin/sh
+for a in "$@"; do
+	last="$a"
 done
+[ "$1" = convert ] && : > "$last"
+exit 0
+EOF
+cat > "$T/bin/unzip" <<'EOF'
+#!/bin/sh
+case "$1" in
+-p) echo disk ;;
+-q)
+	while [ "$#" -gt 0 ]; do
+		[ "$1" = -d ] && : > "$2/container-7.25.1.npk"
+		shift
+	done
+	;;
+esac
+exit 0
+EOF
 chmod +x "$T"/bin/* "$T/guest.bin" "$T/idle"
 : > "$T/b4.json"
 
@@ -422,6 +480,10 @@ check "ssh: an instance that is not running is not contacted" 1 "old8 is not run
 
 check "up: a start that never got its seed image makes it" 0 "noseed is up" \
 	lab up debian9 noseed
+case "$(grep -e '-name b4-lab-noseed ' "$T/qemu.args" | tail -n 1)" in
+*"file=$T/home/instances/noseed/seed.iso,"*) ;;
+*) fail "up: the cloud guest was started without its cloud-init seed drive" ;;
+esac
 
 remote change 0 \
 	'=== RUN   TestNetnsA' \
@@ -518,6 +580,69 @@ seeded "$half" third || fail "up: the instance was seeded without the lab's key"
 : > "$T/qemu-broken"
 check "up: stops at once when qemu fails for another reason" 1 "qemu did not start up2" \
 	lab up debian9 up2
+
+rm -f "$T/qemu-broken"
+ros="$T/ros"
+mkdir -p "$ros/images" "$ros/keys"
+cp "$T/home/keys/id_ed25519" "$T/home/keys/id_ed25519.pub" "$ros/keys/"
+. "$LAB_DIR/guests/routeros.env"
+: > "$ros/images/$(basename "$IMAGE_URL")"
+: > "$ros/images/$(basename "$PACKAGES_URL")"
+: > "$T/rest.log"
+: > "$T/rest.put"
+: > "$T/ssh.log"
+: > "$T/provision.log"
+check "up: a RouterOS guest starts without a seed and comes up in its container" 0 "rosup is up" \
+	env B4_LAB_HOME="$ros" sh "$LAB_DIR/lab" up routeros rosup
+grep -q "into the b4 container, RouterOS ssh" "$T/out" ||
+	fail "up: the RouterOS start does not name its RouterOS, REST and web ports"
+rosargs="$(grep -e '-name b4-lab-rosup ' "$T/qemu.args" | tail -n 1)"
+case "$rosargs" in
+*seed.iso*) fail "up: the RouterOS guest was given a cloud-init seed" ;;
+esac
+p="$(cat "$ros/instances/rosup/port" 2>/dev/null)"
+case "$rosargs" in
+*if=ide*"hostfwd=tcp:127.0.0.1:$p-:2222,hostfwd=tcp:127.0.0.1:$((p + 1))-:22,hostfwd=tcp:127.0.0.1:$((p + 2))-:80,hostfwd=tcp:127.0.0.1:$((p + 3))-:7000"*) ;;
+*) fail "up: the RouterOS guest did not get an IDE disk and forwards from its port $p to 2222, 22, 80 and 7000: $rosargs" ;;
+esac
+[ ! -s "$T/provision.log" ] || fail "up: the cloud provisioning script ran on the RouterOS guest"
+[ -f "$ros/instances/rosup/provisioned" ] || fail "up: the RouterOS instance is not marked provisioned"
+for made in '/rest/interface/veth {"name":"lab-b4"' '/rest/interface/bridge {"name":"lab-bridge"}' \
+	'/rest/interface/bridge/port {"bridge":"lab-bridge"' '/rest/ip/address {"address":"172.17.0.1/24"' \
+	'"comment":"lab-masq"}' '"comment":"lab-ssh"}' '"comment":"lab-web"}' '/rest/file {"name":"b4lab","type":"directory"}' \
+	'/rest/file {"name":"b4lab/entry.sh","contents":"#!/bin/sh\n' '/rest/file {"name":"b4lab/authorized_keys"' \
+	'/rest/file {"name":"b4lab/env","contents":"LAB_ROS_FIREWALL=legacy\n"}' \
+	'/rest/container {"name":"b4","remote-image":"wiktorbgu/b4-mikrotik:'; do
+	grep -qF -- "$made" "$T/rest.put" || fail "up: RouterOS was never asked to create $made"
+done
+grep -q "^POST .*/rest/user/ssh-keys/import$" "$T/rest.log" || fail "up: the lab's ssh key was not imported for admin"
+grep -q "^POST .*/rest/container/start$" "$T/rest.log" || fail "up: the b4 container was not started"
+grep -qF 'cat /proc/1/comm' "$T/ssh.log" || fail "up: the RouterOS guest counted as up before the image handed over to init"
+[ "$(cat "$ros/instances/rosup/kind" 2>/dev/null)" = routeros ] || fail "up: the RouterOS instance does not record its kind"
+
+mkdir -p "$T/home/instances/ros1"
+echo 2230 > "$T/home/instances/ros1/port"
+echo root > "$T/home/instances/ros1/user"
+echo routeros > "$T/home/instances/ros1/guest"
+echo routeros > "$T/home/instances/ros1/kind"
+"$T/idle" -name b4-lab-ros1 -end &
+echo $! > "$T/home/instances/ros1/pid"
+echo $! >> "$T/pids"
+check "ros: runs a RouterOS command as admin on the RouterOS ssh port" 0 "" \
+	lab ros ros1 '/ip address print where interface="lab bridge"'
+grep -qxF -- 2231 "$T/ssh.args" && grep -qxF admin@127.0.0.1 "$T/ssh.args" &&
+	grep -qxF '/ip address print where interface="lab bridge"' "$T/ssh.args" ||
+	fail "ros: ssh did not get the RouterOS port, admin and the command as one argument"
+check "ros: refuses an instance that is not RouterOS" 1 "not RouterOS" \
+	lab ros fake /system/resource/print
+: > "$T/rest.log"
+: > "$T/ssh.args"
+cp "$T/home/instances/ros1/pid" "$T/shutdown.pid"
+check "down: shuts RouterOS down through its REST API" 0 "ros1 stopped" \
+	lab down ros1
+grep -q "^POST http://127.0.0.1:2232/rest/system/shutdown$" "$T/rest.log" ||
+	fail "down: RouterOS was not asked to shut down on its REST port"
+! grep -qx poweroff "$T/ssh.args" || fail "down: poweroff went to the b4 container instead of RouterOS"
 
 [ "$failed" -eq 0 ] || {
 	echo "lab selftest: $failed failed"
