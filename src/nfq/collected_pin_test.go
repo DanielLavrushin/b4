@@ -1,6 +1,7 @@
 package nfq
 
 import (
+	"net"
 	"testing"
 	"time"
 
@@ -356,5 +357,71 @@ func TestAnEscalatedConnectionKeepsItsEscalationAcrossACollectedPublish(t *testi
 				t.Errorf("%s: a resent ClientHello got verdict %d after a collected publish, want %d (recorded set %q); a publish leaves an open connection its set and that set's escalation, and gives it to no set that took its address since", c.name, v, c.want, d.priorSet)
 			}
 		})
+	}
+}
+
+func TestALearnerAheadOfAnIPPrioritySetKeepsTheConnectionAcrossASaveAndAPublish(t *testing.T) {
+	const unlisted = "unlisted.example.net"
+	for _, save := range []bool{false, true} {
+		name := "without a save"
+		if save {
+			name = "with a save"
+		}
+		t.Run(name, func(t *testing.T) {
+			learner := newFragmentingYTImagesSet()
+			learner.Id, learner.Name = "learner", "learner"
+			learner.Targets.DomainOnly = false
+			listing := newPassiveSet()
+			listing.Id, listing.Name = "listing", "listing"
+			listing.Targets.DomainOnly = false
+			listing.Targets.DomainsToMatch = nil
+			listing.Targets.IpsToMatch = []string{"1.2.3.4"}
+			listing.Targets.IPPriority = true
+			w := newInjectingWorker(t, &learner, &listing)
+			idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
+			stubInjectRoute(t, idx["eth7"], true)
+			queuedVerdict(t, w, makeV4TCPPacketFromPort(buildClientHello("i.ytimg.com", 16, 0xAB), 1000, 12346, 0x18), nil, idx["eth7"], 0)
+			hello := buildClientHello(unlisted, 16, 0xAB)
+			if v := queuedVerdict(t, w, pinnedHello(unlisted), nil, idx["eth7"], 0); v != nfqueue.NfDrop {
+				t.Fatalf("setup: the first ClientHello got verdict %d, want the learner's drop: IP priority holds only against the sets after the listing set", v)
+			}
+			if save {
+				saveSets(w, nil)
+			}
+			data := makeV4TCPPacket(tlsAppData(100), 1000+uint32(len(hello)))
+			if v := queuedVerdict(t, w, data, nil, idx["eth7"], 0); v != nfqueue.NfDrop {
+				t.Fatalf("setup: the data packet got verdict %d, want the learner's drop", v)
+			}
+			publishCollectedMatcher(t, w, nil)
+			if v := queuedVerdict(t, w, pinnedHello(unlisted), nil, idx["eth7"], 0); v != nfqueue.NfDrop {
+				d, _ := w.tlsCache.Decision(pinnedConnKey)
+				t.Errorf("%s: a resent ClientHello got verdict %d after a collected publish, want the learner's drop as before it (recorded set %q); a set with IP priority later in the order never had the connection", name, v, d.priorSet)
+			}
+		})
+	}
+}
+
+func TestAnEscalationFoundAfterAHostHintDropSurvivesACollectedPublish(t *testing.T) {
+	const unlisted = "unlisted.example.net"
+	hinted := newPassiveSet()
+	hinted.Id, hinted.Name = "hinted", "hinted"
+	hinted.Targets.DomainOnly = false
+	escalated := newFragmentingYTImagesSet()
+	escalated.Id, escalated.Name = "escalated", "escalated"
+	escalated.Targets.DomainOnly = false
+	escalated.Targets.DomainsToMatch = []string{"never.example.org"}
+	w := newInjectingWorker(t, &hinted, &escalated)
+	idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
+	stubInjectRoute(t, idx["eth7"], true)
+	w.hostHints.Store("10.0.0.1", "1.2.3.4", "hinted", "i.ytimg.com")
+	w.getMatcher().LearnIPToDomain(net.ParseIP("1.2.3.4"), "i.ytimg.com", &hinted)
+	w.destState.SetEscalation("i.ytimg.com", "escalated", "test", time.Hour)
+	if v := queuedVerdict(t, w, pinnedHello(unlisted), nil, idx["eth7"], 0); v != nfqueue.NfDrop {
+		t.Fatalf("setup: the first ClientHello got verdict %d, want the escalated set's drop after the hint gave way to the learned address", v)
+	}
+	publishCollectedMatcher(t, w, nil)
+	if v := queuedVerdict(t, w, pinnedHello(unlisted), nil, idx["eth7"], 0); v != nfqueue.NfDrop {
+		d, _ := w.tlsCache.Decision(pinnedConnKey)
+		t.Errorf("a resent ClientHello got verdict %d after a collected publish, want the escalated set's drop as before it (recorded set %q); the escalation lookup after a host hint drop must not take the pinned scope", v, d.priorSet)
 	}
 }
