@@ -145,6 +145,25 @@ func TestTakenFollowsThePortsAndFamiliesTheConsumersRulesMatch(t *testing.T) {
 	}
 }
 
+func TestAReuseConsumerTakesTheRoutersOwnTCP443WhateverSourceInterfacesItKeeps(t *testing.T) {
+	const dst = "203.0.113.7"
+	cfg := config.NewConfig()
+	cfg.Queue.IPv4Enabled = true
+	set := readyConsumer(false)
+	set.Id, set.Enabled = "reuse-consumer", true
+	set.TCP.WSSizeReuse.Enabled = true
+	set.Routing.SourceInterfaces = []string{"br0"}
+	cfg.Sets = []*config.SetConfig{set}
+	view := cfg.WithCollectedIPs([]string{dst})
+	stubCollectedRoutes(t, func(id string) (tables.CollectedRoute, bool) {
+		return installedCollectedRoute(view, view.GetSetById(id))
+	})
+	router := helloWatch{dst: net.ParseIP(dst), port: 443, ver: IPv4, client: net.ParseIP("198.51.100.2"), scope: &ingressScope{resolved: true, router: true}}
+	if !collectedTakenAway(view, buildMatcher(view), router) {
+		t.Fatal("a WSSIZE reuse consumer that keeps source interfaces from an earlier routing setup does not take the router's own TCP/443 in the unit model, but its firewall rules come from the reuse view, which drops source interfaces, so they divert that connection (netns oracle: router 443, consumer on the LAN interface)")
+	}
+}
+
 func TestOnlyAnInstalledRouteTakesACollectedConnection(t *testing.T) {
 	reuse := readyConsumer(false)
 	reuse.Id = "reuse-consumer"
