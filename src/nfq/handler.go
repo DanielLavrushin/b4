@@ -395,12 +395,13 @@ func (h addressHold) yieldsTo(cfg *config.Config, matcher *sni.SuffixSet, escSet
 	return escalationReaches(cfg, h.set, escSet.Id) || !h.outranks(matcher, escSet, srcMac)
 }
 
-func (w *Worker) connectionSet(matcher *sni.SuffixSet, connKey, srcMac string, ipVersion uint8, dport uint16, payload []byte, seq uint32, keep sni.SetFilter, hold addressHold) (*config.SetConfig, string, bool) {
+func (w *Worker) connectionSet(matcher *sni.SuffixSet, connKey, srcMac string, ipVersion uint8, dport uint16, payload []byte, seq uint32, keep sni.SetFilter, hold addressHold) (*config.SetConfig, string, bool, uint64) {
 	decision, ok := w.tlsCache.Decision(connKey)
 	if !ok || (startsClientHello(payload) && decision.helloSeq-seq > maxPendingHelloRecord) {
-		return nil, "", false
+		return nil, "", false, 0
 	}
 	set, held := decision.set, decision.heldBy != ""
+	var unnamed uint64
 	if !matcher.SameConnectionPolicy(decision.decidedBy) || decision.decidedMac != srcMac {
 		stillHeld := decision.heldBy != "" && hold.on() && decision.heldBy == hold.set.Id && hold.set.MatchesIPVersion(ipVersion)
 		set, held = nil, false
@@ -418,11 +419,14 @@ func (w *Worker) connectionSet(matcher *sni.SuffixSet, connKey, srcMac string, i
 			}
 		}
 		w.tlsCache.DecideHeld(connKey, decision.gen, matcher, srcMac, set, held, hold.set)
+		if set == nil && hold.set == nil {
+			unnamed = decision.gen
+		}
 	}
 	if set == nil {
-		return nil, "", false
+		return nil, "", false, unnamed
 	}
-	return set, decision.host, held && hold.keeps(set)
+	return set, decision.host, held && hold.keeps(set), 0
 }
 
 func fragmentsOrDesyncs(set *config.SetConfig) bool {
@@ -505,8 +509,9 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	var connSet *config.SetConfig
 	connHost := ""
 	connHeld := false
+	var unnamedGen uint64
 	if cfg.IsTCPPort(dport) && tcp[13]&0x02 == 0 {
-		connSet, connHost, connHeld = w.connectionSet(matcher, connKey, pkt.srcMac, pkt.ver, dport, payload, binary.BigEndian.Uint32(tcp[4:8]), keep, hold)
+		connSet, connHost, connHeld, unnamedGen = w.connectionSet(matcher, connKey, pkt.srcMac, pkt.ver, dport, payload, binary.BigEndian.Uint32(tcp[4:8]), keep, hold)
 	}
 
 	matchedHint := false
@@ -569,6 +574,13 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		hintHost = ""
 		matchedLearned = false
 		learnedHost = ""
+	}
+	if unnamedGen != 0 {
+		var prior *config.SetConfig
+		if matched {
+			prior = set
+		}
+		w.tlsCache.RecordPrior(connKey, unnamedGen, matcher, prior)
 	}
 
 	earlyHost := hintHost

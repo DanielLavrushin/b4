@@ -185,6 +185,18 @@ func (c *tlsInfoCache) DecideHeld(connKey string, gen uint64, matcher *sni.Suffi
 	}
 }
 
+func (c *tlsInfoCache) RecordPrior(connKey string, gen uint64, matcher *sni.SuffixSet, prior *config.SetConfig) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if info, exists := c.conns[connKey]; exists && info.gen == gen && info.decidedBy == matcher && info.set == nil {
+		info.priorSet = ""
+		if prior != nil {
+			info.priorSet = prior.Id
+		}
+	}
+}
+
 func (c *tlsInfoCache) ForgetDecisions(current *sni.SuffixSet) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
