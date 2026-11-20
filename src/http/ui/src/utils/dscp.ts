@@ -7,6 +7,7 @@ import type {
   TargetsConfig,
 } from "@models/config";
 import type { HubWarning } from "@models/hub";
+import { declaresIpTargets } from "./targets";
 
 export const DSCP_MAX_VALUE = 63;
 
@@ -45,10 +46,7 @@ const anyListed = (...lists: (string[] | undefined)[]) =>
   lists.some((list) => (list?.length ?? 0) > 0);
 
 const declaresTargets = (t: TargetsConfig) =>
-  anyListed(t.sni_domains, t.ip, t.geosite_categories, t.geoip_categories, t.asns);
-
-const declaresIPTargets = (t: TargetsConfig) =>
-  anyListed(t.ip, t.geoip_categories, t.asns);
+  anyListed(t.sni_domains, t.geosite_categories) || declaresIpTargets(t);
 
 const routingModeRefusal = (mode: string | undefined): DscpRefusal | null => {
   switch (mode) {
@@ -80,7 +78,7 @@ export const dscpRefusal = (
   if (deviceFilter) return "device_filter";
   if (
     !declaresTargets(targets) ||
-    (targets.domain_only && !declaresIPTargets(targets))
+    (targets.domain_only && !declaresIpTargets(targets))
   ) {
     return "no_addresses";
   }

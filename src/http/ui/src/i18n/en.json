@@ -2505,8 +2505,8 @@
       "dscpOffDevices": "This set selects source devices (Targets -> Source Devices), and the firewall stage that writes DSCP cannot see which device a packet came from.",
       "dscpOffSourceIfaces": "This set's routing is limited to source interfaces, and the firewall stage that writes DSCP cannot see which interface a packet came in on.",
       "dscpOffDeviceFilter": "Device Filtering in Settings -> Core -> Devices has devices selected, and the firewall stage that writes DSCP cannot see which device a packet came from, so no set writes its own value.",
-      "dscpNoAddresses": "This set has no domain, IP, GeoIP or ASN target, so it has no address to write the value for.",
-      "dscpDomainOnly": "Domain-only matching is on, so this set writes its value only for the IP, GeoIP and ASN targets it lists, and it lists none. The value is written by destination address, before the domain name is visible."
+      "dscpNoAddresses": "This set has no domain, IP, GeoIP or ASN target and does not use collected IPs, so it has no address to write the value for.",
+      "dscpDomainOnly": "Domain-only matching is on, so this set writes its value only for the IP, GeoIP and ASN targets it lists and for collected IPs, and it has none of these. The value is written by destination address, before the domain name is visible."
     },
     "importExport": {
       "sectionTitle": "Import/Export Set configuration",
