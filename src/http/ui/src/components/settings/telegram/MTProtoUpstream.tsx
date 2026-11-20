@@ -28,11 +28,9 @@ import { SettingsPropHandlerType } from "@models/settings";
 import { mtprotoApi } from "@api/mtproto";
 import { MTProtoRelayHelpDialog } from "./MTProtoRelayHelpDialog";
 import { MTProtoProbeResults, type ProbeRow } from "./MTProtoProbeResults";
-import {
-  MTProtoUpstreamSet,
-  telegramSetRoutes,
-  telegramSetUsable,
-} from "./MTProtoUpstreamSet";
+import { telegramSetRoutes, telegramSetUsable } from "@models/telegramSet";
+import { MTProtoRelayProcessing } from "./MTProtoRelayProcessing";
+import { MTProtoUpstreamSet } from "./MTProtoUpstreamSet";
 
 type RefreshResult =
   | {
@@ -112,6 +110,10 @@ export const MTProtoUpstreamCard = ({
   const showWorkerDpi =
     (mtproto?.cfworker_domain || "").trim() !== "" &&
     !telegramSetRoutes(config);
+  const showCFProxyDpi =
+    ((mtproto?.cfproxy_enabled ?? true) ||
+      (mtproto?.ws_custom_domain || "").trim() !== "") &&
+    !telegramSetUsable(config);
   const hasEdgeOverride =
     !!mtproto?.ws_endpoint_host || !!mtproto?.ws_front_sni;
   const showDcRelay =
@@ -340,6 +342,7 @@ export const MTProtoUpstreamCard = ({
             <B4Switch
               checked={mtproto?.cfworker_dpi ?? false}
               path="system.mtproto.cfworker_dpi"
+              aiTopic="system.mtproto.cfworker_dpi"
               onChange={(checked: boolean) =>
                 onChange("system.mtproto.cfworker_dpi", checked)
               }
@@ -364,6 +367,22 @@ export const MTProtoUpstreamCard = ({
             helperText={t("settings.MTProto.wsCustomDomainHelp")}
             selectOnFocus
           />
+        </Grid>
+        {showCFProxyDpi && (
+          <Grid size={{ xs: 12 }}>
+            <B4Switch
+              checked={mtproto?.cfproxy_dpi ?? false}
+              path="system.mtproto.cfproxy_dpi"
+              aiTopic="system.mtproto.cfproxy_dpi"
+              onChange={(checked: boolean) =>
+                onChange("system.mtproto.cfproxy_dpi", checked)
+              }
+              description={t("settings.MTProto.cfProxyDpiHelp")}
+            />
+          </Grid>
+        )}
+        <Grid size={{ xs: 12 }}>
+          <MTProtoRelayProcessing config={config} />
         </Grid>
       </Grid>
 

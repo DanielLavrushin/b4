@@ -27,6 +27,7 @@ import {
   EscalateInIcon,
   EscalateOutIcon,
   ShareIcon,
+  TelegramIcon,
   ThumbDownIcon,
   ThumbDownOutlinedIcon,
   ThumbUpIcon,
@@ -41,6 +42,10 @@ import { B4SetConfig } from "@models/config";
 import { HubVoteKind } from "@models/hub";
 import { SetWatchStatus, setWatchBlock, setWatchTone } from "@models/watchdog";
 import { formatAsn } from "@models/asn";
+import {
+  TelegramSetProblem,
+  telegramSetProblemText,
+} from "@models/telegramSet";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "@api/apiClient";
 import { useSnackbar } from "@context/SnackbarProvider";
@@ -89,6 +94,7 @@ interface SetCardProps {
   watchStatus?: SetWatchStatus;
   watchdogOn?: boolean;
   deviceFilter?: boolean;
+  telegramSet?: { problem: TelegramSetProblem | null };
 }
 
 export const SetCard = ({
@@ -116,6 +122,7 @@ export const SetCard = ({
   watchStatus,
   watchdogOn = true,
   deviceFilter = false,
+  telegramSet,
 }: SetCardProps) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -175,7 +182,28 @@ export const SetCard = ({
     dscpRefusal,
   });
   const openFacet = facets.find((f) => f.key === activeFacet);
-  const targetSummary = buildTargetSummary(set, stats, t);
+  const telegramProblem = telegramSet?.problem ?? null;
+  const telegramPorts = [
+    set.tcp?.dport_filter?.trim() && `TCP ${set.tcp.dport_filter.trim()}`,
+    set.udp?.dport_filter?.trim() && `UDP ${set.udp.dport_filter.trim()}`,
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const targetSummary = buildTargetSummary(
+    set,
+    stats,
+    t,
+    telegramSet && !telegramProblem
+      ? {
+          noTargetsText: telegramPorts
+            ? t("sets.card.telegramTargetsPorts", { ports: telegramPorts })
+            : t("sets.card.telegramTargets"),
+        }
+      : undefined,
+  );
+  const telegramLabel = telegramProblem
+    ? t(`sets.card.telegramSetProblem.${telegramProblem.kind}`)
+    : t("sets.card.telegramSet");
   const route = buildRouteSummary(set, t, { dscpRefusal });
   const unresolvedAsns = stats?.asn_unresolved ?? [];
   const watched = !!set.discovery?.watchdog;
@@ -474,7 +502,8 @@ export const SetCard = ({
         </CardContent>
       </CardActionArea>
 
-      {(escalatesTo ||
+      {(telegramSet ||
+        escalatesTo ||
         (escalatedFrom && escalatedFrom.length > 0) ||
         set.hub_state ||
         watched ||
@@ -491,6 +520,33 @@ export const SetCard = ({
             borderTop: `1px solid ${colors.border.light}`,
           }}
         >
+          {telegramSet && (
+            <Tooltip
+              title={
+                telegramProblem
+                  ? telegramSetProblemText(t, telegramProblem)
+                  : t("sets.card.telegramSetTooltip")
+              }
+            >
+              <B4Badge
+                icon={<TelegramIcon sx={{ fontSize: ESCALATION_ICON }} />}
+                label={telegramLabel}
+                aria-label={
+                  telegramProblem
+                    ? `${t("sets.card.telegramSet")}: ${telegramLabel}`
+                    : telegramLabel
+                }
+                size="small"
+                color={telegramProblem ? "warning" : "secondary"}
+                variant="outlined"
+                clickable
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate("/settings/mtproto")?.catch(() => {});
+                }}
+              />
+            </Tooltip>
+          )}
           {escalatesTo && (
             <EscalationChip
               icon={<EscalateOutIcon sx={{ fontSize: ESCALATION_ICON }} />}

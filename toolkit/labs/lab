@@ -88,11 +88,54 @@ load_guest() {
 	GUEST_SEED=nocloud
 	GUEST_GOARCH=amd64
 	GUEST_PROVISION=""
+	GUEST_PROVISION_ARGS=""
+	GUEST_FILE_URL=""
+	GUEST_FILE_SHA256=""
+	GUEST_PUSH=""
+	GUEST_CHROOT=""
 	GUEST_KIND=cloud
 	PACKAGES_URL=""
 	PACKAGES_SHA256=""
 	CONTAINER_IMAGE=""
 	. "$GUESTS/$1.env"
+}
+
+guest_qemu() {
+	case "$GUEST_GOARCH" in
+	amd64) echo qemu-system-x86_64 ;;
+	arm64) echo qemu-system-aarch64 ;;
+	*) die "guest architecture '$GUEST_GOARCH' is neither amd64 nor arm64" ;;
+	esac
+}
+
+guest_accel() {
+	case "$GUEST_GOARCH:$(uname -m)" in
+	amd64:x86_64 | arm64:aarch64)
+		if [ -w "${LAB_KVM:-/dev/kvm}" ]; then
+			echo kvm
+			return 0
+		fi
+		;;
+	esac
+	echo tcg
+}
+
+arm_cpu() {
+	if [ "$1" = kvm ]; then
+		echo host
+	else
+		echo cortex-a72
+	fi
+}
+
+efi_code() { echo "${LAB_EFI_CODE:-/usr/share/AAVMF/AAVMF_CODE.fd}"; }
+
+efi_vars() { echo "${LAB_EFI_VARS:-/usr/share/AAVMF/AAVMF_VARS.fd}"; }
+
+need_efi() {
+	[ "$GUEST_GOARCH" = arm64 ] || return 0
+	[ -f "$(efi_code)" ] && [ -f "$(efi_vars)" ] ||
+		die "an arm64 guest boots UEFI from $(efi_code) and $(efi_vars) (package qemu-efi-aarch64; LAB_EFI_CODE and LAB_EFI_VARS point at others)"
 }
 
 needs_provision() {
@@ -263,12 +306,13 @@ cmd_up() {
 	name="${2:-$guest}"
 	named "$guest"
 	named "$name"
-	need qemu-system-x86_64
+	load_guest "$guest"
+	need "$(guest_qemu)"
+	need_efi
 	need qemu-img
 	need ssh
 	need sha256sum
 	need flock
-	load_guest "$guest"
 	dir="$(inst_dir "$name")"
 	mkdir -p "$dir"
 	exec 8> "$dir/up.lock"
@@ -300,8 +344,19 @@ cmd_up() {
 		sleep 2
 	done
 	if [ -n "$GUEST_PROVISION" ] && [ ! -f "$dir/provisioned" ]; then
+		if [ -n "$GUEST_FILE_URL" ]; then
+			need scp
+			cmd_push "$name" "$(fetch_file "$GUEST_FILE_URL" "$GUEST_FILE_SHA256")" /root/lab-files
+		fi
+		for f in $GUEST_PUSH; do
+			need scp
+			[ -f "$GUESTS/$f" ] || die "the guest $guest pushes $f, which is not in $GUESTS"
+			cmd_push "$name" "$GUESTS/$f" /root/lab-files
+		done
 		echo "lab: provisioning $name" >&2
-		guest_ssh "$name" 'sh -s' < "$GUESTS/$GUEST_PROVISION"
+		p_remote="sh -s"
+		[ -z "$GUEST_PROVISION_ARGS" ] || p_remote="LAB_PROVISION_ARGS=$(quote "$GUEST_PROVISION_ARGS") $p_remote"
+		guest_ssh "$name" "$p_remote" < "$GUESTS/$GUEST_PROVISION"
 	fi
 	needs_provision && touch "$dir/provisioned"
 	if [ "$GUEST_KIND" = routeros ]; then
@@ -314,6 +369,8 @@ cmd_up() {
 ssh_tries() {
 	if [ "$GUEST_KIND" = routeros ]; then
 		echo 450
+	elif [ "$(guest_accel)" = tcg ]; then
+		echo 300
 	else
 		echo 90
 	fi
@@ -327,6 +384,16 @@ launch_guest() {
 			-drive "file=$dir/disk.qcow2,if=ide,format=qcow2" \
 			-netdev "user,id=n0,hostfwd=tcp:127.0.0.1:$1-:2222,hostfwd=tcp:127.0.0.1:$(($1 + 1))-:22,hostfwd=tcp:127.0.0.1:$(($1 + 2))-:80,hostfwd=tcp:127.0.0.1:$(($1 + 3))-:7000" \
 			-device virtio-net-pci,netdev=n0 \
+			-device virtio-rng-pci 2> "$dir/qemu.err" 8>&-
+	elif [ "$GUEST_GOARCH" = arm64 ]; then
+		qemu-system-aarch64 -name "b4-lab-$name" -machine "virt,accel=$accel" -cpu "$(arm_cpu "$accel")" \
+			-smp "${LAB_CPUS:-$GUEST_CPUS}" -m "${LAB_MEM:-$GUEST_MEM}" \
+			-display none -serial "file:$dir/console.log" -pidfile "$dir/pid" -daemonize \
+			-drive "if=pflash,format=raw,readonly=on,file=$(efi_code)" \
+			-drive "if=pflash,format=raw,file=$dir/efivars.fd" \
+			-drive "file=$dir/disk.qcow2,if=virtio,format=qcow2" \
+			-drive "file=$dir/seed.iso,if=virtio,format=raw,readonly=on" \
+			-netdev "user,id=n0,hostfwd=tcp:127.0.0.1:$1-:22" -device virtio-net-pci,netdev=n0 \
 			-device virtio-rng-pci 2> "$dir/qemu.err" 8>&-
 	else
 		qemu-system-x86_64 -name "b4-lab-$name" -machine "accel=$accel" -cpu max \
@@ -354,9 +421,11 @@ start_guest() {
 	echo "$GUEST_KIND" > "$dir/kind"
 	[ -f "$dir/disk.qcow2" ] || qemu-img create -q -f qcow2 -b "$image" -F qcow2 "$dir/disk.qcow2" "$GUEST_DISK"
 	[ "$GUEST_KIND" = routeros ] || [ -f "$dir/seed.iso" ] || make_seed "$dir" "$name"
+	if [ "$GUEST_GOARCH" = arm64 ] && [ ! -f "$dir/efivars.fd" ]; then
+		cp "$(efi_vars)" "$dir/efivars.fd"
+	fi
 	port="$(free_port "$span")"
-	accel=tcg
-	[ -w /dev/kvm ] && accel=kvm
+	accel="$(guest_accel)"
 	tries=0
 	until launch_guest "$port"; do
 		tries=$((tries + 1))
@@ -420,8 +489,7 @@ routeros_power_cycle() {
 		[ "$c_tries" -lt 30 ] || die "$name did not stop for its power cycle"
 		sleep 1
 	done
-	accel=tcg
-	[ -w /dev/kvm ] && accel=kvm
+	accel="$(guest_accel)"
 	port="$(inst_port "$name")"
 	r_tries=0
 	until launch_guest "$port"; do
@@ -641,7 +709,7 @@ test_run() {
 	t_log="$3"
 	cmd_push "$t_name" "$t_bin" /root/lab
 	t_status=0
-	guest_ssh "$t_name" "sh -s -- $(quote "/root/lab/$(basename "$t_bin")") $(quote "$2") 1" \
+	guest_ssh "$t_name" "sh -s -- $(quote "/root/lab/$(basename "$t_bin")") $(quote "$2") 1 $(quote "$GUEST_CHROOT")" \
 		< "$LAB_DIR/scripts/netns-test.sh" > "$t_log" 2>&1 || t_status=$?
 	echo "$t_status" > "$t_log.status"
 	test_results FAIL "$t_log" | sort > "$t_log.fail"

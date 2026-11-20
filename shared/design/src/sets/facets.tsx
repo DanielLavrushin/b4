@@ -657,6 +657,7 @@ export const buildTargetSummary = (
   set: FacetSetConfig,
   stats: FacetStats | undefined,
   t: FacetTranslate,
+  options?: { noTargetsText?: string },
 ): string => {
   const { targets } = set;
   const named = [
@@ -670,7 +671,7 @@ export const buildTargetSummary = (
     const l7 = udpL7(set);
     return l7.length > 0
       ? `${t(F("udpL7"))}: ${udpL7Text(t, l7)}`
-      : t("sets.card.noTargets");
+      : (options?.noTargetsText ?? t("sets.card.noTargets"));
   }
 
   const parts: string[] = [];

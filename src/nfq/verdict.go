@@ -39,6 +39,7 @@ type verdictCtx struct {
 	scope          *ingressScope
 	keep           sni.SetFilter
 	telegramSet    *config.SetConfig
+	selfDial       bool
 	hellos         *pendingHelloCache
 	helloKey       string
 	held           *helloHold
