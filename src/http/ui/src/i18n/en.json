@@ -1886,6 +1886,17 @@
         "wssizeReuseAge": "Warm validity (seconds)",
         "wssizeReuseAgeDesc": "Default 120, at most 300. How long a warmed source port keeps taking new connections, counted from the start of its warm-up. After that, the next connection warms a new source port. The age never cuts a connection that is already relayed.",
         "wssizeReuseAlert": "After a good warm, the small window and this set's TCP strategy apply only to the warm connection, and client TLS uses a new connection with its normal Window Scale; b4 chooses the backend source port. When the warm fails, this set's TCP strategy applies to the whole client connection. Requires TPROXY; QUIC is not relayed.",
+        "wssizeReuseIssue": {
+          "window": "Reuse WSSIZE connection needs Real TCP window (wssize) on, with a Window above 0, so b4 refuses to save the set as it is.",
+          "targets": "Reuse WSSIZE connection needs IP targets: Manual Bypass IPs, Bypass GeoIP Categories, Networks (ASN) or Use collected IPs, so b4 refuses to save the set as it is.",
+          "domains": "Reuse WSSIZE connection does not work with domain targets, so b4 refuses to save the set as it is. Remove the bypass domains and GeoSite categories and turn Domain-only matching off.",
+          "tls": "Reuse WSSIZE connection does not work while a TLS Version Filter is set, so b4 refuses to save the set as it is.",
+          "port": "Reuse WSSIZE connection needs TCP port 443, and the Port Filter leaves it out, so b4 refuses to save the set as it is.",
+          "escalation": "Reuse WSSIZE connection does not work together with escalation in the same set, so b4 refuses to save the set as it is. Choose None in Escalate to set on the Escalation tab.",
+          "tun": "Reuse WSSIZE connection does nothing while the engine is TUN; the set's connections get its usual strategy.",
+          "skip_setup": "Reuse WSSIZE connection does nothing while Skip IPTables/NFTables Setup is on; the set's connections get its usual strategy.",
+          "queue_mark": "Reuse WSSIZE connection does nothing while the Packet Mark {{mark}} shares bits with 0x240000, the mark of its relay connections; the set's connections get its usual strategy."
+        },
         "ibdAction": "Detected IP action",
         "ibdBlock": "Block detected IPs",
         "ibdBlockNote": "Refuse detected blocked destinations using the existing block detection rules.",

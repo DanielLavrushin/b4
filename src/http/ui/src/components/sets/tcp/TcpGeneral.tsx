@@ -12,12 +12,21 @@ import {
   B4Hint,
 } from "@b4.elements";
 import { B4Switch } from "@common/B4Switch";
-import { declaresIpTargets, mssClampIpScope, portFilterCovers } from "@utils";
+import {
+  declaresIpTargets,
+  effectiveQueueMark,
+  isWSSizeReuseRefusal,
+  mssClampIpScope,
+  portFilterCovers,
+  wssizeReuseIssues,
+} from "@utils";
 import { Trans, useTranslation } from "react-i18next";
 
 interface TcpGeneralProps {
   config: B4SetConfig;
   tunEngine?: boolean;
+  skipSetup?: boolean;
+  queueMark?: number;
   onChange: (
     field: string,
     value: string | number | boolean | number[],
@@ -32,6 +41,8 @@ function wssizeScaleMode(ws: WSSizeConfig): "keep" | "lower" | "strip" {
 export const TcpGeneral = ({
   config,
   tunEngine = false,
+  skipSetup = false,
+  queueMark,
   onChange,
 }: TcpGeneralProps) => {
   const { t } = useTranslation();
@@ -44,6 +55,11 @@ export const TcpGeneral = ({
     ...config.tcp.wssize,
   };
   const reuse = config.tcp.wssize_reuse ?? { enabled: false, max_age_seconds: 120 };
+  const reuseIssues = wssizeReuseIssues(config, {
+    tunEngine,
+    skipSetup,
+    queueMark,
+  });
   const dup = config.tcp.duplicate ?? { enabled: false, count: 3 };
   const wsConflict = (config.routing?.enabled ?? false) || dup.enabled;
   const wsTun = ws.enabled && !wsConflict && tunEngine;
@@ -346,6 +362,23 @@ export const TcpGeneral = ({
               </Grid>
             )}
           </>
+        )}
+        {reuseIssues.length > 0 && (
+          <Grid size={{ xs: 12 }}>
+            <Stack spacing={1}>
+              {reuseIssues.map((issue) => (
+                <B4Alert
+                  key={issue}
+                  noWrapper
+                  severity={isWSSizeReuseRefusal(issue) ? "error" : "warning"}
+                >
+                  {t(`sets.tcp.general.wssizeReuseIssue.${issue}`, {
+                    mark: `0x${effectiveQueueMark(queueMark).toString(16)}`,
+                  })}
+                </B4Alert>
+              ))}
+            </Stack>
+          </Grid>
         )}
       </Grid>
 

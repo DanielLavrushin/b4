@@ -22,6 +22,8 @@ interface TcpTabContainerProps {
   initialSub?: string;
   config: B4SetConfig;
   tunEngine?: boolean;
+  skipSetup?: boolean;
+  queueMark?: number;
   onChange: (
     field: string,
     value: string | number | boolean | string[] | number[],
@@ -38,6 +40,8 @@ export const TcpTabContainer = ({
   initialSub,
   config,
   tunEngine,
+  skipSetup,
+  queueMark,
   onChange,
 }: TcpTabContainerProps) => {
   const { t } = useTranslation();
@@ -81,7 +85,13 @@ export const TcpTabContainer = ({
       </B4Tabs>
 
       <B4TabPanel value={activeTab} index={TCP_TABS.GENERAL} idPrefix="tcp-tab">
-        <TcpGeneral config={config} tunEngine={tunEngine} onChange={onChange} />
+        <TcpGeneral
+          config={config}
+          tunEngine={tunEngine}
+          skipSetup={skipSetup}
+          queueMark={queueMark}
+          onChange={onChange}
+        />
       </B4TabPanel>
 
       <B4TabPanel value={activeTab} index={TCP_TABS.SPLITTING} idPrefix="tcp-tab">

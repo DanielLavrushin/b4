@@ -408,6 +408,8 @@ export const SetEditorPage = ({
             initialSub={requestedSub}
             config={editedSet}
             tunEngine={config.queue.mode === "tun"}
+            skipSetup={config.system.tables.skip_setup}
+            queueMark={config.queue.mark}
             onChange={handleChange}
           />
         </B4TabPanel>
