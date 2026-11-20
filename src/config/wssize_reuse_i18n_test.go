@@ -93,3 +93,22 @@ func TestEnglishCollectAndReuseStringsUsePlainWords(t *testing.T) {
 		}
 	}
 }
+
+func TestReuseSwitchDescriptionNamesUseCollectedIPs(t *testing.T) {
+	c := reuseConfig(t)
+	c.Sets[0].Targets.IPs = nil
+	c.Sets[0].Targets.IpsToMatch = nil
+	c.Sets[0].Targets.UseCollectedIPs = true
+	if err := c.Validate(); err != nil {
+		t.Fatalf("a reuse set whose only target is Use collected IPs was refused: %v", err)
+	}
+	for locale, want := range useCollectedIPsLabel {
+		text, ok := uiStrings(t, locale)["sets.tcp.general.wssizeReuseDesc"]
+		if !ok {
+			t.Fatalf("%s.json has no sets.tcp.general.wssizeReuseDesc", locale)
+		}
+		if !strings.Contains(text, want) {
+			t.Errorf("%s sets.tcp.general.wssizeReuseDesc lists the targets a reuse set may have, and b4 saves one whose only target is Use collected IPs, but it does not name %q: %q", locale, want, text)
+		}
+	}
+}
