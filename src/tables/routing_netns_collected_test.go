@@ -1152,3 +1152,84 @@ func TestNetnsClearingRulesLeavesKernelForcedAccountingOn(t *testing.T) {
 func TestNetnsClearingRulesLeavesKernelForcedAccountingOnNft(t *testing.T) {
 	netnsClearingRulesLeavesKernelForcedAccountingOn(t, backendNFTables)
 }
+
+func netnsADiscoveryProbeToACollectedAddressSkipsTheConsumer(t *testing.T, engine string) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+	netnsRequireEngine(t, engine)
+
+	routeEngine = nil
+	base := netnsLocalGuardConfig(engine, "", []string{netnsDevOther})
+	base.Queue.Mark = 0x8001
+	base.Sets[0].Targets.UseCollectedIPs = true
+	probeMark := base.DiscoveryFlowMark()
+	if probeMark&base.Queue.Mark == base.Queue.Mark || uint32(probeMark)&routeSetMarkMask == 0 {
+		t.Fatalf("the flow mark 0x%x under the queue mark 0x%x does not take the path this test covers", probeMark, base.Queue.Mark)
+	}
+	if err := AddRules(base); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	t.Cleanup(func() {
+		RoutingClearAll()
+		_ = ClearRules(base)
+		routeEngine = nil
+	})
+	RoutingSyncConfig(base.WithCollectedIPs([]string{netnsDevInet}))
+	routeMu.Lock()
+	st, ok := routeRuleCache[base.Sets[0].Id]
+	routeMu.Unlock()
+	if !ok {
+		t.Fatal("the collected proxy set built no rules")
+	}
+	port, _ := portFromState(st)
+	ln := netnsMarkedTransparentListener(t, port, SelfDialMark)
+	accepted := make(chan struct{}, 8)
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			accepted <- struct{}{}
+			_ = conn.Close()
+		}
+	}()
+	taken := func() bool {
+		select {
+		case <-accepted:
+			return true
+		case <-time.After(500 * time.Millisecond):
+			return false
+		}
+	}
+	target := net.JoinHostPort(netnsDevInet, "443")
+
+	uplink := netnsCountUplinkPacketsTo(t, engine, netnsDevInet)
+	if conn, err := netnsMarkedDialer(int(probeMark), nil).Dial("tcp4", target); err == nil {
+		_ = conn.Close()
+	}
+	if taken() {
+		t.Errorf("a Discovery probe with flow mark 0x%x to the collected address %s reached the proxy set's listener; its mark has a bit under 0x%x, so the set must leave it alone and Discovery must measure the strategy, not the upstream", probeMark, netnsDevInet, routeSetMarkMask)
+	}
+	if n := uplink(); n == 0 {
+		netnsLogState(t, engine)
+		t.Errorf("the Discovery probe to %s sent no packet by the uplink", netnsDevInet)
+	}
+
+	conn, err := netnsMarkedDialer(0, nil).Dial("tcp4", target)
+	if err != nil {
+		t.Fatalf("the router's own unmarked dial to the collected address %s failed: %v", netnsDevInet, err)
+	}
+	_ = conn.Close()
+	if !taken() {
+		t.Errorf("the router's own unmarked dial to the collected address %s did not reach the proxy set's listener", netnsDevInet)
+	}
+}
+
+func TestNetnsADiscoveryProbeToACollectedAddressSkipsTheConsumer(t *testing.T) {
+	netnsADiscoveryProbeToACollectedAddressSkipsTheConsumer(t, backendIPTables)
+}
+
+func TestNetnsADiscoveryProbeToACollectedAddressSkipsTheConsumerNft(t *testing.T) {
+	netnsADiscoveryProbeToACollectedAddressSkipsTheConsumer(t, backendNFTables)
+}

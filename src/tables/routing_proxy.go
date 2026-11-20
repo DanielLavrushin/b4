@@ -395,6 +395,7 @@ func routeInstallProxyRule(be routeBackend, cfg *config.Config, set *config.SetC
 	routeAddLocalDestinationGuard(be, st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	if !sourceScoped {
 		routeSelfDialBypass(be, cfg, st.chainOut)
+		be.addClaimedBypassRule(st.chainOut, 0)
 		if err := routeCollectedGuard(be, cfg, set, st, st.chainOut); err != nil {
 			return err
 		}
