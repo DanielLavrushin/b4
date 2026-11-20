@@ -29,13 +29,13 @@ The **Bypass Domains** sub-tab holds domain names and GeoSite categories, and th
 
 The **Bypass IPs** sub-tab holds addresses, GeoIP categories and ASNs.
 
-![The Bypass IPs sub-tab](/img/targets/20261101084918.png)
+![The Bypass IPs sub-tab](/img/targets/20261120190010.png)
 
 | Field | What it does | Default |
 | --- | --- | --- |
 | **Match any IP address** | Adds `0.0.0.0/0`, and `::/0` while IPv6 support is on, which match every address. For DPI bypass, a narrower range in another set is handled by that set, so this set takes only what no other set claims. For routing, a narrower range in another routing set gets no such priority, so the two are best not combined. | Off |
-| **IP priority** | A connection to an address the set lists, by IP, GeoIP category or ASN, stays with this set even when a set lower in the list matches its domain. Shown while **TLS Version Filter** on **Bypass Domains** is **Any**. | Off |
-| **Use collected IPs** | Adds candidates from the shared detected-IP pool to this set's IP targets. | Off |
+| **IP priority** | A connection to an address the set lists, by IP, GeoIP category, ASN or collected IPs, stays with this set even when a set lower in the list matches its domain. Shown while **TLS Version Filter** on **Bypass Domains** is **Any**. | Off |
+| **Use collected IPs** | Adds the addresses that IP block detection collects to the set's targets, see [Collected IPs](#collected-ips). | Off |
 | **Manual Bypass IPs** | Addresses and CIDR ranges, such as `192.168.1.100` or `10.0.0.0/8`, entered the same way as domains. Other text, such as an AS number, is refused. | Empty |
 | **Bypass GeoIP Categories** | Address ranges from the GeoIP database, by country or by network. Needs the database loaded under **Settings > Geodat Settings**. | Empty |
 
@@ -43,11 +43,18 @@ The **Bypass IPs** sub-tab holds addresses, GeoIP categories and ASNs.
 
 ### Collected IPs {#collected-ips}
 
-Sets with [Collect detected IPs](./tcp/general.md#ip-block-detection) feed one shared pool. **Use collected IPs** adds that pool alongside manual IPs, GeoIP and ASN targets. There is no producer selection. An empty pool adds no destinations.
+**Use collected IPs** adds the addresses that [Collect detected IPs](./tcp/general.md#collect-detected-ips) finds to the set's targets, next to its manual IPs, GeoIP categories and ASNs. Every set that collects fills one pool, and every set with the switch on uses all of it. A collected address is a candidate: the TLS handshake to it stalled, which does not show that this set gets through. An empty pool adds nothing.
 
-Collected addresses are candidates, not confirmed successful bypasses. The consumer uses its own strategy. Source devices, source interfaces, address family, ports, set order and **IP priority** still decide which set handles a connection. Existing active connections keep their owner when an address is collected.
+Which of the sets with **Use collected IPs** on takes a connection to a collected address:
 
-The pool stays through settings changes and clears when b4 restarts. Addresses can also be removed from [Collected IPs](../dashboard.md#collected-ips) on the dashboard. Exported sets contain the switch, never the collected addresses. A failed later connection does not remove an address. Collection does not itself ban an address, filter DNS, reject QUIC or refuse SOCKS connections. Each consumer's own settings still apply. [Capture requirements](../internals/capture.md#collected-ips) describe the limits.
+- A set with [Traffic Routing](./routing.md#traffic-routing) through a **Network interface**, an **Upstream SOCKS5 proxy** or **Telegram over WebSocket (built-in)**, or with [Reuse WSSIZE connection](./tcp/general.md#warm-connection), takes every such connection from the devices it applies to, whatever the site name and the set order. Reuse takes TCP port 443 only.
+- Any other set takes it by the usual rules of IP targets. When another set targets the site's domain, that set takes the connection, unless **IP priority** keeps it with this one. A set whose **Reuse WSSIZE connection** does nothing, or whose router lacks TPROXY, follows these rules too.
+
+An address leaves the pool 6 hours after it was collected. It leaves earlier when its server answers a connection that IP block detection watches in a set without **Use collected IPs**, unless a routing or reuse set from the list above takes that connection. The set's own connections never remove an address, whether they get through or not. Two new silent connections in a row can collect it again. The pool is kept when the settings are saved and cleared when b4 restarts. The [Collected IPs](../dashboard.md#collected-ips) panel on the dashboard lists the addresses and removes them.
+
+For [MSS Clamping](./tcp/general.md#mss-clamping), [Packet Duplication](./tcp/general.md#packet-duplication) and the set's [DSCP value](./routing.md#dscp), the collected addresses count as the set's addresses, and **Use collected IPs** alone is enough of a target. A [set for calls](./udp.md#protocol-selection) cannot use collected IPs.
+
+The set's JSON on the **Import/Export** tab carries the switch, never the addresses. A [shared set](./sharing.md#what-leaves-the-router) carries neither. [Collected IP targets](../internals/capture.md#collected-ips) describes how collection works under the hood.
 
 ### ASN {#asn}
 
