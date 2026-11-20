@@ -18,6 +18,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -412,8 +413,8 @@ func TestOnlyServerOutcomesAreErrWarm(t *testing.T) {
 				return errors.New("remote error: tls: protocol version not supported")
 			}
 		}, true},
-		"HTTP status": {func(_ *testing.T, m *Manager, _ Config) {
-			m.warm = func(context.Context, net.Conn) error { return errors.New("warm HTTP status 404, expected 204") }
+		"no HTTP answer": {func(_ *testing.T, m *Manager, _ Config) {
+			m.warm = func(context.Context, net.Conn) error { return io.ErrUnexpectedEOF }
 		}, true},
 		"warm timeout": {func(_ *testing.T, m *Manager, _ Config) {
 			m.warm = func(ctx context.Context, _ net.Conn) error { <-ctx.Done(); return ctx.Err() }
@@ -637,7 +638,11 @@ func warmTLSServer(t *testing.T, cert tls.Certificate, status int) string {
 				if _, err := http.ReadRequest(bufio.NewReader(c)); err != nil {
 					return
 				}
-				if _, err := fmt.Fprintf(c, "HTTP/1.1 %d test\r\nLocation: https://warm.example.org/\r\nContent-Length: 0\r\n\r\n", status); err != nil {
+				answer := fmt.Sprintf("HTTP/1.1 %d test\r\nLocation: https://warm.example.org/\r\nContent-Length: 0\r\n\r\n", status)
+				if status < 0 {
+					answer = "not an HTTP answer\r\n\r\n"
+				}
+				if _, err := io.WriteString(c, answer); err != nil {
 					return
 				}
 				_, _ = io.Copy(io.Discard, c)
@@ -693,5 +698,41 @@ func TestWarmTLSConfigCarriesRoots(t *testing.T) {
 			conn.Close()
 		}
 		t.Fatalf("a warm whose server certificate does not chain to the configured roots gave %v, want a failed warm", err)
+	}
+}
+
+func TestWarmAcceptsAnyHTTPStatus(t *testing.T) {
+	cert, roots := warmTestCA(t, "warm.example.org")
+	for _, status := range []int{403, 404, 301, 204} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			m := realWarmManager(t, warmTLSServer(t, cert, status), roots)
+			c, err := m.DialContext(context.Background(), "warm.example.org:443")
+			if err != nil {
+				t.Fatalf("a verified warm answered with HTTP %d failed: %v", status, err)
+			}
+			defer c.Close()
+			if !c.(*Conn).Warmed {
+				t.Fatalf("a verified warm answered with HTTP %d did not count as a warm", status)
+			}
+		})
+	}
+}
+
+func TestWarmWithoutAStatusLineFails(t *testing.T) {
+	cert, roots := warmTestCA(t, "warm.example.org")
+	for name, status := range map[string]int{"closed after the handshake": 0, "not HTTP": -1} {
+		t.Run(name, func(t *testing.T) {
+			m := realWarmManager(t, warmTLSServer(t, cert, status), roots)
+			c, err := m.DialContext(context.Background(), "warm.example.org:443")
+			if c != nil {
+				c.Close()
+			}
+			if c != nil || !errors.Is(err, ErrWarm) {
+				t.Fatalf("a warm server that sent no HTTP status line gave %v, %v, want a failed warm", c, err)
+			}
+			if m.Active() != 0 {
+				t.Fatal("the failed warm leaked its lease")
+			}
+		})
 	}
 }

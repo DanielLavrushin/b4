@@ -440,9 +440,6 @@ func (m *Manager) warmTLS(ctx context.Context, raw net.Conn) error {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("warm HTTP status %d, expected 204", resp.StatusCode)
-	}
 	if err := c.CloseWrite(); err != nil {
 		return err
 	}

@@ -59,3 +59,15 @@ func TestWSReuseAgeTopicStatesTheDefaultAndTheCap(t *testing.T) {
 		}
 	}
 }
+
+func TestWSReuseTopicSaysAnyHTTPStatusWarms(t *testing.T) {
+	facts := TopicFacts("tcp.wssize_reuse.enabled")
+	if !strings.Contains(facts, "needs a complete HTTP answer, whatever its status") {
+		t.Errorf("tcp.wssize_reuse.enabled does not say that any HTTP status warms: %s", facts)
+	}
+	for _, stale := range []string{"204 answer", "another HTTP status"} {
+		if strings.Contains(facts, stale) {
+			t.Errorf("tcp.wssize_reuse.enabled still says %q, but any HTTP status now counts as a good warm: %s", stale, facts)
+		}
+	}
+}

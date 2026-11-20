@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"os"
@@ -265,7 +266,7 @@ func TestFailedWarmsCoolOnlyTheirDestination(t *testing.T) {
 		m := fakeManager(t, c)
 		m.warm = func(context.Context, net.Conn) error {
 			if c.Target == failing {
-				return errors.New("warm HTTP status 404, expected 204")
+				return errors.New("remote error: tls: handshake failure")
 			}
 			count.Add(1)
 			return nil
@@ -394,7 +395,7 @@ func (s *Service) fallbackCount() int {
 
 func TestWarmFailureRelaysThroughSetStrategy(t *testing.T) {
 	for name, cause := range map[string]error{
-		"HTTP status": errors.New("warm HTTP status 404, expected 204"),
+		"no response": io.ErrUnexpectedEOF,
 		"certificate": &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}},
 		"TLS version": tls.AlertError(70),
 		"timeout":     context.DeadlineExceeded,
@@ -510,7 +511,7 @@ func TestCapacityFallsBack(t *testing.T) {
 
 func TestServiceCloseEndsFallbackRelays(t *testing.T) {
 	s, _, set, _ := serviceFixture(t)
-	failWarms(t, s, errors.New("warm HTTP status 404, expected 204"))
+	failWarms(t, s, errors.New("remote error: tls: handshake failure"))
 	recordDirect(t, s)
 	c, err := s.Dial(context.Background(), set, "192.0.2.10", "warm.example.org", netip.MustParseAddrPort("203.0.113.2:443"))
 	if err != nil || !isFallback(c) {
@@ -575,7 +576,7 @@ func TestAFailedPassAfterAGoodWarmFallsBack(t *testing.T) {
 func TestAFullFallbackRegistryClosesWithAPlainError(t *testing.T) {
 	t.Run("fallback slots", func(t *testing.T) {
 		s, _, set, _ := serviceFixture(t)
-		failWarms(t, s, errors.New("warm HTTP status 404, expected 204"))
+		failWarms(t, s, errors.New("remote error: tls: handshake failure"))
 		s.mu.Lock()
 		s.fallbacks = maxFallbacks
 		s.mu.Unlock()
@@ -689,7 +690,7 @@ func dialExpectingFallback(t *testing.T, s *Service, set *config.SetConfig, host
 func TestFailedWarmIsRememberedPerAddressAndName(t *testing.T) {
 	s, cfg, set, _ := serviceFixture(t)
 	set.Targets.UseCollectedIPs = true
-	warms := failWarmsCounted(t, s, errors.New("warm HTTP status 404, expected 204"))
+	warms := failWarmsCounted(t, s, errors.New("remote error: tls: handshake failure"))
 	direct := recordDirect(t, s)
 	dialExpectingFallback(t, s, set, "warm.example.org")
 	if warms.Load() != 1 || s.failureCount() != 1 {
@@ -912,7 +913,7 @@ func TestFailedWarmWarnsOncePerMinutePerSet(t *testing.T) {
 	second.Id, second.Name = "reuse2", "reuse2"
 	next.Sets = append(next.Sets, &second)
 	s.UpdateConfig(next)
-	failWarms(t, s, errors.New("warm HTTP status 404, expected 204"))
+	failWarms(t, s, errors.New("remote error: tls: handshake failure"))
 	recordDirect(t, s)
 	for i := range 3 {
 		dialExpectingFallback(t, s, next.Sets[0], fmt.Sprintf("site%d.example.org", i))
