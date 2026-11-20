@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
@@ -249,19 +248,6 @@ var selfDialMark = func() uint {
 	return uint(config.SelfDialMark)
 }
 
-var (
-	workerFollowsSets  atomic.Bool
-	cfProxyFollowsSets atomic.Bool
-)
-
-func setWorkerFollowsSets(cfg *config.Config) {
-	workerFollowsSets.Store(cfg != nil && cfg.System.MTProto.CFWorkerDPI)
-}
-
-func setCFProxyFollowsSets(cfg *config.Config) {
-	cfProxyFollowsSets.Store(cfg != nil && cfg.System.MTProto.CFProxyDPI)
-}
-
 func relayDialMark(base uint) uint {
 	base, final := resolveTelegramMark(base)
 	if final || base == 0 {
@@ -270,28 +256,11 @@ func relayDialMark(base uint) uint {
 	return base | uint(config.SelfDialNoDPIBit)
 }
 
-func workerDialMark(base uint) uint {
-	if base&uint(config.TelegramSetBit) != 0 && !workerFollowsSets.Load() && currentTelegramPath().kind == telegramPathStrategy {
-		return base&^uint(config.TelegramSetBit) | uint(config.SelfDialNoDPIBit)
-	}
-	base, final := resolveTelegramMark(base)
-	if final || workerFollowsSets.Load() {
-		return base
-	}
-	return relayDialMark(base)
-}
-
 func planDialMark(p transportPlan, base uint) uint {
-	if p.isWorker {
-		return workerDialMark(base)
-	}
-	base, final := resolveTelegramMark(base)
-	if final {
-		return base
-	}
-	if p.cfBase != "" && !cfProxyFollowsSets.Load() {
+	if p.isWorker || p.cfBase != "" {
 		return relayDialMark(base)
 	}
+	base, _ = resolveTelegramMark(base)
 	return base
 }
 

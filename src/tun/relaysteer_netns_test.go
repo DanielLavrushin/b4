@@ -124,8 +124,9 @@ func TestNetnsARelayDialForSetsIsSteeredIntoTheCaptureAndANoDPIOneIsNot(t *testi
 		steer bool
 		why   string
 	}{
-		{"a relay sets may process", config.SelfDialMark, true, "with cfproxy_dpi or cfworker_dpi on, b4 dials the relay with 0x40000 so that a set covering it can process it, and in TUN mode that needs the capture"},
-		{"a relay without DPI", config.SelfDialRelayMark, false, "0x240000 keeps b4's Cloudflare relays away from every set, so the capture must return it before the steer rules"},
+		{"a relay of the Telegram set", config.TelegramSetDialMark, true, "with a Telegram set without routing b4 dials the relays with 0x4040000, and in TUN mode the set's strategy needs the capture"},
+		{"b4's own connection that sets may process", config.SelfDialMark, true, "0x40000 lets a set covering the destination process b4's own connection, and in TUN mode that needs the capture"},
+		{"a relay without DPI", config.SelfDialRelayMark, false, "0x240000 keeps b4's Cloudflare relays away from every set while no Telegram set applies, so the capture must return it before the steer rules"},
 		{"an unmarked connection", 0, true, "the control: ordinary traffic to a captured port is steered"},
 	} {
 		t.Run(c.name, func(t *testing.T) {

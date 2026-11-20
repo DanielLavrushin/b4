@@ -202,6 +202,9 @@ func (w *Worker) ProcessPacketDir(raw []byte, dir engine.Direction) engine.Packe
 		return engine.VerdictAccept
 	}
 	vc := &verdictCtx{verdict: engine.VerdictAccept, dir: dir}
+	if set := w.ownTelegramSet(raw); set != nil {
+		vc.telegramSet, vc.selfDial = set, true
+	}
 	w.dispatch(vc, raw)
 	if vc.dropsFlow() {
 		return engine.VerdictDropFlow

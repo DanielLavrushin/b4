@@ -9,6 +9,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/selfdial"
 	"github.com/daniellavrushin/b4/sock"
 )
 
@@ -63,6 +64,18 @@ func (w *Worker) openTelegramInjector(cfg *config.Config) {
 func (w *Worker) divertTelegramFlows(telegram *sock.Sender) {
 	w.telegramSock = telegram
 	w.sock.Divert(telegram, w.telegramFlows.carries)
+}
+
+func (w *Worker) ownTelegramSet(raw []byte) *config.SetConfig {
+	cfg := w.getConfig()
+	if cfg == nil || cfg.Queue.IsDiscovery || cfg.System.MTProto.UpstreamSet == "" {
+		return nil
+	}
+	flow, whole, ok := telegramFlowOf(raw)
+	if !ok || !whole || !selfdial.Holds(flow.sport, netip.AddrPortFrom(flow.dst, flow.dport)) {
+		return nil
+	}
+	return cfg.TelegramUpstreamSet()
 }
 
 func telegramFlowOf(packet []byte) (telegramFlow, bool, bool) {
