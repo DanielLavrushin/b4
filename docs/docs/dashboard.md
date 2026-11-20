@@ -128,7 +128,13 @@ Shown while IP block detection has [banned addresses](sets/tcp/general.md#banned
 
 ## Collected IPs {#collected-ips}
 
-The panel appears while the [collected pool](sets/targets.md#collected-ips) contains addresses. Each row shows the IP, the domain and the collecting set. **Remove** deletes one address; **Clear pool** removes all addresses after confirmation. A new detection can add a removed address again. Manual IP, GeoIP and ASN targets remain unchanged.
+Shown while the [collected pool](sets/targets.md#collected-ips) holds an address. Sets with the action [Collect detected IPs](sets/tcp/general.md#collect-detected-ips) add addresses to it, and sets that have **Use collected IPs** turned on target them. Each row shows the address, the domain it was collected on, the set that collected it and the time left until the address leaves the pool. An answer from the address's server can remove it earlier. Once the time is up, the row reads **expiring** until b4 removes the address.
+
+![Collected IPs](/img/dashboard/20261120190020.png)
+
+**Remove** takes one address out of the pool at once, and **Clear pool** takes out every address after a confirmation. The sets' manual IP, GeoIP and ASN targets stay as they are. While Discovery runs, both buttons fail with an error.
+
+The pool holds up to 1024 addresses. While it is full, b4 collects no new addresses. Room frees up as addresses leave the pool or are removed. After the full pool refuses an address, a line under the list counts such refusals since b4 started.
 
 ## Telegram {#telegram}
 
@@ -155,4 +161,4 @@ Shown while the [MTProto proxy](telegram/mtproto-proxy.md) or [Telegram over Web
 
 ![Reset counters](/img/dashboard/20261003220130.png)
 
-It clears **Top domains**, **Top addresses**, the **Blocked** counts, the count of resets dropped by RST protection and the escalation count. It keeps the **Activity** history, **Recent changes**, the uptime, the Telegram figures, the banned addresses and the hosts escalated right now. **Clear** on [Active Escalations](#active-escalations) sends those back.
+It clears **Top domains**, **Top addresses**, the **Blocked** counts, the count of resets dropped by RST protection and the escalation count. It keeps the **Activity** history, **Recent changes**, the uptime, the Telegram figures, the banned addresses, the collected IPs and the hosts escalated right now. **Clear** on [Active Escalations](#active-escalations) sends those back.
