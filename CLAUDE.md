@@ -77,8 +77,8 @@ pnpm lint           # oxlint --type-aware --fix: rewrites files; pnpm exec oxlin
 
 No workflow runs on pull requests. `go test ./...` (src and hub) and the router UI's vite build
 run only in the release workflow, the docs build after a push to main, and nothing runs tsc,
-oxlint or `make test-netns`, so a type error merges silently. The `b4-check` skill runs all of
-it for the areas a diff touches.
+`pnpm test`, oxlint or `make test-netns`, so a type error merges silently. The `b4-check`
+skill runs all of it for the areas a diff touches.
 
 `make gen-defaults` regenerates the UI's set defaults (`NewSetConfig()`) from the Go structs
 (`src/tools/gendefaults.go`). Run it after changing a set default; global defaults reach the
