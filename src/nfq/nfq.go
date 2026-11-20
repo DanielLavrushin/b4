@@ -202,14 +202,16 @@ func (w *Worker) dropAndInjectQUIC(cfg *config.SetConfig, raw []byte, dst net.IP
 	}
 	if udpCfg.FakeSeqLength > 0 {
 		for i := 0; i < udpCfg.FakeSeqLength; i++ {
-			payload := udpFakePayload(udpCfg)
+			payload := udpFakePayload(udpCfg, min(udpCfg.FakeLen, config.MaxUDPFakeLen))
 			fake, ok := sock.BuildFakeUDPFromOriginalV4(raw, udpCfg.FakeLen, cfg.Faking.TTL, payload)
 			if ok {
 				if udpCfg.FakingStrategy == "checksum" {
 					corruptUDPChecksum(fake, int((fake[0]&0x0F)*4))
 				}
 				log.Tracef("Sending fake UDP packet %d/%d to %s", i+1, udpCfg.FakeSeqLength, dst.String())
-				_ = w.sock.SendIPv4(fake, dst)
+				if err := w.sock.SendIPv4(fake, dst); err != nil {
+					w.warnUDPFakeSend(cfg, len(fake), dst, err)
+				}
 				if seg2d > 0 {
 					time.Sleep(time.Duration(seg2d) * time.Millisecond)
 				}
@@ -244,10 +246,15 @@ func (w *Worker) dropAndInjectQUIC(cfg *config.SetConfig, raw []byte, dst net.IP
 }
 
 func (w *Worker) dropAndInjectTCP(cfg *config.SetConfig, raw []byte, dst net.IP, fakes bool) {
+	if burst := w.injectTCP(cfg, raw, dst, fakes); burst != nil {
+		burst()
+	}
+}
 
+func (w *Worker) injectTCP(cfg *config.SetConfig, raw []byte, dst net.IP, fakes bool) func() {
 	if len(raw) < 40 {
 		_ = w.sock.SendIPv4(raw, dst)
-		return
+		return nil
 	}
 
 	ipHdrLen := int((raw[0] & 0x0F) * 4)
@@ -257,7 +264,7 @@ func (w *Worker) dropAndInjectTCP(cfg *config.SetConfig, raw []byte, dst net.IP,
 
 	if payloadLen <= 0 {
 		_ = w.sock.SendIPv4(raw, dst)
-		return
+		return nil
 	}
 
 	raw = w.applyHTTPMethodEOL(cfg, raw)
@@ -308,9 +315,9 @@ func (w *Worker) dropAndInjectTCP(cfg *config.SetConfig, raw []byte, dst net.IP,
 	}
 
 	if cfg.TCP.Desync.PostDesync {
-		time.Sleep(50 * time.Millisecond)
-		w.sendPostDesyncRST(cfg, raw, ipHdrLen, dst)
+		return postDesyncLater(func() { w.sendPostDesyncRST(cfg, raw, ipHdrLen, dst) })
 	}
+	return nil
 }
 
 func (w *Worker) sendTCPFragments(cfg *config.SetConfig, packet []byte, dst net.IP) {
@@ -507,7 +514,20 @@ func (w *Worker) sendFakeSNISequence(cfg *config.SetConfig, original []byte, dst
 	if badsum && fk.Strategy == "timestamp" {
 		w.warnTimestampFallback(cfg, original, int(original[0]&0x0F)*4, net.IP(original[12:16]), dst)
 	}
-	if fk.MD5OnFake || fk.Strategy == "md5sum" {
+	md5 := fk.MD5OnFake || fk.Strategy == "md5sum"
+	if md5 {
+		fakeIPHdrLen := int(fake[0]&0x0F) * 4
+		fakePayloadStart := fakeIPHdrLen + int(fake[fakeIPHdrLen+12]>>4)*4
+		if over := md5OptionOverrun(fake, original, fakePayloadStart); over > 0 {
+			if fk.Strategy == "md5sum" {
+				fake = trimFakePayload(fake, fakePayloadStart, over)
+			} else {
+				log.Tracef("Fake SNI to %s: the TCP MD5 option would make the fake longer than the full real segment, sending it without", dst.String())
+				md5 = false
+			}
+		}
+	}
+	if md5 {
 		withMD5, ok := sock.AddTCPMD5Option(fake, false)
 		if !ok && fk.Strategy == "md5sum" {
 			log.Tracef("Fake SNI to %s: no room for the TCP MD5 option, MD5 Sum fake not sent", dst.String())
@@ -549,20 +569,66 @@ func (w *Worker) sendFakeSNISequence(cfg *config.SetConfig, original []byte, dst
 	}
 }
 
-func (w *Worker) warnFakeSend(cfg *config.SetConfig, size int, dst net.IP, err error) {
-	now := time.Now().Unix()
-	last := atomic.LoadInt64(&w.lastFakeSendLog)
-	if now-last < 30 {
-		return
+const tcpMD5OptionLen = 20
+
+func tlsRecordContinuesPast(payload []byte) bool {
+	return len(payload) >= 5 && payload[0] == TLSHandshakeType && 5+int(binary.BigEndian.Uint16(payload[3:5])) > len(payload)
+}
+
+func md5OptionOverrun(fake, original []byte, payloadStart int) int {
+	over := len(fake) + tcpMD5OptionLen - len(original)
+	if over <= 0 || len(fake) > len(original) || payloadStart >= len(original) || !tlsRecordContinuesPast(original[payloadStart:]) {
+		return 0
 	}
-	if !atomic.CompareAndSwapInt64(&w.lastFakeSendLog, last, now) {
+	return over
+}
+
+func trimFakePayload(fake []byte, payloadStart, n int) []byte {
+	if len(fake)-payloadStart <= n {
+		return fake
+	}
+	out := fake[:len(fake)-n]
+	sock.FixTLSRecordLength(out[payloadStart:])
+	if out[0]>>4 == IPv6 {
+		binary.BigEndian.PutUint16(out[4:6], uint16(len(out)-IPv6HeaderLen))
+	} else {
+		binary.BigEndian.PutUint16(out[2:4], uint16(len(out)))
+	}
+	return out
+}
+
+func fakeSendLogDue(lastLog *int64) bool {
+	now := time.Now().Unix()
+	last := atomic.LoadInt64(lastLog)
+	if now-last < 30 {
+		return false
+	}
+	return atomic.CompareAndSwapInt64(lastLog, last, now)
+}
+
+func (w *Worker) warnFakeSend(cfg *config.SetConfig, size int, dst net.IP, err error) {
+	if !fakeSendLogDue(&w.lastFakeSendLog) {
 		return
 	}
 	hint := ""
 	if errors.Is(err, syscall.EMSGSIZE) {
 		hint = "; the fake is larger than the interface MTU, pick a smaller payload or enable fake_len_mode match"
+		if cfg.Faking.FakeLenMode == "match" || cfg.Faking.SNIType == config.FakePayloadInverted {
+			hint = "; the fake is larger than the interface MTU, although it is sized to the real segment"
+		}
 	}
 	log.Warnf("Fake ClientHello for set %q not sent (%d bytes to %s): %v%s", cfg.Name, size, dst.String(), err, hint)
+}
+
+func (w *Worker) warnUDPFakeSend(cfg *config.SetConfig, size int, dst net.IP, err error) {
+	if !fakeSendLogDue(&w.lastUDPFakeLog) {
+		return
+	}
+	hint := ""
+	if errors.Is(err, syscall.EMSGSIZE) {
+		hint = "; the fake is larger than the interface MTU, pick a smaller udp.fake_len"
+	}
+	log.Warnf("Fake UDP packet for set %q not sent (%d bytes to %s): %v%s", cfg.Name, size, dst.String(), err, hint)
 }
 
 func (w *Worker) getMacByIp(ip string) string {

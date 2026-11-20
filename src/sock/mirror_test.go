@@ -138,7 +138,7 @@ func TestMatchPayloadLengthOnContinuationSegment(t *testing.T) {
 	if len(fake) != len(tail) {
 		t.Fatalf("fake is %d bytes, segment is %d", len(fake), len(tail))
 	}
-	if !bytes.Equal(fake[:3], config.FakeSNI1[:3]) || !bytes.Equal(fake[5:40], config.FakeSNI1[5:40]) {
+	if !bytes.Equal(fake[:3], config.FakeSNI1[:3]) || fake[5] != config.FakeSNI1[5] || !bytes.Equal(fake[9:40], config.FakeSNI1[9:40]) {
 		t.Fatal("a segment without a host name must fall back to the tiled payload")
 	}
 

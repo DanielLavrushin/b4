@@ -21,24 +21,12 @@ func BuildFakeSNIPacketV4(original []byte, cfg *config.SetConfig) []byte {
 		originalTLS = original[payloadStart:]
 	}
 
-	var fakePayload []byte
-	if cfg.Faking.SNIType == config.FakePayloadInverted && len(originalTLS) > 0 {
-		fakePayload = make([]byte, len(originalTLS))
-		for i, b := range originalTLS {
-			fakePayload[i] = ^b
-		}
-	} else {
-		fakePayload = GetPayload(&cfg.Faking)
-	}
-
-	if len(cfg.Faking.TLSMod) > 0 {
-		flags := ParseTLSMod(cfg.Faking.TLSMod)
-		fakePayload = ApplyTLSMod(fakePayload, originalTLS, flags)
-	}
-
-	fakePayload = MatchPayloadLength(fakePayload, originalTLS, cfg.Faking.FakeLenMode)
+	fakePayload := fakeTCPPayload(&cfg.Faking, originalTLS)
 
 	fakeLen := ipHdrLen + tcpHdrLen + len(fakePayload)
+	if fakeLen > 0xFFFF {
+		return nil
+	}
 	fake := make([]byte, fakeLen)
 	copy(fake[:ipHdrLen+tcpHdrLen], original[:ipHdrLen+tcpHdrLen])
 	copy(fake[ipHdrLen+tcpHdrLen:], fakePayload)
@@ -55,12 +43,12 @@ func BuildFakeSNIPacketV4(original []byte, cfg *config.SetConfig) []byte {
 	switch cfg.Faking.Strategy {
 	case "ttl":
 	case "pastseq":
-		off := uint32(cfg.Faking.SeqOffset)
-		if off == 0 {
-			off = 8192
+		back := int64(cfg.Faking.SeqOffset)
+		if back == 0 {
+			back = 8192
 		}
 		seq := binary.BigEndian.Uint32(fake[ipHdrLen+4 : ipHdrLen+8])
-		binary.BigEndian.PutUint32(fake[ipHdrLen+4:ipHdrLen+8], seq-off)
+		binary.BigEndian.PutUint32(fake[ipHdrLen+4:ipHdrLen+8], seq-behindRealData(back, len(fakePayload)))
 	case "randseq":
 		dlen := len(original) - ipHdrLen - tcpHdrLen
 		if cfg.Faking.SeqOffset == 0 {
@@ -69,8 +57,8 @@ func BuildFakeSNIPacketV4(original []byte, cfg *config.SetConfig) []byte {
 			binary.BigEndian.PutUint32(fake[ipHdrLen+4:ipHdrLen+8], binary.BigEndian.Uint32(r[:]))
 		} else {
 			seq := binary.BigEndian.Uint32(fake[ipHdrLen+4 : ipHdrLen+8])
-			off := uint32(cfg.Faking.SeqOffset) + uint32(dlen)
-			binary.BigEndian.PutUint32(fake[ipHdrLen+4:ipHdrLen+8], seq-off)
+			back := int64(cfg.Faking.SeqOffset) + int64(dlen)
+			binary.BigEndian.PutUint32(fake[ipHdrLen+4:ipHdrLen+8], seq-behindRealData(back, len(fakePayload)))
 		}
 	case "timestamp":
 		decrease := cfg.Faking.TimestampDecrease

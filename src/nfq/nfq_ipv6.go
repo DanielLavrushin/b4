@@ -26,13 +26,15 @@ func (w *Worker) dropAndInjectQUICV6(cfg *config.SetConfig, raw []byte, dst net.
 
 	if cfg.UDP.FakeSeqLength > 0 {
 		for i := 0; i < cfg.UDP.FakeSeqLength; i++ {
-			payload := udpFakePayload(&cfg.UDP)
+			payload := udpFakePayload(&cfg.UDP, min(cfg.UDP.FakeLen, maxUDPFakeLenV6))
 			fake, ok := sock.BuildFakeUDPFromOriginalV6(raw, cfg.UDP.FakeLen, cfg.Faking.TTL, payload)
 			if ok {
 				if cfg.UDP.FakingStrategy == "checksum" {
 					corruptUDPChecksum(fake, IPv6HeaderLen)
 				}
-				_ = w.sock.SendIPv6(fake, dst)
+				if err := w.sock.SendIPv6(fake, dst); err != nil {
+					w.warnUDPFakeSend(cfg, len(fake), dst, err)
+				}
 				if seg2d > 0 {
 					time.Sleep(time.Duration(seg2d) * time.Millisecond)
 				}
@@ -64,17 +66,22 @@ func (w *Worker) dropAndInjectQUICV6(cfg *config.SetConfig, raw []byte, dst net.
 	w.SendTwoSegmentsV6(frags[0], frags[1], dst, seg2d, cfg.Fragmentation.ReverseOrder)
 }
 
-// dropAndInjectTCPv6 handles TCP packet manipulation for IPv6
 func (w *Worker) dropAndInjectTCPv6(cfg *config.SetConfig, raw []byte, dst net.IP, fakes bool) {
+	if burst := w.injectTCPv6(cfg, raw, dst, fakes); burst != nil {
+		burst()
+	}
+}
+
+func (w *Worker) injectTCPv6(cfg *config.SetConfig, raw []byte, dst net.IP, fakes bool) func() {
 	if !hasPlainIPv6Header(raw, ipProtoTCP) {
 		log.Tracef("TCP v6: passing %s through untouched, the TCP header is not at the fixed IPv6 offset", dst.String())
 		_ = w.sock.SendIPv6(raw, dst)
-		return
+		return nil
 	}
 
 	if len(raw) < 60 { // IPv6 header (40) + TCP header (20 min)
 		_ = w.sock.SendIPv6(raw, dst)
-		return
+		return nil
 	}
 
 	ipv6HdrLen := 40
@@ -84,7 +91,7 @@ func (w *Worker) dropAndInjectTCPv6(cfg *config.SetConfig, raw []byte, dst net.I
 
 	if payloadLen <= 0 {
 		_ = w.sock.SendIPv6(raw, dst)
-		return
+		return nil
 	}
 
 	raw = w.applyHTTPMethodEOL(cfg, raw)
@@ -134,9 +141,9 @@ func (w *Worker) dropAndInjectTCPv6(cfg *config.SetConfig, raw []byte, dst net.I
 	}
 
 	if cfg.TCP.Desync.PostDesync {
-		time.Sleep(50 * time.Millisecond)
-		w.sendPostDesyncRSTv6(cfg, raw, dst)
+		return postDesyncLater(func() { w.sendPostDesyncRSTv6(cfg, raw, dst) })
 	}
+	return nil
 }
 
 func (w *Worker) sendTCPSegmentsv6(cfg *config.SetConfig, packet []byte, dst net.IP) {
@@ -354,7 +361,19 @@ func (w *Worker) sendFakeSNISequencev6(cfg *config.SetConfig, original []byte, d
 	if badsum && faking.Strategy == "timestamp" {
 		w.warnTimestampFallback(cfg, original, 40, net.IP(original[8:24]), dst)
 	}
-	if faking.MD5OnFake || faking.Strategy == "md5sum" {
+	md5 := faking.MD5OnFake || faking.Strategy == "md5sum"
+	if md5 {
+		fakePayloadStart := IPv6HeaderLen + int(fake[IPv6HeaderLen+12]>>4)*4
+		if over := md5OptionOverrun(fake, original, fakePayloadStart); over > 0 {
+			if faking.Strategy == "md5sum" {
+				fake = trimFakePayload(fake, fakePayloadStart, over)
+			} else {
+				log.Tracef("Fake SNI v6 to %s: the TCP MD5 option would make the fake longer than the full real segment, sending it without", dst.String())
+				md5 = false
+			}
+		}
+	}
+	if md5 {
 		withMD5, ok := sock.AddTCPMD5Option(fake, true)
 		if !ok && faking.Strategy == "md5sum" {
 			log.Tracef("Fake SNI v6 to %s: no room for the TCP MD5 option, MD5 Sum fake not sent", dst.String())

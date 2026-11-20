@@ -504,7 +504,7 @@ export const UdpSettings = ({
                     path="udp.fake_len"
                     onChange={(value) => onChange("udp.fake_len", value)}
                     min={32}
-                    max={1500}
+                    max={1472}
                     step={8}
                     valueSuffix={t("core.units.bytes")}
                     helperText={t("sets.udp.fakeSizeHelper")}

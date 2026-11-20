@@ -55,11 +55,11 @@ func TestBuildFakeSNIPacketV6_PastSeqStrategy(t *testing.T) {
 
 	cfg := &config.SetConfig{}
 	cfg.Faking.Strategy = "pastseq"
-	cfg.Faking.SeqOffset = 500
+	cfg.Faking.SeqOffset = 5000
 
 	result := BuildFakeSNIPacketV6(pkt, cfg)
 	newSeq := binary.BigEndian.Uint32(result[44:48])
-	if newSeq != origSeq-500 {
+	if newSeq != origSeq-5000 {
 		t.Errorf("seq not adjusted")
 	}
 }
@@ -78,4 +78,3 @@ func TestFixTCPChecksumV6_ValidPacket(t *testing.T) {
 
 	// Should complete without panic
 }
-

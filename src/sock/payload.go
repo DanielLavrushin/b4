@@ -14,11 +14,41 @@ func cloneBytes(src []byte) []byte {
 	return dst
 }
 
+func fakeTCPPayload(faking *config.FakingConfig, originalTLS []byte) []byte {
+	var fakePayload []byte
+	if faking.SNIType == config.FakePayloadInverted && len(originalTLS) > 0 {
+		fakePayload = make([]byte, len(originalTLS))
+		for i, b := range originalTLS {
+			fakePayload[i] = ^b
+		}
+	} else {
+		fakePayload = GetPayload(faking)
+	}
+
+	flags := ParseTLSMod(faking.TLSMod)
+	if len(faking.TLSMod) > 0 {
+		fakePayload = ApplyTLSMod(fakePayload, originalTLS, flags)
+	}
+
+	return matchPayloadLength(fakePayload, originalTLS, faking.FakeLenMode, flags)
+}
+
+func behindRealData(back int64, fakeLen int) uint32 {
+	return uint32(max(back, int64(fakeLen)))
+}
+
 func MatchPayloadLength(fakePayload, originalTLS []byte, mode string) []byte {
+	return matchPayloadLength(fakePayload, originalTLS, mode, TLSModFlags{})
+}
+
+func matchPayloadLength(fakePayload, originalTLS []byte, mode string, flags TLSModFlags) []byte {
 	if mode != "match" || len(originalTLS) == 0 || len(fakePayload) == 0 {
 		return fakePayload
 	}
 	if mirrored := MirrorClientHello(originalTLS, fakePayload); mirrored != nil {
+		if flags.Randomize {
+			redrawHello(mirrored, !flags.DupSessID)
+		}
 		return mirrored
 	}
 	target := len(originalTLS)
@@ -30,7 +60,7 @@ func MatchPayloadLength(fakePayload, originalTLS []byte, mode string) []byte {
 	for i := 0; i < target; i++ {
 		out[i] = fakePayload[i%len(fakePayload)]
 	}
-	fixTLSRecordLength(out)
+	FixTLSRecordLength(out)
 	return out
 }
 
@@ -65,12 +95,17 @@ func moveFakeAck(tcp []byte) {
 	binary.BigEndian.PutUint32(tcp[8:12], binary.BigEndian.Uint32(tcp[8:12])+fakeAckLead)
 }
 
-func fixTLSRecordLength(payload []byte) {
+func FixTLSRecordLength(payload []byte) {
 	if len(payload) < 5 || payload[0] != 0x16 {
 		return
 	}
-	payload[3] = byte((len(payload) - 5) >> 8)
-	payload[4] = byte(len(payload) - 5)
+	recLen := len(payload) - 5
+	payload[3] = byte(recLen >> 8)
+	payload[4] = byte(recLen)
+	if len(payload) >= 9 && payload[5] == 0x01 {
+		hsLen := recLen - 4
+		payload[6], payload[7], payload[8] = byte(hsLen>>16), byte(hsLen>>8), byte(hsLen)
+	}
 }
 
 const defaultFakeTTL = 5

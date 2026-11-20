@@ -117,6 +117,19 @@ func (w *Worker) sendComboFragments(cfg *config.SetConfig, packet []byte, dst ne
 	}
 }
 
+const decoyMaxLen = 680
+
+func decoyBlob(fk *config.FakingConfig, blob, realPayload []byte) []byte {
+	if len(fk.TLSMod) > 0 {
+		blob = sock.ApplyTLSMod(blob, realPayload, sock.ParseTLSMod(fk.TLSMod))
+	}
+	if len(blob) > decoyMaxLen {
+		blob = blob[:decoyMaxLen]
+		sock.FixTLSRecordLength(blob)
+	}
+	return blob
+}
+
 func (w *Worker) sendDecoyPacket(cfg *config.SetConfig, packet []byte, pi PacketInfo, dst net.IP) {
 
 	log.Tracef("sendDecoyPacket: Sending decoy fragment packet to %s, set: %s", dst.String(), cfg.Name)
@@ -127,9 +140,7 @@ func (w *Worker) sendDecoyPacket(cfg *config.SetConfig, packet []byte, pi Packet
 		return
 	}
 
-	if len(fakeBlob) > 680 {
-		fakeBlob = fakeBlob[:680]
-	}
+	fakeBlob = decoyBlob(&cfg.Faking, fakeBlob, pi.Payload)
 
 	// Build fake packet with this blob as payload
 	fakePacket := make([]byte, pi.PayloadStart+len(fakeBlob))

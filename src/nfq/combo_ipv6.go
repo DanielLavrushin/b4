@@ -125,9 +125,7 @@ func (w *Worker) sendDecoyPacketV6(cfg *config.SetConfig, packet []byte, pi Pack
 		return
 	}
 
-	if len(fakeBlob) > 680 {
-		fakeBlob = fakeBlob[:680]
-	}
+	fakeBlob = decoyBlob(&cfg.Faking, fakeBlob, pi.Payload)
 
 	// Build fake packet with this blob as payload
 	fakePacket := make([]byte, pi.PayloadStart+len(fakeBlob))

@@ -115,7 +115,10 @@ export const CaptureSettings = () => {
         );
       } else {
         showSuccess(
-          t("settings.Capture.generateSuccess", { domain: capturedDomain }),
+          t("settings.Capture.generateSuccess", {
+            domain: capturedDomain,
+            size: result.size,
+          }),
         );
         setProbeForm({ domain: "" });
       }

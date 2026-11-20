@@ -1,6 +1,8 @@
 package tun
 
 import (
+	"encoding/binary"
+	"io"
 	"net"
 	"os"
 	"sync"
@@ -41,6 +43,8 @@ type Engine struct {
 	fwdErrCount   uint64
 	v6DropCount   uint64
 	lastFwdErrLog int64
+	readMu        sync.Mutex
+	stripes       [flowStripes]flowStripe
 }
 
 func NewEngine(cfg *config.Config, pool *nfq.Pool) *Engine {
@@ -234,6 +238,10 @@ func (e *Engine) readLoop(workerIdx int) {
 	defer e.wg.Done()
 
 	worker := e.pool.Workers[workerIdx%len(e.pool.Workers)]
+	e.serve(e.tunFile, worker, e.forwardPacket)
+}
+
+func (e *Engine) serve(src io.Reader, worker packetProcessor, forward func([]byte, engine.Direction)) {
 	buf := make([]byte, tunBufSize)
 
 	for {
@@ -243,7 +251,7 @@ func (e *Engine) readLoop(workerIdx int) {
 		default:
 		}
 
-		n, err := e.tunFile.Read(buf)
+		raw, stripe, ticket, err := e.readNext(src, buf)
 		if err != nil {
 			select {
 			case <-e.quit:
@@ -254,15 +262,100 @@ func (e *Engine) readLoop(workerIdx int) {
 			time.Sleep(10 * time.Millisecond)
 			continue
 		}
-		if n == 0 {
+		if len(raw) == 0 {
 			continue
 		}
 
-		raw := buf[:n]
-		if forward, dir := e.processPacket(worker, raw); forward {
-			e.forwardPacket(raw, dir)
+		if stripe != nil {
+			stripe.wait(ticket)
+		}
+		if pass, dir := e.processPacket(worker, raw); pass {
+			forward(raw, dir)
+		}
+		if stripe != nil {
+			stripe.done()
 		}
 	}
+}
+
+func (e *Engine) readNext(src io.Reader, buf []byte) ([]byte, *flowStripe, uint64, error) {
+	e.readMu.Lock()
+	defer e.readMu.Unlock()
+
+	n, err := src.Read(buf)
+	if err != nil || n <= 0 {
+		return nil, nil, 0, err
+	}
+	raw := buf[:n]
+	h, ok := tcpFlowHash(raw)
+	if !ok {
+		return raw, nil, 0, nil
+	}
+	stripe := &e.stripes[h%flowStripes]
+	return raw, stripe, stripe.take(), nil
+}
+
+type flowStripe struct {
+	mu      sync.Mutex
+	turn    *sync.Cond
+	next    uint64
+	serving uint64
+}
+
+func (s *flowStripe) take() uint64 {
+	s.mu.Lock()
+	ticket := s.next
+	s.next++
+	s.mu.Unlock()
+	return ticket
+}
+
+func (s *flowStripe) wait(ticket uint64) {
+	s.mu.Lock()
+	if s.turn == nil {
+		s.turn = sync.NewCond(&s.mu)
+	}
+	for s.serving != ticket {
+		s.turn.Wait()
+	}
+	s.mu.Unlock()
+}
+
+func (s *flowStripe) done() {
+	s.mu.Lock()
+	s.serving++
+	if s.turn != nil {
+		s.turn.Broadcast()
+	}
+	s.mu.Unlock()
+}
+
+const flowStripes = 256
+
+func tcpFlowHash(raw []byte) (uint32, bool) {
+	var addrs, ports []byte
+	switch {
+	case len(raw) >= 20 && raw[0]>>4 == 4:
+		ihl := int(raw[0]&0x0f) * 4
+		if raw[9] != 6 || ihl < 20 || len(raw) < ihl+4 || binary.BigEndian.Uint16(raw[6:8])&0x3fff != 0 {
+			return 0, false
+		}
+		addrs, ports = raw[12:20], raw[ihl:ihl+4]
+	case len(raw) >= 44 && raw[0]>>4 == 6:
+		if raw[6] != 6 {
+			return 0, false
+		}
+		addrs, ports = raw[8:40], raw[40:44]
+	default:
+		return 0, false
+	}
+	h := uint32(2166136261)
+	for _, part := range [][]byte{addrs, ports} {
+		for _, b := range part {
+			h = (h ^ uint32(b)) * 16777619
+		}
+	}
+	return h, true
 }
 
 func (e *Engine) forwardPacket(raw []byte, dir engine.Direction) {

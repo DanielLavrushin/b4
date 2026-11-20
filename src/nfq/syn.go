@@ -9,8 +9,16 @@ import (
 	"github.com/daniellavrushin/b4/sock"
 )
 
+func synFakePayload(set *config.SetConfig) []byte {
+	payload := sock.GetPayload(&set.Faking)
+	if set.TCP.SynFakeLen > 0 && len(set.Faking.TLSMod) > 0 {
+		payload = sock.ApplyTLSMod(payload, nil, sock.ParseTLSMod(set.Faking.TLSMod))
+	}
+	return payload
+}
+
 func (w *Worker) sendFakeSyn(set *config.SetConfig, raw []byte, ipHdrLen, tcpHdrLen int) {
-	fakePayload := sock.GetPayload(&set.Faking)
+	fakePayload := synFakePayload(set)
 
 	fakePayloadLen := 0
 	if set.TCP.SynFakeLen > 0 {
@@ -76,7 +84,7 @@ func (w *Worker) sendFakeSynV6(set *config.SetConfig, raw []byte, ipHdrLen, tcpH
 		return
 	}
 
-	fakePayload := sock.GetPayload(&set.Faking)
+	fakePayload := synFakePayload(set)
 
 	fakePayloadLen := 0
 	if set.TCP.SynFakeLen > 0 {

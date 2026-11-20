@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"os"
@@ -1440,7 +1441,25 @@ func (c *Config) MissingCaptureFake(set *SetConfig) (string, bool) {
 		return "", false
 	}
 	data, err := c.ReadCapturePayload(set.Faking.PayloadFile)
-	return set.Faking.PayloadFile, err != nil || len(data) == 0
+	return set.Faking.PayloadFile, err != nil || len(data) == 0 || len(data) > MaxCapturePayloadBytes
+}
+
+var errCaptureTooLarge = errors.New("larger than a payload may be")
+
+func readCapturePayloadFile(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, MaxCapturePayloadBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > MaxCapturePayloadBytes {
+		return nil, errCaptureTooLarge
+	}
+	return data, nil
 }
 
 func (c *Config) LoadCapturePayloads() {
@@ -1473,7 +1492,12 @@ func (c *Config) LoadCapturePayloads() {
 				set.Faking.PayloadData = nil
 				break
 			}
-			data, err := os.ReadFile(capturePath)
+			data, err := readCapturePayloadFile(capturePath)
+			if errors.Is(err, errCaptureTooLarge) {
+				warnFakePayloadOnce("Set '%s': capture file %s is over %d bytes, the most a payload may have, so it is not loaded and the set's fakes carry the built-in google payload instead", set.Name, set.Faking.PayloadFile, MaxCapturePayloadBytes)
+				set.Faking.PayloadData = nil
+				break
+			}
 			if err != nil {
 				log.Errorf("Failed to load capture file %s: %v", set.Faking.PayloadFile, err)
 				set.Faking.PayloadData = nil

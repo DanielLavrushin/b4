@@ -1202,6 +1202,7 @@ func resendUntilEscalatedTo(t *testing.T, r *silenceRig, id string) {
 	for range 3 {
 		r.w.ProcessPacket(silentHelloFrom(12345))
 	}
+	r.w.wg.Wait()
 	if to, _, _ := r.w.destState.GetEscalation("i.ytimg.com"); to != id {
 		t.Fatalf("the third copy of the ClientHello must move the host to %q, it is on %q", id, to)
 	}
