@@ -709,11 +709,33 @@ echo vars > "$T/efi-vars"
 : > "$T/provision.log"
 : > "$T/scp.log"
 check "up: an arm64 guest starts under UEFI with an EFI vars file of its own" 0 "armup is up" \
-	env B4_LAB_HOME="$arm" LAB_EFI_CODE="$T/efi-code" LAB_EFI_VARS="$T/efi-vars" sh "$LAB_DIR/lab" up be7000 armup
+	env B4_LAB_HOME="$arm" LAB_KVM="$T/no-kvm" LAB_EFI_CODE="$T/efi-code" LAB_EFI_VARS="$T/efi-vars" sh "$LAB_DIR/lab" up be7000 armup
 armargs="$(grep -e '-name b4-lab-armup ' "$T/qemu.args" | tail -n 1)"
 case "$armargs" in
 *"-machine virt,"*"file=$T/efi-code"*"file=$arm/instances/armup/efivars.fd"*) ;;
 *) fail "up: the arm64 guest did not start on the virt machine with the EFI code and a vars file of its own: $armargs" ;;
+esac
+case "$armargs" in
+*"-machine virt,accel=tcg -cpu cortex-a72 "*) ;;
+*) fail "up: without KVM the arm64 guest did not get the emulated Cortex-A72: $armargs" ;;
+esac
+mkdir -p "$T/armhost"
+cat > "$T/armhost/uname" <<EOF
+#!/bin/sh
+if [ "\$1" = -m ]; then
+	echo aarch64
+	exit 0
+fi
+exec $(command -v uname) "\$@"
+EOF
+chmod +x "$T/armhost/uname"
+: > "$T/kvm"
+check "up: an arm64 guest on an arm64 host with KVM runs on the host's CPU" 0 "armkvm is up" \
+	env PATH="$T/armhost:$PATH" B4_LAB_HOME="$arm" LAB_KVM="$T/kvm" LAB_EFI_CODE="$T/efi-code" LAB_EFI_VARS="$T/efi-vars" sh "$LAB_DIR/lab" up be7000 armkvm
+kvmargs="$(grep -e '-name b4-lab-armkvm ' "$T/qemu.args" | tail -n 1)"
+case "$kvmargs" in
+*"-machine virt,accel=kvm -cpu host "*) ;;
+*) fail "up: under KVM the arm64 guest did not get the host CPU, the only model KVM takes: $kvmargs" ;;
 esac
 [ "$(cat "$arm/instances/armup/efivars.fd" 2>/dev/null)" = vars ] || fail "up: the arm64 instance has no copy of the EFI vars file"
 grep -qxF "$arm/images/$(basename "$GUEST_FILE_URL")" "$T/scp.log" ||

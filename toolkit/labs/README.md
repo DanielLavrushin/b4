@@ -19,6 +19,8 @@ Where each kind of test belongs:
 the `routeros` guest also `unzip`, for the arm64 guests (`be7000`) also `qemu-system-arm` and
 `qemu-efi-aarch64`, and for `lab test` and `lab ab` also `go` and `git`. With access to `/dev/kvm` a guest of the host's own architecture runs at close to native speed;
 without it, and always for an arm64 guest on an x86 host, QEMU emulates the CPU and is much slower.
+`LAB_KVM` names another path to check in place of `/dev/kvm`; a path that does not exist forces
+emulation.
 
 ## Quick start
 
@@ -378,7 +380,8 @@ GUEST_PROVISION=<name>.provision.sh
   source of the module `be7000.provision.sh` builds.
 - `GUEST_GOARCH=arm64` starts the guest with `qemu-system-aarch64` on QEMU's `virt` machine
   under UEFI (`LAB_EFI_CODE` and `LAB_EFI_VARS` point at firmware files other than
-  `/usr/share/AAVMF/`), and builds the test binaries for arm64.
+  `/usr/share/AAVMF/`), and builds the test binaries for arm64. The guest gets an emulated
+  Cortex-A72, or under KVM on an arm64 host the host's own CPU, the model KVM needs.
 - `GUEST_CHROOT` is a root filesystem inside the guest that `lab test` and `lab ab` run the
   tests in.
 - A guest file may source another and change a few values, as `be7000-noconnbytes.env` does.

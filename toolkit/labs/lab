@@ -111,13 +111,21 @@ guest_qemu() {
 guest_accel() {
 	case "$GUEST_GOARCH:$(uname -m)" in
 	amd64:x86_64 | arm64:aarch64)
-		if [ -w /dev/kvm ]; then
+		if [ -w "${LAB_KVM:-/dev/kvm}" ]; then
 			echo kvm
 			return 0
 		fi
 		;;
 	esac
 	echo tcg
+}
+
+arm_cpu() {
+	if [ "$1" = kvm ]; then
+		echo host
+	else
+		echo cortex-a72
+	fi
 }
 
 efi_code() { echo "${LAB_EFI_CODE:-/usr/share/AAVMF/AAVMF_CODE.fd}"; }
@@ -378,7 +386,7 @@ launch_guest() {
 			-device virtio-net-pci,netdev=n0 \
 			-device virtio-rng-pci 2> "$dir/qemu.err" 8>&-
 	elif [ "$GUEST_GOARCH" = arm64 ]; then
-		qemu-system-aarch64 -name "b4-lab-$name" -machine "virt,accel=$accel" -cpu cortex-a72 \
+		qemu-system-aarch64 -name "b4-lab-$name" -machine "virt,accel=$accel" -cpu "$(arm_cpu "$accel")" \
 			-smp "${LAB_CPUS:-$GUEST_CPUS}" -m "${LAB_MEM:-$GUEST_MEM}" \
 			-display none -serial "file:$dir/console.log" -pidfile "$dir/pid" -daemonize \
 			-drive "if=pflash,format=raw,readonly=on,file=$(efi_code)" \
