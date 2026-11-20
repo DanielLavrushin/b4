@@ -28,7 +28,7 @@ func routeCollectedRouteOf(st routeState) (CollectedRoute, bool) {
 	case !st.collected || config.RoutingIsBlock(st.mode):
 		return route, false
 	case config.RoutingUsesTProxy(st.mode):
-		if st.mode == config.RoutingModeWSReuse && !st.diverts {
+		if st.mode == config.RoutingModeWSReuse && !st.reuseDiverted() {
 			return route, false
 		}
 		route.Router = routeWantsOutputJump(st)

@@ -71,3 +71,13 @@ func TestWSReuseTopicSaysAnyHTTPStatusWarms(t *testing.T) {
 		}
 	}
 }
+
+func TestWSReuseTopicSaysARefusedTProxyRuleLeavesTheSetUndiverted(t *testing.T) {
+	facts := TopicFacts("tcp.wssize_reuse.enabled")
+	if !strings.Contains(facts, "when it refuses the set's TCP TPROXY rule for an enabled address family") {
+		t.Errorf("tcp.wssize_reuse.enabled does not say what a refused TPROXY rule does: %s", facts)
+	}
+	if strings.Contains(facts, "connections that the firewall does not divert get") {
+		t.Errorf("tcp.wssize_reuse.enabled still ties the set's strategy to what the firewall does not divert, which a refused TPROXY rule contradicts: %s", facts)
+	}
+}

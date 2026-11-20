@@ -21,10 +21,14 @@ func WSReuseDiverts(setID string) bool {
 	return false
 }
 
+func (st routeState) reuseDiverted() bool {
+	return st.mode == config.RoutingModeWSReuse && st.diverts && st.tproxied
+}
+
 func routePublishWSReuseDivertsLocked() {
 	diverted := make(map[string]struct{})
 	for id, st := range routeRuleCache {
-		if st.mode == config.RoutingModeWSReuse && st.diverts {
+		if st.reuseDiverted() {
 			diverted[id] = struct{}{}
 		}
 	}

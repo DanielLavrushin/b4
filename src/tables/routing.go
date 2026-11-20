@@ -63,6 +63,7 @@ type routeState struct {
 	gwPeersV4   []string
 	tproxyPort  int
 	diverts     bool
+	tproxied    bool
 	upstreamKey string
 	udpPorts    string
 	sourcesKey  string
@@ -1548,7 +1549,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 				if config.RoutingIsBlock(cur.mode) {
 					err = routeEnsureBlockRule(be, cfg, set, cur, sources)
 				} else if config.RoutingUsesTProxy(cur.mode) {
-					err = routeEnsureProxyRule(be, cfg, set, cur, sources)
+					err = routeInstallProxyRule(be, cfg, set, cur, sources, &cur.tproxied)
 				} else {
 					err = routeEnsureRule(be, cfg, set, cur, sources)
 				}

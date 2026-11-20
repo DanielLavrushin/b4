@@ -322,6 +322,15 @@ func routeAddProxyRouterTrafficGuard(be routeBackend, cfg *config.Config, st rou
 }
 
 func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetConfig, st routeState, sources []string) error {
+	var tproxied bool
+	return routeInstallProxyRule(be, cfg, set, st, sources, &tproxied)
+}
+
+func routeInstallProxyRule(be routeBackend, cfg *config.Config, set *config.SetConfig, st routeState, sources []string, tproxied *bool) error {
+	*tproxied = true
+	tcp := func(added bool) {
+		*tproxied = *tproxied && added
+	}
 	if st.table <= 0 {
 		return fmt.Errorf("no free routing table for transparent proxying")
 	}
@@ -405,7 +414,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 			return err
 		}
 		if byAddress && cfg.Queue.IPv4Enabled {
-			addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources, "tcp", proxyModePorts(st.mode)...)
+			tcp(addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources, "tcp", proxyModePorts(st.mode)...))
 			if st.quicReject {
 				addQUICPassRuleNft(st.chainPre, false, st.setV4, sources)
 			}
@@ -414,7 +423,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 			}
 		}
 		if byAddress && cfg.Queue.IPv6Enabled {
-			addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "tcp", proxyModePorts(st.mode)...)
+			tcp(addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "tcp", proxyModePorts(st.mode)...))
 			if st.quicReject {
 				addQUICPassRuleNft(st.chainPre, true, st.setV6, sources)
 			}
@@ -437,7 +446,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 			return err
 		}
 		if byAddress && cfg.Queue.IPv4Enabled {
-			addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "tcp", proxyModePorts(st.mode)...)
+			tcp(addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "tcp", proxyModePorts(st.mode)...))
 			if st.quicReject {
 				addQUICPassRuleIpt(false, st.chainPre, st.setV4, sources, legacy)
 			}
@@ -449,7 +458,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 			}
 		}
 		if byAddress && cfg.Queue.IPv6Enabled {
-			addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy, "tcp", proxyModePorts(st.mode)...)
+			tcp(addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy, "tcp", proxyModePorts(st.mode)...))
 			if st.quicReject {
 				addQUICPassRuleIpt(true, st.chainPre, st.setV6, sources, legacy)
 			}
@@ -1113,10 +1122,11 @@ func removeProxyInputAccept(be routeBackend, mark uint32) {
 	}
 }
 
-func addProxyTProxyRuleNft(chain string, v6 bool, setName string, mark uint32, port int, sources []string, proto string, ports ...int) {
+func addProxyTProxyRuleNft(chain string, v6 bool, setName string, mark uint32, port int, sources []string, proto string, ports ...int) bool {
 	markHex := fmt.Sprintf("0x%x", mark)
 	portStr := fmt.Sprintf(":%d", port)
 
+	added := true
 	emit := func(sn, src string) {
 		args := append([]string{"add", "rule", "inet", routeNftTable, chain}, proxyNftPorts(ports)...)
 		if src != "" {
@@ -1139,7 +1149,7 @@ func addProxyTProxyRuleNft(chain string, v6 bool, setName string, mark uint32, p
 				"accept",
 			)
 		}
-		runLogged("routing: add tproxy rule "+chain, append([]string{"nft"}, args...)...)
+		added = runLogged("routing: add tproxy rule "+chain, append([]string{"nft"}, args...)...) && added
 	}
 
 	for _, sn := range []string{setName, routeNftDynSet(setName)} {
@@ -1151,9 +1161,10 @@ func addProxyTProxyRuleNft(chain string, v6 bool, setName string, mark uint32, p
 			emit(sn, src)
 		}
 	}
+	return added
 }
 
-func addProxyTProxyRuleIpt(v6 bool, chain, setName string, mark uint32, port int, sources []string, legacy bool, proto string, ports ...int) {
+func addProxyTProxyRuleIpt(v6 bool, chain, setName string, mark uint32, port int, sources []string, legacy bool, proto string, ports ...int) bool {
 	cmd := backendIPTables
 	if v6 {
 		cmd = backendIP6Tables
@@ -1166,10 +1177,11 @@ func addProxyTProxyRuleIpt(v6 bool, chain, setName string, mark uint32, port int
 		}
 	}
 	if !hasBinary(cmd) {
-		return
+		return true
 	}
 	markHex := fmt.Sprintf("0x%x/0x%x", mark, routeProxyMarkMask)
 
+	added := true
 	emit := func(src string) {
 		args := []string{cmd, "-w", "-t", "mangle", "-A", chain, "-p", proto}
 		args = append(args, proxyIptPorts(ports)...)
@@ -1182,16 +1194,17 @@ func addProxyTProxyRuleIpt(v6 bool, chain, setName string, mark uint32, port int
 			"--tproxy-mark", markHex,
 			"--on-port", fmt.Sprintf("%d", port),
 		)
-		runLogged("routing: add tproxy rule "+chain, args...)
+		added = runLogged("routing: add tproxy rule "+chain, args...) && added
 	}
 
 	if len(sources) == 0 {
 		emit("")
-		return
+		return added
 	}
 	for _, src := range sources {
 		emit(src)
 	}
+	return added
 }
 
 func portFromState(st routeState) (int, bool) {

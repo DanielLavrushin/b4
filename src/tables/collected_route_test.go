@@ -20,7 +20,8 @@ func TestTheCollectedRoutesFollowWhatTheRulesTake(t *testing.T) {
 		"proxy":          both(routeState{mode: config.RoutingModeProxy}),
 		"proxy-scoped":   both(routeState{mode: config.RoutingModeProxy, srcScoped: true}),
 		"mtproto":        both(routeState{mode: config.RoutingModeMTProtoWS}),
-		"reuse":          both(routeState{mode: config.RoutingModeWSReuse, diverts: true}),
+		"reuse":          both(routeState{mode: config.RoutingModeWSReuse, diverts: true, tproxied: true}),
+		"reuse-refused":  both(routeState{mode: config.RoutingModeWSReuse, diverts: true}),
 		"reuse-idle":     both(routeState{mode: config.RoutingModeWSReuse}),
 		"iface":          both(routeState{mode: config.RoutingModeInterface, iface: "wg0", routerOut: true}),
 		"iface-lan-only": both(routeState{mode: config.RoutingModeInterface, iface: "wg0"}),
@@ -37,6 +38,7 @@ func TestTheCollectedRoutesFollowWhatTheRulesTake(t *testing.T) {
 		"proxy-scoped":   {IPv4: true, IPv6: true},
 		"mtproto":        {IPv4: true, IPv6: true, Router: true},
 		"reuse":          {IPv4: true, IPv6: true, Router: true, Port: 443},
+		"reuse-refused":  nil,
 		"reuse-idle":     nil,
 		"iface":          {IPv4: true, IPv6: true, Router: true},
 		"iface-lan-only": {IPv4: true, IPv6: true},
@@ -49,7 +51,7 @@ func TestTheCollectedRoutesFollowWhatTheRulesTake(t *testing.T) {
 		got, ok := CollectedRouteOf(id)
 		switch {
 		case want == nil && ok:
-			t.Errorf("%s: published %+v; its rules take no connection (not a collected consumer, a block set, a reuse set whose diversion is off, or an interface that never appeared and so has no ip rule)", id, got)
+			t.Errorf("%s: published %+v; its rules take no connection (not a collected consumer, a block set, a reuse set whose diversion is off or whose TPROXY rule was refused, or an interface that never appeared and so has no ip rule)", id, got)
 		case want != nil && (!ok || got != *want):
 			t.Errorf("%s: published %+v (published=%v), want %+v", id, got, ok, *want)
 		}
