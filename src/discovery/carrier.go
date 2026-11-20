@@ -8,6 +8,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/nfq"
+	"github.com/daniellavrushin/b4/tables"
 )
 
 type CarrierRequest struct {
@@ -37,6 +38,8 @@ func (m *Runtime) SetTUNCarrier(factory CarrierFactory) {
 	m.mu.Unlock()
 }
 
+var watchCarrierDSCP = tables.WatchCarrierDiscoveryDSCP
+
 var newCarrierPool = func(cfg *config.Config) (*nfq.Pool, error) {
 	pool := nfq.NewPool(cfg)
 	for _, w := range pool.Workers {
@@ -64,17 +67,6 @@ func (m *Runtime) startCarrier(cfg *config.Config, dscp *config.DSCPProbe) (*Sta
 	start := cfg.Queue.StartNum + cfg.Queue.Threads
 	log.Infof("Discovery marks: main_injected=0x%x discovery_flow=0x%x discovery_injected=0x%x, carried through the TUN engine without a queue", cfg.MainInjectedMark(), flowMark, injectedMark)
 
-	poolCfg := discoveryPoolConfig(cfg, start, threads, flowMark, injectedMark)
-	poolCfg.Queue.Mode = "tun"
-	pool, err := newCarrierPool(poolCfg)
-	if err != nil {
-		return nil, fmt.Errorf("%w: failed to start discovery pool: %w", ErrTUNCarrierUnavailable, err)
-	}
-	if len(pool.Workers) == 0 {
-		pool.Stop()
-		return nil, fmt.Errorf("%w: the discovery pool has no worker", ErrTUNCarrierUnavailable)
-	}
-
 	state := &runtimeState{
 		discoveryStartNum: start,
 		discoveryThreads:  threads,
@@ -83,6 +75,24 @@ func (m *Runtime) startCarrier(cfg *config.Config, dscp *config.DSCPProbe) (*Sta
 		carrier:           true,
 	}
 	lost := func(err error) { m.rulesLost(state, err) }
+	path, release, err := watchCarrierDSCP(cfg, lost)
+	if err != nil {
+		return nil, err
+	}
+
+	poolCfg := discoveryPoolConfig(cfg, start, threads, flowMark, injectedMark)
+	poolCfg.Queue.Mode = "tun"
+	pool, err := newCarrierPool(poolCfg)
+	if err != nil {
+		release()
+		return nil, fmt.Errorf("%w: failed to start discovery pool: %w", ErrTUNCarrierUnavailable, err)
+	}
+	if len(pool.Workers) == 0 {
+		pool.Stop()
+		release()
+		return nil, fmt.Errorf("%w: the discovery pool has no worker", ErrTUNCarrierUnavailable)
+	}
+
 	carrier, err := factory(CarrierRequest{
 		FlowMark:     flowMark,
 		InjectedMark: injectedMark,
@@ -91,13 +101,17 @@ func (m *Runtime) startCarrier(cfg *config.Config, dscp *config.DSCPProbe) (*Sta
 	})
 	if err != nil {
 		pool.Stop()
+		release()
 		return nil, fmt.Errorf("%w: %w", ErrTUNCarrierUnavailable, err)
 	}
 
 	state.pool = pool
-	state.clearRules = carrier.Stop
+	state.clearRules = func() {
+		carrier.Stop()
+		release()
+	}
 	m.state = state
-	return &StartResult{Pool: pool, FlowMark: flowMark, Carrier: true}, nil
+	return &StartResult{Pool: pool, FlowMark: flowMark, Path: path, Carrier: true}, nil
 }
 
 func noteCarrierRun() {

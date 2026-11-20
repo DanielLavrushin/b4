@@ -218,8 +218,8 @@ func TestDiscoveryUnderTUNStartsTheCarrierWithTheDiscoveryMarksAndWorker(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.Carrier || res.DSCP != nil || res.Path != nil {
-		t.Errorf("a carrier run records no DSCP stamp and says it is carried, got %+v", res)
+	if !res.Carrier || res.DSCP != nil || res.Path == nil || res.Path.IPv4 != nil || res.Path.IPv6 != nil {
+		t.Errorf("a carrier run writes no DSCP value of its own, records the path its probes take (none here) and says it is carried, got %+v", res)
 	}
 	if req.FlowMark != cfg.DiscoveryFlowMark() || req.InjectedMark != cfg.DiscoveryInjectedMark() || req.Worker == nil || req.Worker != res.Pool.Workers[0] {
 		t.Errorf("the carrier must get Discovery's marks and the pool's worker, got %+v", req)
@@ -320,13 +320,127 @@ func TestTheDSCPPathGuardStillRefusesAResultTestedWithoutTheSetsValue(t *testing
 	set.Name = "yt"
 	set.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
 	tested := config.NewSetConfig()
+	value := 25
 	stamps := func(*config.Config, *config.DSCPProbe) (*config.DSCPProbe, *config.DSCPPath, error) {
-		return &config.DSCPProbe{Value: 25, IPv4: true, IPv6: true}, nil, nil
+		return &config.DSCPProbe{Value: 25, IPv4: true, IPv6: true}, &config.DSCPPath{IPv4: &value, IPv6: &value}, nil
 	}
 	cfg := tunConfig()
 	cfg.Sets = []*config.SetConfig{&set}
-	if change, err := DSCPPathChanged(cfg, &set, &tested, nil, stamps); err != nil || change == nil {
-		t.Errorf("a result tested without the set's DSCP must not be adopted for it in TUN mode either, got %v, %v", change, err)
+	for _, recorded := range []*config.DSCPPath{nil, {}} {
+		if change, err := DSCPPathChanged(cfg, &set, &tested, recorded, stamps); err != nil || change == nil {
+			t.Errorf("a result tested without the set's DSCP must not be adopted for it in TUN mode either (recorded path %+v), got %v, %v", recorded, change, err)
+		}
+	}
+}
+
+func stubCarrierDSCPWatch(t *testing.T, path *config.DSCPPath, err error, order *[]string) *func(error) {
+	t.Helper()
+	orig := watchCarrierDSCP
+	t.Cleanup(func() { watchCarrierDSCP = orig })
+	var lost func(error)
+	watchCarrierDSCP = func(_ *config.Config, l func(error)) (*config.DSCPPath, func(), error) {
+		lost = l
+		if err != nil {
+			return nil, nil, err
+		}
+		return path, func() {
+			if order != nil {
+				*order = append(*order, "release")
+			}
+		}, nil
+	}
+	return &lost
+}
+
+func TestACarrierRunWaitsForPendingDSCPRulesBeforeTouchingAnything(t *testing.T) {
+	stubCarrierDSCPWatch(t, nil, ErrDSCPRulesPending, nil)
+	pools := 0
+	orig := newCarrierPool
+	t.Cleanup(func() { newCarrierPool = orig })
+	newCarrierPool = func(cfg *config.Config) (*nfq.Pool, error) {
+		pools++
+		return orig(cfg)
+	}
+	rt := tunRuntime()
+	called := false
+	rt.SetTUNCarrier(func(CarrierRequest) (Carrier, error) {
+		called = true
+		return nil, errors.New("must not be reached")
+	})
+
+	_, err := rt.Start(tunConfig(), nil)
+	if !errors.Is(err, ErrDSCPRulesPending) || errors.Is(err, ErrTUNCarrierUnavailable) {
+		t.Fatalf("got %v, want ErrDSCPRulesPending alone, so the API answers dscp_rules_pending and the watchdog queues the heal again", err)
+	}
+	if called || pools != 0 || rt.IsActive() {
+		t.Error("a run that waits for the DSCP rules must start no pool and no carrier")
+	}
+}
+
+func TestACarrierRunReleasesItsDSCPWatchOnEveryFailedStart(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		pool    error
+		carrier error
+	}{
+		{"the pool fails", errors.New("no raw socket"), nil},
+		{"the carrier fails", nil, errors.New("no free route table")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var order []string
+			stubCarrierDSCPWatch(t, &config.DSCPPath{}, nil, &order)
+			orig := newCarrierPool
+			t.Cleanup(func() { newCarrierPool = orig })
+			newCarrierPool = func(cfg *config.Config) (*nfq.Pool, error) {
+				if tc.pool != nil {
+					return nil, tc.pool
+				}
+				pool := nfq.NewPool(cfg)
+				pool.SetTUNLocalOnly(true)
+				return pool, nil
+			}
+			rt := tunRuntime()
+			rt.SetTUNCarrier(func(CarrierRequest) (Carrier, error) { return nil, tc.carrier })
+
+			if _, err := rt.Start(tunConfig(), nil); !errors.Is(err, ErrTUNCarrierUnavailable) {
+				t.Fatalf("got %v, want ErrTUNCarrierUnavailable", err)
+			}
+			if !slices.Equal(order, []string{"release"}) || rt.IsActive() {
+				t.Errorf("a failed start must release its DSCP watch once and leave the runtime idle, got %v", order)
+			}
+		})
+	}
+}
+
+func TestACarrierRunReportsItsDSCPPathAndReleasesTheWatchAfterTheCarrier(t *testing.T) {
+	stubCarrierPool(t)
+	var order []string
+	value := 46
+	lost := stubCarrierDSCPWatch(t, &config.DSCPPath{IPv4: &value}, nil, &order)
+	rt := tunRuntime()
+	carrier := &fakeCarrier{order: &order}
+	rt.SetTUNCarrier(func(CarrierRequest) (Carrier, error) { return carrier, nil })
+
+	res, err := rt.Start(tunConfig(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Path == nil || res.Path.IPv4 == nil || *res.Path.IPv4 != 46 {
+		t.Errorf("the run must report the path its probes take, got %+v", res.Path)
+	}
+
+	rewritten := errors.New("b4 rewrote its DSCP rules during the run")
+	(*lost)(rewritten)
+	rt.mu.Lock()
+	recorded := rt.state.lostErr
+	rt.mu.Unlock()
+	if recorded != rewritten {
+		t.Errorf("a DSCP rewrite must reach the run the way a lost carrier rule does, got %v", recorded)
+	}
+
+	rt.Stop("")
+	if !slices.Equal(order, []string{"carrier", "release"}) {
+		t.Errorf("Stop must remove the carrier, then release the DSCP watch, got %v", order)
 	}
 }
 
