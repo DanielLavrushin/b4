@@ -308,13 +308,29 @@ type captureRule struct {
 	steer bool
 }
 
+func discoveryCaptureReturns(queueMark, flow, injected uint) [][]string {
+	var specs [][]string
+	if flow != 0 && flow&queueMark != queueMark {
+		specs = append(specs, []string{"-m", "mark", "--mark", fmt.Sprintf("0x%x/0xffffffff", flow), "-j", "RETURN"})
+	}
+	if bare := injected &^ engine.ReinjectMarkBit; bare != 0 && bare&queueMark != queueMark {
+		specs = append(specs, []string{"-m", "mark", "--mark", fmt.Sprintf("0x%x/0x%x", bare, uint32(0xffffffff)&^engine.ReinjectMarkBit), "-j", "RETURN"})
+	}
+	return specs
+}
+
 func (r *routeManager) captureChainRules(excl, local []string) []captureRule {
 	rules := []captureRule{
 		{spec: []string{"-m", "mark", "--mark", fmt.Sprintf("0x%x/0x%x", r.mark, r.mark), "-j", "RETURN"}},
-		{spec: []string{"-m", "mark", "--mark", fmt.Sprintf("0x%x/0x%x", defaultClientMark, defaultClientMark), "-j", "RETURN"}},
-		{spec: []string{"-m", "mark", "--mark", config.SelfDialSkipMarkMatch(), "-j", "RETURN"}},
-		{spec: []string{"-m", "mark", "--mark", fmt.Sprintf("0x%x/0x%x", config.TelegramBridgeMark, config.PerSetRouteMarkBits), "-j", "RETURN"}},
 	}
+	for _, spec := range discoveryCaptureReturns(r.mark, r.discoveryFlow, r.discoveryInjected) {
+		rules = append(rules, captureRule{spec: spec})
+	}
+	rules = append(rules,
+		captureRule{spec: []string{"-m", "mark", "--mark", fmt.Sprintf("0x%x/0x%x", defaultClientMark, defaultClientMark), "-j", "RETURN"}},
+		captureRule{spec: []string{"-m", "mark", "--mark", config.SelfDialSkipMarkMatch(), "-j", "RETURN"}},
+		captureRule{spec: []string{"-m", "mark", "--mark", fmt.Sprintf("0x%x/0x%x", config.TelegramBridgeMark, config.PerSetRouteMarkBits), "-j", "RETURN"}},
+	)
 	for _, set := range excl {
 		rules = append(rules, captureRule{spec: []string{"-m", "set", "--match-set", set, "dst", "-j", "RETURN"}, soft: true})
 	}

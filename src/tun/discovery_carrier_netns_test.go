@@ -2,6 +2,7 @@ package tun
 
 import (
 	"net"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -64,6 +65,99 @@ func carrierNetnsSend(t *testing.T, proto int, dst [4]byte, port, mark int) {
 
 func carrierNetnsLinkExists(name string) bool {
 	return exec.Command("ip", "link", "show", "dev", name).Run() == nil
+}
+
+func carrierNetnsTxPackets(t *testing.T, dev string) uint64 {
+	t.Helper()
+	lines := strings.Split(netnsIP(t, "-s", "link", "show", "dev", dev), "\n")
+	for i, line := range lines {
+		if !strings.HasPrefix(strings.TrimSpace(line), "TX:") || i+1 >= len(lines) {
+			continue
+		}
+		if fields := strings.Fields(lines[i+1]); len(fields) > 1 {
+			if n, err := strconv.ParseUint(fields[1], 10, 64); err == nil {
+				return n
+			}
+		}
+	}
+	t.Fatalf("no TX counters for %s", dev)
+	return 0
+}
+
+func TestNetnsCarrierProbesWithMarksOutsideTheQueueMarkStayOutOfPortCapture(t *testing.T) {
+	tunNetnsRequire(t)
+	netnsIP(t, "link", "set", "lo", "up")
+	netnsDummy(t, "b4dclan0", "192.168.1.1/24")
+	netnsDummy(t, "b4dcwan0", "203.0.113.2/24")
+	netnsDummy(t, "b4dccap0", "")
+	if err := os.WriteFile("/proc/sys/net/ipv6/conf/b4dccap0/disable_ipv6", []byte("1\n"), 0o644); err != nil {
+		t.Logf("IPv6 stays on b4dccap0 (%v); its own IPv6 packets may count as captured", err)
+	}
+	netnsMoveLocalRule(t, 0)
+	netnsIP(t, "route", "add", "default", "via", "203.0.113.1", "dev", "b4dcwan0")
+	netnsIP(t, "route", "add", "default", "dev", "b4dccap0", "table", "96")
+	netnsIP(t, "rule", "add", "fwmark", "0x40000000/0x40000000", "lookup", "96", "priority", "10")
+	t.Cleanup(func() {
+		exec.Command("ip", "rule", "del", "priority", "10").Run()
+		exec.Command("ip", "route", "flush", "table", "96").Run()
+		exec.Command("ip", "route", "del", "default", "via", "203.0.113.1", "dev", "b4dcwan0").Run()
+	})
+
+	r := &routeManager{
+		tunName:           "b4dccap0",
+		mark:              0x8000,
+		outIface:          "b4dcwan0",
+		tcpPorts:          []string{"443"},
+		udpPorts:          []string{"443"},
+		tcpLimit:          19,
+		udpLimit:          8,
+		noConnbytes:       true,
+		captureTable:      96,
+		capturePrio:       10,
+		discoveryFlow:     0x100001,
+		discoveryInjected: 0x100002,
+	}
+	if r.ensureCaptureChain() < 0 {
+		t.Skip("iptables cannot create a mangle chain in this namespace")
+	}
+	t.Cleanup(func() {
+		exec.Command("iptables", "-t", "mangle", "-D", "OUTPUT", "-j", tunCaptureChain).Run()
+		exec.Command("iptables", "-t", "mangle", "-F", tunCaptureChain).Run()
+		exec.Command("iptables", "-t", "mangle", "-X", tunCaptureChain).Run()
+	})
+	r.rebuildCaptureChain()
+	if r.captureMissing > 0 {
+		t.Skipf("%d capture rule(s) could not be added in this namespace", r.captureMissing)
+	}
+	r.ensureJump("OUTPUT", "-j", tunCaptureChain)
+
+	e := carrierEngine("ports", "203.0.113.2")
+	e.routes.outIface = "b4dcwan0"
+	lane := &carrierNetnsLane{}
+	c, err := e.startDiscoveryCarrier(DiscoveryCarrierRequest{FlowMark: 0x100001, InjectedMark: 0x100002, Lost: func(error) {}}, lane)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Stop)
+
+	captured := carrierNetnsTxPackets(t, "b4dccap0")
+	carrierNetnsSend(t, syscall.IPPROTO_UDP, [4]byte{8, 8, 8, 8}, 53, 0x100001)
+	carrierNetnsSend(t, syscall.IPPROTO_TCP, [4]byte{8, 8, 8, 8}, 443, 0x100001)
+	deadline := time.Now().Add(2 * time.Second)
+	for len(lane.packets()) < 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	if got := lane.packets(); len(got) != 2 {
+		t.Errorf("probes whose flow mark lacks a bit of the queue mark must reach the carrier, not the capture device, got %+v", got)
+	}
+	if n := c.sendErrs.Load(); n != 0 {
+		t.Errorf("the lane failed to re-send %d packet(s)", n)
+	}
+	if n := carrierNetnsTxPackets(t, "b4dccap0") - captured; n != 0 {
+		t.Errorf("neither a probe nor its re-send may enter the capture device, %d packet(s) did", n)
+	}
 }
 
 func TestNetnsDiscoveryCarrierCarriesOnlyRemoteProbesAndLeavesNothingBehind(t *testing.T) {

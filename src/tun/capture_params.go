@@ -7,15 +7,17 @@ import (
 )
 
 type captureParams struct {
-	tcpPorts       []string
-	udpPorts       []string
-	tcpLimit       int
-	udpLimit       int
-	dupIPs         []string
-	replyCapture   bool
-	devicesEnabled bool
-	whiteIsBlack   bool
-	devices        []config.DeviceMatch
+	tcpPorts          []string
+	udpPorts          []string
+	tcpLimit          int
+	udpLimit          int
+	dupIPs            []string
+	replyCapture      bool
+	discoveryFlow     uint
+	discoveryInjected uint
+	devicesEnabled    bool
+	whiteIsBlack      bool
+	devices           []config.DeviceMatch
 }
 
 func captureParamsFrom(cfg *config.Config) captureParams {
@@ -30,15 +32,17 @@ func captureParamsFrom(cfg *config.Config) captureParams {
 	dupV4, _ := cfg.CollectDuplicateIPs()
 	devices, _ := cfg.Queue.Devices.SelectedMatches()
 	return captureParams{
-		tcpPorts:       normalizePorts(cfg.CollectTCPPorts()),
-		udpPorts:       normalizePorts(cfg.CollectUDPPorts()),
-		tcpLimit:       tcpLimit,
-		udpLimit:       udpLimit,
-		dupIPs:         dupV4,
-		replyCapture:   replyCaptureNeeded(cfg),
-		devicesEnabled: cfg.Queue.Devices.Enabled,
-		whiteIsBlack:   cfg.Queue.Devices.WhiteIsBlack,
-		devices:        devices,
+		tcpPorts:          normalizePorts(cfg.CollectTCPPorts()),
+		udpPorts:          normalizePorts(cfg.CollectUDPPorts()),
+		tcpLimit:          tcpLimit,
+		udpLimit:          udpLimit,
+		dupIPs:            dupV4,
+		replyCapture:      replyCaptureNeeded(cfg),
+		discoveryFlow:     cfg.DiscoveryFlowMark(),
+		discoveryInjected: cfg.DiscoveryInjectedMark(),
+		devicesEnabled:    cfg.Queue.Devices.Enabled,
+		whiteIsBlack:      cfg.Queue.Devices.WhiteIsBlack,
+		devices:           devices,
 	}
 }
 
@@ -48,7 +52,9 @@ func (p captureParams) sameChain(o captureParams) bool {
 		p.tcpLimit == o.tcpLimit &&
 		p.udpLimit == o.udpLimit &&
 		slices.Equal(p.dupIPs, o.dupIPs) &&
-		p.replyCapture == o.replyCapture
+		p.replyCapture == o.replyCapture &&
+		p.discoveryFlow == o.discoveryFlow &&
+		p.discoveryInjected == o.discoveryInjected
 }
 
 func (p captureParams) sameGate(o captureParams) bool {
@@ -59,15 +65,17 @@ func (p captureParams) sameGate(o captureParams) bool {
 
 func (r *routeManager) captureParams() captureParams {
 	return captureParams{
-		tcpPorts:       r.tcpPorts,
-		udpPorts:       r.udpPorts,
-		tcpLimit:       r.tcpLimit,
-		udpLimit:       r.udpLimit,
-		dupIPs:         r.dupIPs,
-		replyCapture:   r.replyCapture,
-		devicesEnabled: r.devicesEnabled,
-		whiteIsBlack:   r.whiteIsBlack,
-		devices:        r.devices,
+		tcpPorts:          r.tcpPorts,
+		udpPorts:          r.udpPorts,
+		tcpLimit:          r.tcpLimit,
+		udpLimit:          r.udpLimit,
+		dupIPs:            r.dupIPs,
+		replyCapture:      r.replyCapture,
+		discoveryFlow:     r.discoveryFlow,
+		discoveryInjected: r.discoveryInjected,
+		devicesEnabled:    r.devicesEnabled,
+		whiteIsBlack:      r.whiteIsBlack,
+		devices:           r.devices,
 	}
 }
 
@@ -80,6 +88,8 @@ func (r *routeManager) setCaptureParams(p captureParams) {
 	r.udpLimit = p.udpLimit
 	r.dupIPs = p.dupIPs
 	r.replyCapture = p.replyCapture
+	r.discoveryFlow = p.discoveryFlow
+	r.discoveryInjected = p.discoveryInjected
 	r.devicesEnabled = p.devicesEnabled
 	r.whiteIsBlack = p.whiteIsBlack
 	r.devices = p.devices

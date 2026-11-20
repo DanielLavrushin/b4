@@ -107,7 +107,7 @@ packet processing and through every set that carries the router's own traffic.
 | Routing sets, the router's own packets (`b4r_*_out`) | Its mark has bit `0x40000` or any bit under `0x27fff`. A packet with every bit of the queue mark is left alone as well, after a set routed through an interface has given it the set's mark when its destination is in the set; a set that leaves the router's own traffic alone and lists its devices only by IP address does this only for packets from those addresses. The IPv4 ICMP redirects that a set with a gateway drops, as [sets routed through an interface](#sets-routed-through-an-interface) describes, are dropped whatever their mark |
 | QUIC refusal of a proxy set with **Route UDP through upstream** off or **Block QUIC (force TCP)** on, for forwarded packets (`b4r_*_q`) and the router's own (`b4r_*_qo`) | Its mark has every bit of the queue mark, or bit `0x40000`; in `b4r_*_q` also when it comes from a device outside the set's source devices |
 | Block sets | Never: they test no mark, only the destination and, when the set has them, its source interfaces and source devices |
-| TUN capture (`B4_TUN`) | Its mark has every bit of the queue mark or bit `0x20000000`, matches `0x240000/0x8efd8000`, or has `0x24bab` as its bits under `0x27fff`; on iptables also when its destination is in a routing set other than a block set. A packet to a network in which the router has an IPv4 address of its own is left alone as well, unless it is UDP DNS or a TCP reset the chain captures; while b4 captures only the router's own connections, such a packet is always left alone, except a UDP DNS query to the uplink gateway |
+| TUN capture (`B4_TUN`) | Its mark has every bit of the queue mark or bit `0x20000000`, matches `0x240000/0x8efd8000`, has `0x24bab` as its bits under `0x27fff`, or is exactly Discovery's flow mark, or its injected mark with or without `0x10000000`, when that mark lacks a bit of the queue mark; on iptables also when its destination is in a routing set other than a block set. A packet to a network in which the router has an IPv4 address of its own is left alone as well, unless it is UDP DNS or a TCP reset the chain captures; while b4 captures only the router's own connections, such a packet is always left alone, except a UDP DNS query to the uplink gateway |
 | TUN on the whole default route | Only packets with bit `0x10000000`, and with bit `0x20000000` when `ip` accepts `suppress_prefixlength`, leave by b4's rules; every other packet that follows the default route enters `b4tun0`. During a Discovery run, packets whose mark is exactly the flow or injected mark follow Discovery's rules at priorities 80-83 instead, see [Discovery](#discovery-tun) |
 | **NAT Masquerade** (`b4_masq`, `B4_MASQ`) | Its mark has bit `0x20000000`. On iptables that `RETURN` sits at the top of nat `POSTROUTING`, so such a packet skips every later rule there, other services' included |
 | **Set DSCP** and the sets' own DSCP values (`B4_DSCP`, `inet b4_dscp`) | Its mark has bit `0x20000000`, it leaves through `lo`, or it travels in the reply direction of its connection. On iptables the jump to `B4_DSCP` sits at the top of mangle `POSTROUTING`; on nftables `inet b4_dscp` runs in postrouting at priority 150. The sets' values are written in the same chain or table, after the **Set DSCP** value, by rules that choose the value by the destination address alone |
@@ -164,7 +164,7 @@ that has bit `0x2000000` or `0x20000000` itself, the rules do not tell such pack
 | Routing sets other than block sets | `meta mark & 0x8000 == 0x8000 return` | `-m mark --mark 0x8000/0x8000 -j RETURN` |
 | Sets routed through an interface, router's own packets | `meta mark & 0x8000 == 0x8000 ip daddr @<set> meta mark set ...` | `-m mark --mark 0x8000/0x8000 -m set --match-set <set> dst -j MARK --set-xmark <mark>/0x27fff` |
 | DNS over TCP redirect, while it is on | `meta mark & 0x8000 == 0x8000 return` | `B4_DNSTCP`: `-m mark --mark 0x8000/0x8000 -j RETURN` |
-| TUN capture | - | `B4_TUN`: `-m mark --mark 0x8000/0x8000 -j RETURN`, written with `iptables` on both backends |
+| TUN capture | - | `B4_TUN`: `-m mark --mark 0x8000/0x8000 -j RETURN`, written with `iptables` on both backends; when a Discovery mark lacks a bit of the queue mark, also `-m mark --mark <flow mark>/0xffffffff -j RETURN` or `-m mark --mark <injected mark>/0xefffffff -j RETURN` |
 
 In the queue chains `b4_chain` and `B4` and in the rules that queue or copy DNS queries, a
 mark reads as b4's own when it has every bit of the queue mark and no other bit outside
@@ -589,8 +589,9 @@ with the source address of the device's route. These rules cover IPv4 only.
 | Packets b4 sends | The probes b4 has processed, its fakes and split segments: the injected mark with `0x10000000` added, `0x10008002` by default. Packets toward the probes: `0x20000000` alone |
 | NAT Masquerade | Leaves the device out, as it does `b4tun0` |
 
-With port capture and the default marks, `B4_TUN` returns the probes, whose mark has every bit
-of the queue mark. On the whole default route, priority 81 comes ahead of the main table and its default
+With port capture, `B4_TUN` returns the probes and the packets b4 sends for the run: with the
+default marks by the queue-mark rule, since they have every bit of the queue mark, and with a
+flow or injected mark that lacks one of those bits by a rule for that mark. On the whole default route, priority 81 comes ahead of the main table and its default
 route into `b4tun0`. During a run, a packet of another service whose mark is exactly the flow
 mark goes into the device too. Every 5 seconds b4 checks the device, its route, these rules
 and the uplink address. A missing one, or a changed uplink address, stops the run. A device, table or rules left behind by a crash are
