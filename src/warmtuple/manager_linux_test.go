@@ -150,6 +150,32 @@ func TestWarmThenMarkedPassOnExactlyTheSameTuple(t *testing.T) {
 	}
 }
 
+func TestFreshTupleSkipsReconnectSettle(t *testing.T) {
+	cfg := fixture()
+	cfg.ReconnectDelay = 300 * time.Millisecond
+	cfg.ReuseTimeout = time.Second
+	cfg.WarmAge = time.Minute
+	m := fakeManager(t, cfg)
+	started := time.Now()
+	first, err := m.DialContext(context.Background(), cfg.Host+":443")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(started); took < cfg.ReconnectDelay || !first.(*Conn).Warmed {
+		t.Fatalf("the warming call took %s with warmed=%t, want the %s settle after its warm", took, first.(*Conn).Warmed, cfg.ReconnectDelay)
+	}
+	first.Close()
+	started = time.Now()
+	second, err := m.DialContext(context.Background(), cfg.Host+":443")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	if took := time.Since(started); took >= 150*time.Millisecond || second.(*Conn).Warmed {
+		t.Fatalf("a reuse of the warmed tuple took %s with warmed=%t, want it to connect without the settle", took, second.(*Conn).Warmed)
+	}
+}
+
 func TestFailuresNeverFallbackAndReleaseTheLease(t *testing.T) {
 	for _, phase := range []string{"warm", "tuple", "reuse", "cancel"} {
 		t.Run(phase, func(t *testing.T) {

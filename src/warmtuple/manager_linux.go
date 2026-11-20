@@ -227,12 +227,14 @@ func (m *Manager) DialContext(ctx context.Context, dest string) (net.Conn, error
 	started = time.Now()
 	passCtx, passCancel := context.WithTimeout(ctx, m.cfg.ReuseTimeout)
 	defer passCancel()
-	settle := time.NewTimer(m.cfg.ReconnectDelay)
-	select {
-	case <-passCtx.Done():
-		settle.Stop()
-		return nil, fmt.Errorf("same-tuple reconnect: %w", passCtx.Err())
-	case <-settle.C:
+	if !fresh {
+		settle := time.NewTimer(m.cfg.ReconnectDelay)
+		select {
+		case <-passCtx.Done():
+			settle.Stop()
+			return nil, fmt.Errorf("same-tuple reconnect: %w", passCtx.Err())
+		case <-settle.C:
+		}
 	}
 	raw, err := m.connect(passCtx, l.port, config.SelfDialRelayMark)
 	if err != nil {
