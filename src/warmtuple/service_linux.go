@@ -22,6 +22,11 @@ const firstPort, lastPort = 63000, 63999
 const idleRetention = 2 * time.Minute
 const tupleCooling = 10 * time.Minute
 const coolingPrune = 2048
+const maxFallbacks = 1024
+const fallbackDialTimeout = 10 * time.Second
+const fallbackWarnInterval = time.Minute
+
+var ErrFallbackCapacity = errors.New("every fallback relay slot is in use")
 
 type serviceKey struct {
 	owner, set, host, route string
@@ -44,8 +49,26 @@ type serviceLease struct {
 	port    uint16
 }
 
+type warnKey struct{ set, kind string }
+
+type warnLimiter struct {
+	count atomic.Int64
+	last  atomic.Int64
+}
+
+func (w *warnLimiter) note(now time.Time) (int64, bool) {
+	n := w.count.Add(1)
+	last := w.last.Load()
+	if last != 0 && now.UnixNano()-last < int64(fallbackWarnInterval) {
+		return n, false
+	}
+	return n, w.last.CompareAndSwap(last, now.UnixNano())
+}
+
 type Service struct {
 	clients    chan struct{}
+	ctx        context.Context
+	stop       context.CancelFunc
 	mu         sync.Mutex
 	cfg        *config.Config
 	epoch      uint64
@@ -55,9 +78,13 @@ type Service struct {
 	leases     map[uint16]*serviceLease
 	cooling    map[coolKey]time.Time
 	pending    map[*serviceLease]context.CancelFunc
+	directs    map[*directConn]struct{}
+	fallbacks  int
+	warnings   map[warnKey]*warnLimiter
 	source     func(context.Context, netip.AddrPort) (netip.Addr, error)
 	route      func(context.Context, netip.AddrPort, netip.Addr) (string, error)
 	newManager func(Config) (*Manager, error)
+	direct     directDialer
 }
 
 type serviceConn struct {
@@ -69,7 +96,10 @@ type serviceConn struct {
 }
 
 func NewService(flows *Flows) *Service {
-	return &Service{clients: make(chan struct{}, 256), flows: flows, next: firstPort, leases: make(map[uint16]*serviceLease), cooling: make(map[coolKey]time.Time), pending: make(map[*serviceLease]context.CancelFunc), source: routeSource, route: routeFingerprint, newManager: New}
+	ctx, stop := context.WithCancel(context.Background())
+	return &Service{clients: make(chan struct{}, 256), ctx: ctx, stop: stop, flows: flows, next: firstPort, leases: make(map[uint16]*serviceLease), cooling: make(map[coolKey]time.Time),
+		pending: make(map[*serviceLease]context.CancelFunc), directs: make(map[*directConn]struct{}), warnings: make(map[warnKey]*warnLimiter),
+		source: routeSource, route: routeFingerprint, newManager: New, direct: dialDirect}
 }
 
 func routeSource(ctx context.Context, target netip.AddrPort) (netip.Addr, error) {
@@ -199,7 +229,7 @@ func (s *Service) Dial(ctx context.Context, set *config.SetConfig, owner, host s
 	}
 	egress, err := s.route(ctx, target, source)
 	if err != nil {
-		return nil, fmt.Errorf("warm egress: %w", err)
+		return s.fallBackAfter(ctx, set.Id, host, source, target, fmt.Errorf("warm egress: %w", err))
 	}
 	s.mu.Lock()
 	if s.closed || s.cfg == nil || s.flows == nil {
@@ -216,30 +246,127 @@ func (s *Service) Dial(ctx context.Context, set *config.SetConfig, owner, host s
 	l, err := s.reserveLocked(key, set, source)
 	if err != nil {
 		s.mu.Unlock()
+		if errors.Is(err, ErrCapacity) {
+			return s.fallBackAfter(ctx, set.Id, host, source, target, err)
+		}
 		return nil, err
 	}
-	ctx, cancel := context.WithCancel(ctx)
+	warmCtx, cancel := context.WithCancel(ctx)
 	s.pending[l] = cancel
 	l.manager.capture = func() (func(), error) {
 		return s.flows.Register(netip.AddrPortFrom(source, l.port), target, cfg, set, host)
 	}
 	s.mu.Unlock()
 	defer cancel()
-	raw, err := l.manager.DialContext(ctx, net.JoinHostPort(host, strconv.Itoa(int(target.Port()))))
+	raw, err := l.manager.DialContext(warmCtx, net.JoinHostPort(host, strconv.Itoa(int(target.Port()))))
 	s.mu.Lock()
 	delete(s.pending, l)
+	live := warmCtx.Err() == nil && !s.closed
 	if err == nil && (s.closed || !s.keepsLease(l)) {
 		_ = raw.Close()
 		err = errors.New("warm configuration changed")
+		live = false
 	}
 	if err != nil {
 		s.discardLocked(l, time.Now())
 		s.mu.Unlock()
+		if live {
+			return s.fallBackAfter(ctx, set.Id, host, source, target, err)
+		}
 		return nil, err
 	}
 	s.mu.Unlock()
 	log.Tracef("WSSIZE reuse [%s]: %s -> %s host=%s warmed=%t warm=%s reconnect=%s", set.Name, raw.LocalAddr(), raw.RemoteAddr(), host, raw.(*Conn).Warmed, raw.(*Conn).WarmDuration, raw.(*Conn).ReuseDuration)
 	return &serviceConn{Conn: raw, service: s, lease: l}, nil
+}
+
+func (s *Service) Fallback(ctx context.Context, set *config.SetConfig, _, host string, target netip.AddrPort) (net.Conn, error) {
+	host = normalizeHost(host)
+	if !validHost(host) || target.Port() != 443 || !set.ReusesWSSize() {
+		return nil, ErrTarget
+	}
+	source, err := s.source(ctx, target)
+	if err != nil {
+		return nil, fmt.Errorf("warm route: %w", err)
+	}
+	c, _, err := s.dialFallback(ctx, set.Id, host, source, target)
+	return c, err
+}
+
+func (s *Service) fallBackAfter(ctx context.Context, id, host string, source netip.Addr, target netip.AddrPort, cause error) (net.Conn, error) {
+	if ctx.Err() != nil {
+		return nil, cause
+	}
+	c, set, err := s.dialFallback(ctx, id, host, source, target)
+	if err != nil {
+		return nil, fmt.Errorf("%v; relay with the set's strategy: %w", cause, err)
+	}
+	s.noteFallback(set, host, cause)
+	return c, nil
+}
+
+func (s *Service) dialFallback(ctx context.Context, id, host string, source netip.Addr, target netip.AddrPort) (net.Conn, *config.SetConfig, error) {
+	s.mu.Lock()
+	if s.closed || s.cfg == nil || s.flows == nil {
+		s.mu.Unlock()
+		return nil, nil, ErrClosed
+	}
+	cfg := s.cfg
+	set := reuseSet(cfg, id, target)
+	if set == nil {
+		s.mu.Unlock()
+		return nil, nil, ErrTarget
+	}
+	if s.fallbacks >= maxFallbacks {
+		s.mu.Unlock()
+		return nil, nil, ErrFallbackCapacity
+	}
+	s.fallbacks++
+	s.mu.Unlock()
+	dialCtx, cancel := context.WithTimeout(ctx, fallbackDialTimeout)
+	defer cancel()
+	stop := context.AfterFunc(s.ctx, cancel)
+	defer stop()
+	raw, release, err := s.direct(dialCtx, source, target, config.SelfDialMark, func(local netip.AddrPort) (func(), error) {
+		return s.flows.Register(local, target, cfg, set, host)
+	})
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err == nil && s.closed {
+		_ = raw.Close()
+		release()
+		err = ErrClosed
+	}
+	if err != nil {
+		s.fallbacks--
+		return nil, nil, err
+	}
+	c := &directConn{Conn: raw, service: s, release: release}
+	s.directs[c] = struct{}{}
+	return c, set, nil
+}
+
+func (s *Service) limiter(key warnKey) *warnLimiter {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	w := s.warnings[key]
+	if w == nil {
+		w = &warnLimiter{}
+		s.warnings[key] = w
+	}
+	return w
+}
+
+func (s *Service) noteFallback(set *config.SetConfig, host string, cause error) {
+	if !errors.Is(cause, ErrCapacity) {
+		log.Warnf("WSSIZE reuse [%s]: %s: %v; relayed with the set's strategy without reuse", set.Name, host, cause)
+		return
+	}
+	if n, warn := s.limiter(warnKey{set: set.Id, kind: "capacity"}).note(time.Now()); warn {
+		log.Warnf("WSSIZE reuse [%s]: %s: %v, %d connections relayed with the set's strategy without reuse so far", set.Name, host, cause, n)
+		return
+	}
+	log.Tracef("WSSIZE reuse [%s]: %s: %v, relayed with the set's strategy without reuse", set.Name, host, cause)
 }
 
 func (c *serviceConn) Close() error {
@@ -268,6 +395,7 @@ func (c *serviceConn) CloseWrite() error {
 func (s *Service) Close() error {
 	s.mu.Lock()
 	s.closed = true
+	s.stop()
 	for _, cancel := range s.pending {
 		cancel()
 	}
@@ -276,9 +404,16 @@ func (s *Service) Close() error {
 		managers = append(managers, l.manager)
 	}
 	s.leases = make(map[uint16]*serviceLease)
+	directs := make([]*directConn, 0, len(s.directs))
+	for c := range s.directs {
+		directs = append(directs, c)
+	}
 	s.mu.Unlock()
 	for _, m := range managers {
 		_ = m.Close()
+	}
+	for _, c := range directs {
+		_ = c.Close()
 	}
 	return nil
 }

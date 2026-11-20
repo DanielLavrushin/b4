@@ -20,6 +20,7 @@ import (
 
 type WSReuseDialer interface {
 	Dial(context.Context, *config.SetConfig, string, string, netip.AddrPort) (net.Conn, error)
+	Fallback(context.Context, *config.SetConfig, string, string, netip.AddrPort) (net.Conn, error)
 	AcquireClient() (func(), bool)
 }
 
@@ -48,14 +49,16 @@ func (l *Listener) serveWSReuse(client net.Conn, ip net.IP, port int, given *sni
 	if err != nil {
 		return
 	}
-	release, ok := l.Warm.AcquireClient()
-	if !ok {
-		l.noteWarmSlotsFull()
-		return
-	}
+	dest := netip.AddrPortFrom(target.Unmap(), uint16(port))
 	warmCtx, stopWatch := watchWarmClient(l.ctx, client)
-	backend, err := l.Warm.Dial(warmCtx, set, owner, sniffed.host, netip.AddrPortFrom(target.Unmap(), uint16(port)))
-	release()
+	var backend net.Conn
+	if release, ok := l.Warm.AcquireClient(); ok {
+		backend, err = l.Warm.Dial(warmCtx, set, owner, sniffed.host, dest)
+		release()
+	} else {
+		l.noteWarmSlotsFull()
+		backend, err = l.Warm.Fallback(warmCtx, set, owner, sniffed.host, dest)
+	}
 	stopWatch()
 	listening := stop()
 	if err != nil {
@@ -66,8 +69,12 @@ func (l *Listener) serveWSReuse(client net.Conn, ip net.IP, port int, given *sni
 	if !listening {
 		return
 	}
+	flag := "wssize-reuse"
+	if fallback, ok := backend.(interface{ Fallback() bool }); ok && fallback.Fallback() {
+		flag = "wssize-reuse-fallback"
+	}
 	from := metrics.DeviceOf(client.RemoteAddr())
-	log.LogConnectionStr("TCP", set.Name, sniffed.host, client.RemoteAddr().String(), "", backend.RemoteAddr().String(), from.MAC, config.TLSVersionString(sniffed.tlsVersion), "wssize-reuse")
+	log.LogConnectionStr("TCP", set.Name, sniffed.host, client.RemoteAddr().String(), "", backend.RemoteAddr().String(), from.MAC, config.TLSVersionString(sniffed.tlsVersion), flag)
 	if err := writePrefix(backend, sniffed.prefix); err != nil {
 		return
 	}
@@ -92,18 +99,22 @@ func (w *warnLimiter) note(now time.Time) (int64, bool) {
 
 func (l *Listener) noteWarmSlotsFull() {
 	if n, warn := l.warmSlotsFull.note(time.Now()); warn {
-		log.Warnf("WSSIZE reuse [%s]: every warm slot is busy, %d connections closed without a relay so far", l.SetName, n)
+		log.Warnf("WSSIZE reuse [%s]: every warm slot is busy, %d connections relayed with the set's strategy without reuse so far", l.SetName, n)
 		return
 	}
-	log.Tracef("WSSIZE reuse [%s]: every warm slot is busy, a connection was closed", l.SetName)
+	log.Tracef("WSSIZE reuse [%s]: every warm slot is busy, a connection is relayed with the set's strategy without reuse", l.SetName)
 }
 
 func (l *Listener) noteWarmFailure(host string, err error) {
-	if !errors.Is(err, warmtuple.ErrCapacity) {
+	limiter := &l.warmPortsLeased
+	switch {
+	case errors.Is(err, warmtuple.ErrFallbackCapacity):
+		limiter = &l.fallbacksFull
+	case !errors.Is(err, warmtuple.ErrCapacity):
 		log.Warnf("WSSIZE reuse [%s]: %s: %v", l.SetName, host, err)
 		return
 	}
-	if n, warn := l.warmPortsLeased.note(time.Now()); warn {
+	if n, warn := limiter.note(time.Now()); warn {
 		log.Warnf("WSSIZE reuse [%s]: %s: %v, %d connections closed without a relay so far", l.SetName, host, err, n)
 		return
 	}

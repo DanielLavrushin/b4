@@ -121,6 +121,7 @@ type Listener struct {
 
 	warmSlotsFull   warnLimiter
 	warmPortsLeased warnLimiter
+	fallbacksFull   warnLimiter
 
 	upstreamFails    atomic.Int64
 	upstreamLastWarn atomic.Int64

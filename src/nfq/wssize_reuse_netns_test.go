@@ -97,6 +97,11 @@ func warmFirstRecord(b []byte) []byte {
 
 func warmTLSServer(t *testing.T, pid int, cert tls.Certificate, status int, network ...string) <-chan warmTestRead {
 	t.Helper()
+	return warmTLSServerUpTo(t, pid, cert, status, 0, network...)
+}
+
+func warmTLSServerUpTo(t *testing.T, pid int, cert tls.Certificate, status int, maxVersion uint16, network ...string) <-chan warmTestRead {
+	t.Helper()
 	var ln net.Listener
 	netnsHoldInside(t, pid, func() error {
 		var err error
@@ -135,7 +140,7 @@ func warmTLSServer(t *testing.T, pid int, cert tls.Certificate, status int, netw
 					}
 					return
 				}
-				c := tls.Server(raw, &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12, NextProtos: []string{"http/1.1"}})
+				c := tls.Server(raw, &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12, MaxVersion: maxVersion, NextProtos: []string{"http/1.1"}})
 				defer c.Close()
 				req, err := http.ReadRequest(bufio.NewReader(c))
 				r := warmTestRead{peer: conn.RemoteAddr().String(), hello: warmFirstRecord(raw.read.Bytes()), err: err}
@@ -295,8 +300,13 @@ func TestNetnsWSReuseTransparentBinary(t *testing.T) {
 	}
 }
 
-func warmTransparentBinary(t *testing.T, binary, backend string, ipv6 bool, version uint16, collecting ...bool) {
-	collectMode := len(collecting) > 0 && collecting[0]
+type reuseNetns struct {
+	serverPID, clientPID       int
+	target, outsideIP, network string
+	prefix                     uint32
+}
+
+func reuseNetnsFixture(t *testing.T, backend string, ipv6 bool) reuseNetns {
 	t.Helper()
 	netnsHoldRequire(t)
 	if _, err := exec.LookPath("ethtool"); err != nil {
@@ -308,16 +318,17 @@ func warmTransparentBinary(t *testing.T, binary, backend string, ipv6 bool, vers
 		}
 	}
 	serverPID := netnsHoldStartPeer(t)
-	target, outsideIP, network, prefix := netnsHoldServer, "203.0.113.3", "tcp4", uint32(32)
+	n := reuseNetns{serverPID: serverPID, target: netnsHoldServer, outsideIP: "203.0.113.3", network: "tcp4", prefix: 32}
 	clientPID := netnsWSStartLANClient(t)
+	n.clientPID = clientPID
 	netnsHoldRun(t, "nsenter", "-t", strconv.Itoa(serverPID), "-n", "ip", "addr", "add", "203.0.113.3/24", "dev", netnsHoldPeer)
 	netnsHoldRun(t, "ethtool", "-K", netnsHoldLink, "tx", "off", "tso", "off", "gso", "off", "gro", "off")
 	netnsHoldRun(t, "nsenter", "-t", strconv.Itoa(serverPID), "-n", "ethtool", "-K", netnsHoldPeer, "tx", "off", "tso", "off", "gso", "off", "gro", "off")
 	if ipv6 {
-		target, outsideIP, network, prefix = "2001:db8::2", "2001:db8::3", "tcp6", 128
+		n.target, n.outsideIP, n.network, n.prefix = "2001:db8::2", "2001:db8::3", "tcp6", 128
 		netnsHoldRun(t, "ip", "-6", "addr", "add", "2001:db8::1/64", "dev", netnsHoldLink, "nodad")
 		netnsHoldRun(t, "ip", "-6", "addr", "add", "fd00:88::1/64", "dev", netnsWSLANLink, "nodad")
-		for _, address := range []string{target, outsideIP} {
+		for _, address := range []string{n.target, n.outsideIP} {
 			netnsHoldRun(t, "nsenter", "-t", strconv.Itoa(serverPID), "-n", "ip", "-6", "addr", "add", address+"/64", "dev", netnsHoldPeer, "nodad")
 		}
 		netnsHoldRun(t, "nsenter", "-t", strconv.Itoa(clientPID), "-n", "ip", "-6", "addr", "add", "fd00:88::2/64", "dev", netnsWSLANPeer, "nodad")
@@ -327,18 +338,20 @@ func warmTransparentBinary(t *testing.T, binary, backend string, ipv6 bool, vers
 			t.Fatal(err)
 		}
 	}
-	cert, roots := warmTestCertificate(t)
-	serverMode := ""
-	if collectMode {
-		serverMode = "collect"
-	}
-	reads := warmTLSServer(t, serverPID, cert, 204, network, serverMode)
-	wire := warmWire(t, serverPID)
-	dir := t.TempDir()
+	return n
+}
+
+func writeReuseCA(t *testing.T, dir string, cert tls.Certificate) string {
+	t.Helper()
 	ca := filepath.Join(dir, "ca.pem")
 	if err := os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Certificate[0]}), 0600); err != nil {
 		t.Fatal(err)
 	}
+	return ca
+}
+
+func reuseB4Config(t *testing.T, dir, backend string, ipv6 bool, geoTarget string, prefix uint32) (config.Config, int) {
+	t.Helper()
 	reserved, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -356,13 +369,6 @@ func warmTransparentBinary(t *testing.T, binary, backend string, ipv6 bool, vers
 	cfg.System.WebServer.Port, cfg.System.WebServer.BindAddress = apiPort, "127.0.0.1"
 	cfg.System.Geo.GeoSitePath = ""
 	cfg.System.Geo.GeoIpPath = filepath.Join(dir, "googlevideo.dat")
-	geoTarget := target
-	if collectMode {
-		geoTarget = "203.0.113.99"
-		if ipv6 {
-			geoTarget = "2001:db8::99"
-		}
-	}
 	addressBytes := net.ParseIP(geoTarget).To4()
 	if ipv6 {
 		addressBytes = net.ParseIP(geoTarget).To16()
@@ -374,11 +380,14 @@ func warmTransparentBinary(t *testing.T, binary, backend string, ipv6 bool, vers
 	if err := os.WriteFile(cfg.System.Geo.GeoIpPath, geo, 0600); err != nil {
 		t.Fatal(err)
 	}
+	return cfg, apiPort
+}
+
+func reuseNetnsSet(t *testing.T, clientPID int) config.SetConfig {
+	t.Helper()
 	set := config.NewSetConfig()
 	set.Id, set.Name, set.Enabled = "reuse-netns", "reuse-netns", true
 	set.Targets.GeoIpCategories = []string{"BLOCKED_TLS_RU"}
-	set.Targets.UseCollectedIPs = collectMode
-	set.Targets.IPPriority = collectMode
 	netnsHoldInside(t, clientPID, func() error {
 		iface, err := net.InterfaceByName(netnsWSLANPeer)
 		if err == nil {
@@ -386,19 +395,8 @@ func warmTransparentBinary(t *testing.T, binary, backend string, ipv6 bool, vers
 		}
 		return err
 	})
-	if collectMode {
-		clientAddress := netnsWSLANClient
-		if ipv6 {
-			clientAddress = "fd00:88::2"
-		}
-		cfg.Queue.Devices.Devices = []config.Device{{MAC: set.Targets.SourceDevices[0], IP: clientAddress, Name: "Test device", IsManual: true}}
-	}
 	set.TCP.WSSize = config.WSSizeConfig{Enabled: true, Window: 1, Scale: 1}
 	set.TCP.WSSizeReuse.Enabled = true
-	exerciseCache := !collectMode && !ipv6 && version == tls.VersionTLS13
-	if exerciseCache {
-		set.TCP.WSSizeReuse.MaxAgeSeconds = 4
-	}
 	set.TCP.RSTProtection.Enabled = false
 	set.Faking.SNI = false
 	set.Fragmentation.Strategy = "combo"
@@ -410,19 +408,12 @@ func warmTransparentBinary(t *testing.T, binary, backend string, ipv6 bool, vers
 	set.Fragmentation.Combo.ShuffleMode = "reverse"
 	set.Fragmentation.Combo.DecoyEnabled = false
 	set.Fragmentation.Combo.FakePerSegment = false
-	ordinary := config.NewSetConfig()
-	ordinary.Id, ordinary.Name, ordinary.Enabled = "ordinary", "ordinary", true
-	ordinary.Targets.SNIDomains = []string{warmTestHost}
-	ordinary.Faking.SNI = false
-	ordinary.Fragmentation.Strategy = "none"
-	if collectMode {
-		ordinary.TCP.IPBlockDetect.Enabled = true
-		ordinary.TCP.IPBlockDetect.Action = "collect"
-		ordinary.TCP.IPBlockDetect.TimeoutMs = 1000
-		ordinary.TCP.RSTProtection.Enabled = false
-	}
-	cfg.Sets = []*config.SetConfig{&set, &ordinary}
-	raw, err := json.Marshal(&cfg)
+	return set
+}
+
+func startReuseB4(t *testing.T, binary, dir string, cfg *config.Config, apiPort int, ca string) []byte {
+	t.Helper()
+	raw, err := json.Marshal(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -478,6 +469,58 @@ func warmTransparentBinary(t *testing.T, binary, backend string, ipv6 bool, vers
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
+	return raw
+}
+
+func warmTransparentBinary(t *testing.T, binary, backend string, ipv6 bool, version uint16, collecting ...bool) {
+	collectMode := len(collecting) > 0 && collecting[0]
+	t.Helper()
+	n := reuseNetnsFixture(t, backend, ipv6)
+	serverPID, clientPID, target, outsideIP, network := n.serverPID, n.clientPID, n.target, n.outsideIP, n.network
+	cert, roots := warmTestCertificate(t)
+	serverMode := ""
+	if collectMode {
+		serverMode = "collect"
+	}
+	reads := warmTLSServer(t, serverPID, cert, 204, network, serverMode)
+	wire := warmWire(t, serverPID)
+	dir := t.TempDir()
+	ca := writeReuseCA(t, dir, cert)
+	geoTarget := target
+	if collectMode {
+		geoTarget = "203.0.113.99"
+		if ipv6 {
+			geoTarget = "2001:db8::99"
+		}
+	}
+	cfg, apiPort := reuseB4Config(t, dir, backend, ipv6, geoTarget, n.prefix)
+	set := reuseNetnsSet(t, clientPID)
+	set.Targets.UseCollectedIPs = collectMode
+	set.Targets.IPPriority = collectMode
+	if collectMode {
+		clientAddress := netnsWSLANClient
+		if ipv6 {
+			clientAddress = "fd00:88::2"
+		}
+		cfg.Queue.Devices.Devices = []config.Device{{MAC: set.Targets.SourceDevices[0], IP: clientAddress, Name: "Test device", IsManual: true}}
+	}
+	exerciseCache := !collectMode && !ipv6 && version == tls.VersionTLS13
+	if exerciseCache {
+		set.TCP.WSSizeReuse.MaxAgeSeconds = 4
+	}
+	ordinary := config.NewSetConfig()
+	ordinary.Id, ordinary.Name, ordinary.Enabled = "ordinary", "ordinary", true
+	ordinary.Targets.SNIDomains = []string{warmTestHost}
+	ordinary.Faking.SNI = false
+	ordinary.Fragmentation.Strategy = "none"
+	if collectMode {
+		ordinary.TCP.IPBlockDetect.Enabled = true
+		ordinary.TCP.IPBlockDetect.Action = "collect"
+		ordinary.TCP.IPBlockDetect.TimeoutMs = 1000
+		ordinary.TCP.RSTProtection.Enabled = false
+	}
+	cfg.Sets = []*config.SetConfig{&set, &ordinary}
+	raw := startReuseB4(t, binary, dir, &cfg, apiPort, ca)
 	if collectMode {
 		dial := func() net.Conn {
 			t.Helper()
@@ -777,6 +820,118 @@ func nextReuseRecord(t *testing.T, records <-chan warmTestRead) warmTestRead {
 		t.Fatal("missing warm/pass server record")
 		return warmTestRead{}
 	}
+}
+
+func reusePeerPort(t *testing.T, peer string) uint16 {
+	t.Helper()
+	_, port, err := net.SplitHostPort(peer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := strconv.ParseUint(port, 10, 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return uint16(n)
+}
+
+func warmTuplePort(port uint16) bool { return port >= 63000 && port <= 63999 }
+
+func reuseSYNs(packets []netnsWireSegment, keep func(uint16) bool) []netnsWireSegment {
+	var syns []netnsWireSegment
+	for _, packet := range packets {
+		if packet.flags&0x12 == 2 && keep(packet.sport) && (len(syns) == 0 || packet.seq != syns[len(syns)-1].seq) {
+			syns = append(syns, packet)
+		}
+	}
+	return syns
+}
+
+func TestNetnsWSReuseWarmFailureFallbackBinary(t *testing.T) {
+	binary := wsReuseBinary(t, "set B4_WSREUSE_BINARY to the candidate b4 binary")
+	for _, backend := range []string{"iptables", "nftables"} {
+		t.Run("IPv4/"+backend, func(t *testing.T) { warmFailureFallbackBinary(t, binary, backend) })
+	}
+}
+
+func warmFailureFallbackBinary(t *testing.T, binary, backend string) {
+	t.Helper()
+	n := reuseNetnsFixture(t, backend, false)
+	cert, roots := warmTestCertificate(t)
+	reads := warmTLSServerUpTo(t, n.serverPID, cert, 204, tls.VersionTLS12, n.network)
+	wire := warmWire(t, n.serverPID)
+	dir := t.TempDir()
+	ca := writeReuseCA(t, dir, cert)
+	cfg, apiPort := reuseB4Config(t, dir, backend, false, n.target, n.prefix)
+	set := reuseNetnsSet(t, n.clientPID)
+	cfg.Sets = []*config.SetConfig{&set}
+	startReuseB4(t, binary, dir, &cfg, apiPort, ca)
+	request := func() []byte {
+		t.Helper()
+		var raw net.Conn
+		netnsHoldInside(t, n.clientPID, func() error {
+			var err error
+			raw, err = net.DialTimeout(n.network, net.JoinHostPort(n.target, "443"), 3*time.Second)
+			return err
+		})
+		raw.SetDeadline(time.Now().Add(25 * time.Second))
+		recorded := &warmRecordConn{Conn: raw}
+		c := tls.Client(recorded, &tls.Config{ServerName: warmTestHost, RootCAs: roots, MinVersion: tls.VersionTLS12, MaxVersion: tls.VersionTLS12, NextProtos: []string{"http/1.1"}})
+		if _, err := fmt.Fprintf(c, "GET /generate_204 HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", warmTestHost); err != nil {
+			raw.Close()
+			t.Fatalf("the client's TLS after a failed warm: %v", err)
+		}
+		response, err := http.ReadResponse(bufio.NewReader(c), nil)
+		if err != nil {
+			raw.Close()
+			t.Fatalf("the client got no answer after a failed warm: %v", err)
+		}
+		response.Body.Close()
+		if response.StatusCode != 204 {
+			raw.Close()
+			t.Fatalf("client HTTP status %d", response.StatusCode)
+		}
+		closeReuseTestTLS(t, c, raw)
+		return warmFirstRecord(recorded.written.Bytes())
+	}
+	hello := request()
+	warm, get := nextReuseRecord(t, reads), nextReuseRecord(t, reads)
+	warmPort, getPort := reusePeerPort(t, warm.peer), reusePeerPort(t, get.peer)
+	if warm.err == nil || warm.method != "" || !warmTuplePort(warmPort) {
+		t.Fatalf("want a warm from a warm-tuple port that the TLS 1.2 server refuses: %+v", warm)
+	}
+	if get.err != nil || get.method != "GET" || getPort == warmPort || warmTuplePort(getPort) {
+		t.Fatalf("want the client's GET relayed from an ordinary source port, not the warm's %d or another warm-tuple port: %+v", warmPort, get)
+	}
+	if !bytes.Equal(get.hello, hello) {
+		t.Fatal("the fallback changed the client's ClientHello")
+	}
+	logged := ""
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(25 * time.Millisecond) {
+		data, _ := os.ReadFile(filepath.Join(dir, "b4.log"))
+		if logged = string(data); strings.Contains(logged, "[wssize-reuse-fallback]") {
+			break
+		}
+	}
+	if !strings.Contains(logged, "[wssize-reuse-fallback]") {
+		t.Error("the relayed connection is not logged as a reuse fallback")
+	}
+	time.Sleep(100 * time.Millisecond)
+	packets := wire()
+	warmSYNs := reuseSYNs(packets, warmTuplePort)
+	fallbackSYNs := reuseSYNs(packets, func(port uint16) bool { return port == getPort })
+	if len(warmSYNs) != 1 || warmSYNs[0].sport != warmPort || warmSYNs[0].window != 1 || warmSYNs[0].scale != 1 {
+		t.Fatalf("want one warm SYN with the set's window 1 and scale 1 and no pass: %+v", warmSYNs)
+	}
+	if len(fallbackSYNs) != 1 || fallbackSYNs[0].window != 1 || fallbackSYNs[0].scale != 1 {
+		t.Fatalf("want the fallback SYN with the set's window 1 and scale 1 from the queue: %+v", fallbackSYNs)
+	}
+	select {
+	case record := <-reads:
+		t.Fatalf("an extra server record: %+v", record)
+	default:
+	}
+	t.Logf("%s: a refused warm from port %d, the client's TLS relayed from port %d with the set's strategy", backend, warmPort, getPort)
 }
 
 func TestNetnsCollectedWSReuseTransparentBinary(t *testing.T) {

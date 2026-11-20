@@ -1,16 +1,24 @@
 package warmtuple
 
 import (
+	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
 	"net/netip"
+	"os"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/log"
+	"golang.org/x/sys/unix"
 )
 
 func serviceFixture(t *testing.T) (*Service, *config.Config, *config.SetConfig, *atomic.Int32) {
@@ -40,7 +48,59 @@ func serviceFixture(t *testing.T) (*Service, *config.Config, *config.SetConfig, 
 		m.warm = func(context.Context, net.Conn) error { count.Add(1); return nil }
 		return m, nil
 	}
+	s.direct = func(context.Context, netip.Addr, netip.AddrPort, uint32, func(netip.AddrPort) (func(), error)) (net.Conn, func(), error) {
+		t.Error("a connection fell back to the set's strategy where no fallback is expected")
+		return nil, nil, errors.New("unexpected fallback")
+	}
 	return s, &cfg, &set, count
+}
+
+type directRecorder struct {
+	mu      sync.Mutex
+	next    uint16
+	fail    error
+	marks   []uint32
+	sources []netip.Addr
+	locals  []netip.AddrPort
+	conns   []*fakeConn
+}
+
+func recordDirect(t *testing.T, s *Service) *directRecorder {
+	t.Helper()
+	r := &directRecorder{next: 40000}
+	s.direct = func(_ context.Context, source netip.Addr, target netip.AddrPort, mark uint32, register func(netip.AddrPort) (func(), error)) (net.Conn, func(), error) {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.marks = append(r.marks, mark)
+		r.sources = append(r.sources, source)
+		if r.fail != nil {
+			return nil, nil, r.fail
+		}
+		local := netip.AddrPortFrom(source, r.next)
+		r.next++
+		release, err := register(local)
+		if err != nil {
+			return nil, nil, err
+		}
+		a, b := net.Pipe()
+		t.Cleanup(func() { a.Close(); b.Close() })
+		c := &fakeConn{Conn: a, local: net.TCPAddrFromAddrPort(local), remote: net.TCPAddrFromAddrPort(target)}
+		r.locals = append(r.locals, local)
+		r.conns = append(r.conns, c)
+		return c, release, nil
+	}
+	return r
+}
+
+func (r *directRecorder) calls() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.marks)
+}
+
+func isFallback(c net.Conn) bool {
+	f, ok := c.(interface{ Fallback() bool })
+	return ok && f.Fallback()
 }
 
 func serviceDial(t *testing.T, s *Service, set *config.SetConfig) net.Conn {
@@ -210,14 +270,17 @@ func TestFailedWarmsCoolOnlyTheirDestination(t *testing.T) {
 		}
 		return m, nil
 	}
+	recordDirect(t, s)
 	failures := 0
 	for i := 0; i <= lastPort-firstPort; i++ {
 		c, err := s.Dial(context.Background(), set, "192.0.2.10", fmt.Sprintf("site%d.example.org", i), failing)
-		if err == nil {
-			c.Close()
-			continue
+		if err != nil {
+			t.Fatalf("a failed warm closed the client: %v", err)
 		}
-		failures++
+		if isFallback(c) {
+			failures++
+		}
+		c.Close()
 	}
 	if failures != lastPort-firstPort+1 {
 		t.Fatalf("%d of %d warms to the failing address failed", failures, lastPort-firstPort+1)
@@ -277,4 +340,319 @@ func TestRouteChangeAndSilentPassInvalidateCache(t *testing.T) {
 		t.Fatalf("after a silent pass the next connection warmed the same tuple %s again, want a new source port", third.LocalAddr())
 	}
 	third.Close()
+}
+
+type lockedLog struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedLog) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedLog) warnings(substr string) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	n := 0
+	for _, line := range strings.Split(b.buf.String(), "\n") {
+		if strings.Contains(line, "[WARN]") && strings.Contains(line, substr) {
+			n++
+		}
+	}
+	return n
+}
+
+func captureWarnings(t *testing.T) *lockedLog {
+	t.Helper()
+	previous := log.Level(log.CurLevel.Load())
+	out := &lockedLog{}
+	log.Init(out, log.LevelInfo, true)
+	t.Cleanup(func() { log.Init(os.Stderr, previous, true) })
+	return out
+}
+
+func failWarms(t *testing.T, s *Service, cause error) {
+	t.Helper()
+	s.newManager = func(c Config) (*Manager, error) {
+		c.ReconnectDelay = 20 * time.Millisecond
+		m := fakeManager(t, c)
+		m.warm = func(context.Context, net.Conn) error { return cause }
+		return m, nil
+	}
+}
+
+func (s *Service) fallbackCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.fallbacks
+}
+
+func TestWarmFailureRelaysThroughSetStrategy(t *testing.T) {
+	for name, cause := range map[string]error{
+		"HTTP status": errors.New("warm HTTP status 404, expected 204"),
+		"certificate": &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}},
+		"TLS version": tls.AlertError(70),
+		"timeout":     context.DeadlineExceeded,
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, _, set, _ := serviceFixture(t)
+			set.TCP.IPBlockDetect.Enabled = true
+			failWarms(t, s, cause)
+			direct := recordDirect(t, s)
+			target := netip.MustParseAddrPort("203.0.113.2:443")
+			c, err := s.Dial(context.Background(), set, "192.0.2.10", "warm.example.org", target)
+			if err != nil {
+				t.Fatalf("a failed warm closed the client: %v", err)
+			}
+			if !isFallback(c) || direct.calls() != 1 {
+				t.Fatalf("got a %T after %d fallback dials, want one connection relayed with the set's strategy", c, direct.calls())
+			}
+			if direct.marks[0] != config.SelfDialMark || direct.sources[0] != netip.MustParseAddr("203.0.113.1") {
+				t.Fatalf("the fallback dialed from %s with mark %#x, want the warm's source address and the self-dial mark %#x", direct.sources[0], direct.marks[0], config.SelfDialMark)
+			}
+			local := direct.locals[0]
+			profile := s.flows.Lookup(local, target)
+			if profile == nil {
+				t.Fatal("the fallback connection has no strategy profile, so the queue would leave it without the set's strategy")
+			}
+			got := profile.Config.Sets[0].TCP
+			if got.WSSizeReuse.Enabled || got.WSSize != set.TCP.WSSize || got.IPBlockDetect.Enabled {
+				t.Fatalf("the fallback profile has reuse=%t wssize=%+v block detection=%t, want reuse off, the set's %+v and no IP Block Detection", got.WSSizeReuse.Enabled, got.WSSize, got.IPBlockDetect.Enabled, set.TCP.WSSize)
+			}
+			c.Close()
+			c.Close()
+			if s.flows.Lookup(local, target) != nil || s.flows.Active() != 0 || s.fallbackCount() != 0 {
+				t.Fatalf("the closed fallback left %d flows and %d fallbacks", s.flows.Active(), s.fallbackCount())
+			}
+		})
+	}
+}
+
+func TestCancelledDialNeverFallsBack(t *testing.T) {
+	t.Run("warm", func(t *testing.T) {
+		s, _, set, _ := serviceFixture(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		s.newManager = func(c Config) (*Manager, error) {
+			m := fakeManager(t, c)
+			m.warm = func(warmCtx context.Context, _ net.Conn) error { cancel(); <-warmCtx.Done(); return warmCtx.Err() }
+			return m, nil
+		}
+		if c, err := s.Dial(ctx, set, "192.0.2.10", "warm.example.org", netip.MustParseAddrPort("203.0.113.2:443")); err == nil || c != nil {
+			t.Fatalf("a client that hung up during the warm got %T, %v", c, err)
+		}
+	})
+	t.Run("egress", func(t *testing.T) {
+		s, _, set, _ := serviceFixture(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		s.route = func(context.Context, netip.AddrPort, netip.Addr) (string, error) {
+			cancel()
+			return "", context.Canceled
+		}
+		if c, err := s.Dial(ctx, set, "192.0.2.10", "warm.example.org", netip.MustParseAddrPort("203.0.113.2:443")); err == nil || c != nil {
+			t.Fatalf("a client that hung up during the egress lookup got %T, %v", c, err)
+		}
+	})
+}
+
+func TestEgressLookupErrorFallsBack(t *testing.T) {
+	s, _, set, count := serviceFixture(t)
+	direct := recordDirect(t, s)
+	s.route = func(context.Context, netip.AddrPort, netip.Addr) (string, error) { return "", errors.New("no route") }
+	c, err := s.Dial(context.Background(), set, "192.0.2.10", "warm.example.org", netip.MustParseAddrPort("203.0.113.2:443"))
+	if err != nil || !isFallback(c) {
+		t.Fatalf("an egress lookup error gave %T, %v, want a relay with the set's strategy", c, err)
+	}
+	defer c.Close()
+	if count.Load() != 0 || direct.calls() != 1 || len(s.leases) != 0 {
+		t.Fatalf("an egress lookup error warmed %d times, dialed %d fallbacks and holds %d leases", count.Load(), direct.calls(), len(s.leases))
+	}
+	s.source = func(context.Context, netip.AddrPort) (netip.Addr, error) {
+		return netip.Addr{}, errors.New("no source")
+	}
+	if c, err := s.Dial(context.Background(), set, "192.0.2.10", "warm.example.org", netip.MustParseAddrPort("203.0.113.2:443")); err == nil || c != nil {
+		t.Fatalf("without a source address the client got %T, %v, want it closed", c, err)
+	}
+	if direct.calls() != 1 {
+		t.Fatal("a fallback was dialed without a source address")
+	}
+}
+
+func TestCapacityFallsBack(t *testing.T) {
+	logged := captureWarnings(t)
+	s, _, set, count := serviceFixture(t)
+	direct := recordDirect(t, s)
+	target := netip.MustParseAddrPort("203.0.113.2:443")
+	s.mu.Lock()
+	for port := firstPort; port <= lastPort; port++ {
+		s.cooling[coolKey{port: uint16(port), source: netip.MustParseAddr("203.0.113.1"), target: target}] = time.Now().Add(time.Hour)
+	}
+	s.mu.Unlock()
+	for i := range 3 {
+		c, err := s.Dial(context.Background(), set, "192.0.2.10", "warm.example.org", target)
+		if err != nil || !isFallback(c) {
+			t.Fatalf("connection %d with every warm port cooling got %T, %v, want a relay with the set's strategy", i+1, c, err)
+		}
+		c.Close()
+	}
+	if count.Load() != 0 || direct.calls() != 3 {
+		t.Fatalf("%d warms and %d fallbacks, want 0 and 3", count.Load(), direct.calls())
+	}
+	if n := logged.warnings(ErrCapacity.Error()); n != 1 {
+		t.Fatalf("%d warnings for 3 connections relayed within a minute because every warm port is leased, want 1", n)
+	}
+}
+
+func TestServiceCloseEndsFallbackRelays(t *testing.T) {
+	s, _, set, _ := serviceFixture(t)
+	failWarms(t, s, errors.New("warm HTTP status 404, expected 204"))
+	recordDirect(t, s)
+	c, err := s.Dial(context.Background(), set, "192.0.2.10", "warm.example.org", netip.MustParseAddrPort("203.0.113.2:443"))
+	if err != nil || !isFallback(c) {
+		t.Fatalf("got %T, %v, want a fallback relay", c, err)
+	}
+	read := make(chan error, 1)
+	go func() {
+		_, err := c.Read(make([]byte, 1))
+		read <- err
+	}()
+	select {
+	case err := <-read:
+		t.Fatalf("the fallback relay ended before shutdown: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	s.Close()
+	select {
+	case err := <-read:
+		if err == nil {
+			t.Fatal("a fallback read succeeded after shutdown")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Service.Close left a fallback relay open")
+	}
+	if s.flows.Active() != 0 || s.fallbackCount() != 0 || len(s.directs) != 0 {
+		t.Fatalf("shutdown left %d flows, %d fallbacks and %d relays", s.flows.Active(), s.fallbackCount(), len(s.directs))
+	}
+}
+
+func TestAFailedPassAfterAGoodWarmFallsBack(t *testing.T) {
+	s, _, set, count := serviceFixture(t)
+	direct := recordDirect(t, s)
+	s.newManager = func(c Config) (*Manager, error) {
+		c.ReconnectDelay, c.ReuseTimeout = 20*time.Millisecond, 200*time.Millisecond
+		m := fakeManager(t, c)
+		m.warm = func(context.Context, net.Conn) error { count.Add(1); return nil }
+		m.dial = func(_ context.Context, port uint16, mark uint32) (net.Conn, error) {
+			if mark != c.WarmMark {
+				return nil, unix.EADDRNOTAVAIL
+			}
+			return fakeSocket(t, c, port), nil
+		}
+		return m, nil
+	}
+	target := netip.MustParseAddrPort("203.0.113.2:443")
+	c, err := s.Dial(context.Background(), set, "192.0.2.10", "warm.example.org", target)
+	if err != nil || !isFallback(c) {
+		t.Fatalf("a pass that failed after a good warm gave %T, %v, want a relay with the set's strategy", c, err)
+	}
+	defer c.Close()
+	if count.Load() != 1 || direct.calls() != 1 || s.flows.Lookup(direct.locals[0], target) == nil {
+		t.Fatalf("%d warms and %d fallbacks, want the warm once and one fallback with a profile", count.Load(), direct.calls())
+	}
+	s.mu.Lock()
+	leases := len(s.leases)
+	s.mu.Unlock()
+	if leases != 0 {
+		t.Fatalf("the tuple whose pass failed is still leased (%d leases)", leases)
+	}
+}
+
+func TestAFullFallbackRegistryClosesWithAPlainError(t *testing.T) {
+	t.Run("fallback slots", func(t *testing.T) {
+		s, _, set, _ := serviceFixture(t)
+		failWarms(t, s, errors.New("warm HTTP status 404, expected 204"))
+		s.mu.Lock()
+		s.fallbacks = maxFallbacks
+		s.mu.Unlock()
+		c, err := s.Dial(context.Background(), set, "192.0.2.10", "warm.example.org", netip.MustParseAddrPort("203.0.113.2:443"))
+		if c != nil || !errors.Is(err, ErrFallbackCapacity) {
+			t.Fatalf("with %d fallbacks relaying, a failed warm gave %T, %v, want the client closed", maxFallbacks, c, err)
+		}
+		s.mu.Lock()
+		s.fallbacks = 0
+		s.mu.Unlock()
+	})
+	t.Run("flow registry", func(t *testing.T) {
+		s, _, set, count := serviceFixture(t)
+		direct := recordDirect(t, s)
+		var releases []func()
+		defer func() {
+			for _, release := range releases {
+				release()
+			}
+		}()
+		for i := 0; s.flows.Active() < 4096; i++ {
+			release, err := s.flows.Register(netip.AddrPortFrom(netip.MustParseAddr("198.51.100.1"), uint16(10000+i)), netip.MustParseAddrPort("198.51.100.2:443"), s.cfg, set, "filler.example.org")
+			if err != nil {
+				t.Fatal(err)
+			}
+			releases = append(releases, release)
+		}
+		c, err := s.Dial(context.Background(), set, "192.0.2.10", "warm.example.org", netip.MustParseAddrPort("203.0.113.2:443"))
+		if c != nil || err == nil || errors.Is(err, ErrCapacity) || errors.Is(err, ErrFallbackCapacity) {
+			t.Fatalf("with the flow registry full the client got %T, %v, want it closed with the registry's error", c, err)
+		}
+		if count.Load() != 0 || direct.calls() != 1 || s.fallbackCount() != 0 {
+			t.Fatalf("%d warms, %d fallback dials and %d fallbacks held, want 0, 1 and 0", count.Load(), direct.calls(), s.fallbackCount())
+		}
+	})
+}
+
+func TestFallbackReResolvesTheSet(t *testing.T) {
+	t.Run("egress error", func(t *testing.T) {
+		s, cfg, set, _ := serviceFixture(t)
+		next := cfg.Clone()
+		next.Sets[0].TCP.WSSizeReuse.Enabled = false
+		s.route = func(context.Context, netip.AddrPort, netip.Addr) (string, error) {
+			s.UpdateConfig(next)
+			return "", errors.New("no route")
+		}
+		if c, err := s.Dial(context.Background(), set, "192.0.2.10", "warm.example.org", netip.MustParseAddrPort("203.0.113.2:443")); c != nil || !errors.Is(err, ErrTarget) {
+			t.Fatalf("a set that stopped reusing during the egress lookup got %T, %v, want ErrTarget", c, err)
+		}
+	})
+	t.Run("warm slots full", func(t *testing.T) {
+		s, cfg, set, _ := serviceFixture(t)
+		next := cfg.Clone()
+		next.Sets[0].TCP.WSSizeReuse.Enabled = false
+		s.UpdateConfig(next)
+		if c, err := s.Fallback(context.Background(), set, "192.0.2.10", "warm.example.org", netip.MustParseAddrPort("203.0.113.2:443")); c != nil || !errors.Is(err, ErrTarget) {
+			t.Fatalf("a stale reuse set got %T, %v, want ErrTarget", c, err)
+		}
+		s.Close()
+		if c, err := s.Fallback(context.Background(), set, "192.0.2.10", "warm.example.org", netip.MustParseAddrPort("203.0.113.2:443")); c != nil || !errors.Is(err, ErrClosed) {
+			t.Fatalf("a closed service got %T, %v, want ErrClosed", c, err)
+		}
+	})
+}
+
+func TestFallbackDialerRelaysThroughSetStrategy(t *testing.T) {
+	s, _, set, count := serviceFixture(t)
+	direct := recordDirect(t, s)
+	target := netip.MustParseAddrPort("203.0.113.2:443")
+	c, err := s.Fallback(context.Background(), set, "192.0.2.10", "WARM.example.org.", target)
+	if err != nil || !isFallback(c) {
+		t.Fatalf("got %T, %v, want a relay with the set's strategy", c, err)
+	}
+	defer c.Close()
+	profile := s.flows.Lookup(direct.locals[0], target)
+	if count.Load() != 0 || len(s.leases) != 0 || profile == nil || profile.Config.Sets[0].Targets.SNIDomains[0] != "warm.example.org" {
+		t.Fatalf("the fallback warmed %d times, leased %d ports and registered %+v", count.Load(), len(s.leases), profile)
+	}
+	if _, err := s.Fallback(context.Background(), set, "192.0.2.10", "warm.example.org", netip.MustParseAddrPort("203.0.113.2:80")); !errors.Is(err, ErrTarget) {
+		t.Fatalf("a fallback to port 80 got %v, want ErrTarget", err)
+	}
 }

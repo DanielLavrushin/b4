@@ -27,6 +27,9 @@ type reuseTestDialer struct {
 func (d reuseTestDialer) Dial(ctx context.Context, s *config.SetConfig, owner, host string, target netip.AddrPort) (net.Conn, error) {
 	return d.dial(ctx, s, owner, host, target)
 }
+func (d reuseTestDialer) Fallback(context.Context, *config.SetConfig, string, string, netip.AddrPort) (net.Conn, error) {
+	return nil, errors.New("no fallback with a free warm slot")
+}
 func (d reuseTestDialer) AcquireClient() (func(), bool) { return func() {}, true }
 
 type reuseTestClient struct{ net.Conn }
@@ -97,7 +100,7 @@ func TestWSReuseReplaysOriginalFragmentedClientHello(t *testing.T) {
 
 func TestWSReuseWithoutSNIOrWithWarmFailureNeverForwards(t *testing.T) {
 	for _, missing := range []bool{true, false} {
-		t.Run(map[bool]string{true: "missing SNI", false: "warm failure"}[missing], func(t *testing.T) {
+		t.Run(map[bool]string{true: "missing SNI", false: "dial error"}[missing], func(t *testing.T) {
 			a, b := net.Pipe()
 			defer a.Close()
 			defer b.Close()
@@ -303,13 +306,29 @@ func TestWSReuseListenerStopAbortsPendingWarm(t *testing.T) {
 }
 
 type slotTestDialer struct {
-	slots    chan struct{}
-	err      error
-	acquired atomic.Int32
-	released atomic.Int32
-	dials    atomic.Int32
-	mu       sync.Mutex
-	servers  []net.Conn
+	slots     chan struct{}
+	err       error
+	acquired  atomic.Int32
+	released  atomic.Int32
+	dials     atomic.Int32
+	fallbacks atomic.Int32
+	mu        sync.Mutex
+	servers   []net.Conn
+}
+
+type fallbackTestConn struct{ net.Conn }
+
+func (fallbackTestConn) Fallback() bool { return true }
+
+func (d *slotTestDialer) Fallback(context.Context, *config.SetConfig, string, string, netip.AddrPort) (net.Conn, error) {
+	d.fallbacks.Add(1)
+	c, s := net.Pipe()
+	d.mu.Lock()
+	d.servers = append(d.servers, s)
+	d.mu.Unlock()
+	go func() { _, _ = io.Copy(io.Discard, s) }()
+	go func() { _, _ = s.Write([]byte("ok")) }()
+	return fallbackTestConn{c}, nil
 }
 
 func (d *slotTestDialer) Dial(context.Context, *config.SetConfig, string, string, netip.AddrPort) (net.Conn, error) {
@@ -474,25 +493,77 @@ func captureWarnings(t *testing.T) *lockedLog {
 	return out
 }
 
-func TestWSReuseWarmSlotsFullClosesAndCounts(t *testing.T) {
+func (b *lockedLog) lines(substr string) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return strings.Count(b.buf.String(), substr)
+}
+
+func TestWSReuseLogsAFallbackRelay(t *testing.T) {
+	logged := captureWarnings(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	backend, server := net.Pipe()
+	defer server.Close()
+	set := config.NewSetConfig()
+	set.Enabled = true
+	set.TCP.WSSizeReuse.Enabled = true
+	l := &Listener{ctx: ctx, SetName: "reuse", Warm: reuseTestDialer{dial: func(context.Context, *config.SetConfig, string, string, netip.AddrPort) (net.Conn, error) {
+		return fallbackTestConn{backend}, nil
+	}}}
+	l.set.Store(&set)
+	go func() {
+		hello := make([]byte, 5)
+		if _, err := io.ReadFull(server, hello); err == nil {
+			_, _ = server.Write([]byte("ok"))
+		}
+	}()
+	a, b := net.Pipe()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		l.serveWSReuse(reuseTestClient{b}, net.ParseIP("203.0.113.2"), 443, &sniffResult{host: "video.example.org", tlsVersion: 0x0304, prefix: []byte("hello")})
+	}()
+	a.SetDeadline(time.Now().Add(2 * time.Second))
+	reply := make([]byte, 2)
+	if _, err := io.ReadFull(a, reply); err != nil || string(reply) != "ok" {
+		t.Fatalf("the fallback backend was not relayed: %q %v", reply, err)
+	}
+	a.Close()
+	server.Close()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("the relay did not end with the client")
+	}
+	if logged.lines("[wssize-reuse-fallback]") != 1 || logged.lines("[wssize-reuse]") != 0 {
+		t.Fatalf("a relay through the set's strategy was not logged as a reuse fallback: %s", logged.buf.String())
+	}
+}
+
+func TestWarmSlotsFullFallsBack(t *testing.T) {
 	logged := captureWarnings(t)
 	d := &slotTestDialer{slots: make(chan struct{})}
 	r := startReuseAcceptRig(t, d)
 	for i := 0; i < 2; i++ {
 		client := r.connect(50001 + i)
 		client.SetReadDeadline(time.Now().Add(2 * time.Second))
-		if _, err := client.Read(make([]byte, 1)); err == nil || errors.Is(err, os.ErrDeadlineExceeded) {
-			t.Fatalf("connection %d was left open with every warm slot busy: %v", i+1, err)
+		reply := make([]byte, 2)
+		if _, err := io.ReadFull(client, reply); err != nil || string(reply) != "ok" {
+			t.Fatalf("connection %d with every warm slot busy was not relayed: %q %v", i+1, reply, err)
 		}
 	}
-	if d.dials.Load() != 0 {
-		t.Fatalf("%d warms dialed without a warm slot", d.dials.Load())
+	if d.dials.Load() != 0 || d.fallbacks.Load() != 2 {
+		t.Fatalf("%d warms and %d fallbacks with every warm slot busy, want 0 and 2", d.dials.Load(), d.fallbacks.Load())
 	}
 	if got := r.l.warmSlotsFull.count.Load(); got != 2 {
-		t.Fatalf("%d connections counted as refused for busy warm slots, want 2", got)
+		t.Fatalf("%d connections counted for busy warm slots, want 2", got)
 	}
 	if n := logged.warnings("every warm slot is busy"); n != 1 {
-		t.Fatalf("%d warnings for 2 connections refused within a minute, want 1", n)
+		t.Fatalf("%d warnings for 2 connections relayed within a minute, want 1", n)
+	}
+	if n := logged.lines("[wssize-reuse-fallback]"); n != 2 {
+		t.Fatalf("%d connection log lines flagged as a reuse fallback, want 2", n)
 	}
 }
 
@@ -522,10 +593,17 @@ func TestWSReuseLeasedPortsWarnOncePerMinute(t *testing.T) {
 	if n := logged.warnings(warmtuple.ErrCapacity.Error()); n != 1 {
 		t.Fatalf("%d warnings for 3 connections refused within a minute because every warm port is leased, want 1", n)
 	}
+	d.err = warmtuple.ErrFallbackCapacity
+	for i := 0; i < 3; i++ {
+		serveReuseOnce(l)
+	}
+	if n := logged.warnings(warmtuple.ErrFallbackCapacity.Error()); n != 1 {
+		t.Fatalf("%d warnings for 3 connections closed within a minute because every fallback relay slot is in use, want 1", n)
+	}
 	d.err = errors.New("tls: handshake failure")
 	serveReuseOnce(l)
 	serveReuseOnce(l)
 	if n := logged.warnings("handshake failure"); n != 2 {
-		t.Fatalf("%d warnings for 2 failed warms, want 2: only the leased-port refusal is rate-limited", n)
+		t.Fatalf("%d warnings for 2 failed warms, want 2: only the capacity refusals are rate-limited", n)
 	}
 }

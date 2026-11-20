@@ -18,6 +18,22 @@ func TestWSReuseTopicSaysWhatEndsARelay(t *testing.T) {
 	}
 }
 
+func TestWSReuseTopicSaysAFailedWarmGetsTheSetsStrategy(t *testing.T) {
+	facts := TopicFacts("tcp.wssize_reuse.enabled")
+	for _, want := range []string{
+		"When the warm fails",
+		"when the pass after a good warm fails",
+		"the set's own TCP strategy applies to that whole connection",
+	} {
+		if !strings.Contains(facts, want) {
+			t.Errorf("tcp.wssize_reuse.enabled does not say %q: %s", want, facts)
+		}
+	}
+	if strings.Contains(facts, "the configured strategy changes only warm packets on that port;") {
+		t.Errorf("tcp.wssize_reuse.enabled still says the strategy changes only warm packets, which a failed warm contradicts: %s", facts)
+	}
+}
+
 func TestWSReuseAgeTopicStatesTheDefaultAndTheCap(t *testing.T) {
 	facts := TopicFacts("tcp.wssize_reuse.max_age_seconds")
 	for _, want := range []string{
