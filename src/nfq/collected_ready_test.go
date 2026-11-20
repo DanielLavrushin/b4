@@ -12,6 +12,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/ctnl"
+	"github.com/daniellavrushin/b4/tables"
 )
 
 func readyConsumer(priority bool) *config.SetConfig {
@@ -191,6 +192,9 @@ func TestARoutingConsumerOwnsTheRetryWhateverTheName(t *testing.T) {
 			cfg := config.NewConfig()
 			cfg.Sets = []*config.SetConfig{readyProducer(), tc.consumer}
 			view := cfg.WithCollectedIPs([]string{"1.2.3.4"})
+			stubCollectedRoutes(t, func(id string) (tables.CollectedRoute, bool) {
+				return installedCollectedRoute(view, view.GetSetById(id))
+			})
 			matcher := buildMatcher(view)
 			h := helloWatch{dst: net.ParseIP("1.2.3.4").To4(), port: tc.port, host: "i.ytimg.com", tls: 0x0303, ver: IPv4}
 			consumer, owned := collectedOwner(view, matcher, h)

@@ -513,10 +513,6 @@ func (p *Pool) collectedSettleTargetsLocked(before []string, batch []collectedEn
 	return targets
 }
 
-func collectedConsumerTakesAway(consumer *config.SetConfig, port uint16) bool {
-	return consumer.RoutingDivertsPackets() && !config.RoutingIsBlock(consumer.Routing.Mode) || consumer.ReusesWSSize() && port == 443
-}
-
 var collectedRouteOf = tables.CollectedRouteOf
 
 func collectedRouteTakes(set *config.SetConfig, h helloWatch) bool {
@@ -550,6 +546,11 @@ func collectedOwner(cfg *config.Config, matcher *sni.SuffixSet, h helloWatch) (*
 	if cfg == nil || matcher == nil || !cfg.IPFamilyEnabled(h.ver == IPv6) {
 		return nil, false
 	}
+	if taken, taker, _ := matcher.MatchIPWithSourceDetail(h.dst, h.mac, func(set *config.SetConfig) bool {
+		return collectedRouteTakes(set, h)
+	}); taken {
+		return taker, true
+	}
 	source := func(set *config.SetConfig) bool {
 		return set.MatchesTCPDPort(h.port) && collectedSourceAllowed(set, h.scope)
 	}
@@ -558,9 +559,6 @@ func collectedOwner(cfg *config.Config, matcher *sni.SuffixSet, h helloWatch) (*
 	})
 	if !found {
 		return nil, false
-	}
-	if collectedConsumerTakesAway(consumer, h.port) {
-		return consumer, true
 	}
 	held, hold, prefix := matcher.MatchIPWithSourceDetail(h.dst, h.mac, source)
 	if !held || hold.Id != consumer.Id {
