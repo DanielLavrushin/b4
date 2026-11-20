@@ -542,6 +542,10 @@ func collectedTakenAway(cfg *config.Config, matcher *sni.SuffixSet, h helloWatch
 	return found
 }
 
+func collectedRoutesOnceInstalled(consumer *config.SetConfig, port uint16) bool {
+	return consumer.RoutingDivertsPackets() && !config.RoutingIsBlock(consumer.Routing.Mode) || consumer.ReusesWSSize() && port == 443
+}
+
 func collectedOwner(cfg *config.Config, matcher *sni.SuffixSet, h helloWatch) (*config.SetConfig, bool) {
 	if cfg == nil || matcher == nil || !cfg.IPFamilyEnabled(h.ver == IPv6) {
 		return nil, false
@@ -559,6 +563,9 @@ func collectedOwner(cfg *config.Config, matcher *sni.SuffixSet, h helloWatch) (*
 	})
 	if !found {
 		return nil, false
+	}
+	if _, installed := collectedRouteOf(consumer.Id); !installed && collectedRoutesOnceInstalled(consumer, h.port) {
+		return consumer, true
 	}
 	held, hold, prefix := matcher.MatchIPWithSourceDetail(h.dst, h.mac, source)
 	if !held || hold.Id != consumer.Id {
