@@ -444,6 +444,9 @@ func (m *Manager) warmTLS(ctx context.Context, raw net.Conn) error {
 		return err
 	}
 	defer resp.Body.Close()
+	if extra := answers.Buffered(); extra > 0 {
+		return fmt.Errorf("warm HTTP answer: %d more bytes after the final answer", extra)
+	}
 	if err := c.CloseWrite(); err != nil {
 		return err
 	}

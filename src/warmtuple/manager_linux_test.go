@@ -830,3 +830,28 @@ func TestWarmCountsAServerCloseWithoutCloseNotify(t *testing.T) {
 		t.Fatal("a server that answered and closed without a TLS close_notify did not count as a warm")
 	}
 }
+
+func TestWarmFailsOnDataAfterTheFinalAnswerWhateverItsRecord(t *testing.T) {
+	cert, roots := warmTestCA(t, "warm.example.org")
+	final := "HTTP/1.1 204 No Content\r\n\r\n"
+	head := "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\n"
+	for name, records := range map[string][]string{
+		"extra bytes in the final answer's TLS record":  {final + "EXTRA"},
+		"extra bytes in a later TLS record":             {final, "EXTRA"},
+		"a HEAD body in the answer's TLS record":        {head + "hello"},
+		"a HEAD body in a later TLS record":             {head, "hello"},
+		"103, 204 and extra bytes in one TLS record":    {"HTTP/1.1 103 Early Hints\r\n\r\n" + final + "EXTRA"},
+		"over 4 KiB after the answer in its TLS record": {final + strings.Repeat("x", 5000)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := realWarmManager(t, warmTLSRecords(t, cert, false, records...), roots)
+			c, err := m.DialContext(context.Background(), "warm.example.org:443")
+			if c != nil {
+				c.Close()
+			}
+			if c != nil || !errors.Is(err, ErrWarm) {
+				t.Fatalf("a server that sent data after its final answer gave a connection=%t and %v, want a failed warm whatever the TLS record framing", c != nil, err)
+			}
+		})
+	}
+}
