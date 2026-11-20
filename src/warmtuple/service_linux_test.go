@@ -106,6 +106,14 @@ func isFallback(c net.Conn) bool {
 	return ok && f.Fallback()
 }
 
+func savedConfig(cfg *config.Config, edit func(*config.SetConfig)) *config.Config {
+	n := *cfg
+	set := *cfg.Sets[0]
+	edit(&set)
+	n.Sets = append([]*config.SetConfig{&set}, cfg.Sets[1:]...)
+	return &n
+}
+
 func serviceDial(t *testing.T, s *Service, set *config.SetConfig) net.Conn {
 	t.Helper()
 	c, err := s.Dial(context.Background(), set, "192.0.2.10", "warm.example.org", netip.MustParseAddrPort("203.0.113.2:443"))
@@ -177,8 +185,7 @@ func TestServiceConfigChangeInvalidatesIdleAndCancelsWarm(t *testing.T) {
 	first := serviceDial(t, s, set)
 	first.Close()
 	old := first.LocalAddr().String()
-	next := cfg.Clone()
-	next.Sets[0].TCP.Seg2Delay++
+	next := savedConfig(cfg, func(set *config.SetConfig) { set.TCP.Seg2Delay++ })
 	s.UpdateConfig(next)
 	second := serviceDial(t, s, next.Sets[0])
 	if second.LocalAddr().String() == old {
@@ -617,8 +624,7 @@ func TestAFullFallbackRegistryClosesWithAPlainError(t *testing.T) {
 func TestFallbackReResolvesTheSet(t *testing.T) {
 	t.Run("egress error", func(t *testing.T) {
 		s, cfg, set, _ := serviceFixture(t)
-		next := cfg.Clone()
-		next.Sets[0].TCP.WSSizeReuse.Enabled = false
+		next := savedConfig(cfg, func(set *config.SetConfig) { set.TCP.WSSizeReuse.Enabled = false })
 		s.route = func(context.Context, netip.AddrPort, netip.Addr) (string, error) {
 			s.UpdateConfig(next)
 			return "", errors.New("no route")
@@ -629,9 +635,7 @@ func TestFallbackReResolvesTheSet(t *testing.T) {
 	})
 	t.Run("warm slots full", func(t *testing.T) {
 		s, cfg, set, _ := serviceFixture(t)
-		next := cfg.Clone()
-		next.Sets[0].TCP.WSSizeReuse.Enabled = false
-		s.UpdateConfig(next)
+		s.UpdateConfig(savedConfig(cfg, func(set *config.SetConfig) { set.TCP.WSSizeReuse.Enabled = false }))
 		if c, err := s.Fallback(context.Background(), set, "192.0.2.10", "warm.example.org", netip.MustParseAddrPort("203.0.113.2:443")); c != nil || !errors.Is(err, ErrTarget) {
 			t.Fatalf("a stale reuse set got %T, %v, want ErrTarget", c, err)
 		}
@@ -721,8 +725,7 @@ func TestFailedWarmIsRememberedPerAddressAndName(t *testing.T) {
 	if s.failureCount() != 2 {
 		t.Fatalf("a collected-only update left %d remembered failures, want 2", s.failureCount())
 	}
-	next := cfg.Clone()
-	next.Sets[0].TCP.Seg2Delay++
+	next := savedConfig(cfg, func(set *config.SetConfig) { set.TCP.Seg2Delay++ })
 	s.UpdateConfig(next)
 	if s.failureCount() != 0 {
 		t.Fatalf("a settings change kept %d remembered failures", s.failureCount())
@@ -731,6 +734,71 @@ func TestFailedWarmIsRememberedPerAddressAndName(t *testing.T) {
 	if warms.Load() != 4 {
 		t.Fatalf("after a settings change the address and name warmed %d times in all, want a fourth warm", warms.Load())
 	}
+}
+
+func TestAWarmCancelledByTheClientOrASaveIsNotRemembered(t *testing.T) {
+	target := netip.MustParseAddrPort("203.0.113.2:443")
+	t.Run("client hung up", func(t *testing.T) {
+		s, _, set, _ := serviceFixture(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		warms := &atomic.Int32{}
+		s.newManager = func(c Config) (*Manager, error) {
+			c.ReconnectDelay = 20 * time.Millisecond
+			m := fakeManager(t, c)
+			m.warm = func(warmCtx context.Context, _ net.Conn) error {
+				if warms.Add(1) > 1 {
+					return nil
+				}
+				cancel()
+				<-warmCtx.Done()
+				return warmCtx.Err()
+			}
+			return m, nil
+		}
+		if c, err := s.Dial(ctx, set, "192.0.2.10", "warm.example.org", target); c != nil || err == nil {
+			t.Fatalf("a client that hung up during the warm got %T, %v", c, err)
+		}
+		if s.failureCount() != 0 {
+			t.Fatalf("a warm the client hung up on left %d remembered failures, so a client action would skip the warm to this address and name for 10 minutes", s.failureCount())
+		}
+		if c := serviceDial(t, s, set); isFallback(c) || warms.Load() != 2 {
+			t.Fatalf("the next connection got %T after %d warms, want a second warm", c, warms.Load())
+		}
+	})
+	t.Run("a save", func(t *testing.T) {
+		s, cfg, set, _ := serviceFixture(t)
+		entered := make(chan struct{})
+		var once sync.Once
+		s.newManager = func(c Config) (*Manager, error) {
+			c.ReconnectDelay = 20 * time.Millisecond
+			m := fakeManager(t, c)
+			m.warm = func(warmCtx context.Context, _ net.Conn) error {
+				once.Do(func() { close(entered) })
+				<-warmCtx.Done()
+				return warmCtx.Err()
+			}
+			return m, nil
+		}
+		done := make(chan error, 1)
+		go func() {
+			_, err := s.Dial(context.Background(), set, "192.0.2.10", "warm.example.org", target)
+			done <- err
+		}()
+		<-entered
+		s.UpdateConfig(savedConfig(cfg, func(set *config.SetConfig) { set.TCP.Seg2Delay++ }))
+		select {
+		case err := <-done:
+			if err == nil {
+				t.Fatal("a save did not cancel the pending warm")
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("the pending warm was not cancelled by the save")
+		}
+		if s.failureCount() != 0 {
+			t.Fatalf("a warm the save cancelled left %d remembered failures after the save forgot the earlier ones", s.failureCount())
+		}
+	})
 }
 
 func TestPassReconnectFailureIsNotRemembered(t *testing.T) {
@@ -908,10 +976,11 @@ func TestAWarmWithoutTimestampsIsRemembered(t *testing.T) {
 func TestFailedWarmWarnsOncePerMinutePerSet(t *testing.T) {
 	logged := captureWarnings(t)
 	s, cfg, _, _ := serviceFixture(t)
-	next := cfg.Clone()
-	second := *next.Sets[0]
+	n := *cfg
+	next := &n
+	second := *cfg.Sets[0]
 	second.Id, second.Name = "reuse2", "reuse2"
-	next.Sets = append(next.Sets, &second)
+	next.Sets = append(append([]*config.SetConfig{}, cfg.Sets...), &second)
 	s.UpdateConfig(next)
 	failWarms(t, s, errors.New("remote error: tls: handshake failure"))
 	recordDirect(t, s)
