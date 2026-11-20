@@ -55,9 +55,8 @@ func (l *Listener) serveWSReuse(client net.Conn, ip net.IP, port int, given *sni
 	if release, ok := l.Warm.AcquireClient(); ok {
 		backend, err = l.Warm.Dial(warmCtx, set, owner, sniffed.host, dest)
 		release()
-	} else {
+	} else if backend, err = l.Warm.Fallback(warmCtx, set, owner, sniffed.host, dest); err == nil {
 		l.noteWarmSlotsFull()
-		backend, err = l.Warm.Fallback(warmCtx, set, owner, sniffed.host, dest)
 	}
 	stopWatch()
 	listening := stop()
@@ -106,13 +105,12 @@ func (l *Listener) noteWarmSlotsFull() {
 }
 
 func (l *Listener) noteWarmFailure(host string, err error) {
-	limiter := &l.warmPortsLeased
+	limiter := &l.dialFailed
 	switch {
 	case errors.Is(err, warmtuple.ErrFallbackCapacity):
 		limiter = &l.fallbacksFull
-	case !errors.Is(err, warmtuple.ErrCapacity):
-		log.Warnf("WSSIZE reuse [%s]: %s: %v", l.SetName, host, err)
-		return
+	case errors.Is(err, warmtuple.ErrCapacity):
+		limiter = &l.warmPortsLeased
 	}
 	if n, warn := limiter.note(time.Now()); warn {
 		log.Warnf("WSSIZE reuse [%s]: %s: %v, %d connections closed without a relay so far", l.SetName, host, err, n)

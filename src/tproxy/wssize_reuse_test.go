@@ -306,14 +306,15 @@ func TestWSReuseListenerStopAbortsPendingWarm(t *testing.T) {
 }
 
 type slotTestDialer struct {
-	slots     chan struct{}
-	err       error
-	acquired  atomic.Int32
-	released  atomic.Int32
-	dials     atomic.Int32
-	fallbacks atomic.Int32
-	mu        sync.Mutex
-	servers   []net.Conn
+	slots       chan struct{}
+	err         error
+	fallbackErr error
+	acquired    atomic.Int32
+	released    atomic.Int32
+	dials       atomic.Int32
+	fallbacks   atomic.Int32
+	mu          sync.Mutex
+	servers     []net.Conn
 }
 
 type fallbackTestConn struct{ net.Conn }
@@ -322,6 +323,9 @@ func (fallbackTestConn) Fallback() bool { return true }
 
 func (d *slotTestDialer) Fallback(context.Context, *config.SetConfig, string, string, netip.AddrPort) (net.Conn, error) {
 	d.fallbacks.Add(1)
+	if d.fallbackErr != nil {
+		return nil, d.fallbackErr
+	}
 	c, s := net.Pipe()
 	d.mu.Lock()
 	d.servers = append(d.servers, s)
@@ -600,10 +604,41 @@ func TestWSReuseLeasedPortsWarnOncePerMinute(t *testing.T) {
 	if n := logged.warnings(warmtuple.ErrFallbackCapacity.Error()); n != 1 {
 		t.Fatalf("%d warnings for 3 connections closed within a minute because every fallback relay slot is in use, want 1", n)
 	}
-	d.err = errors.New("tls: handshake failure")
+	d.err = errors.New("remote error: tls: handshake failure; relay with the set's strategy: connect: network is unreachable")
 	serveReuseOnce(l)
 	serveReuseOnce(l)
-	if n := logged.warnings("handshake failure"); n != 2 {
-		t.Fatalf("%d warnings for 2 failed warms, want 2: only the capacity refusals are rate-limited", n)
+	if n := logged.warnings("network is unreachable"); n != 1 {
+		t.Fatalf("%d warnings for 2 connections closed within a minute because the warm and the relay with the set's strategy both failed, want 1", n)
+	}
+	l.dialFailed.last.Store(time.Now().Add(-2 * warmWarnInterval).UnixNano())
+	serveReuseOnce(l)
+	if n := logged.warnings("3 connections closed without a relay so far"); n != 1 {
+		t.Fatalf("a minute later the failed relay was not warned again with its count: %s", logged.buf.String())
+	}
+}
+
+func TestWarmSlotsFullCountsOnlyRelayedFallbacks(t *testing.T) {
+	logged := captureWarnings(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	set := config.NewSetConfig()
+	set.Enabled = true
+	set.TCP.WSSizeReuse.Enabled = true
+	d := &slotTestDialer{slots: make(chan struct{}), fallbackErr: warmtuple.ErrFallbackCapacity}
+	l := &Listener{ctx: ctx, Warm: d, SetName: "reuse"}
+	l.set.Store(&set)
+	serveReuseOnce(l)
+	serveReuseOnce(l)
+	if d.dials.Load() != 0 || d.fallbacks.Load() != 2 {
+		t.Fatalf("%d warms and %d fallbacks tried with every warm slot busy, want 0 and 2", d.dials.Load(), d.fallbacks.Load())
+	}
+	if got := l.warmSlotsFull.count.Load(); got != 0 {
+		t.Fatalf("%d connections counted as relayed with the set's strategy, but every fallback failed and closed its client", got)
+	}
+	if n := logged.warnings("every warm slot is busy"); n != 0 {
+		t.Fatalf("%d warnings say a connection was relayed with the set's strategy, but none was", n)
+	}
+	if n := logged.warnings(warmtuple.ErrFallbackCapacity.Error()); n != 1 {
+		t.Fatalf("%d warnings for 2 clients closed because every fallback relay slot is in use, want 1", n)
 	}
 }
