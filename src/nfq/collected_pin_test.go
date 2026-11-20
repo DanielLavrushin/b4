@@ -2,6 +2,7 @@ package nfq
 
 import (
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/sni"
@@ -281,6 +282,78 @@ func TestARecordedSetSurvivesAPublishBetweenTheDecisionAndTheRecord(t *testing.T
 			}
 			if d.collectedPinned != c.pinned || d.priorSet != c.want {
 				t.Errorf("%s between the re-decision and its record: pinned=%v recorded set %q, want pinned=%v recorded set %q", c.name, d.collectedPinned, d.priorSet, c.pinned, c.want)
+			}
+		})
+	}
+}
+
+func TestAnEscalatedConnectionKeepsItsEscalationAcrossACollectedPublish(t *testing.T) {
+	const unlisted = "unlisted.example.net"
+	for _, c := range []struct {
+		name          string
+		hello         string
+		learn         bool
+		save          bool
+		escalateFirst bool
+		escalateLater bool
+		consumer      bool
+		wantFirst     int
+		want          int
+	}{
+		{"a set its ClientHello named", "i.ytimg.com", false, false, true, false, false, nfqueue.NfDrop, nfqueue.NfDrop},
+		{"a learned address, its ClientHello naming no set", unlisted, true, false, true, false, false, nfqueue.NfDrop, nfqueue.NfDrop},
+		{"a learned address, its ClientHello naming no set, after a save", unlisted, true, true, true, false, false, nfqueue.NfDrop, nfqueue.NfDrop},
+		{"an escalation recorded after the publish", "i.ytimg.com", false, false, false, true, false, nfqueue.NfAccept, nfqueue.NfDrop},
+		{"no escalation, a consumer collects the address", "i.ytimg.com", false, false, false, false, true, nfqueue.NfAccept, nfqueue.NfAccept},
+		{"no escalation for its host, a consumer collects the address and is another host's escalation", "i.ytimg.com", false, false, false, true, true, nfqueue.NfAccept, nfqueue.NfAccept},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			named := newPassiveSet()
+			named.Id, named.Name = "named", "named"
+			named.Targets.DomainOnly = false
+			escalated := newFragmentingYTImagesSet()
+			escalated.Id, escalated.Name = "escalated", "escalated"
+			escalated.Targets.DomainOnly = false
+			escalated.Targets.DomainsToMatch = []string{"never.example.org"}
+			escalated.Targets.UseCollectedIPs = c.consumer
+			w := newInjectingWorker(t, &named, &escalated)
+			idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
+			stubInjectRoute(t, idx["eth7"], true)
+			if c.learn {
+				queuedVerdict(t, w, makeV4TCPPacketFromPort(buildClientHello("i.ytimg.com", 16, 0xAB), 1000, 12346, 0x18), nil, idx["eth7"], 0)
+			}
+			escalate := func() {
+				host := "i.ytimg.com"
+				if c.consumer {
+					host = "other.example.org"
+				}
+				w.destState.SetEscalation(host, "escalated", "test", time.Hour)
+			}
+			if c.escalateFirst {
+				escalate()
+			}
+			hello := buildClientHello(c.hello, 16, 0xAB)
+			if v := queuedVerdict(t, w, pinnedHello(c.hello), nil, idx["eth7"], 0); v != c.wantFirst {
+				t.Fatalf("setup: the first ClientHello got verdict %d, want %d", v, c.wantFirst)
+			}
+			if c.save {
+				saveSets(w, nil)
+			}
+			data := makeV4TCPPacket(tlsAppData(100), 1000+uint32(len(hello)))
+			if v := queuedVerdict(t, w, data, nil, idx["eth7"], 0); v != c.wantFirst {
+				t.Fatalf("setup: the data packet got verdict %d, want %d", v, c.wantFirst)
+			}
+			var ips []string
+			if c.consumer {
+				ips = []string{"1.2.3.4"}
+			}
+			publishCollectedMatcher(t, w, ips)
+			if c.escalateLater {
+				escalate()
+			}
+			if v := queuedVerdict(t, w, pinnedHello(c.hello), nil, idx["eth7"], 0); v != c.want {
+				d, _ := w.tlsCache.Decision(pinnedConnKey)
+				t.Errorf("%s: a resent ClientHello got verdict %d after a collected publish, want %d (recorded set %q); a publish leaves an open connection its set and that set's escalation, and gives it to no set that took its address since", c.name, v, c.want, d.priorSet)
 			}
 		})
 	}

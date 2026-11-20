@@ -474,6 +474,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	hold := addressHold{set: st, prefix: stPrefix, pinned: vc.telegramSet != nil}
 
 	connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
+	escalationKeep := keep
 	if tcp[13]&0x02 == 0 && vc.telegramSet == nil && w.tlsCache.HasPinned() {
 		if decision, ok := w.tlsCache.Decision(connKey); ok && decision.collectedPinned && matcher.SameConnectionPolicy(decision.decidedBy) && decision.decidedMac == pkt.srcMac {
 			previousKeep := keep
@@ -575,12 +576,12 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		matchedLearned = false
 		learnedHost = ""
 	}
+	var stageSet *config.SetConfig
+	if matched {
+		stageSet = set
+	}
 	if unnamedGen != 0 {
-		var prior *config.SetConfig
-		if matched {
-			prior = set
-		}
-		w.tlsCache.RecordPrior(connKey, unnamedGen, matcher, prior)
+		w.tlsCache.RecordPrior(connKey, unnamedGen, matcher, stageSet)
 	}
 
 	earlyHost := hintHost
@@ -591,7 +592,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		earlyHost = connHost
 	}
 	if matched && earlyHost != "" && cfg.IsTCPPort(dport) {
-		if escSet := w.escalatedSetFor(cfg, set, earlyHost, pkt.srcMac, keep); escSet != nil && escSet != set && (!connHeld || !hold.keeps(set) || hold.yieldsTo(cfg, matcher, escSet, pkt.srcMac)) {
+		if escSet := w.escalatedSetFor(cfg, set, earlyHost, pkt.srcMac, escalationKeep); escSet != nil && escSet != set && (!connHeld || !hold.keeps(set) || hold.yieldsTo(cfg, matcher, escSet, pkt.srcMac)) {
 			log.Tracef("escalation hit for %s before the ClientHello: %s -> %s", earlyHost, set.Name, escSet.Name)
 			set = escSet
 			if st != nil {
@@ -839,11 +840,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				matchedLearned = false
 				learnedHost = ""
 			}
-			var prior *config.SetConfig
-			if matched {
-				prior = set
-			}
-			w.tlsCache.DecideHeld(connKey, helloGen, matcher, pkt.srcMac, decided, heldHello, prior)
+			w.tlsCache.DecideHeld(connKey, helloGen, matcher, pkt.srcMac, decided, heldHello, stageSet)
 		}
 
 		if matched && !matchedSNI && set != nil && !set.MatchesTLSVersion(tlsVersion) {
@@ -869,7 +866,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				matchedIP = true
 				matchedLearned = true
 				learnedHost = learnedDomain
-				if escSet := w.escalatedSetFor(cfg, set, learnedHost, pkt.srcMac, keep); escSet != nil && escSet != set {
+				if escSet := w.escalatedSetFor(cfg, set, learnedHost, pkt.srcMac, escalationKeep); escSet != nil && escSet != set {
 					log.Tracef("escalation hit for %s after the hint drop: %s -> %s", learnedHost, set.Name, escSet.Name)
 					set = escSet
 					st = escSet
@@ -907,7 +904,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	addressHolds := (heldHello || heldLearned || connHeld) && !matchedSNI
 
 	if matched && host != "" && cfg.IsTCPPort(dport) {
-		if escSet := w.escalatedSetFor(cfg, set, host, pkt.srcMac, keep); escSet != nil && (!addressHolds || hold.yieldsTo(cfg, matcher, escSet, pkt.srcMac)) {
+		if escSet := w.escalatedSetFor(cfg, set, host, pkt.srcMac, escalationKeep); escSet != nil && (!addressHolds || hold.yieldsTo(cfg, matcher, escSet, pkt.srcMac)) {
 			if escSet != set {
 				log.Tracef("escalation hit for %s: %s -> %s", host, set.Name, escSet.Name)
 				set = escSet
