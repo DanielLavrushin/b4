@@ -40,5 +40,6 @@
       "@b4.hub": ["./src/barrels/hub.ts"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
 }
