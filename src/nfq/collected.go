@@ -542,8 +542,8 @@ func collectedTakenAway(cfg *config.Config, matcher *sni.SuffixSet, h helloWatch
 	return found
 }
 
-func collectedRoutesOnceInstalled(consumer *config.SetConfig, port uint16) bool {
-	return consumer.RoutingDivertsPackets() && !config.RoutingIsBlock(consumer.Routing.Mode) || consumer.ReusesWSSize() && port == 443
+func collectedRoutesOnceInstalled(cfg *config.Config, consumer *config.SetConfig, port uint16) bool {
+	return consumer.RoutingDivertsPackets() && !config.RoutingIsBlock(consumer.Routing.Mode) || cfg.WSReuseActive(consumer) && port == 443
 }
 
 func collectedOwner(cfg *config.Config, matcher *sni.SuffixSet, h helloWatch) (*config.SetConfig, bool) {
@@ -551,7 +551,7 @@ func collectedOwner(cfg *config.Config, matcher *sni.SuffixSet, h helloWatch) (*
 		return nil, false
 	}
 	if taken, taker, _ := matcher.MatchIPWithSourceDetail(h.dst, h.mac, func(set *config.SetConfig) bool {
-		return collectedRouteTakes(set, h)
+		return (!set.ReusesWSSize() || cfg.WSReuseActive(set)) && collectedRouteTakes(set, h)
 	}); taken {
 		return taker, true
 	}
@@ -564,7 +564,7 @@ func collectedOwner(cfg *config.Config, matcher *sni.SuffixSet, h helloWatch) (*
 	if !found {
 		return nil, false
 	}
-	if _, installed := collectedRouteOf(consumer.Id); !installed && collectedRoutesOnceInstalled(consumer, h.port) {
+	if _, installed := collectedRouteOf(consumer.Id); !installed && collectedRoutesOnceInstalled(cfg, consumer, h.port) {
 		return consumer, true
 	}
 	held, hold, prefix := matcher.MatchIPWithSourceDetail(h.dst, h.mac, source)
