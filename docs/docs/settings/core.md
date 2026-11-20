@@ -19,7 +19,7 @@ The sub-tab decides how packets reach b4, which address families it handles and 
 | Mode | How packets reach b4 |
 | --- | --- |
 | **NFQUEUE (default)** | Firewall rules hand packets to b4. The usual choice. |
-| **TUN interface** | Traffic is routed through a virtual interface that b4 reads. For kernels without the modules NFQUEUE needs. |
+| **TUN interface** | Traffic is routed through a virtual interface that b4 reads. For kernels without the modules NFQUEUE needs. Discovery runs there [with limits](../discovery.md#tun). |
 
 #### TUN settings {#tun-settings}
 

@@ -42,11 +42,12 @@ func masqueradeSpecs(cfg *config.Config) [][]string {
 }
 
 func masqueradeChainSpecs(cfg *config.Config) [][]string {
-	specs := masqueradeSpecs(cfg)
-	if dev := activeTUNDevice(); dev != "" {
-		specs = append([][]string{{"-o", dev, "-j", "RETURN"}}, specs...)
+	devs := tunNATExemptDevices()
+	out := make([][]string, 0, len(devs)+1)
+	for _, dev := range devs {
+		out = append(out, []string{"-o", dev, "-j", "RETURN"})
 	}
-	return specs
+	return append(out, masqueradeSpecs(cfg)...)
 }
 
 func masqueradeLogLabel(cfg *config.Config) string {

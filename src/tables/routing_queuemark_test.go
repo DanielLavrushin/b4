@@ -255,6 +255,37 @@ func TestRouteResolveIDs_AHandSetMarkEqualToTheQueueMarksSetBitsIsReplaced(t *te
 	}
 }
 
+func TestRouteResolveIDs_AMarkEqualToADiscoveryMarksSetBitsIsReplaced(t *testing.T) {
+	if !hasBinary("ip") {
+		t.Skip("routeResolveIDs looks up routing tables with the ip binary")
+	}
+	familyResetGlobals(t)
+
+	cfg := queueMarkTestConfig(0x8000)
+	set := familyTestSet()
+	for _, pin := range []uint32{0x1, 0x2} {
+		set.Routing.FWMark = pin
+		if mark, _ := routeResolveIDs(cfg, set); mark == pin {
+			t.Errorf("hand-set fwmark 0x%x equals the bits of Discovery mark 0x%x or 0x%x under 0x%x, so the carrier's probes or re-sends would follow the set's ip rule; the mark must be replaced", pin, cfg.DiscoveryFlowMark(), cfg.DiscoveryInjectedMark(), routeSetMarkMask)
+		}
+	}
+	set.Routing.FWMark = 0x3
+	if mark, _ := routeResolveIDs(cfg, set); mark != 0x3 {
+		t.Errorf("a hand-set mark clear of the queue and Discovery marks must be kept, got 0x%x", mark)
+	}
+
+	familyResetGlobals(t)
+	auto := familyTestSet()
+	natural, _ := routeResolveIDs(cfg, auto)
+	if natural == 0 {
+		t.Fatal("no automatic mark to collide with")
+	}
+	cfg.System.Checker.DiscoveryFlowMark = uint(natural) | 0x100000
+	if mark, _ := routeResolveIDs(cfg, auto); mark == natural || mark == 0 {
+		t.Errorf("Discovery flow mark 0x%x has the set's automatic mark 0x%x under 0x%x, so the set must move to another mark, got 0x%x", cfg.System.Checker.DiscoveryFlowMark, natural, routeSetMarkMask, mark)
+	}
+}
+
 func TestRoutingSyncConfig_ABroadQueueMarkKeepsTheAutoMarkStable(t *testing.T) {
 	if !hasBinary("ip") {
 		t.Skip("RoutingSyncConfig gives up before it touches a set when the ip binary is missing")

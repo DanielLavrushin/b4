@@ -153,10 +153,26 @@ func (c *Config) RoutingMarkPin(set *SetConfig) uint32 {
 	if c == nil || pin == 0 || pin == TelegramBridgeMark {
 		return pin
 	}
-	if pin == c.QueueRouteBits() {
+	if c.RouteMarkReserved(pin) {
 		return 0
 	}
 	return pin
+}
+
+func (c *Config) RouteMarkReserved(mark uint32) bool {
+	if c == nil || mark == 0 {
+		return false
+	}
+	for _, own := range []uint32{
+		c.QueueRouteBits(),
+		uint32(c.DiscoveryFlowMark()) & PerSetRouteMarkBits,
+		uint32(c.DiscoveryInjectedMark()) & PerSetRouteMarkBits,
+	} {
+		if own != 0 && mark == own {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Config) DiscoveryFlowMark() uint {

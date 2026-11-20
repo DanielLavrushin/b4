@@ -284,6 +284,32 @@ func TestMasqueradeChainExemptsTheRunningTUNDevice(t *testing.T) {
 	}
 }
 
+func TestMasqueradeChainExemptsTheDiscoveryCarrierOnlyInTUNMode(t *testing.T) {
+	t.Cleanup(func() {
+		tunDevice.Store(nil)
+		tunCarrierDevice.Store(nil)
+	})
+	cfg := newTUNTestConfig()
+
+	SetTUNCarrierDevice("dsc9")
+	for _, spec := range masqueradeChainSpecs(cfg) {
+		if strings.Contains(strings.Join(spec, " "), "RETURN") {
+			t.Fatalf("no TUN engine runs, so the carrier device must not change the chain: %v", spec)
+		}
+	}
+
+	SetTUNDevice("tun9")
+	specs := masqueradeChainSpecs(cfg)
+	if len(specs) < 3 || strings.Join(specs[0], " ") != "-o tun9 -j RETURN" || strings.Join(specs[1], " ") != "-o dsc9 -j RETURN" {
+		t.Fatalf("both TUN devices must be exempt ahead of the masquerade, got %v", specs)
+	}
+
+	SetTUNCarrierDevice("tun9")
+	if specs := masqueradeChainSpecs(cfg); len(specs) > 1 && strings.Join(specs[1], " ") == "-o tun9 -j RETURN" {
+		t.Fatalf("a carrier name equal to the engine device must not be exempted twice: %v", specs)
+	}
+}
+
 func TestRefreshTUNFirewallAppliesOnlyWhatChanged(t *testing.T) {
 	applied := newTUNTestConfig()
 	applied.System.Tables.Masquerade.Enabled = true

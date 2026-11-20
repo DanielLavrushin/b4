@@ -476,7 +476,7 @@ func (ds *DiscoverySuite) applyHostConfig(cfg *config.Config) error {
 	if ds.hostConfigFn != nil {
 		return ds.hostConfigFn(cfg)
 	}
-	if err := ds.pool.UpdateConfig(cfg); err != nil {
+	if err := ds.applyPoolConfig(cfg); err != nil {
 		return err
 	}
 	time.Sleep(time.Duration(ds.cfg.System.Checker.ConfigPropagateMs) * time.Millisecond)

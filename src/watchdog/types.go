@@ -26,6 +26,7 @@ type DomainStatus struct {
 	OwnerSetName        string    `json:"owner_set_name,omitempty"`
 	WatchedBySetId      string    `json:"watched_by_set_id,omitempty"`
 	WatchedBySetName    string    `json:"watched_by_set_name,omitempty"`
+	startRefusal        string
 }
 
 type CheckResult struct {
@@ -133,6 +134,10 @@ const (
 	ReasonEdited       = "edited"
 	ReasonBusy         = "busy"
 	ReasonRulesChanged = "rules_changed"
+
+	ReasonTUNCarrierUnavailable = "tun_carrier_unavailable"
+	ReasonIPv6UnsupportedTUN    = "ipv6_unsupported_tun"
+	ReasonDSCPUnsupportedTUN    = "dscp_unsupported_tun"
 )
 
 const (

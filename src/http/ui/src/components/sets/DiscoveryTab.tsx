@@ -35,8 +35,11 @@ import {
 } from "@models/watchdog";
 import { discoveryApi } from "@api/discovery";
 import { useWatchdogSetStatuses } from "@hooks/useWatchdog";
+import { useTunEngine } from "@hooks/useEngineMode";
 import {
+  DscpEnvironment,
   MAX_PROBE_URLS,
+  dscpStampsProbes,
   formatTimeAgo,
   normalizeProbeUrl,
   presetLabel,
@@ -61,6 +64,7 @@ interface DiscoveryTabProps {
   dirty: boolean;
   savedWatchdog: boolean;
   globalWatchdog: boolean;
+  dscpEnv: Pick<DscpEnvironment, "skipSetup" | "deviceFilter">;
   onChange: (field: string, value: string[] | boolean) => void;
 }
 
@@ -70,6 +74,7 @@ export const DiscoveryTab = ({
   dirty,
   savedWatchdog,
   globalWatchdog,
+  dscpEnv,
   onChange,
 }: DiscoveryTabProps) => {
   const { t } = useTranslation();
@@ -101,6 +106,12 @@ export const DiscoveryTab = ({
   const watchEntry = showWatchStatus
     ? watchStatuses.byId.get(config.id)
     : undefined;
+  const tunEngine = useTunEngine();
+  const tunDscpNoHeal =
+    tunEngine &&
+    !watchBlock &&
+    dscpStampsProbes(config, dscpEnv) &&
+    watchEntry?.reason !== "dscp_unsupported_tun";
 
   useEffect(() => {
     if (isNew || routed || !config.id) return;
@@ -309,6 +320,16 @@ export const DiscoveryTab = ({
                         reason: t(`watchdog.errors.${watchBlock}`),
                       })
                     : t(`watchdog.errors.${watchBlock}`)}
+              </Typography>
+            )}
+            {tunDscpNoHeal && (
+              <Typography
+                variant="caption"
+                sx={{ color: colors.text.secondary, display: "block" }}
+              >
+                {t("sets.discovery.watchdog.tunDscp", {
+                  value: config.dscp?.value,
+                })}
               </Typography>
             )}
             {!globalWatchdog && (

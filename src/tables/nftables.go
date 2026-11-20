@@ -601,10 +601,10 @@ func (n *NFTablesManager) ApplyMasquerade() error {
 		return fmt.Errorf("failed to add masquerade mark-bypass rule: %w", err)
 	}
 
-	if dev := activeTUNDevice(); dev != "" {
+	for _, dev := range tunNATExemptDevices() {
 		if _, err := n.runNft("add", "rule", "ip", nftNatTableName, nftNatChainName,
 			"oifname", fmt.Sprintf("%q", dev), "return"); err != nil {
-			return fmt.Errorf("failed to exempt the TUN device from masquerade: %w", err)
+			return fmt.Errorf("failed to exempt the TUN device %s from masquerade: %w", dev, err)
 		}
 	}
 

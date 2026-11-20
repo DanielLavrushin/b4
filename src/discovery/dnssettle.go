@@ -200,7 +200,7 @@ func (ds *DiscoverySuite) checkSystemAddresses(presetName string, stored *config
 	if cfg == nil {
 		return served, true
 	}
-	if err := ds.pool.UpdateConfig(cfg); err != nil {
+	if err := ds.applyPoolConfig(cfg); err != nil {
 		log.DiscoveryLogf("  DNS: could not apply '%s' to try the system resolver's addresses: %v", presetName, err)
 		return served, true
 	}

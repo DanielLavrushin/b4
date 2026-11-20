@@ -341,6 +341,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	tables.RoutingClearAll()
 
 	isTUN := cfg.Queue.Mode == "tun"
+	discoveryRT.SetEngineTUN(isTUN)
 	engineAttempt = loadEngineAttempt()
 
 	pool := nfq.NewPool(&cfg)
@@ -387,6 +388,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	} else {
 		if tunEngine != nil {
 			tunEngineRef.Store(tunEngine)
+			discoveryRT.SetTUNCarrier(tunDiscoveryCarrier(tunEngine))
 		}
 		if engineAttempt > 0 {
 			log.Infof("%s engine started on automatic retry %d of %d", engineName, engineAttempt, len(engineRetryDelays))
@@ -417,6 +419,10 @@ func runB4(cmd *cobra.Command, args []string) error {
 		}
 		c := cfgPtr.Load()
 		if tunEngine != nil {
+			discoveryRT.SetTUNCarrier(nil)
+			if discoveryRT.IsActive() {
+				discoveryRT.Stop("")
+			}
 			tunEngine.Stop()
 			if !c.System.Tables.SkipSetup {
 				tables.ClearTUNFirewall(c)
@@ -781,6 +787,9 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engin
 	log.Infof("Shutting down WebSocket connections...")
 	b4http.Shutdown()
 
+	if discoveryRT != nil && tunEngine != nil {
+		discoveryRT.SetTUNCarrier(nil)
+	}
 	if discoveryRT != nil && discoveryRT.IsActive() {
 		log.Infof("Stopping active discovery...")
 		discoveryRT.Stop("")

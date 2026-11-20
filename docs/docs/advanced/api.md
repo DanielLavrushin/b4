@@ -37,7 +37,7 @@ A login token stays valid while it is used at least once every 24 hours, and is 
 | `GET /api/config/download?safe=true` | The safe copy, as **Download safe copy** saves it |
 | `GET /api/system/addresses` | The ports the **Expose to internet** switches opened, their firewall chains and errors, and the [reason](#exposure-reasons) a switch that is on opened nothing |
 | `GET /api/watchdog/status` | The watchdog's state for every watched set and domain, with the [reason codes](#watchdog-reason-codes) |
-| `POST /api/discovery/start` | Starts a Discovery run. A run for a set that routes its traffic is refused with `400` and the code `routed_set`, and any run while b4 is still applying its DSCP rules with `409` and the code `dscp_rules_pending` |
+| `POST /api/discovery/start` | Starts a Discovery run. A run for a set that routes its traffic is refused with `400` and the code `routed_set`, and any run while b4 is still applying its DSCP rules with `409` and the code `dscp_rules_pending`. Under the [TUN engine](../discovery.md#tun), `409` also comes with `tun_carrier_unavailable` while the engine cannot carry the probes, `ipv6_unsupported_tun` for a run that asks for IPv6, and `dscp_unsupported_tun` for a set with its own DSCP value |
 | `POST /api/discovery/replace`, `POST /api/discovery/add`, `POST /api/sets/{id}/add-domain` with `tested` | Write a Discovery result into a set, create a set from it, or add its domains to a set. With the run's `dscp_path`, a set whose traffic takes another DSCP path is refused with `409` and the code `dscp_path_changed`, and a write while b4 is still applying its DSCP rules with `dscp_rules_pending`. `replace` and `add` take the [page hosts](../discovery.md#page-hosts) to add in `hosts`. An entry that is not a host name on the internet is refused with `400` and the code `bad_host`, and more than 64 hosts with `too_many_hosts` |
 | `POST /api/mcp` | The MCP server, see [below](#mcp-server) |
 
@@ -61,6 +61,9 @@ The watchdog reports why a set is in its state, or how its last heal ended, as o
 | `edited` | The set was changed during the check or the search, so nothing was written |
 | `busy` | Another Discovery run holds the runtime, and the heal waits |
 | `rules_changed` | b4 was applying or rewriting the firewall rules the search depends on, such as its DSCP rules, so nothing was written; the heal is tried again later |
+| `tun_carrier_unavailable` | The TUN engine could not carry the run's probes, for example while it was not running or had no uplink address yet, so the run could not start; the set cools down for at least a minute and never gives up for it |
+| `ipv6_unsupported_tun` | The set is limited to IPv6, which Discovery cannot test under the TUN engine; the watchdog gives up on the set until its IP version changes |
+| `dscp_unsupported_tun` | The set has its own DSCP value, which Discovery cannot write into its probes under the TUN engine; the watchdog gives up on the set until it stops writing that value |
 
 ### Exposure reasons {#exposure-reasons}
 

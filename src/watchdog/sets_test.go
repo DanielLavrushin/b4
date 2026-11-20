@@ -66,6 +66,7 @@ type fakeDriver struct {
 	mu         sync.Mutex
 	active     bool
 	startErr   error
+	attempts   int
 	starts     []discovery.StartSuiteOptions
 	startURLs  [][]string
 	runningFor int
@@ -94,6 +95,7 @@ func (d *fakeDriver) setActive(v bool) {
 func (d *fakeDriver) Start(cfg *config.Config, urls []string, opts discovery.StartSuiteOptions) (string, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	d.attempts++
 	if d.startErr != nil {
 		return "", d.startErr
 	}
