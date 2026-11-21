@@ -70,15 +70,16 @@ Telegram Desktop names its data centre at the start of a connection. The Android
 
 ### DPI processing
 
-Connections from devices reach the bridge untouched: no faking, fragmentation or desync applies to them. The bridge's own connections to Telegram, and those of the MTProto proxy, depend on the route:
+Connections from devices reach the bridge untouched: no faking, fragmentation or desync applies to them. The bridge's own connections to Telegram, and those of the MTProto proxy, are handled by the [Telegram set](./upstream.md#telegram-set) while one applies, on every route, in NFQUEUE and TUN mode. A Telegram set without routing applies its strategy to them, and one with routing carries them on its route without a strategy. No other set applies its DPI settings to them. Every route except a DC Relay connects to port 443, and a Telegram set whose TCP port filter leaves out that port applies its strategy to none of them.
+
+While no Telegram set applies, the processing depends on the route:
 
 | Route | DPI processing |
 | --- | --- |
 | Telegram's WebSocket edge, direct TCP to a data centre | An ordinary set whose targets match applies its DPI settings |
-| Cloudflare-proxied domains, a custom WebSocket domain | None, unless **Let sets process CF proxy connections** is on |
-| A Cloudflare Worker | None, unless **Let sets process Worker connections** is on |
+| Cloudflare-proxied domains, a custom WebSocket domain, a Cloudflare Worker | None |
 
-A set that covers Cloudflare for other sites therefore leaves these routes alone while their switch is off. With a switch on, a set that covers the route by address or by name handles it like a device's connection, in TUN mode too, but no set routes it. The **DPI processing now** lines on the [Telegram upstream](./upstream.md) card show what applies to each route. While a [Telegram set](./upstream.md#telegram-set) applies, no other set applies its DPI settings to these routes: a Telegram set without routing applies its strategy, to the Worker only while **Let sets process Worker connections** is on, and one with routing carries them on its route without a strategy. All these routes connect to port 443, and a Telegram set whose TCP port filter leaves out that port applies its strategy to none of them. A set in the **Telegram over WebSocket (built-in)** mode, unless it is limited by an included source-device list, leaves the bridge's connections to its targets unmodified.
+A set that covers Cloudflare for other sites leaves the routes through Cloudflare alone. Only a Telegram set applies a strategy to them. A set in the **Telegram over WebSocket (built-in)** mode, unless it is limited by an included source-device list, leaves the bridge's connections to its targets unmodified.
 
 ### Connections the bridge passes on
 

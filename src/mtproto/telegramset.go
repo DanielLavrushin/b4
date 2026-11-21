@@ -13,6 +13,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/netprobe"
+	"github.com/daniellavrushin/b4/selfdial"
 )
 
 type TelegramRoute struct {
@@ -103,8 +104,6 @@ func telegramSetProblem(cfg *config.Config) string {
 		return "the set " + set.Name + " chosen for b4's own Telegram connections blocks its traffic or routes it through Telegram over WebSocket"
 	case set.RoutingIncomplete():
 		return "the routing of the set " + set.Name + " chosen for b4's own Telegram connections is incomplete"
-	case cfg.Queue.Mode == "tun":
-		return "the set " + set.Name + " chosen for b4's own Telegram connections does not apply in TUN mode"
 	case cfg.TelegramSetMarkConflict():
 		return fmt.Sprintf("the set %s chosen for b4's own Telegram connections does not apply while the packet mark or a Discovery mark carries the bits of 0x%x, the mark of those connections", set.Name, config.TelegramSetDialMark)
 	}
@@ -308,6 +307,9 @@ func dialTelegramTCP(ctx context.Context, network, addr string, mark uint, timeo
 	}
 	if mark&uint(config.TelegramSetBit) != 0 && currentTelegramPath().kind != telegramPathStrategy {
 		mark &^= uint(config.TelegramSetBit)
+	}
+	if mark&uint(config.TelegramSetBit) != 0 {
+		return selfdial.Dial(ctx, network, addr, int(mark), timeout)
 	}
 	dialer := net.Dialer{Timeout: timeout, Control: netprobe.MarkControl(int(mark))}
 	return dialer.DialContext(ctx, network, addr)

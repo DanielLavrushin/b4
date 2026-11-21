@@ -40,7 +40,7 @@ func TestTelegramUpstreamSetIsUsableOnlyWhenItCanApply(t *testing.T) {
 		{"a proxy set with no upstream port", func(c *Config) {
 			c.Sets[0].Routing.Enabled, c.Sets[0].Routing.Mode = true, RoutingModeProxy
 		}, false},
-		{"TUN mode, whose engine never sees socket marks", func(c *Config) { c.Queue.Mode = "tun" }, false},
+		{"TUN mode, whose engine knows b4's own connections by their addresses", func(c *Config) { c.Queue.Mode = "tun" }, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			cfg := telegramSetConfig()

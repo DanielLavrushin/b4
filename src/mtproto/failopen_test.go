@@ -68,28 +68,20 @@ func TestFailOpenRemembersWhatCarriedData(t *testing.T) {
 	assertFailOpenOrder(t, b, ip, 443, false, true, "a direct connection that opened and carried nothing, as behind a filter that answers the handshake itself, hands the address back to the Worker")
 }
 
-func TestWorkerDialsFollowSetsOnlyWhenAllowed(t *testing.T) {
+func TestRelayDialsSkipDPIWithoutATelegramSet(t *testing.T) {
 	base := uint(config.SelfDialMark)
 	relay := uint(config.SelfDialRelayMark)
-	worker := transportPlan{kind: transportWS, isWorker: true}
-	proxied := transportPlan{kind: transportWS, cfBase: "example.co.uk"}
-
-	cfg := config.NewConfig()
-	setWorkerFollowsSets(&cfg)
-	t.Cleanup(func() { setWorkerFollowsSets(nil) })
-	if got := planDialMark(worker, base); got != relay {
-		t.Errorf("by default a Worker dial must skip DPI sets, got 0x%x", got)
+	setTelegramSet(nil)
+	for name, p := range map[string]transportPlan{
+		"a Worker dial":                   {kind: transportWS, isWorker: true},
+		"a dial to a CF proxy domain":     {kind: transportWS, cfBase: "example.co.uk"},
+		"a pool or fail-open Worker dial": {kind: transportWS, isWorker: true},
+	} {
+		if got := planDialMark(p, base); got != relay {
+			t.Errorf("%s carries 0x%x, want 0x%x: without a Telegram set no set may process b4's relays", name, got, relay)
+		}
 	}
-
-	cfg.System.MTProto.CFWorkerDPI = true
-	setWorkerFollowsSets(&cfg)
-	if got := planDialMark(worker, base); got != base {
-		t.Errorf("with the switch on a Worker dial must carry the plain self-dial mark, got 0x%x", got)
-	}
-	if got := workerDialMark(base); got != base {
-		t.Errorf("pool and fail-open Worker dials must follow the switch too, got 0x%x", got)
-	}
-	if got := planDialMark(proxied, base); got != relay {
-		t.Errorf("the switch covers the Worker only; Cloudflare-proxied domains must keep skipping DPI, got 0x%x", got)
+	if got := relayDialMark(base); got != relay {
+		t.Errorf("pool and fail-open Worker dials carry 0x%x, want 0x%x", got, relay)
 	}
 }

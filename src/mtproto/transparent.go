@@ -133,8 +133,6 @@ func NewTransparentBridge(cfg *config.Config) *TransparentBridge {
 		}},
 	}
 	b.cfg.Store(cfg)
-	setWorkerFollowsSets(cfg)
-	setCFProxyFollowsSets(cfg)
 	setTelegramSet(cfg)
 	liveBridge.Store(b)
 	return b
@@ -142,8 +140,6 @@ func NewTransparentBridge(cfg *config.Config) *TransparentBridge {
 
 func (b *TransparentBridge) UpdateConfig(newCfg *config.Config) {
 	old := b.cfg.Swap(newCfg)
-	setWorkerFollowsSets(newCfg)
-	setCFProxyFollowsSets(newCfg)
 	setTelegramSet(newCfg)
 	if old != nil &&
 		old.System.MTProto.CFWorkerDomain == newCfg.System.MTProto.CFWorkerDomain &&
@@ -398,7 +394,7 @@ func (b *TransparentBridge) FailOpenViaWorker(client net.Conn, origIP net.IP, or
 			continue
 		}
 		path := fmt.Sprintf("/apiws?dst=%s&dc=%d", dst, dc)
-		wc, derr := dialWS(wd, wd, path, wsDialTimeout, workerDialMark(selfDialMark()))
+		wc, derr := dialWS(wd, wd, path, wsDialTimeout, relayDialMark(selfDialMark()))
 		if derr != nil {
 			log.Debugf("%s failopen worker dial %s for %s:%d failed: %v", tag, wd, dst, origPort, derr)
 			continue

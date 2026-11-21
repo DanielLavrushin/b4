@@ -57,6 +57,14 @@ func (p *Pool) EnableTUNSourceResolver(wanIP string) {
 	log.Infof("TUN: source attribution enabled (recovering LAN source from conntrack; uplink %s)", wanIP)
 }
 
+func (p *Pool) CarriesOwnTelegramFlow(packet []byte) bool {
+	return p.state.telegram.carriesOn(packet)
+}
+
+func (p *Pool) SweepOwnTelegramFlows(now time.Time) {
+	p.state.telegram.sweep(now)
+}
+
 func (p *Pool) SetTUNLocalOnly(localOnly bool) {
 	for _, w := range p.Workers {
 		w.tunLocalOnly.Store(localOnly)

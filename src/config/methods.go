@@ -337,7 +337,7 @@ func (c *Config) GetTargetsForSetWithCache(set *SetConfig, geositeDomains, geoip
 }
 
 func (c *Config) TelegramUpstreamSet() *SetConfig {
-	if c == nil || c.System.MTProto.UpstreamSet == "" || c.Queue.Mode == "tun" || c.TelegramSetMarkConflict() {
+	if c == nil || c.System.MTProto.UpstreamSet == "" || c.TelegramSetMarkConflict() {
 		return nil
 	}
 	set := c.GetSetById(c.System.MTProto.UpstreamSet)
