@@ -901,7 +901,7 @@
       "generateTitle": "Сгенерировать payload",
       "generateDescription": "Собрать TLS ClientHello с доменом в качестве имени сервера",
       "domain": "Домен",
-      "domainHelp": "Введите домен, для которого сгенерировать payload",
+      "domainHelp": "Домен, который называет payload. Используйте результат в Фейкинг → Свой файл payload.",
       "generating": "Генерация...",
       "refreshList": "Обновить список",
       "clearAll": "Удалить все payload",
@@ -979,7 +979,7 @@
         "kind_mismatch_tls": "Файл - {{kind}}, но его протокол TLS, для TCP-фейков.",
         "kind_mismatch_quic": "Файл - TLS ClientHello, но его протокол QUIC, для UDP-фейков."
       },
-      "domainInfo": "ClientHello собирается локально, без подключения к домену. Один payload на домен.\n\nИспользуйте его в Фейкинг → Свой файл payload."
+      "domainInfo": "ClientHello собирается локально, без подключения к домену. Один payload на домен."
     },
     "SystemInfo": {
       "title": "Диагностика системы",
