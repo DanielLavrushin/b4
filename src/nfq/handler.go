@@ -80,6 +80,18 @@ func localQueueMarked(a nfqueue.Attribute, queueMark uint32, cfg *config.Config)
 	return cfg == nil || (m != uint32(cfg.DiscoveryFlowMark()) && m != uint32(cfg.DiscoveryInjectedMark()))
 }
 
+func telegramSetDial(m uint32) bool {
+	return m&^config.SelfDialSkipTransitBits == config.TelegramSetDialMark
+}
+
+func routerSelfDial(a nfqueue.Attribute) bool {
+	if a.UID == nil || a.Mark == nil || *a.Mark&config.SelfDialMark == 0 {
+		return false
+	}
+	_, role := packetIfaceIndex(a)
+	return role == ifaceLeaving
+}
+
 func (w *Worker) handlePacket(q *nfqueue.Nfqueue, a nfqueue.Attribute, mark uint) int {
 	if a.PacketID == nil || a.Payload == nil || len(*a.Payload) == 0 {
 		if a.PacketID != nil && q != nil {
@@ -119,11 +131,12 @@ func (w *Worker) handleQueued(vc *verdictCtx, a nfqueue.Attribute, mark uint) in
 		return vc.accept()
 	}
 	vc.selfDialed = a.Mark != nil && *a.Mark&config.SelfDialMark != 0
-	if a.Mark != nil && config.IsTelegramSetMark(*a.Mark) {
+	if a.Mark != nil && telegramSetDial(*a.Mark) {
 		vc.telegramSet = w.getConfig().TelegramUpstreamSet()
-		if vc.telegramSet != nil {
-			w.telegramFlows.note(*a.Payload, time.Now())
-		}
+	}
+	if vc.telegramSet != nil || routerSelfDial(a) {
+		vc.selfDial = true
+		w.telegramFlows.note(*a.Payload, time.Now())
 	}
 
 	if !w.matchesInterface(a) {
@@ -503,6 +516,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	if cfg.IsTCPPort(dport) && tcp[13]&0x12 == 0x02 {
 		if w.tlsCache.DropOtherConnection(connKey, binary.BigEndian.Uint32(tcp[4:8])+1) || len(payload) == 0 {
 			w.destState.ForgetConnection(connKey)
+			w.injector.detach(connKey)
 		}
 		w.pendingHello.ForgetHeld(connKey)
 	}
@@ -645,18 +659,38 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 
 		held := vc.takeHeld()
+		ordered := w.followsInjection(connKey, tcp, payload) && injectAcquire()
 		if !vc.drop() {
+			if ordered {
+				injectRelease()
+			}
 			if held != nil {
 				held.settle(nfqueue.NfAccept, "released, the next packet could not be dropped")
 			}
 			return 0
 		}
 
+		count := set.TCP.Duplicate.Count
 		if held != nil {
 			held.settle(nfqueue.NfDrop, "sent as duplicates through set "+set.Name)
-			w.sendCopies(held.raw, held.dst, held.ver, set.TCP.Duplicate.Count)
 		}
-		w.sendCopies(pkt.raw, pkt.dst, pkt.ver, set.TCP.Duplicate.Count)
+		if ordered {
+			raw := append([]byte(nil), pkt.raw...)
+			dst := append(net.IP(nil), pkt.dst...)
+			ver := pkt.ver
+			w.injector.submit(connKey, true, w.flowJob(func() func() {
+				if held != nil {
+					w.sendCopies(held.raw, held.dst, held.ver, count)
+				}
+				w.sendCopies(raw, dst, ver, count)
+				return nil
+			}))
+			return 0
+		}
+		if held != nil {
+			w.sendCopies(held.raw, held.dst, held.ver, count)
+		}
+		w.sendCopies(pkt.raw, pkt.dst, pkt.ver, count)
 		return 0
 	}
 
@@ -720,7 +754,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 
 		if set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.Active() {
-			w.connTracker.RegisterOutgoing(connKey, set, vc.telegramSet != nil)
+			w.connTracker.RegisterOutgoing(connKey, set, vc.selfDial)
 		}
 
 		vc.drop()
@@ -843,7 +877,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			w.tlsCache.DecideHeld(connKey, helloGen, matcher, pkt.srcMac, decided, heldHello, stageSet)
 		}
 
-		if matched && !matchedSNI && set != nil && !set.MatchesTLSVersion(tlsVersion) {
+		if matched && !matchedSNI && set != nil && !(hold.pinned && hold.keeps(set)) && !set.MatchesTLSVersion(tlsVersion) {
 			clearMatch()
 		}
 
@@ -1062,13 +1096,19 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 
 		if !foreignEgress && (set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.Active() || addressHolds) {
-			w.connTracker.RegisterOutgoing(connKey, set, vc.telegramSet != nil)
+			w.connTracker.RegisterOutgoing(connKey, set, vc.selfDial)
 			if isAck && !isSyn && !isRst && cfg.IsTCPPort(dport) && set.TCP.RSTProtection.Enabled {
 				w.connTracker.MarkEstablished(connKey)
 			}
 		}
 
-		if routeHandsOff || !needsTCPInjection(set) {
+		if routeHandsOff {
+			return vc.accept()
+		}
+		if !needsTCPInjection(set) {
+			if w.resendInOrder(vc, pkt, tcp, connKey, payload) {
+				return 0
+			}
 			return vc.accept()
 		}
 
@@ -1135,11 +1175,18 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		if held != nil {
 			held.settle(nfqueue.NfDrop, "sent through set "+set.Name)
 		}
-		w.injectHeldThen(setCopy, held, packetCopy, dstCopy, pkt.ver, !w.tlsCache.PastHello(connKey, binary.BigEndian.Uint32(tcp[4:8])))
+		seq := binary.BigEndian.Uint32(tcp[4:8])
+		inside := w.tlsCache.InsideHello(connKey, seq)
+		if w.injectHeldThen(setCopy, held, packetCopy, dstCopy, pkt.ver, !w.tlsCache.PastHello(connKey, seq), connKey, held != nil || inside || opensHello(payload)) && inside {
+			w.tlsCache.MarkLaned(connKey, seq)
+		}
 		return 0
 	}
 
 	if vc.own != nil {
+		return 0
+	}
+	if w.resendInOrder(vc, pkt, tcp, connKey, payload) {
 		return 0
 	}
 	return vc.accept()

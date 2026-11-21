@@ -59,6 +59,7 @@ import { useSetFacetSelection } from "@hooks/useSetFacetSelection";
 import { useWatchdogSetStatuses } from "@hooks/useWatchdog";
 import { B4Config, B4SetConfig } from "@models/config";
 import { formatAsn } from "@models/asn";
+import { telegramSetId, telegramSetProblem } from "@models/telegramSet";
 import { useTranslation } from "react-i18next";
 
 export interface SetStats {
@@ -232,6 +233,14 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
   const deviceFilter = deviceFilterSelects(config.queue?.devices);
   const anyWatched = sets.some((s) => !!s.discovery?.watchdog);
   const watchStatuses = useWatchdogSetStatuses(anyWatched && watchdogOn);
+  const telegramId = telegramSetId(config);
+  const telegramState = useMemo(
+    () =>
+      telegramId === ""
+        ? undefined
+        : { problem: telegramSetProblem({ ...config, sets }) },
+    [config, sets, telegramId],
+  );
 
   const sensors = useSensors(
     useSensor(MouseSensor, {
@@ -766,6 +775,9 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                           watchStatus={watchStatuses.byId.get(set.id)}
                           watchdogOn={watchdogOn}
                           deviceFilter={deviceFilter}
+                          telegramSet={
+                            set.id === telegramId ? telegramState : undefined
+                          }
                         />
                       )}
                     </SortableCardWrapper>

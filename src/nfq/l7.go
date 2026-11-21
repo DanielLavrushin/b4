@@ -7,12 +7,14 @@ import (
 	"github.com/daniellavrushin/b4/stun"
 )
 
-func udpFakePayload(udpCfg *config.UDPConfig) []byte {
+const maxUDPFakeLenV6 = config.MaxUDPFakeLen - (IPv6HeaderLen - IPv4HeaderMinLen)
+
+func udpFakePayload(udpCfg *config.UDPConfig, size int) []byte {
 	switch udpCfg.FakePayloadFile {
 	case config.FakePayloadAutoQUIC:
-		return sock.BuildQUICInitial(udpCfg.FakeLen)
+		return sock.BuildQUICInitial(size)
 	case config.FakePayloadAutoSTUN:
-		return sock.BuildSTUNRequest(udpCfg.FakeLen)
+		return sock.BuildSTUNRequest(size)
 	}
 	return udpCfg.FakePayloadData
 }

@@ -84,7 +84,7 @@ Shown in **Fake & Fragment** mode.
 | Field | What it does | Default |
 | --- | --- | --- |
 | **Fake Packet Count** | How many fakes go before the real packet, 1 to 20. | `6` |
-| **Fake Packet Size** | The payload size of each fake, 32 to 1500 bytes. | `64` |
+| **Fake Packet Size** | The payload size of each fake, 32 to 1472 bytes. Over IPv6 a fake carries at most 1452 bytes. | `64` |
 | **Fake Packet Payload** | What the fakes carry: **(zero fill)**, **(auto: QUIC Initial)** for a fresh random QUIC Initial in each fake, **(auto: STUN request)** for a fresh STUN request in each fake, **QUIC preset 1**, **QUIC preset 2**, or a payload uploaded under [Settings > Payloads](../settings/payloads.md). Presets and uploaded payloads are cut or padded with zeros to **Fake Packet Size**, **(auto: STUN request)** is padded with random bytes, and 1200 bytes suits **(auto: QUIC Initial)**. | **(zero fill)** |
 | **Evasion Technique** | How the fakes are made unusable to the server. UDP fakes always use the set's **Fake TTL** from [TCP > Faking](./tcp/faking.md): **None** sends them without extra corruption, **TTL** is the same as **None**, **Checksum** also breaks the UDP checksum. | **None** |
 | **Segment 2 Delay** | Delay between the fakes and the real packet, 0 to 1000 ms. A range makes each connection pick a random value. | `0` |

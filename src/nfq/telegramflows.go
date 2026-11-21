@@ -54,7 +54,7 @@ func (w *Worker) openTelegramInjector(cfg *config.Config) {
 	}
 	s, err := sock.NewSenderWithMark(int(mark))
 	if err != nil {
-		log.Warnf("NFQ queue %d: no raw socket with mark 0x%x (%v), so the packets b4 sends into its own Telegram connections carry the ordinary injector mark and follow a routing set that lists the Telegram address", w.qnum, mark, err)
+		log.Warnf("NFQ queue %d: no raw socket with mark 0x%x (%v), so the packets b4 sends into the connections it opens itself carry the ordinary injector mark and follow a routing set that lists their address", w.qnum, mark, err)
 		return
 	}
 	w.divertTelegramFlows(s)

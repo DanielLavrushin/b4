@@ -20,16 +20,16 @@ Fake ClientHello packets sent before the real one. DPI reads the fake, and the r
 | Field | What it does | Default |
 | --- | --- | --- |
 | **Fake Payload Type** | What the fake carries, see the table below. | **Preset: Google (classic)** |
-| **Match Fake Size** | Builds the fake from the real ClientHello with the payload's domain fitted to the length of the real name, so both have the same size. A payload that is not a ClientHello is repeated or cut to that size. | Off |
-| **Randomize TLS Random** | Replaces the 32-byte Random field of the fake, so that it differs from the real one. | Off |
-| **Duplicate Session ID** | Copies the Session ID of the real ClientHello into the fake. | Off |
+| **Match Fake Size** | Builds the fake from the real ClientHello with the payload's domain fitted to the length of the real name, so both have the same size. A payload that is not a ClientHello is repeated or cut to that size. On a 1500-byte link a payload file larger than 1448 bytes, what one packet with TCP timestamps carries, is refused unless this switch is on, and the editor shows a warning for it. | Off |
+| **Randomize TLS Random** | Replaces the 32-byte Random field and the Session ID of each fake with random values. | Off |
+| **Duplicate Session ID** | Copies the Session ID of the real ClientHello into the fake. It takes precedence over the random Session ID of **Randomize TLS Random**. | Off |
 
 The last two are under **Fake Packet TLS Modification**, shown for every payload type except **Random**.
 
 | Payload type | The fake carries |
 | --- | --- |
 | **Random** | Random bytes. |
-| **Preset: Google (classic)**, **Preset: DuckDuckGo** | A ClientHello for that site. |
+| **Preset: Google (classic)**, **Preset: VK** | A ClientHello for that site. |
 | **Preset: STUN** | A STUN request. |
 | **My own Payload File** | A ClientHello generated or uploaded under **Settings > Payloads**, chosen in **Generated Payload**. |
 | **All Zeros** | Zero bytes. |

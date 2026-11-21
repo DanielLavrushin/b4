@@ -249,10 +249,17 @@ var selfDialMark = func() uint {
 	return uint(config.SelfDialMark)
 }
 
-var workerFollowsSets atomic.Bool
+var (
+	workerFollowsSets  atomic.Bool
+	cfProxyFollowsSets atomic.Bool
+)
 
 func setWorkerFollowsSets(cfg *config.Config) {
 	workerFollowsSets.Store(cfg != nil && cfg.System.MTProto.CFWorkerDPI)
+}
+
+func setCFProxyFollowsSets(cfg *config.Config) {
+	cfProxyFollowsSets.Store(cfg != nil && cfg.System.MTProto.CFProxyDPI)
 }
 
 func relayDialMark(base uint) uint {
@@ -282,7 +289,7 @@ func planDialMark(p transportPlan, base uint) uint {
 	if final {
 		return base
 	}
-	if p.cfBase != "" {
+	if p.cfBase != "" && !cfProxyFollowsSets.Load() {
 		return relayDialMark(base)
 	}
 	return base

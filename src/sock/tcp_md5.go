@@ -35,6 +35,14 @@ func AddTCPMD5Option(packet []byte, isIPv6 bool) ([]byte, bool) {
 		return packet, false
 	}
 
+	lengthField := len(packet) + 20
+	if isIPv6 {
+		lengthField -= ipHdrLen
+	}
+	if lengthField > 0xFFFF {
+		return packet, false
+	}
+
 	newPacket := make([]byte, len(packet)+20)
 
 	copy(newPacket[:ipHdrLen], packet[:ipHdrLen])

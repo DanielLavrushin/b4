@@ -42,6 +42,7 @@ type tlsInfo struct {
 	set             *config.SetConfig
 	priorSet        string
 	heldBy          string
+	laned           bool
 }
 
 type tlsInfoCache struct {
@@ -115,7 +116,7 @@ func (c *tlsInfoCache) MoveHello(connKey string, seq, helloLen uint32) {
 	if !exists || info.helloLen == 0 || seq-info.gateSeq < info.helloLen {
 		return
 	}
-	info.gateSeq, info.helloLen = seq, helloLen
+	info.gateSeq, info.helloLen, info.laned = seq, helloLen, false
 }
 
 func (c *tlsInfoCache) PastHello(connKey string, seq uint32) bool {
@@ -124,6 +125,35 @@ func (c *tlsInfoCache) PastHello(connKey string, seq uint32) bool {
 
 	info, exists := c.conns[connKey]
 	return exists && info.helloLen > 0 && seq-info.gateSeq >= info.helloLen
+}
+
+func (c *tlsInfoCache) InsideHello(connKey string, seq uint32) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	info, exists := c.conns[connKey]
+	return exists && insideHello(info, seq)
+}
+
+func insideHello(info *tlsInfo, seq uint32) bool {
+	return info.helloLen > 0 && seq-info.gateSeq < info.helloLen
+}
+
+func (c *tlsInfoCache) MarkLaned(connKey string, seq uint32) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if info, exists := c.conns[connKey]; exists && insideHello(info, seq) {
+		info.laned = true
+	}
+}
+
+func (c *tlsInfoCache) LanedContinuation(connKey string, seq uint32) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	info, exists := c.conns[connKey]
+	return exists && info.laned && seq != info.gateSeq && insideHello(info, seq)
 }
 
 func (c *tlsInfoCache) HelloAt(connKey string, seq uint32, helloID uint64) (tlsInfo, bool) {
@@ -718,10 +748,12 @@ type runtimeState struct {
 	goodIPs      *iphealth.KnownGood
 	bans         *ipBans
 	telegram     *telegramFlows
+	injector     *flowInjector
 }
 
 func newRuntimeState() *runtimeState {
 	return &runtimeState{
+		injector:     newFlowInjector(),
 		telegram:     newTelegramFlows(),
 		pendingHello: newPendingHelloCache(),
 		wssize:       newWSSizeCache(),

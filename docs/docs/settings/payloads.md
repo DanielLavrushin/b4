@@ -20,7 +20,7 @@ The **Fake Payload Type** field of a set, under **TCP > Faking > Fake SNI Packet
 | --- | --- |
 | **Random** | 1200 random bytes, new for every connection |
 | **Preset: Google (classic)** | A recorded TLS ClientHello for `www.google.com`. A new set starts with this type |
-| **Preset: DuckDuckGo** | A recorded TLS ClientHello for `staticcdn.duckduckgo.com` |
+| **Preset: VK** | A 517-byte TLS ClientHello for `vk.com` |
 | **Preset: STUN** | A STUN Binding Request, with no TLS in it |
 | **My own Payload File** | A payload from this tab, picked in the **Generated Payload** field |
 | **All Zeros** | 1200 zero bytes |
@@ -36,7 +36,7 @@ The card builds a TLS ClientHello for the name in **Domain**. Typing a name, suc
 
 The ClientHello is built on the router. No connection is made, and the name is not resolved or checked. An `http://` or `https://` prefix and a path are dropped, and the name is lowercased. Each name holds one payload per protocol: when the name already has a TLS payload, generated or uploaded, the tab keeps it and reports that it exists.
 
-Every generated ClientHello has SNI as its first extension. The generator is built for a TSPU shortcut: when SNI is the first extension, the name is checked against an allow-list, and an allowed name takes a fast path. Whether the shortcut applies depends on the provider's equipment.
+A generated ClientHello takes 648 bytes plus the length of the name, so it fits one packet. Its random values are drawn when it is generated and stay the same in the saved file until the payload is deleted and generated again.
 
 ## Upload Custom Payload {#uploading-a-payload}
 

@@ -189,7 +189,7 @@ const PAYLOAD_LABELS: Record<number, string> = {
   0: "random",
   1: "custom",
   2: "google",
-  3: "duckduckgo",
+  3: "vk",
   4: "capture",
   5: "zero",
   6: "inverted",
@@ -659,6 +659,7 @@ export const buildTargetSummary = (
   set: FacetSetConfig,
   stats: FacetStats | undefined,
   t: FacetTranslate,
+  options?: { noTargetsText?: string },
 ): string => {
   const { targets } = set;
   const named = [
@@ -673,7 +674,7 @@ export const buildTargetSummary = (
     const l7 = udpL7(set);
     return l7.length > 0
       ? `${t(F("udpL7"))}: ${udpL7Text(t, l7)}`
-      : t("sets.card.noTargets");
+      : (options?.noTargetsText ?? t("sets.card.noTargets"));
   }
 
   const parts: string[] = [];

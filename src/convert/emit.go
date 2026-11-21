@@ -811,10 +811,19 @@ func pendingPayloadFile(tool string) string {
 	return PendingPayloadPrefix + tool + "-fake"
 }
 
-func useImportedPayload(set *config.SetConfig, tool string, data []byte) {
+func useImportedPayload(set *config.SetConfig, tool string, data []byte) bool {
+	if len(data) > config.MaxImportedPayloadBytes {
+		return false
+	}
 	set.Faking.SNIType = config.FakePayloadCapture
 	set.Faking.PayloadFile = pendingPayloadFile(tool)
 	set.Faking.PayloadData = data
+	return true
+}
+
+func notePayloadTooLarge(set *config.SetConfig, tok Token, notes *noteSet, size int) {
+	n := notes.set(tok, StatusApproximated, "fakePayloadTooLarge", fakeTypeField(set))
+	n.Params = map[string]any{"size": size, "max": config.MaxImportedPayloadBytes}
 }
 
 func noteUDPHexFakes(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet, keys []string) {
@@ -910,9 +919,13 @@ func emitFake(set *config.SetConfig, prog *Program, prof *Profile, ti tokenIndex
 	}
 	switch {
 	case prof.Fake.DataInline != "":
-		useImportedPayload(set, prog.Tool, []byte(prof.Fake.DataInline))
+		adopted := useImportedPayload(set, prog.Tool, []byte(prof.Fake.DataInline))
 		if tok, ok := ti.first(prof.Index, "fake_data"); ok {
-			notes.set(tok, StatusMapped, "fakeDataMapped", importedPayloadFields...)
+			if adopted {
+				notes.set(tok, StatusMapped, "fakeDataMapped", importedPayloadFields...)
+			} else {
+				notePayloadTooLarge(set, tok, notes, len(prof.Fake.DataInline))
+			}
 		}
 	case len(prof.Fake.HexPayload) > 0 && sni == "":
 		useImportedPayload(set, prog.Tool, prof.Fake.HexPayload)
@@ -960,6 +973,8 @@ func emitFake(set *config.SetConfig, prog *Program, prof *Profile, ti tokenIndex
 			switch {
 			case err != nil:
 				notes.set(tok, StatusInvalid, "fakeHexInvalid")
+			case len(data) > config.MaxImportedPayloadBytes:
+				notePayloadTooLarge(set, tok, notes, len(data))
 			case !hexUsed && set.Faking.SNIType == config.FakePayloadCapture && bytes.Equal(data, set.Faking.PayloadData):
 				hexUsed = true
 				notes.set(tok, StatusMapped, "fakeDataMapped", importedPayloadFields...)
@@ -977,7 +992,7 @@ func emitFake(set *config.SetConfig, prog *Program, prof *Profile, ti tokenIndex
 	var droppedMods []string
 	for _, m := range prof.Fake.TLSMod {
 		switch m {
-		case "r", "rnd", "rndsni":
+		case "r", "rnd":
 			set.Faking.TLSMod = appendUnique(set.Faking.TLSMod, "rnd")
 		case "dupsid":
 			set.Faking.TLSMod = appendUnique(set.Faking.TLSMod, "dupsid")

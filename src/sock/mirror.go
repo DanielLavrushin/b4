@@ -21,9 +21,34 @@ func MirrorClientHello(real, fakePayload []byte) []byte {
 	if !found {
 		return nil
 	}
+	name := FitHostName(template, e-s)
+	if strings.EqualFold(name, string(real[s:e])) {
+		name = otherHostName(name)
+	}
 	out := cloneBytes(real)
-	copy(out[s:e], FitHostName(template, e-s))
+	copy(out[s:e], name)
 	return out
+}
+
+func otherHostName(name string) string {
+	n := len(name)
+	tld := name[strings.LastIndexByte(name, '.')+1:]
+	for range 16 {
+		alt := randomLabels(n)
+		if len(tld) > 0 && len(tld) < n-1 {
+			alt = randomLabels(n-1-len(tld)) + "." + tld
+		}
+		if !strings.EqualFold(alt, name) {
+			return alt
+		}
+	}
+	alt := []byte(strings.ToLower(name))
+	if alt[0] == 'x' {
+		alt[0] = 'y'
+	} else {
+		alt[0] = 'x'
+	}
+	return string(alt)
 }
 
 func FitHostName(template string, n int) string {

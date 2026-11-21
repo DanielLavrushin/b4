@@ -713,6 +713,16 @@ func (c *Config) Validate() error {
 				set.UDP.FakeLen = size
 			}
 		}
+		switch {
+		case set.UDP.FakeLen < 0:
+			v.addf(fmt.Sprintf("sets[%d].udp.fake_len", setIdx), "out_of_range",
+				map[string]any{"set": set.Name, "value": set.UDP.FakeLen, "min": 0, "max": MaxUDPFakeLen},
+				"set %q: udp.fake_len %d is outside 0-%d", set.Name, set.UDP.FakeLen, MaxUDPFakeLen)
+			return v.result()
+		case set.UDP.FakeLen > MaxUDPFakeLen:
+			log.Warnf("Set '%s': UDP fake length %d adjusted to %d, the most one 1500-byte IPv4 packet carries", set.Name, set.UDP.FakeLen, MaxUDPFakeLen)
+			set.UDP.FakeLen = MaxUDPFakeLen
+		}
 
 		set.UDP.FilterL7 = NormalizeL7Filter(set.UDP.FilterL7)
 		if len(set.UDP.FilterL7) > 0 {
@@ -737,11 +747,51 @@ func (c *Config) Validate() error {
 	}
 
 	c.LoadCapturePayloads()
+	c.warnFakesLargerThanOnePacket()
 	c.BuildTCPPortMap()
 	c.BuildSetPortRanges()
 	c.validateWSReuse(v)
 
 	return v.result()
+}
+
+var (
+	fakePayloadWarnMu sync.Mutex
+	fakePayloadWarned = map[string]struct{}{}
+)
+
+func warnFakePayloadOnce(format string, a ...any) {
+	text := fmt.Sprintf(format, a...)
+	fakePayloadWarnMu.Lock()
+	_, seen := fakePayloadWarned[text]
+	if !seen {
+		fakePayloadWarned[text] = struct{}{}
+	}
+	fakePayloadWarnMu.Unlock()
+	if !seen {
+		log.Warnf("%s", text)
+	}
+}
+
+func (c *Config) warnFakesLargerThanOnePacket() {
+	for _, set := range c.Sets {
+		if !set.Enabled || !set.Faking.SNI || set.Faking.FakeLenMode == "match" {
+			continue
+		}
+		var source string
+		switch set.Faking.SNIType {
+		case FakePayloadCapture:
+			source = "file " + set.Faking.PayloadFile
+		case FakePayloadCustom:
+			source = "custom payload"
+		default:
+			continue
+		}
+		if n := len(set.Faking.PayloadData); n > MaxTCPFakeLenInOnePacket {
+			warnFakePayloadOnce("Set '%s': the fake payload (%s) is %d bytes, more than the %d bytes one 1500-byte packet carries after its IP and TCP headers, so the fake will not fit one packet and a 1500-byte link refuses it; turn on Match Fake Size (faking.fake_len_mode match) or choose a smaller payload",
+				set.Name, source, n, MaxTCPFakeLenInOnePacket)
+		}
+	}
 }
 
 var injectedBitWarnedMark atomic.Uint64

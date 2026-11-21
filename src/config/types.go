@@ -140,7 +140,15 @@ func SelectsKnownL7(classes []string) bool {
 	return slices.ContainsFunc(classes, func(c string) bool { return slices.Contains(UDPL7Classes, c) })
 }
 
-const maxSTUNFakeLen = (0xffff - 20 - 8) &^ 3
+const MaxUDPFakeLen = 1500 - 20 - 8
+
+const MaxTCPFakeLenInOnePacket = 1500 - 20 - 32
+
+const MaxImportedPayloadBytes = 16 * 1024
+
+const MaxCapturePayloadBytes = 64 * 1024
+
+const maxSTUNFakeLen = MaxUDPFakeLen &^ 3
 
 func NormalizeSTUNFakeLen(size int) int {
 	switch {
@@ -178,7 +186,7 @@ var FakePayloadNames = [FakePayloadSTUN + 1]string{
 	FakePayloadRandom:   "random",
 	FakePayloadCustom:   "custom",
 	FakePayloadDefault1: "google",
-	FakePayloadDefault2: "duckduckgo",
+	FakePayloadDefault2: "vk",
 	FakePayloadCapture:  "capture",
 	FakePayloadZero:     "zero",
 	FakePayloadInverted: "inverted",
@@ -630,6 +638,7 @@ type MTProtoConfig struct {
 	CFProxyURL        string          `json:"cfproxy_url" mcp:"deny"` // URL to refresh CF-proxy domain list; empty = built-in default
 	CFWorkerDomain    string          `json:"cfworker_domain"`        // user's Cloudflare Worker domain(s) (workers.dev), comma-separated; free per-user WS relay tried before the shared CF pool
 	CFWorkerDPI       bool            `json:"cfworker_dpi"`
+	CFProxyDPI        bool            `json:"cfproxy_dpi"`
 	UpstreamSet       string          `json:"upstream_set"`
 
 	DCFallbackEnabled bool   `json:"dc_fallback_enabled"`        // fetch the DC IP list from DCFallbackURL when Telegram's official endpoint is blocked
