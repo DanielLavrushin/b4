@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -189,6 +191,52 @@ func TestAGeneratedPayloadReachesTheSetsThatNameItsFile(t *testing.T) {
 	if reloaded := reloadedBy(t, rec); !reflect.DeepEqual(reloaded, []any{set.Name}) || !bytes.Equal(got, data) {
 		t.Errorf("generate wrote %s (%d bytes), which set %q names, but answered reloaded=%v and the running set sends %d bytes (the Google preset: %t)",
 			file, len(data), set.Name, reloaded, len(got), bytes.Equal(got, config.FakeSNI1))
+	}
+}
+
+func TestUploadAndGenerateRepairAnUnlistedFileASetNames(t *testing.T) {
+	mux, api := captureTestMux(t)
+	manager := capture.GetManager(api.getCfg())
+	for _, c := range []struct {
+		action, name, file string
+		send               func(name string) *httptest.ResponseRecorder
+	}{
+		{"upload", "unlisted-upload.repair.example", "captures/tls_unlisted-upload_repair_example.bin", func(name string) *httptest.ResponseRecorder {
+			return uploadCapturePayload(t, mux, name, "tls", payloadTestHello(0x77, 444))
+		}},
+		{"generate", "unlisted-generate.repair.example", "captures/tls_unlisted-generate_repair_example.bin", func(name string) *httptest.ResponseRecorder {
+			rec, _ := serveRecovered(mux, httptest.NewRequest(http.MethodPost, "/api/capture/generate", strings.NewReader(`{"domain":"`+name+`"}`)))
+			return rec
+		}},
+	} {
+		full := filepath.Join(filepath.Dir(api.getCfg().ConfigPath), c.file)
+		stale := payloadTestHello(0x66, 222)
+		if err := os.WriteFile(full, stale, 0644); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			manager.DeleteCapture("tls", c.name)
+			os.Remove(full)
+		})
+		set := namedSet("repair", "names an unlisted file", true, "a.example")
+		set.Faking.SNI = true
+		set.Faking.SNIType = config.FakePayloadCapture
+		set.Faking.PayloadFile = c.file
+		useSets(api, set)
+
+		rec := c.send(c.name)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", c.action, rec.Code, rec.Body.String())
+		}
+		storedAt := "nothing"
+		if saved, ok := manager.GetCapture("tls", c.name); ok {
+			storedAt = saved.Filepath
+		}
+		got := sock.GetPayload(&runningSet(api).Faking)
+		if storedAt != c.file || bytes.Equal(got, stale) || !reflect.DeepEqual(reloadedBy(t, rec), []any{set.Name}) {
+			t.Errorf("the %s of %s, whose file %s a set names but no entry lists, stored %s and answered reloaded=%v; the set still sends the stale file: %t",
+				c.action, c.name, c.file, storedAt, reloadedBy(t, rec), bytes.Equal(got, stale))
+		}
 	}
 }
 

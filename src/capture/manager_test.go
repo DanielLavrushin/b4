@@ -287,15 +287,46 @@ func TestNamesThatSanitizeAlikeKeepTheirOwnFiles(t *testing.T) {
 	if err := m.SaveUploadedCapture("tls", "orphan.sanitize.example", []byte("new upload"), true); err != nil {
 		t.Fatal(err)
 	}
-	if data, _ := os.ReadFile(orphan); string(data) != "a file no entry lists" {
-		problems = append(problems, fmt.Sprintf("an upload overwrote %s, a file no entry lists, with %q", filepath.Base(orphan), data))
+	if c, data := saved("orphan.sanitize.example"); c.Filepath != filepath.Join("captures", filepath.Base(orphan)) || string(data) != "new upload" {
+		problems = append(problems, fmt.Sprintf("an upload must take its plain file %s when no entry lists it, as a set may name it; got %s holding %q", filepath.Base(orphan), c.Filepath, data))
 	}
-	if _, data := saved("orphan.sanitize.example"); string(data) != "new upload" {
-		problems = append(problems, fmt.Sprintf("the upload next to an unlisted file holds %q", data))
+
+	blocker := filepath.Join(m.outputPath, "tls_dir_sanitize_example.bin")
+	if err := os.Mkdir(blocker, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SaveUploadedCapture("tls", "dir.sanitize.example", []byte("next to a directory"), true); err != nil {
+		t.Fatal(err)
+	}
+	if c, data := saved("dir.sanitize.example"); c.Filepath == filepath.Join("captures", filepath.Base(blocker)) || string(data) != "next to a directory" {
+		problems = append(problems, fmt.Sprintf("an upload whose plain name is a directory must take a tagged file, got %s holding %q", c.Filepath, data))
+	}
+	if info, err := os.Stat(blocker); err != nil || !info.IsDir() {
+		problems = append(problems, fmt.Sprintf("the upload replaced the directory %s: %v", filepath.Base(blocker), err))
 	}
 
 	if len(problems) > 0 {
 		t.Fatal(strings.Join(problems, "; "))
+	}
+}
+
+func TestAFailedSaveOverAnUnlistedFileGivesItsBytesBack(t *testing.T) {
+	m := testManager(t)
+	unlisted := filepath.Join(m.outputPath, "tls_unlisted_rollback_example.bin")
+	if err := os.WriteFile(unlisted, []byte("bytes a set may still name"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(m.metadataFile, "blocker"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SaveUploadedCapture("tls", "unlisted.rollback.example", []byte("new upload"), true); err == nil {
+		t.Fatal("fixture: an upload whose metadata save fails must return the error")
+	}
+	if data, err := os.ReadFile(unlisted); err != nil || string(data) != "bytes a set may still name" {
+		t.Errorf("an upload whose metadata save failed left the unlisted file it took holding %q (%v)", data, err)
+	}
+	if _, listed := m.GetCapture("tls", "unlisted.rollback.example"); listed {
+		t.Errorf("an upload whose metadata save failed is listed")
 	}
 }
 

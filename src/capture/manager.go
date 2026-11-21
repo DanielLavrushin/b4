@@ -245,7 +245,7 @@ func (m *Manager) RegenerateCapture(domain string) (*Capture, error) {
 	return captureOf("tls", domain, m.metadata[domain]["tls"]), nil
 }
 
-func (m *Manager) fileNameFor(protocol, name string) (string, error) {
+func (m *Manager) fileNameFor(protocol, name string, claimUnlisted bool) (string, error) {
 	if previous := m.metadata[name][protocol]; previous != nil {
 		return previous.Filepath, nil
 	}
@@ -259,7 +259,7 @@ func (m *Manager) fileNameFor(protocol, name string) (string, error) {
 		case i > 1:
 			filename = fmt.Sprintf(payloadFilenameFmt, protocol, fmt.Sprintf("%s-%d", tagged, i))
 		}
-		if m.fileNameFree(filename) {
+		if m.fileNameFree(filename, claimUnlisted && i == 0) {
 			return filename, nil
 		}
 	}
@@ -281,7 +281,7 @@ func (m *Manager) fileOwned(filename string) bool {
 	return false
 }
 
-func (m *Manager) fileNameFree(filename string) bool {
+func (m *Manager) fileNameFree(filename string, claimUnlisted bool) bool {
 	if m.fileOwned(filename) {
 		return false
 	}
@@ -289,12 +289,15 @@ func (m *Manager) fileNameFree(filename string) bool {
 	if err != nil {
 		return false
 	}
-	_, err = os.Lstat(path)
-	return os.IsNotExist(err)
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return true
+	}
+	return claimUnlisted && err == nil && info.Mode().IsRegular()
 }
 
 func (m *Manager) storeLocked(protocol, name string, data []byte, origin string) error {
-	filename, err := m.fileNameFor(protocol, name)
+	filename, err := m.fileNameFor(protocol, name, true)
 	if err != nil {
 		return err
 	}
@@ -303,10 +306,8 @@ func (m *Manager) storeLocked(protocol, name string, data []byte, origin string)
 		return err
 	}
 	previous := m.metadata[name][protocol]
-	var previousData []byte
-	if previous != nil {
-		previousData, _ = os.ReadFile(path)
-	}
+	previousData, readErr := os.ReadFile(path)
+	hadFile := readErr == nil
 
 	if err := utils.WriteFileAtomic(path, data, 0644); err != nil {
 		return fmt.Errorf("failed to save file: %v", err)
@@ -322,12 +323,13 @@ func (m *Manager) storeLocked(protocol, name string, data []byte, origin string)
 	if err := m.saveMetadata(); err != nil {
 		if previous == nil {
 			m.removeEntry(name, protocol)
-			os.Remove(path)
 		} else {
 			m.setEntry(name, protocol, previous)
-			if previousData != nil {
-				utils.WriteFileAtomic(path, previousData, 0644)
-			}
+		}
+		if hadFile {
+			utils.WriteFileAtomic(path, previousData, 0644)
+		} else {
+			os.Remove(path)
 		}
 		return fmt.Errorf("failed to save metadata: %v", err)
 	}
@@ -528,7 +530,7 @@ func (m *Manager) SaveImportedPayload(protocol, domain string, data []byte) (str
 			log.Infof("Registered existing shared %s payload for %s (%d bytes)", protocol, name, len(data))
 			return filepath.Join("captures", plain), nil
 		}
-		filename, err := m.fileNameFor(protocol, name)
+		filename, err := m.fileNameFor(protocol, name, false)
 		if err != nil {
 			return "", err
 		}
