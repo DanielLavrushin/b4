@@ -38,7 +38,7 @@ func TestWSReuseTopicSaysAFailedWarmIsSkippedForTenMinutes(t *testing.T) {
 	facts := TopicFacts("tcp.wssize_reuse.enabled")
 	for _, want := range []string{
 		"that address and SNI name skip the warm for 10 minutes",
-		"any saved settings change other than collected addresses forgets these failures",
+		"a save or payload change that alters running settings beyond collected addresses forgets these failures",
 		"a connect error is, even one from the router's own route or firewall",
 	} {
 		if !strings.Contains(facts, want) {
@@ -51,6 +51,16 @@ func TestWSReuseTopicSaysAFailedWarmIsSkippedForTenMinutes(t *testing.T) {
 	if !strings.Contains(facts, "After a warm fails in one of the ways in parentheses above,") || strings.Contains(facts, "in one of the ways listed above") {
 		t.Errorf("tcp.wssize_reuse.enabled does not limit the remembered failures to the list in parentheses; the cases listed after it (a skipped warm, an egress route that cannot be looked up, a failed pass, busy ports or slots) are not remembered: %s", facts)
 	}
+}
+
+func TestWSReuseTopicSaysAPayloadReloadForgetsFailures(t *testing.T) {
+	checkTopicWording(t, "tcp.wssize_reuse.enabled", []string{
+		"a save or payload change that alters running settings beyond collected addresses forgets these failures.",
+		"a skipped or cancelled warm, and a local port or capture error are not remembered",
+	}, []string{
+		"any saved settings change other than collected addresses forgets these failures",
+		"a warm the client or a save cancelled",
+	})
 }
 
 func TestWSReuseTopicNamesWhatTheWarmNeedsBesidesTheServer(t *testing.T) {
