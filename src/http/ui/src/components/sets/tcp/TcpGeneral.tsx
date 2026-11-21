@@ -401,7 +401,7 @@ export const TcpGeneral = ({
             )}
           </>
         )}
-        {reuse.enabled && (
+        {config.enabled && reuse.enabled && (
           <WSSizeReuseIssues
             config={config}
             queueMode={queueMode}
