@@ -526,7 +526,7 @@ func (p *Pool) collectedSettleTargetsLocked(before []string, batch []collectedEn
 
 var collectedRouteOf = tables.CollectedRouteOf
 
-func collectedRouteTakes(set *config.SetConfig, h helloWatch) bool {
+func collectedRouteTakes(set *config.SetConfig, h *helloWatch) bool {
 	if !set.Targets.UseCollectedIPs {
 		return false
 	}
@@ -543,7 +543,9 @@ func collectedRouteTakes(set *config.SetConfig, h helloWatch) bool {
 	return set.ReusesWSSize() || collectedSourceAllowed(set, h.scope)
 }
 
-func collectedTakenAway(cfg *config.Config, matcher *sni.SuffixSet, h helloWatch) bool {
+var collectedTakes = collectedTakenAway
+
+func collectedTakenAway(cfg *config.Config, matcher *sni.SuffixSet, h *helloWatch) bool {
 	if cfg == nil || matcher == nil {
 		return false
 	}
@@ -562,7 +564,7 @@ func collectedOwner(cfg *config.Config, matcher *sni.SuffixSet, h helloWatch) (*
 		return nil, false
 	}
 	if taken, taker, _ := matcher.MatchIPWithSourceDetail(h.dst, h.mac, func(set *config.SetConfig) bool {
-		return (!set.ReusesWSSize() || cfg.WSReuseActive(set)) && collectedRouteTakes(set, h)
+		return (!set.ReusesWSSize() || cfg.WSReuseActive(set)) && collectedRouteTakes(set, &h)
 	}); taken {
 		return taker, true
 	}

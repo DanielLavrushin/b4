@@ -355,8 +355,10 @@ func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pk
 
 		fakesCloseEntry: w.closingFakesMayHaveHit(cfg, set, host),
 	}
-	if _, ok := eligibleCollectedIP(h.dst); ok && !h.collect && !h.consumer && !selfDialed {
-		h.takenAway = collectedTakenAway(cfg, w.getMatcher(), *h)
+	if !h.collect && !h.consumer && !selfDialed && collectedConsumerEnabled(cfg) {
+		if _, ok := eligibleCollectedIP(h.dst); ok {
+			h.takenAway = collectedTakes(cfg, w.getMatcher(), h)
+		}
 	}
 	if h.collect {
 		if set.Targets.UseCollectedIPs || h.tun || hostAddress(pkt.src) || h.scope != nil && h.scope.router {
@@ -365,7 +367,7 @@ func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pk
 		if _, ok := eligibleCollectedIP(h.dst); !ok {
 			return
 		}
-		if collectedTakenAway(cfg, w.getMatcher(), *h) {
+		if collectedTakes(cfg, w.getMatcher(), h) {
 			return
 		}
 		info, known := w.tlsCache.Decision(connKey)

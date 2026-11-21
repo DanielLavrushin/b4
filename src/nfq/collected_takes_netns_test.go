@@ -377,7 +377,7 @@ func (r *takesRig) firewallTakes(t *testing.T, engine string, c takesCell) (take
 	r.dial(t, c.router, net.JoinHostPort(dst.String(), strconv.Itoa(c.port)))
 	taken = takesUplinkPackets(t) == before
 	h := helloWatch{dst: dst, port: uint16(c.port), ver: ver, client: client, mac: mac, scope: scope}
-	predicate = collectedTakenAway(view, buildMatcher(view), h)
+	predicate = collectedTakenAway(view, buildMatcher(view), &h)
 	return taken, predicate, route
 }
 

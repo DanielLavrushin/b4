@@ -191,7 +191,7 @@ func TestTakenFollowsThePortsAndFamiliesTheConsumersRulesMatch(t *testing.T) {
 				ver = IPv6
 			}
 			h := helloWatch{dst: net.ParseIP(c.dst), port: c.port, ver: ver, client: net.IPv4(192, 168, 1, 50), scope: &ingressScope{resolved: true, name: "br0"}}
-			if got := collectedTakenAway(view, buildMatcher(view), h); got != c.taken {
+			if got := collectedTakenAway(view, buildMatcher(view), &h); got != c.taken {
 				t.Errorf("%s: taken=%v, want %v; the consumer's firewall rules match only their own families, and only WSSIZE reuse has a port term (443)", c.name, got, c.taken)
 			}
 		})
@@ -212,7 +212,7 @@ func TestAReuseConsumerTakesTheRoutersOwnTCP443WhateverSourceInterfacesItKeeps(t
 		return installedCollectedRoute(view, view.GetSetById(id))
 	})
 	router := helloWatch{dst: net.ParseIP(dst), port: 443, ver: IPv4, client: net.ParseIP("198.51.100.2"), scope: &ingressScope{resolved: true, router: true}}
-	if !collectedTakenAway(view, buildMatcher(view), router) {
+	if !collectedTakenAway(view, buildMatcher(view), &router) {
 		t.Fatal("a WSSIZE reuse consumer that keeps source interfaces from an earlier routing setup does not take the router's own TCP/443 in the unit model, but its firewall rules come from the reuse view, which drops source interfaces, so they divert that connection (netns oracle: router 443, consumer on the LAN interface)")
 	}
 }
@@ -253,7 +253,7 @@ func TestOnlyAnInstalledRouteTakesACollectedConnection(t *testing.T) {
 				}
 				return installedCollectedRoute(view, view.GetSetById(id))
 			})
-			if got := collectedTakenAway(view, buildMatcher(view), device); got != c.want {
+			if got := collectedTakenAway(view, buildMatcher(view), &device); got != c.want {
 				t.Errorf("%s: taken=%v, want %v; an answer counts as the consumer's only while the firewall sends the connection to it", c.name, got, c.want)
 			}
 		})
@@ -286,7 +286,7 @@ func TestAnInactiveReuseConsumerTakesNoCollectedConnection(t *testing.T) {
 			stubCollectedRoutes(t, func(id string) (tables.CollectedRoute, bool) {
 				return installedCollectedRoute(view, view.GetSetById(id))
 			})
-			if got := collectedTakenAway(view, buildMatcher(view), device); got != c.want {
+			if got := collectedTakenAway(view, buildMatcher(view), &device); got != c.want {
 				t.Errorf("%s: taken=%v, want %v with a diversion still published for the set; an inactive reuse set diverts nothing, so an answer on the connection came over the uplink", c.name, got, c.want)
 			}
 		})
