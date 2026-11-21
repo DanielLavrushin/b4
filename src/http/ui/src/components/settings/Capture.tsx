@@ -29,10 +29,23 @@ import {
   B4Alert,
   B4Select,
 } from "@b4.elements";
-import { useCaptures, Capture } from "@b4.capture";
+import {
+  useCaptures,
+  Capture,
+  PayloadInspection,
+  PayloadProtocol,
+} from "@b4.capture";
+import { ApiError } from "@api/apiClient";
 import { colors, radius } from "@design";
 import { copyText, describeApiError } from "@utils";
 import { bytesToHex } from "./payloads/hex";
+import {
+  asProtocol,
+  bytesLabel,
+  inspectionWarnings,
+  kindLabel,
+} from "./payloads/facts";
+import { PayloadWarnings } from "./payloads/PayloadWarnings";
 
 interface HexTarget {
   name: string;
@@ -41,15 +54,49 @@ interface HexTarget {
   read: () => Promise<Uint8Array>;
 }
 
+interface UploadForm {
+  domain: string;
+  nameTyped: boolean;
+  protocol: PayloadProtocol;
+  file: File | null;
+}
+
+const emptyUploadForm: UploadForm = {
+  domain: "",
+  nameTyped: false,
+  protocol: "tls",
+  file: null,
+};
+
+function existsConflictSets(error: unknown): string[] | null {
+  if (
+    !(error instanceof ApiError) ||
+    error.status !== 409 ||
+    error.code !== "exists"
+  ) {
+    return null;
+  }
+  const body = error.body as { used_by?: unknown } | undefined;
+  return Array.isArray(body?.used_by)
+    ? body.used_by.filter((name): name is string => typeof name === "string")
+    : [];
+}
+
 export const CaptureSettings = () => {
   const { t } = useTranslation();
   const { showError, showSuccess } = useSnackbar();
   const [probeForm, setProbeForm] = useState({ domain: "" });
-  const [uploadForm, setUploadForm] = useState<{
+  const [uploadForm, setUploadForm] = useState<UploadForm>(emptyUploadForm);
+  const [inspection, setInspection] = useState<{
+    file: File;
+    result: PayloadInspection | null;
+    error: string | null;
+  } | null>(null);
+  const [replaceDialog, setReplaceDialog] = useState<{
     domain: string;
-    protocol: string;
-    file: File | null;
-  }>({ domain: "", protocol: "tls", file: null });
+    protocol: PayloadProtocol;
+    sets: string[];
+  } | null>(null);
 
   const {
     captures,
@@ -62,6 +109,7 @@ export const CaptureSettings = () => {
     generate,
     deleteCapture,
     clearAll,
+    inspect,
     upload,
     readBytes,
     download,
@@ -71,47 +119,39 @@ export const CaptureSettings = () => {
     loadCaptures().catch(() => {});
   }, [loadCaptures]);
 
-  useEffect(() => {
-    if (!uploadForm.domain && uploadForm.file) {
-      setUploadForm((prev) => {
-        let name = (prev.file?.name ?? "").replace(/\.bin$/i, "");
-        name = name.replace(/^(tls|quic)_/, "").replaceAll("_", ".");
-        return { ...prev, domain: name };
-      });
-    }
-  }, [uploadForm.domain, uploadForm.file]);
-
-  const detectPayloadProtocol = async (
-    file: File,
-  ): Promise<"tls" | "quic" | null> => {
-    try {
-      const buf = await file.slice(0, 5).arrayBuffer();
-      const bytes = new Uint8Array(buf);
-      if (bytes.length < 2) return null;
-      if (bytes[0] === 0x16 && bytes[1] === 0x03) return "tls";
-      if ((bytes[0] & 0xf0) === 0xc0) return "quic";
-      return null;
-    } catch {
-      return null;
-    }
-  };
-
   const handleFileChange = async (file: File | null) => {
-    if (!file) {
-      setUploadForm((prev) => ({ ...prev, file: null }));
-      return;
+    if (!file) return;
+    const fileName = file.name.replace(/\.[^.]+$/, "").toLowerCase();
+    setUploadForm((prev) => ({
+      ...prev,
+      file,
+      protocol: "tls",
+      domain: prev.nameTyped ? prev.domain : fileName,
+    }));
+    setInspection({ file, result: null, error: null });
+    try {
+      const result = await inspect(file);
+      setInspection((prev) =>
+        prev?.file === file ? { file, result, error: null } : prev,
+      );
+      setUploadForm((prev) =>
+        prev.file === file
+          ? {
+              ...prev,
+              protocol: result.protocol || "tls",
+              domain: prev.nameTyped
+                ? prev.domain
+                : (result.name || fileName).toLowerCase(),
+            }
+          : prev,
+      );
+    } catch (error) {
+      setInspection((prev) =>
+        prev?.file === file
+          ? { file, result: null, error: describeApiError(error) }
+          : prev,
+      );
     }
-    setUploadForm((prev) => ({ ...prev, file }));
-    let protocol = await detectPayloadProtocol(file);
-    if (!protocol) {
-      const name = file.name.toLowerCase();
-      if (name.startsWith("quic_")) protocol = "quic";
-      else if (name.startsWith("tls_")) protocol = "tls";
-    }
-    if (!protocol) return;
-    setUploadForm((prev) =>
-      prev.file === file ? { ...prev, protocol } : prev,
-    );
   };
 
   const generateCapture = async () => {
@@ -235,21 +275,67 @@ export const CaptureSettings = () => {
     setHexDialog(null);
   };
 
-  const uploadCapture = async () => {
-    if (!uploadForm.file || !uploadForm.domain) return;
-
+  const sendUpload = async (
+    domain: string,
+    protocol: PayloadProtocol,
+    replace: boolean,
+  ) => {
+    const file = uploadForm.file;
+    if (!file) return;
     try {
-      await upload(uploadForm.file, uploadForm.domain.toLowerCase(), uploadForm.protocol);
-      showSuccess(
-        t("settings.Capture.uploadedSuccess", { domain: uploadForm.domain }),
-      );
-      setUploadForm({ domain: "", protocol: "tls", file: null });
+      await upload(file, domain, protocol, replace);
+      showSuccess(t("settings.Capture.uploadedSuccess", { domain }));
+      setUploadForm(emptyUploadForm);
+      setInspection(null);
     } catch (error) {
+      const sets = replace ? null : existsConflictSets(error);
+      if (sets) {
+        setReplaceDialog({ domain, protocol, sets });
+        return;
+      }
       showError(
         t("settings.Capture.uploadFailed", { error: describeApiError(error) }),
       );
     }
   };
+
+  const uploadCapture = async () => {
+    const domain = uploadForm.domain.trim().toLowerCase();
+    if (!uploadForm.file || !domain) return;
+    const existing = captures.find(
+      (c) => c.protocol === uploadForm.protocol && c.domain === domain,
+    );
+    if (existing) {
+      setReplaceDialog({
+        domain,
+        protocol: uploadForm.protocol,
+        sets: existing.used_by ?? [],
+      });
+      return;
+    }
+    await sendUpload(domain, uploadForm.protocol, false);
+  };
+
+  const confirmReplace = () => {
+    const pending = replaceDialog;
+    setReplaceDialog(null);
+    if (pending) void sendUpload(pending.domain, pending.protocol, true);
+  };
+
+  const inspected = inspection?.result ?? null;
+  const inspecting = !!inspection && !inspection.result && !inspection.error;
+  const uploadWarnings = inspected
+    ? inspectionWarnings(inspected, uploadForm.protocol)
+    : [];
+  const foundParts = inspected
+    ? [
+        inspected.facts ? kindLabel(t, inspected.facts) : null,
+        inspected.facts?.sni
+          ? t("settings.Capture.sni", { sni: inspected.facts.sni })
+          : null,
+        bytesLabel(t, inspected.size),
+      ].filter((part): part is string => !!part)
+    : [];
 
   const handleDownload = async (capture: Capture) => {
     try {
@@ -285,7 +371,6 @@ export const CaptureSettings = () => {
         </B4Alert>
       )}
 
-
       <Grid container spacing={3}>
         <Grid size={{ xs: 12, md: 6 }}>
           <B4Section
@@ -294,6 +379,65 @@ export const CaptureSettings = () => {
             icon={<UploadIcon />}
           >
             <Stack spacing={2}>
+              <Box sx={{ minWidth: 0 }}>
+                <Button
+                  component="label"
+                  color="secondary"
+                  variant="outlined"
+                  disabled={uploading}
+                  sx={{ maxWidth: "100%", minWidth: 0 }}
+                >
+                  <Box
+                    component="span"
+                    sx={{
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {uploadForm.file
+                      ? uploadForm.file.name
+                      : t("settings.Capture.chooseFile")}
+                  </Box>
+                  <input
+                    type="file"
+                    hidden
+                    accept=".bin,application/octet-stream"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] || null;
+                      e.target.value = "";
+                      void handleFileChange(file);
+                    }}
+                  />
+                </Button>
+                {inspecting && (
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: "block", mt: 1 }}
+                  >
+                    {t("settings.Capture.inspecting")}
+                  </Typography>
+                )}
+                {foundParts.length > 0 && (
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ mt: 1, overflowWrap: "anywhere" }}
+                  >
+                    {t("settings.Capture.found", {
+                      facts: foundParts.join(" · "),
+                    })}
+                  </Typography>
+                )}
+              </Box>
+              {inspection?.error && (
+                <B4Alert severity="warning" noWrapper>
+                  {t("settings.Capture.inspectFailed", {
+                    error: inspection.error,
+                  })}
+                </B4Alert>
+              )}
               <B4TextField
                 label={t("settings.Capture.nameDomain")}
                 value={uploadForm.domain}
@@ -301,10 +445,16 @@ export const CaptureSettings = () => {
                   setUploadForm({
                     ...uploadForm,
                     domain: e.target.value.toLowerCase(),
+                    nameTyped: e.target.value !== "",
                   })
                 }
                 placeholder="youtube.com"
-                helperText={t("settings.Capture.nameDomainHelp")}
+                helperText={
+                  inspected?.name &&
+                  uploadForm.domain === inspected.name.toLowerCase()
+                    ? t("settings.Capture.nameFromSni")
+                    : t("settings.Capture.nameDomainHelp")
+                }
                 disabled={uploading}
               />
               <B4Select
@@ -317,39 +467,23 @@ export const CaptureSettings = () => {
                 onChange={(e) =>
                   setUploadForm({
                     ...uploadForm,
-                    protocol: String(e.target.value),
+                    protocol: asProtocol(String(e.target.value)),
                   })
                 }
-                helperText={t("settings.Capture.protocolHelp")}
+                helperText={
+                  inspected?.protocol &&
+                  inspected.protocol === uploadForm.protocol
+                    ? t("settings.Capture.protocolDetected")
+                    : t("settings.Capture.protocolHelp")
+                }
                 disabled={uploading}
               />
-              <Stack direction="row" spacing={1} alignItems="center">
-                <Button
-                  component="label"
-                  color="secondary"
-                  variant="outlined"
-                  disabled={uploading}
-                  sx={{ flexShrink: 0 }}
-                >
-                  {uploadForm.file
-                    ? uploadForm.file.name
-                    : t("settings.Capture.chooseFile")}
-                  <input
-                    type="file"
-                    hidden
-                    accept=".bin,application/octet-stream"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0] || null;
-                      e.target.value = "";
-                      void handleFileChange(file);
-                    }}
-                  />
-                </Button>
-                {uploadForm.file && (
-                  <Typography variant="caption" color="text.secondary">
-                    {uploadForm.file.size} bytes
-                  </Typography>
-                )}
+              <PayloadWarnings
+                warnings={uploadWarnings}
+                protocol={uploadForm.protocol}
+                facts={inspected?.facts}
+              />
+              <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
                 <Button
                   variant="contained"
                   startIcon={
@@ -358,11 +492,16 @@ export const CaptureSettings = () => {
                   onClick={() => {
                     uploadCapture().catch(() => {});
                   }}
-                  disabled={uploading || !uploadForm.file || !uploadForm.domain}
+                  disabled={
+                    uploading ||
+                    inspecting ||
+                    !uploadForm.file ||
+                    !uploadForm.domain.trim()
+                  }
                 >
                   {uploading ? t("core.uploading") : t("core.upload")}
                 </Button>
-              </Stack>
+              </Box>
             </Stack>
           </B4Section>
         </Grid>
@@ -490,6 +629,47 @@ export const CaptureSettings = () => {
           </Typography>
         </Paper>
       )}
+
+      <B4Dialog
+        title={t("settings.Capture.replaceTitle", {
+          domain: replaceDialog?.domain ?? "",
+        })}
+        icon={<UploadIcon />}
+        open={replaceDialog !== null}
+        onClose={() => setReplaceDialog(null)}
+        maxWidth="sm"
+        fullWidth
+        actions={
+          <>
+            <Button onClick={() => setReplaceDialog(null)}>
+              {t("core.cancel")}
+            </Button>
+            <Box sx={{ flex: 1 }} />
+            <Button
+              variant="contained"
+              disabled={uploading}
+              onClick={confirmReplace}
+            >
+              {t("settings.Capture.replace")}
+            </Button>
+          </>
+        }
+      >
+        {replaceDialog && (
+          <Typography variant="body2">
+            {replaceDialog.sets.length > 0
+              ? t("settings.Capture.replaceInUse", {
+                  protocol: replaceDialog.protocol.toUpperCase(),
+                  domain: replaceDialog.domain,
+                  sets: replaceDialog.sets.join(", "),
+                })
+              : t("settings.Capture.replaceBody", {
+                  protocol: replaceDialog.protocol.toUpperCase(),
+                  domain: replaceDialog.domain,
+                })}
+          </Typography>
+        )}
+      </B4Dialog>
 
       <B4Dialog
         title={t("settings.Capture.hexTitle")}

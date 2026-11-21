@@ -4,6 +4,7 @@ import {
   Capture,
   CaptureGenerateResponse,
   CaptureUploadResponse,
+  PayloadInspection,
 } from "@b4.capture";
 
 async function fetchBytes(url: string): Promise<Uint8Array<ArrayBuffer>> {
@@ -33,11 +34,17 @@ export const captureApi = {
       `/api/capture/delete?${new URLSearchParams({ protocol, domain }).toString()}`,
     ),
   clear: () => apiPost<{ success: boolean }>("/api/capture/clear"),
-  upload: (file: File, domain: string, protocol: string) => {
+  inspect: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiUpload<PayloadInspection>("/api/capture/inspect", formData);
+  },
+  upload: (file: File, domain: string, protocol: string, replace = false) => {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("domain", domain);
     formData.append("protocol", protocol);
+    if (replace) formData.append("replace", "1");
     return apiUpload<CaptureUploadResponse>("/api/capture/upload", formData);
   },
 };

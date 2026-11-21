@@ -866,8 +866,20 @@
       "protocol": "Protocol",
       "protocolTls": "TLS (for TCP fakes)",
       "protocolQuic": "QUIC (for UDP fakes)",
-      "protocolHelp": "Auto-detected from file contents on upload. Override only if needed.",
+      "protocolHelp": "Detected from the file when b4 recognises it. TLS payloads serve TCP fakes, QUIC payloads UDP fakes.",
+      "protocolDetected": "Detected from the file.",
+      "nameFromSni": "Taken from the file's SNI.",
       "chooseFile": "Choose File...",
+      "inspecting": "Checking the file...",
+      "inspectFailed": "The file could not be checked: {{error}}. It can still be uploaded.",
+      "found": "Found: {{facts}}",
+      "sni": "SNI {{sni}}",
+      "bytes_one": "{{size}} byte",
+      "bytes_other": "{{size}} bytes",
+      "replace": "Replace",
+      "replaceTitle": "Replace {{domain}}?",
+      "replaceBody": "A {{protocol}} payload named {{domain}} already exists. Uploading replaces its bytes.",
+      "replaceInUse": "A {{protocol}} payload named {{domain}} already exists. These sets use it and send the new bytes at once: {{sets}}.",
       "uploadFailed": "Failed to upload payload: {{error}}",
       "generateTitle": "Generate Payload",
       "generateDescription": "Build a TLS ClientHello with the domain as its server name",
@@ -903,7 +915,24 @@
       "downloadFailed": "Failed to download payload: {{error}}",
       "missingFileTls": "The file of this payload is missing. Sets that use it send Preset: Google (classic) instead.",
       "missingFileQuic": "The file of this payload is missing. Sets that use it send zeros instead.",
-      "uploadedSuccess": "Uploaded payload for {{domain}}"
+      "uploadedSuccess": "Uploaded payload for {{domain}}",
+      "kinds": {
+        "tls_client_hello": "TLS ClientHello",
+        "quic_initial": "QUIC Initial",
+        "quic_initial_version": "QUIC v{{version}} Initial",
+        "stun": "STUN message",
+        "dtls_client_hello": "DTLS ClientHello",
+        "other": "Unrecognised data"
+      },
+      "warnings": {
+        "empty": "The file is empty.",
+        "too_large_tls": "Larger than one packet carries on a 1500-byte link. A set that uses it with Match Fake Size off does not send this fake on such a link.",
+        "too_large_quic": "Larger than one UDP fake carries. Only the start of the file goes out.",
+        "unrecognized": "b4 does not recognise this file as a TLS ClientHello, QUIC Initial, STUN or DTLS message. It is sent as is.",
+        "malformed": "Malformed fields: {{fields}}.",
+        "kind_mismatch_tls": "The file is a {{kind}}, but its protocol is TLS, for TCP fakes.",
+        "kind_mismatch_quic": "The file is a TLS ClientHello, but its protocol is QUIC, for UDP fakes."
+      }
     },
     "SystemInfo": {
       "title": "System Diagnostics",

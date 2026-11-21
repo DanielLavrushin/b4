@@ -62,11 +62,16 @@ export function useCaptures() {
     await loadCaptures();
   }, [loadCaptures]);
 
+  const inspect = useCallback(
+    (file: File) => captureApi.inspect(file),
+    [],
+  );
+
   const upload = useCallback(
-    async (file: File, domain: string, protocol: string) => {
+    async (file: File, domain: string, protocol: string, replace = false) => {
       setUploading(true);
       try {
-        const result = await captureApi.upload(file, domain, protocol);
+        const result = await captureApi.upload(file, domain, protocol, replace);
         await loadCaptures();
         return result;
       } finally {
@@ -100,6 +105,7 @@ export function useCaptures() {
     generate,
     deleteCapture,
     clearAll,
+    inspect,
     upload,
     readBytes,
     download,
