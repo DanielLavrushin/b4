@@ -265,7 +265,7 @@ func TestSavedPayloadsCarryTheirFacts(t *testing.T) {
 	if err := m.GenerateCapture("generated.facts.example", "tls"); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.SaveUploadedCapture("quic", "uploaded.facts.example", config.FakeQUIC1); err != nil {
+	if err := m.SaveUploadedCapture("quic", "uploaded.facts.example", config.FakeQUIC1, true); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := m.SaveImportedPayload("tls", "imported.facts.example", config.FakeSNI2); err != nil {

@@ -31,6 +31,7 @@ func (api *API) RegisterCaptureApi() {
 	api.mux.HandleFunc("/api/capture/clear", api.handleClearCaptures)
 	api.mux.HandleFunc("/api/capture/download", api.handleDownloadCapture)
 	api.mux.HandleFunc("/api/capture/upload", api.handleUploadCapture)
+	api.mux.HandleFunc("/api/capture/inspect", api.handleInspectCapture)
 }
 
 // @Summary Generate capture payload
@@ -376,14 +377,94 @@ func uploadTooLargeText() string {
 	return fmt.Sprintf("File too large: a payload may have at most %d bytes", config.MaxCapturePayloadBytes)
 }
 
+func readPayloadForm(w http.ResponseWriter, r *http.Request) ([]byte, string, bool) {
+	const bodyLimit = config.MaxCapturePayloadBytes + uploadFormOverhead
+	r.Body = http.MaxBytesReader(w, r.Body, bodyLimit)
+
+	if err := r.ParseMultipartForm(bodyLimit); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			http.Error(w, uploadTooLargeText(), http.StatusBadRequest)
+			return nil, "", false
+		}
+		http.Error(w, "Invalid upload form: "+err.Error(), http.StatusBadRequest)
+		return nil, "", false
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "File required", http.StatusBadRequest)
+		return nil, "", false
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(io.LimitReader(file, config.MaxCapturePayloadBytes+1))
+	if err != nil {
+		http.Error(w, "Failed to read file", http.StatusInternalServerError)
+		return nil, "", false
+	}
+	if len(data) > config.MaxCapturePayloadBytes {
+		http.Error(w, uploadTooLargeText(), http.StatusBadRequest)
+		return nil, "", false
+	}
+	return data, header.Filename, true
+}
+
+// @Summary Describe a payload file without saving it
+// @Description Reads an uploaded file and answers what it is: its facts, the protocol to save it under, its server name, whether it fits one packet as a TCP and as a UDP fake, and the limits behind those answers. Nothing is saved.
+// @Tags Capture
+// @Accept multipart/form-data
+// @Produce json
+// @Param file formData file true "Payload binary file"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {string} string
+// @Security BearerAuth
+// @Router /capture/inspect [post]
+func (api *API) handleInspectCapture(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	data, _, ok := readPayloadForm(w, r)
+	if !ok {
+		return
+	}
+
+	facts := capture.FactsOf("tls", data)
+	protocol := capture.SuggestedProtocol(facts.Kind)
+	if protocol == "quic" {
+		facts.FitsOnePacket = capture.FitsOnePacket("quic", len(data))
+	}
+	setJsonHeader(w)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"size":     len(data),
+		"facts":    facts,
+		"protocol": protocol,
+		"name":     facts.SNI,
+		"fits": map[string]bool{
+			"tls":  capture.FitsOnePacket("tls", len(data)),
+			"quic": capture.FitsOnePacket("quic", len(data)),
+		},
+		"limits": map[string]int{
+			"tls":  config.MaxTCPFakeLenInOnePacket,
+			"quic": config.MaxUDPFakeLen,
+			"file": config.MaxCapturePayloadBytes,
+		},
+	})
+}
+
 // @Summary Upload a capture file
+// @Description Saves a payload file under a name and protocol. A name and protocol that already exist are replaced only with replace=1; otherwise the answer is 409 with code "exists" and the sets that use the payload in used_by.
 // @Tags Capture
 // @Accept multipart/form-data
 // @Produce json
 // @Param file formData file true "Capture binary file"
 // @Param domain formData string true "Domain name"
 // @Param protocol formData string false "Protocol (tls or quic)" default(tls)
+// @Param replace formData string false "1 to replace an existing payload of this name and protocol"
 // @Success 200 {object} map[string]interface{}
+// @Failure 400 {string} string
+// @Failure 409 {object} map[string]interface{}
 // @Security BearerAuth
 // @Router /capture/upload [post]
 func (api *API) handleUploadCapture(w http.ResponseWriter, r *http.Request) {
@@ -392,25 +473,10 @@ func (api *API) handleUploadCapture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	const bodyLimit = config.MaxCapturePayloadBytes + uploadFormOverhead
-	r.Body = http.MaxBytesReader(w, r.Body, bodyLimit)
-
-	if err := r.ParseMultipartForm(bodyLimit); err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			http.Error(w, uploadTooLargeText(), http.StatusBadRequest)
-			return
-		}
-		http.Error(w, "Invalid upload form: "+err.Error(), http.StatusBadRequest)
+	data, filename, ok := readPayloadForm(w, r)
+	if !ok {
 		return
 	}
-
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		http.Error(w, "File required", http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
 
 	domain := strings.ToLower(strings.TrimSpace(r.FormValue("domain")))
 	protocol := r.FormValue("protocol")
@@ -427,28 +493,33 @@ func (api *API) handleUploadCapture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := io.ReadAll(io.LimitReader(file, config.MaxCapturePayloadBytes+1))
-	if err != nil {
-		http.Error(w, "Failed to read file", http.StatusInternalServerError)
-		return
-	}
-	if len(data) > config.MaxCapturePayloadBytes {
-		http.Error(w, uploadTooLargeText(), http.StatusBadRequest)
-		return
-	}
-
 	if len(data) == 0 {
 		http.Error(w, "Empty file", http.StatusBadRequest)
 		return
 	}
 
 	manager := capture.GetManager(api.getCfg())
-	if err := manager.SaveUploadedCapture(protocol, domain, data); err != nil {
+	err := manager.SaveUploadedCapture(protocol, domain, data, r.FormValue("replace") == "1")
+	if errors.Is(err, capture.ErrPayloadExists) {
+		usedBy := []string{}
+		if c, ok := manager.GetCapture(protocol, domain); ok {
+			usedBy = append(usedBy, setsNamingCapture(api.getCfg(), c.Filepath)...)
+		}
+		setJsonHeader(w)
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"code":    "exists",
+			"error":   fmt.Sprintf("A %s payload named %s already exists; send replace=1 to replace it", protocol, domain),
+			"used_by": usedBy,
+		})
+		return
+	}
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	log.Infof("Uploaded %s capture for %s: %s (%d bytes)", protocol, domain, header.Filename, len(data))
+	log.Infof("Uploaded %s capture for %s: %s (%d bytes)", protocol, domain, filename, len(data))
 
 	response := map[string]interface{}{
 		"success":  true,

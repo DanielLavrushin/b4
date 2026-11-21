@@ -104,7 +104,7 @@ func TestAReuploadedPayloadReachesTheSetsThatUseIt(t *testing.T) {
 	set.Faking.PayloadFile = file
 	useSets(api, set)
 
-	rec := uploadCapturePayload(t, mux, name, "tls", newBytes)
+	rec := replaceCapturePayload(t, mux, name, "tls", newBytes)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("upload: %d %s", rec.Code, rec.Body.String())
 	}
@@ -150,7 +150,7 @@ func TestAnUploadReachesTheSetsThatNameItsFile(t *testing.T) {
 		t.Fatal("setup: the set did not load the first upload")
 	}
 
-	if rec := uploadCapturePayload(t, mux, name, "tls", second); rec.Code != http.StatusOK {
+	if rec := replaceCapturePayload(t, mux, name, "tls", second); rec.Code != http.StatusOK {
 		t.Fatalf("second upload: %d %s", rec.Code, rec.Body.String())
 	}
 	if got := runningSet(api).Faking.PayloadData; !bytes.Equal(got, second) {
@@ -214,7 +214,7 @@ func TestAPayloadChangeWhoseReloadFailsSaysSo(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Remove(api.getCfg().ConfigPath) })
 
-	rec := uploadCapturePayload(t, mux, name, "tls", payloadTestHello(0x52, 110))
+	rec := replaceCapturePayload(t, mux, name, "tls", payloadTestHello(0x52, 110))
 	var out map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 		t.Fatalf("upload answered %d %q: %v", rec.Code, rec.Body.String(), err)

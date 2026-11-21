@@ -15,6 +15,16 @@ import (
 
 func uploadCapturePayload(t *testing.T, mux *http.ServeMux, name, protocol string, data []byte) *httptest.ResponseRecorder {
 	t.Helper()
+	return postCapturePayload(t, mux, name, protocol, data, false)
+}
+
+func replaceCapturePayload(t *testing.T, mux *http.ServeMux, name, protocol string, data []byte) *httptest.ResponseRecorder {
+	t.Helper()
+	return postCapturePayload(t, mux, name, protocol, data, true)
+}
+
+func postCapturePayload(t *testing.T, mux *http.ServeMux, name, protocol string, data []byte, replace bool) *httptest.ResponseRecorder {
+	t.Helper()
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
 	fw, err := mw.CreateFormFile("file", "upload.bin")
@@ -24,6 +34,9 @@ func uploadCapturePayload(t *testing.T, mux *http.ServeMux, name, protocol strin
 	fw.Write(data)
 	mw.WriteField("domain", name)
 	mw.WriteField("protocol", protocol)
+	if replace {
+		mw.WriteField("replace", "1")
+	}
 	mw.Close()
 	req := httptest.NewRequest(http.MethodPost, "/api/capture/upload", &body)
 	req.Header.Set("Content-Type", mw.FormDataContentType())

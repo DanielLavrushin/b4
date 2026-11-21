@@ -81,7 +81,7 @@ func TestSavedPayloadsRecordWhereTheyCameFrom(t *testing.T) {
 	if err := m.GenerateCapture("generated.origin.example", "tls"); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.SaveUploadedCapture("tls", "uploaded.origin.example", generatedHello(t, "uploaded.origin.example")); err != nil {
+	if err := m.SaveUploadedCapture("tls", "uploaded.origin.example", generatedHello(t, "uploaded.origin.example"), true); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := m.SaveImportedPayload("tls", "imported.origin.example", generatedHello(t, "imported.origin.example")); err != nil {

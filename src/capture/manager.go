@@ -216,6 +216,7 @@ func (m *Manager) GenerateCapture(domain, protocol string) error {
 var (
 	ErrPayloadNotFound = errors.New("payload not found")
 	ErrNotGenerated    = errors.New("not a generated payload")
+	ErrPayloadExists   = errors.New("a payload of this name and protocol exists")
 )
 
 func (m *Manager) RegenerateCapture(domain string) (*Capture, error) {
@@ -404,20 +405,13 @@ func warningsOf(protocol string, facts *Facts, missing, empty bool) []string {
 	switch {
 	case facts.Kind == KindOther:
 		warnings = append(warnings, "unrecognized")
-	case kindProtocol(facts.Kind) != protocol:
+	case SuggestedProtocol(facts.Kind) != protocol:
 		warnings = append(warnings, "kind_mismatch")
 	}
 	if len(facts.Faults) > 0 {
 		warnings = append(warnings, "malformed")
 	}
 	return warnings
-}
-
-func kindProtocol(kind string) string {
-	if kind == KindTLSClientHello {
-		return "tls"
-	}
-	return "quic"
 }
 
 func (m *Manager) DeleteCapture(protocol, domain string) error {
@@ -472,11 +466,14 @@ func sanitizeDomain(domain string) string {
 	return result
 }
 
-func (m *Manager) SaveUploadedCapture(protocol, domain string, data []byte) error {
+func (m *Manager) SaveUploadedCapture(protocol, domain string, data []byte, replace bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	domain = strings.ToLower(strings.TrimSpace(domain))
+	if !replace && m.metadata[domain][protocol] != nil {
+		return ErrPayloadExists
+	}
 	if err := m.storeLocked(protocol, domain, data, OriginUploaded); err != nil {
 		return err
 	}

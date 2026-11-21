@@ -145,7 +145,7 @@ func TestAFailedPayloadWriteKeepsTheFileItWouldReplace(t *testing.T) {
 	m := testManager(t)
 	const domain = "replace.atomic.example"
 	old := bytes.Repeat([]byte{0x16}, 100)
-	if err := m.SaveUploadedCapture("tls", domain, old); err != nil {
+	if err := m.SaveUploadedCapture("tls", domain, old, true); err != nil {
 		t.Fatal(err)
 	}
 	c, ok := m.GetCapture("tls", domain)
@@ -155,7 +155,7 @@ func TestAFailedPayloadWriteKeepsTheFileItWouldReplace(t *testing.T) {
 
 	var replaceErr, generateErr, importErr error
 	withFileSizeLimit(t, 50, func() {
-		replaceErr = m.SaveUploadedCapture("tls", domain, bytes.Repeat([]byte{0x17}, 200))
+		replaceErr = m.SaveUploadedCapture("tls", domain, bytes.Repeat([]byte{0x17}, 200), true)
 		generateErr = m.GenerateCapture("generate.atomic.example", "tls")
 		_, importErr = m.SaveImportedPayload("tls", "import.atomic.example", bytes.Repeat([]byte{0x18}, 200))
 	})
@@ -181,7 +181,7 @@ func TestAFailedMetadataSaveLeavesNothingListed(t *testing.T) {
 	m := testManager(t)
 	const kept, added, generated = "kept.rollback.example", "added.rollback.example", "generated.rollback.example"
 	old := bytes.Repeat([]byte{0x16}, 40)
-	if err := m.SaveUploadedCapture("tls", kept, old); err != nil {
+	if err := m.SaveUploadedCapture("tls", kept, old, true); err != nil {
 		t.Fatal(err)
 	}
 	keptCapture, _ := m.GetCapture("tls", kept)
@@ -193,7 +193,7 @@ func TestAFailedMetadataSaveLeavesNothingListed(t *testing.T) {
 		t.Fatal(err)
 	}
 	var problems []string
-	if err := m.SaveUploadedCapture("tls", added, []byte{0x16, 0x03}); err == nil {
+	if err := m.SaveUploadedCapture("tls", added, []byte{0x16, 0x03}, true); err == nil {
 		problems = append(problems, "fixture: an upload whose metadata save fails must return the error")
 	}
 	if _, listed := m.GetCapture("tls", added); listed {
@@ -205,7 +205,7 @@ func TestAFailedMetadataSaveLeavesNothingListed(t *testing.T) {
 	if _, listed := m.GetCapture("tls", generated); listed {
 		problems = append(problems, "a generate whose metadata save failed is listed")
 	}
-	if err := m.SaveUploadedCapture("tls", kept, bytes.Repeat([]byte{0x17}, 80)); err == nil {
+	if err := m.SaveUploadedCapture("tls", kept, bytes.Repeat([]byte{0x17}, 80), true); err == nil {
 		problems = append(problems, "a re-upload whose metadata save fails must return the error")
 	}
 	if c, listed := m.GetCapture("tls", kept); !listed || c.Size != len(old) {
@@ -246,10 +246,10 @@ func TestNamesThatSanitizeAlikeKeepTheirOwnFiles(t *testing.T) {
 	}
 
 	first, second := []byte("payload of пример.рф"), []byte("payload of яндекс.рф")
-	if err := m.SaveUploadedCapture("tls", "пример.рф", first); err != nil {
+	if err := m.SaveUploadedCapture("tls", "пример.рф", first, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.SaveUploadedCapture("tls", "яндекс.рф", second); err != nil {
+	if err := m.SaveUploadedCapture("tls", "яндекс.рф", second, true); err != nil {
 		t.Fatal(err)
 	}
 	a, aData := saved("пример.рф")
@@ -259,7 +259,7 @@ func TestNamesThatSanitizeAlikeKeepTheirOwnFiles(t *testing.T) {
 	}
 
 	again := []byte("payload of пример.рф, uploaded again")
-	if err := m.SaveUploadedCapture("tls", "пример.рф", again); err != nil {
+	if err := m.SaveUploadedCapture("tls", "пример.рф", again, true); err != nil {
 		t.Fatal(err)
 	}
 	if c, data := saved("пример.рф"); c.Filepath != a.Filepath || !bytes.Equal(data, again) {
@@ -284,7 +284,7 @@ func TestNamesThatSanitizeAlikeKeepTheirOwnFiles(t *testing.T) {
 	if err := os.WriteFile(orphan, []byte("a file no entry lists"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.SaveUploadedCapture("tls", "orphan.sanitize.example", []byte("new upload")); err != nil {
+	if err := m.SaveUploadedCapture("tls", "orphan.sanitize.example", []byte("new upload"), true); err != nil {
 		t.Fatal(err)
 	}
 	if data, _ := os.ReadFile(orphan); string(data) != "a file no entry lists" {
@@ -301,7 +301,7 @@ func TestNamesThatSanitizeAlikeKeepTheirOwnFiles(t *testing.T) {
 
 func TestReloadTakesTheListOnDiskAsItIs(t *testing.T) {
 	m := testManager(t)
-	if err := m.SaveUploadedCapture("tls", "before.reload.example", []byte{0x16}); err != nil {
+	if err := m.SaveUploadedCapture("tls", "before.reload.example", []byte{0x16}, true); err != nil {
 		t.Fatal(err)
 	}
 	restored := `{"restored.reload.example":{"quic":{"timestamp":"2026-11-01T00:00:00Z","size":2,"filepath":"quic_restored_reload_example.bin"}}}`
@@ -332,7 +332,7 @@ func TestNullEntriesInPayloadsJSONDoNotPanic(t *testing.T) {
 	}{
 		{"ListCaptures", func(m *Manager) { m.ListCaptures() }},
 		{"ClearAll", func(m *Manager) { m.ClearAll() }},
-		{"SaveUploadedCapture", func(m *Manager) { m.SaveUploadedCapture("tls", "upload.null.example", []byte{0x16, 0x03, 0x01}) }},
+		{"SaveUploadedCapture", func(m *Manager) { m.SaveUploadedCapture("tls", "upload.null.example", []byte{0x16, 0x03, 0x01}, true) }},
 		{"GenerateCapture", func(m *Manager) { m.GenerateCapture("generate.null.example", "tls") }},
 		{"SaveImportedPayload", func(m *Manager) { m.SaveImportedPayload("tls", "import.null.example", []byte{0x16, 0x03, 0x02}) }},
 	}
@@ -346,7 +346,7 @@ func TestNullEntriesInPayloadsJSONDoNotPanic(t *testing.T) {
 		}
 		m := managerWithPayloadsJSON(t, payloadsJSON)
 		if msg := panicOf(func() {
-			if err := m.SaveUploadedCapture("tls", "after.null.example", []byte{0x16}); err != nil {
+			if err := m.SaveUploadedCapture("tls", "after.null.example", []byte{0x16}, true); err != nil {
 				t.Errorf("an upload after loading %s failed: %v", payloadsJSON, err)
 			}
 			if listed := m.ListCaptures(); len(listed) != 1 || listed[0].Domain != "after.null.example" {

@@ -30,6 +30,16 @@ type Facts struct {
 	Faults        []string `json:"faults,omitempty"`
 }
 
+func SuggestedProtocol(kind string) string {
+	switch kind {
+	case KindTLSClientHello:
+		return "tls"
+	case KindQUICInitial, KindSTUN, KindDTLSClientHello:
+		return "quic"
+	}
+	return ""
+}
+
 func FitsOnePacket(protocol string, size int) bool {
 	if protocol == "quic" {
 		return size <= config.MaxUDPFakeLen
