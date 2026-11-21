@@ -63,3 +63,29 @@ func TestLateServerBytesDoNotKeepAHungTuple(t *testing.T) {
 		t.Fatalf("server bytes the relay read after the client had left kept the tuple %s: the next pass used %s after %d warms, want a warm on a new source port", hung.LocalAddr(), next.LocalAddr(), warms.Load())
 	}
 }
+
+func TestASilentPassFallbackLeavesReuseOnForTheAddress(t *testing.T) {
+	s, _, set, _ := serviceFixture(t)
+	warms, servers := passSockets(t, s)
+	direct := recordDirect(t, s)
+	target := netip.MustParseAddrPort("203.0.113.2:443")
+	silent, err := s.Dial(context.Background(), set, "192.0.2.10", "warm.example.org", target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-servers
+	silent.Close()
+	fallback, err := s.Fallback(context.Background(), set, "192.0.2.10", "warm.example.org", target)
+	if err != nil || !isFallback(fallback) || direct.calls() != 1 {
+		t.Fatalf("a silent pass was not relayed with the set's strategy: %T %v", fallback, err)
+	}
+	fallback.Close()
+	next, err := s.Dial(context.Background(), set, "192.0.2.10", "warm.example.org", target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer next.Close()
+	if isFallback(next) || s.failureCount() != 0 || warms.Load() != 2 || next.LocalAddr().String() == silent.LocalAddr().String() {
+		t.Fatalf("after a silent pass and its relay with the set's strategy the next connection got %s (fallback=%t) after %d warms with %d remembered failures, want a warm on a new source port and no failure memory", next.LocalAddr(), isFallback(next), warms.Load(), s.failureCount())
+	}
+}

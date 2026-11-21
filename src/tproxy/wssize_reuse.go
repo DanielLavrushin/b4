@@ -3,8 +3,10 @@ package tproxy
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/netip"
+	"os"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -68,20 +70,107 @@ func (l *Listener) serveWSReuse(client net.Conn, ip net.IP, port int, given *sni
 	if !listening {
 		return
 	}
+	pass, isPass := backend.(interface{ Answered() })
+	if isPass && singleClientHello(sniffed.prefix) {
+		l.relayWatchedPass(client, backend, pass.Answered, set, sniffed, owner, dest)
+		return
+	}
+	l.logReuseRelay(set, client, backend, sniffed)
+	if err := writePrefix(backend, sniffed.prefix); err != nil {
+		return
+	}
+	relayed := client
+	if isPass {
+		relayed = &passClient{Conn: client, answered: pass.Answered}
+	}
+	_ = socks5.Relay(relayed, backend)
+}
+
+func (l *Listener) logReuseRelay(set *config.SetConfig, client, backend net.Conn, sniffed sniffResult) {
 	flag := "wssize-reuse"
 	if fallback, ok := backend.(interface{ Fallback() bool }); ok && fallback.Fallback() {
 		flag = "wssize-reuse-fallback"
 	}
 	from := metrics.DeviceOf(client.RemoteAddr())
 	log.LogConnectionStr("TCP", set.Name, sniffed.host, client.RemoteAddr().String(), "", backend.RemoteAddr().String(), from.MAC, config.TLSVersionString(sniffed.tlsVersion), flag)
+}
+
+func (l *Listener) relayWatchedPass(client, backend net.Conn, answered func(), set *config.SetConfig, sniffed sniffResult, owner string, dest netip.AddrPort) {
 	if err := writePrefix(backend, sniffed.prefix); err != nil {
+		l.logReuseRelay(set, client, backend, sniffed)
 		return
 	}
-	relayed := client
-	if pass, ok := backend.(interface{ Answered() }); ok {
-		relayed = &passClient{Conn: client, answered: pass.Answered}
+	window := passAnswerTimeout
+	first, verdict := awaitPassAnswer(client, backend, window)
+	if verdict != passSilent {
+		l.logReuseRelay(set, client, backend, sniffed)
+		if verdict == passRelay {
+			_ = socks5.Relay(&passClient{Conn: client, answered: answered}, &replayConn{Conn: backend, pending: first})
+		}
+		return
 	}
-	_ = socks5.Relay(relayed, backend)
+	_ = backend.Close()
+	ctx, stop := watchWarmClient(l.ctx, client)
+	fallback, err := l.Warm.Fallback(ctx, set, owner, sniffed.host, dest)
+	stop()
+	if err != nil {
+		l.logReuseRelay(set, client, backend, sniffed)
+		l.noteWarmFailure(sniffed.host, fmt.Errorf("no answer to the hello within %s on the reused tuple; relay with the set's strategy: %w", window, err))
+		return
+	}
+	defer fallback.Close()
+	l.noteSilentPass(sniffed.host, window)
+	l.logReuseRelay(set, client, fallback, sniffed)
+	if err := writePrefix(fallback, sniffed.prefix); err != nil {
+		return
+	}
+	_ = socks5.Relay(client, fallback)
+}
+
+func singleClientHello(b []byte) bool {
+	if !isClientHelloRecord(b) || len(b) < tlsRecordHeader+4 {
+		return false
+	}
+	record := int(b[3])<<8 | int(b[4])
+	hello := int(b[6])<<16 | int(b[7])<<8 | int(b[8])
+	return len(b) == tlsRecordHeader+record && record == 4+hello
+}
+
+type passVerdict int
+
+const (
+	passRelay passVerdict = iota
+	passSilent
+	passClientLeft
+)
+
+func awaitPassAnswer(client, backend net.Conn, window time.Duration) ([]byte, passVerdict) {
+	gone, stop := watchWarmClient(context.Background(), client)
+	defer stop()
+	_ = backend.SetReadDeadline(time.Now().Add(window))
+	read, woke := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(woke)
+		select {
+		case <-gone.Done():
+			_ = backend.SetReadDeadline(time.Now())
+		case <-read:
+		}
+	}()
+	buf := make([]byte, sniffMaxBytes)
+	n, err := backend.Read(buf)
+	close(read)
+	<-woke
+	_ = backend.SetReadDeadline(time.Time{})
+	switch {
+	case n > 0:
+		return buf[:n], passRelay
+	case !errors.Is(err, os.ErrDeadlineExceeded):
+		return nil, passRelay
+	case gone.Err() != nil:
+		return nil, passClientLeft
+	}
+	return nil, passSilent
 }
 
 type passClient struct {
@@ -117,6 +206,8 @@ func (c *passClient) CloseWrite() error {
 
 const warmWarnInterval = time.Minute
 
+var passAnswerTimeout = 5 * time.Second
+
 type warnLimiter struct {
 	count atomic.Int64
 	last  atomic.Int64
@@ -137,6 +228,14 @@ func (l *Listener) noteWarmSlotsFull() {
 		return
 	}
 	log.Tracef("WSSIZE reuse [%s]: every warm slot is busy, a connection is relayed with the set's strategy without reuse", l.SetName)
+}
+
+func (l *Listener) noteSilentPass(host string, window time.Duration) {
+	if n, warn := l.silentPasses.note(time.Now()); warn {
+		log.Warnf("WSSIZE reuse [%s]: %s: no answer to the hello within %s on a reused tuple; the tuple is dropped and the connection relayed with the set's strategy, %d connections so far", l.SetName, host, window, n)
+		return
+	}
+	log.Tracef("WSSIZE reuse [%s]: %s: no answer to the hello within %s on a reused tuple, relayed with the set's strategy", l.SetName, host, window)
 }
 
 func (l *Listener) noteWarmFailure(host string, err error) {
