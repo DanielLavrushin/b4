@@ -166,6 +166,30 @@ func setsNamingCapture(cfg *config.Config, file string) []string {
 	return names
 }
 
+func (api *API) reloadSetsNaming(files []string, response map[string]interface{}) {
+	cfg := api.getCfg()
+	var names []string
+	seen := map[string]bool{}
+	for _, file := range files {
+		for _, name := range setsNamingCapture(cfg, file) {
+			if !seen[name] {
+				seen[name] = true
+				names = append(names, name)
+			}
+		}
+	}
+	response["reloaded"] = []string{}
+	if len(names) == 0 {
+		return
+	}
+	if _, _, err := api.editConfig(func(*config.Config) error { return nil }); err != nil {
+		log.Errorf("The payload change did not reach sets %s: %v", strings.Join(names, ", "), err)
+		response["reload_error"] = err.Error()
+		return
+	}
+	response["reloaded"] = names
+}
+
 // @Summary Delete a capture
 // @Tags Capture
 // @Produce json
@@ -190,16 +214,22 @@ func (api *API) handleDeleteCapture(w http.ResponseWriter, r *http.Request) {
 	}
 
 	manager := capture.GetManager(api.getCfg())
+	var files []string
+	if c, ok := manager.GetCapture(protocol, domain); ok {
+		files = append(files, c.Filepath)
+	}
 	if err := manager.DeleteCapture(protocol, domain); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
-	setJsonHeader(w)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	response := map[string]interface{}{
 		"success": true,
 		"message": "Capture deleted",
-	})
+	}
+	api.reloadSetsNaming(files, response)
+	setJsonHeader(w)
+	json.NewEncoder(w).Encode(response)
 }
 
 // @Summary Clear all captures
@@ -215,16 +245,22 @@ func (api *API) handleClearCaptures(w http.ResponseWriter, r *http.Request) {
 	}
 
 	manager := capture.GetManager(api.getCfg())
+	var files []string
+	for _, c := range manager.ListCaptures() {
+		files = append(files, c.Filepath)
+	}
 	if err := manager.ClearAll(); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	setJsonHeader(w)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	response := map[string]interface{}{
 		"success": true,
 		"message": "All captures cleared",
-	})
+	}
+	api.reloadSetsNaming(files, response)
+	setJsonHeader(w)
+	json.NewEncoder(w).Encode(response)
 }
 
 // @Summary Download a capture file
@@ -344,12 +380,18 @@ func (api *API) handleUploadCapture(w http.ResponseWriter, r *http.Request) {
 
 	log.Infof("Uploaded %s capture for %s: %s (%d bytes)", protocol, domain, header.Filename, len(data))
 
-	setJsonHeader(w)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	response := map[string]interface{}{
 		"success":  true,
 		"message":  fmt.Sprintf("Uploaded %s payload for %s", protocol, domain),
 		"size":     len(data),
 		"domain":   domain,
 		"protocol": protocol,
-	})
+	}
+	var files []string
+	if c, ok := manager.GetCapture(protocol, domain); ok {
+		files = append(files, c.Filepath)
+	}
+	api.reloadSetsNaming(files, response)
+	setJsonHeader(w)
+	json.NewEncoder(w).Encode(response)
 }
