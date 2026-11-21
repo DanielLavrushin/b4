@@ -129,6 +129,7 @@ func NewPool(cfg *config.Config) *Pool {
 
 	pool := &Pool{warmFlows: warmFlows, Workers: ws, Dhcp: dhcpMgr, stopCleanup: make(chan struct{}), cleanupDone: make(chan struct{}), state: state}
 	pool.collectedBase = cfg
+	pool.collectedQuiet.Store(pool.collectedIdleLocked())
 	pool.collectedEngineTUN = cfg.Queue.Mode == "tun"
 	if !cfg.Queue.IsDiscovery {
 		metrics.GetMetricsCollector().UpdateCollectedIPs(nil)
@@ -199,14 +200,7 @@ func NewPool(cfg *config.Config) *Pool {
 				}
 				pool.state.bans.tick(pool.GetFirstWorkerConfig())
 			case <-escalationTicker.C:
-				pool.state.pendingHello.Cleanup()
-				pool.state.wssize.cleanup(time.Now())
-				pool.collectedPass(time.Now())
-				pool.sweepSilentHellos(time.Now())
-				pool.state.destState.cleanupCollectedHistory()
-				pool.publishEscalations()
-				pool.publishBans()
-				pool.reportQueueDirection(time.Now())
+				pool.escalationTick(time.Now())
 			case <-pool.stopCleanup:
 				return
 			}
@@ -214,6 +208,17 @@ func NewPool(cfg *config.Config) *Pool {
 	}()
 
 	return pool
+}
+
+func (p *Pool) escalationTick(now time.Time) {
+	p.state.pendingHello.Cleanup()
+	p.state.wssize.cleanup(now)
+	p.collectedPass(now)
+	p.sweepSilentHellos(now)
+	p.state.destState.cleanupCollectedHistory()
+	p.publishEscalations()
+	p.publishBans()
+	p.reportQueueDirection(now)
 }
 
 func (p *Pool) Start() error {
@@ -443,6 +448,9 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 	p.collectedBase = newCfg
 	p.collectedEpoch.Add(1)
 	p.collectedDirty = p.collectedRelevantLocked(newCfg)
+	if !p.collectedIdleLocked() {
+		p.collectedQuiet.Store(false)
+	}
 	p.collectedRetryWait, p.collectedRetryAt = 0, time.Time{}
 	newCfg = p.CollectedConfig(newCfg)
 

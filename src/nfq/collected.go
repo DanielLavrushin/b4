@@ -156,6 +156,9 @@ func (p *Pool) collectedPass(now time.Time) {
 	if p == nil || p.collectedCtx == nil || len(p.Workers) == 0 {
 		return
 	}
+	if p.collectedQuiet.Load() && !p.collectedTracker().CollectWatching() {
+		return
+	}
 	p.collectedApplyMu.Lock()
 	defer p.collectedApplyMu.Unlock()
 	if p.collectedCtx.Err() != nil {
@@ -170,6 +173,13 @@ func (p *Pool) collectedPass(now time.Time) {
 		return
 	}
 	p.applyCollected(w, w.countDueCollected(w.getConfig(), now), now)
+	p.configMu.Lock()
+	p.collectedQuiet.Store(p.collectedIdleLocked())
+	p.configMu.Unlock()
+}
+
+func (p *Pool) collectedIdleLocked() bool {
+	return len(p.collected) == 0 && !p.collectedDirty && len(p.publishedCollected()) == 0 && (p.collectedBase == nil || !p.collectedBase.CollectedIPsInUse())
 }
 
 func (p *Pool) applyCollected(w *Worker, completed []helloWatch, now time.Time) {

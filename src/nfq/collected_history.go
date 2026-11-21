@@ -37,6 +37,7 @@ func (t *destStateTracker) rememberCollectedLocked(h *helloWatch) bool {
 		t.collectHistory.flows = make(map[string]*list.Element)
 	}
 	t.collectHistory.flows[h.key] = t.collectHistory.order.PushBack(record)
+	t.collectRecorded.Store(int32(len(t.collectHistory.flows)))
 	return true
 }
 
@@ -50,12 +51,16 @@ func (t *destStateTracker) forgetCollectedHistoryLocked(h *helloWatch) {
 	}
 	t.collectHistory.order.Remove(entry)
 	delete(t.collectHistory.flows, h.key)
+	t.collectRecorded.Store(int32(len(t.collectHistory.flows)))
 }
 
 func (t *destStateTracker) cleanupCollectedHistory() {
 	type pending struct {
 		original *helloWatch
 		watch    helloWatch
+	}
+	if t == nil || t.collectRecorded.Load() == 0 {
+		return
 	}
 	t.watchMu.Lock()
 	limit := min(t.collectHistory.order.Len(), maxSilenceLookups)
@@ -82,6 +87,7 @@ func (t *destStateTracker) cleanupCollectedHistory() {
 		if entry != nil && entry.Value == item.original && t.watches[item.watch.key] == nil {
 			t.collectHistory.order.Remove(entry)
 			delete(t.collectHistory.flows, item.watch.key)
+			t.collectRecorded.Store(int32(len(t.collectHistory.flows)))
 		}
 		t.watchMu.Unlock()
 	}

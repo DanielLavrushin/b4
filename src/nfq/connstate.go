@@ -326,6 +326,7 @@ type destStateTracker struct {
 	collectWake      chan struct{}
 	watching         atomic.Int32
 	collectWatching  atomic.Int32
+	collectRecorded  atomic.Int32
 
 	closingFakesNoted map[string]string
 }
