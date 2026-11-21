@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { Box, Grid } from "@mui/material";
+import { Box, Typography } from "@mui/material";
 import { IpIcon } from "@b4.icons";
-import { B4Alert, B4Hint, B4Switch } from "@b4.elements";
+import { B4FieldMessage, B4Help, B4Switch } from "@b4.elements";
 import { B4SetConfig, GeoConfig } from "@models/config";
 import { parseAsnInput } from "@models/asn";
 import { useTranslation } from "react-i18next";
@@ -117,17 +117,42 @@ export const IpsTab = ({
 
   return (
     <>
-      <B4Hint>
-        {t("sets.targets.ipAlert")} {t("sets.targets.ipOverlap")}
-      </B4Hint>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+        <Typography variant="body2" sx={{ color: "text.secondary" }}>
+          {t("sets.targets.ipAlert")}
+        </Typography>
+        <B4Help
+          label={t("sets.targets.ipOverlapTitle")}
+          info={t("sets.targets.ipOverlap")}
+          learnMore="sets/targets#ip-addresses"
+        />
+      </Box>
 
       <Box sx={{ my: 3, display: "flex", gap: 2, flexWrap: "wrap" }}>
-        <Box sx={{ maxWidth: 360, flex: "1 1 260px", minWidth: 0 }}>
+        <Box sx={{ maxWidth: 480, flex: "1 1 260px", minWidth: 0 }}>
           <B4Switch
             label={t("sets.targets.catchAllIps")}
             description={t("sets.targets.catchAllIpsDesc", {
               value: catchAllEntries.join(", "),
             })}
+            message={
+              catchAll || partialCatchAll ? (
+                <>
+                  {partialCatchAll && (
+                    <B4FieldMessage severity="info">
+                      {t("sets.targets.catchAllIpsPartial", {
+                        present: presentCatchAll.join(", "),
+                        missing: missingCatchAll.join(", "),
+                      })}
+                    </B4FieldMessage>
+                  )}
+                  <B4FieldMessage>
+                    {t("sets.targets.catchAllIpsActive")}
+                  </B4FieldMessage>
+                </>
+              ) : undefined
+            }
+            info={t("sets.targets.catchAllIpsInfo")}
             checked={catchAll}
             path="targets.ip"
             arrayItem={IPV4_CATCH_ALL}
@@ -137,9 +162,18 @@ export const IpsTab = ({
           />
         </Box>
         {!tlsFiltered && (
-          <Box sx={{ maxWidth: 360, flex: "1 1 260px", minWidth: 0 }}>
+          <Box sx={{ maxWidth: 480, flex: "1 1 260px", minWidth: 0 }}>
             <B4Switch
               description={t("sets.targets.ipPriorityDesc")}
+              message={
+                (catchAll || partialCatchAll) &&
+                (config.targets.ip_priority ?? false) ? (
+                  <B4FieldMessage severity="info">
+                    {t("sets.targets.ipPriorityCatchAll")}
+                  </B4FieldMessage>
+                ) : undefined
+              }
+              info={t("sets.targets.ipPriorityInfo")}
               checked={config.targets.ip_priority ?? false}
               path="targets.ip_priority"
               onChange={(checked: boolean) =>
@@ -150,25 +184,6 @@ export const IpsTab = ({
           </Box>
         )}
       </Box>
-
-      {partialCatchAll && (
-        <Grid container sx={{ mb: 2 }}>
-          <B4Alert severity="info">
-            {t("sets.targets.catchAllIpsPartial", {
-              present: presentCatchAll.join(", "),
-              missing: missingCatchAll.join(", "),
-            })}
-          </B4Alert>
-        </Grid>
-      )}
-
-      {(catchAll || partialCatchAll) && (
-        <Grid container sx={{ mb: 2 }}>
-          <B4Alert severity="warning">
-            {t("sets.targets.catchAllIpsActive")}
-          </B4Alert>
-        </Grid>
-      )}
 
       <Box sx={{ containerType: "inline-size" }}>
         <Box
@@ -188,7 +203,6 @@ export const IpsTab = ({
           <ManualEntryPanel
             icon={<IpIcon />}
             title={t("sets.targets.manualIps")}
-            tooltip={t("sets.targets.manualIpsTooltip")}
             inputLabel={t("sets.targets.addIpLabel")}
             inputHelper={t("sets.targets.addIpHelper")}
             inputPlaceholder={t("sets.targets.addIpPlaceholder")}
@@ -208,7 +222,7 @@ export const IpsTab = ({
           {hasGeoip && (
             <GeoCategoryPanel
               title={t("sets.targets.geoipCategories")}
-              tooltip={t("sets.targets.geoipCatTooltip")}
+              description={t("sets.targets.geoipCatDesc")}
               inputLabel={t("sets.targets.addGeoipLabel")}
               inputPlaceholder={t("sets.targets.addGeoipPlaceholder")}
               helperText={t("sets.targets.geoipCatAvailable", {

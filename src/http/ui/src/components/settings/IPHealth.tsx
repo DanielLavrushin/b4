@@ -1,7 +1,12 @@
 import { useTranslation } from "react-i18next";
-import { Link, Typography } from "@mui/material";
+import { Link } from "@mui/material";
 import { IpIcon, OpenInNewIcon } from "@b4.icons";
-import { B4NumberField, B4Section, B4Switch } from "@b4.elements";
+import {
+  B4FieldMessage,
+  B4NumberField,
+  B4Section,
+  B4Switch,
+} from "@b4.elements";
 import { B4Config } from "@models/config";
 
 interface IPHealthSettingsProps {
@@ -48,9 +53,19 @@ export const IPHealthSettings = ({
     ipHealth.repeat_ban_ttl_sec,
     DEFAULTS.repeat_ban_ttl_sec,
   );
+  const someSetBans = (config.sets ?? []).some(
+    (set) =>
+      set.enabled &&
+      set.tcp?.ip_block_detect?.enabled &&
+      set.tcp.ip_block_detect.cache_blocked_ips !== false,
+  );
 
   return (
-    <B4Section title={t("settings.IPHealth.title")} icon={<IpIcon />}>
+    <B4Section
+      title={t("settings.IPHealth.title")}
+      icon={<IpIcon />}
+      learnMore="settings/core#ip-block-detection"
+    >
       <B4NumberField
         value={ipHealth.retest_interval_sec}
         min={30}
@@ -60,6 +75,7 @@ export const IPHealthSettings = ({
           onChange("system.ip_health.retest_interval_sec", value)
         }
         helperText={t("settings.IPHealth.retestIntervalHelper")}
+        info={t("settings.IPHealth.retestIntervalInfo")}
         aiTopic="system.ip_health.retest_interval_sec"
       />
       <B4Switch
@@ -70,6 +86,28 @@ export const IPHealthSettings = ({
           onChange("system.ip_health.bans_off", !checked)
         }
         description={t("settings.IPHealth.rememberBansDesc")}
+        message={
+          bansOn && !someSetBans ? (
+            <B4FieldMessage severity="info">
+              {t("settings.IPHealth.rememberBansIdle")}
+            </B4FieldMessage>
+          ) : undefined
+        }
+        info={t("settings.IPHealth.rememberBansInfo")}
+        credit={
+          <>
+            {t("settings.IPHealth.credit")}{" "}
+            <Link
+              href="https://github.com/belotserkovtsev/Ladon"
+              target="_blank"
+              rel="noreferrer"
+              sx={{ display: "inline-flex", alignItems: "center", gap: 0.25 }}
+            >
+              Ladon
+              <OpenInNewIcon sx={{ fontSize: 12 }} />
+            </Link>
+          </>
+        }
         aiTopic="system.ip_health.bans_off"
         aiContext={{ bans_off: ipHealth.bans_off }}
       />
@@ -101,22 +139,10 @@ export const IPHealthSettings = ({
           )
         }
         helperText={t("settings.IPHealth.repeatBanTtlHelper")}
+        info={t("settings.IPHealth.repeatBanTtlInfo")}
         aiTopic="system.ip_health.repeat_ban_ttl_sec"
         aiContext={{ repeat_ban_ttl_sec: repeatBanTtl }}
       />
-      <Typography variant="caption" sx={{ px: 0.5 }}>
-        {t("settings.IPHealth.credit")}{" "}
-        <Link
-          href="https://github.com/belotserkovtsev/Ladon"
-          target="_blank"
-          rel="noreferrer"
-          sx={{ display: "inline-flex", alignItems: "center", gap: 0.25 }}
-        >
-          Ladon
-          <OpenInNewIcon sx={{ fontSize: 12 }} />
-        </Link>
-      </Typography>
     </B4Section>
   );
 };
-

@@ -7,8 +7,7 @@ import {
   B4Alert,
   B4FormHeader,
   B4Hint,
-  B4AiExplain,
-  aiHoverRevealSx,
+  B4Help,
 } from "@b4.elements";
 import { B4SetConfig, FragmentationStrategy } from "@models/config";
 import { colors } from "@design";
@@ -147,7 +146,6 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
             display: "flex",
             alignItems: "flex-start",
             gap: 1,
-            ...aiHoverRevealSx,
           }}
         >
           <Box sx={{ flex: 1 }}>
@@ -162,12 +160,12 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
               {t("sets.tcp.splitting.strategyPoolDesc")}
             </Typography>
           </Box>
-          <B4AiExplain
-            topic="fragmentation.strategy_pool"
-            fieldLabel={t("sets.tcp.splitting.strategyPool")}
+          <B4Help
+            aiTopic="fragmentation.strategy_pool"
+            label={t("sets.tcp.splitting.strategyPool")}
             fieldDoc={t("sets.tcp.splitting.strategyPoolDesc")}
             value={pool.join(",")}
-            context={{
+            aiContext={{
               current_strategy: strategy,
               pool_size: pool.length,
             }}

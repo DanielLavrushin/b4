@@ -10,12 +10,14 @@ import {
   SliderProps,
 } from "@mui/material";
 import { colors } from "@design";
-import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
+import { B4Help, type B4HelpContent } from "./B4Help";
 import { useChangedField } from "@context/ChangedFieldsContext";
 import { useEditableNumber } from "./useEditableNumber";
 import { useFieldLabel } from "./dialogLabels";
 
-interface B4SliderProps extends Omit<SliderProps, "onChange"> {
+interface B4SliderProps
+  extends Omit<SliderProps, "onChange">,
+    B4HelpContent {
   label?: string;
   value: number;
   onChange: (value: number) => void;
@@ -28,9 +30,6 @@ interface B4SliderProps extends Omit<SliderProps, "onChange"> {
   alert?: React.ReactNode;
   disabled?: boolean;
   path?: string;
-  aiTopic?: string;
-  aiContext?: Record<string, unknown>;
-  aiQuestion?: string;
 }
 
 export const B4Slider = ({
@@ -46,6 +45,9 @@ export const B4Slider = ({
   disabled,
   alert,
   path,
+  info,
+  learnMore,
+  credit,
   aiTopic,
   aiContext,
   aiQuestion,
@@ -74,7 +76,7 @@ export const B4Slider = ({
   const editor = useEditableNumber(value, onChange, min, max);
 
   return (
-    <Box sx={{ width: "100%", ...aiHoverRevealSx }}>
+    <Box sx={{ width: "100%" }}>
       <Box
         sx={{
           display: "flex",
@@ -104,18 +106,19 @@ export const B4Slider = ({
               }}
             />
           )}
+          <B4Help
+            label={resolvedLabel}
+            info={info}
+            learnMore={learnMore}
+            credit={credit}
+            aiTopic={aiTopic}
+            aiContext={aiContext}
+            aiQuestion={aiQuestion}
+            fieldDoc={helperText}
+            value={value}
+          />
         </Stack>
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-          {aiTopic && (
-            <B4AiExplain
-              topic={aiTopic}
-              fieldLabel={resolvedLabel}
-              fieldDoc={helperText}
-              value={value}
-              context={aiContext}
-              question={aiQuestion}
-            />
-          )}
           {showValue &&
             (editor.editing && !disabled ? (
               <>

@@ -1,14 +1,21 @@
 import { useState, ReactNode } from "react";
-import { Box, Button, Tooltip, Typography } from "@mui/material";
-import { ClearIcon, EditIcon, InfoIcon } from "@b4.icons";
-import { B4Alert, B4ChipList, B4PlusButton, B4TextField } from "@b4.elements";
+import { Box, Button, Typography } from "@mui/material";
+import { ClearIcon, EditIcon } from "@b4.icons";
+import {
+  B4Alert,
+  B4ChipList,
+  B4Help,
+  B4PlusButton,
+  B4TextField,
+} from "@b4.elements";
 import { useTranslation } from "react-i18next";
 import { BulkEditDialog } from "./BulkEditDialog";
 
 interface ManualEntryPanelProps {
   icon: ReactNode;
   title: string;
-  tooltip: string;
+  description?: string;
+  info?: ReactNode;
   inputLabel: string;
   inputHelper: string;
   inputPlaceholder: string;
@@ -28,7 +35,8 @@ interface ManualEntryPanelProps {
 export const ManualEntryPanel = ({
   icon,
   title,
-  tooltip,
+  description,
+  info,
   inputLabel,
   inputHelper,
   inputPlaceholder,
@@ -91,13 +99,24 @@ export const ManualEntryPanel = ({
     <Box>
       <Typography
         variant="h6"
-        sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          gap: 1,
+          mb: description ? 0.5 : 2,
+        }}
       >
         {icon} {title}
-        <Tooltip title={tooltip}>
-          <InfoIcon fontSize="small" color="action" />
-        </Tooltip>
+        <B4Help label={title} info={info} />
       </Typography>
+      {description && (
+        <Typography
+          variant="caption"
+          sx={{ display: "block", color: "text.secondary", mb: 2 }}
+        >
+          {description}
+        </Typography>
+      )}
       <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
         <B4TextField
           label={inputLabel}

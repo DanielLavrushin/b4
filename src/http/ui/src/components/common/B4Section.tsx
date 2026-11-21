@@ -1,11 +1,15 @@
-import { Box, Paper, Typography, Divider } from "@mui/material";
+import { Box, Link, Paper, Typography, Divider } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import { colors, radiusPx } from "@design";
+import { OpenInNewIcon } from "@b4.icons";
+import { docsUrl } from "@utils";
 
 interface B4SectionProps {
   title: string;
   description?: string;
   icon?: React.ReactNode;
   action?: React.ReactNode;
+  learnMore?: string;
   children: React.ReactNode;
 }
 
@@ -14,8 +18,10 @@ export const B4Section = ({
   description,
   icon,
   action,
+  learnMore,
   children,
 }: B4SectionProps) => {
+  const { t, i18n } = useTranslation();
   return (
     <Paper
       sx={{
@@ -85,6 +91,25 @@ export const B4Section = ({
             )}
           </Box>
         </Box>
+        {learnMore && (
+          <Link
+            href={docsUrl(learnMore, i18n.language)}
+            target="_blank"
+            rel="noopener noreferrer"
+            underline="hover"
+            sx={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 0.5,
+              fontSize: 13,
+              fontWeight: 500,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {t("help.learnMore")}
+            <OpenInNewIcon sx={{ fontSize: 14 }} />
+          </Link>
+        )}
         {action}
       </Box>
       <Divider sx={{ mb: "16px", borderColor: colors.border.light }} />

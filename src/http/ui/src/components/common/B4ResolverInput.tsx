@@ -30,7 +30,7 @@ import { useTranslation } from "react-i18next";
 import { colors, fonts } from "@design";
 import { resolverKey, resolverLabel, resolverValue } from "@utils";
 import { useChangedFields } from "@context/ChangedFieldsContext";
-import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
+import { B4Help } from "./B4Help";
 import { chipSx } from "./B4ChipList";
 import { B4PlusButton } from "./B4PlusButton";
 import { B4TextField } from "./B4TextField";
@@ -349,7 +349,6 @@ export const B4ResolverInput = ({
           gap: 1,
           alignItems: "flex-start",
           "& > .MuiFormControl-root": { flex: 1, minWidth: 0 },
-          ...aiHoverRevealSx,
         }}
       >
         <B4TextField
@@ -374,14 +373,13 @@ export const B4ResolverInput = ({
           onClick={() => addAndStay(input)}
           disabled={disabled || full || !input.trim()}
         />
-        {aiTopic && (
-          <B4AiExplain
-            topic={aiTopic}
-            fieldLabel={label}
-            fieldDoc={helperText}
-            value={value.join(", ")}
-          />
-        )}
+        <B4Help
+          label={label}
+          aiTopic={aiTopic}
+          fieldDoc={helperText}
+          value={value.join(", ")}
+          mt="6px"
+        />
       </Box>
       {(value.length > 0 || emptyMessage) && (
         <Box

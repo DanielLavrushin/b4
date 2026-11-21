@@ -106,9 +106,14 @@ export const theme = createTheme({
           textDecoration: "none",
           "&:hover": {
             textDecoration: "none",
-            color: colors.primary,
+            color: colors.secondary,
           },
         },
+      },
+    },
+    MuiLink: {
+      defaultProps: {
+        color: "secondary",
       },
     },
     MuiChip: {

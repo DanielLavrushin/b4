@@ -21,10 +21,15 @@ import {
   AsnIcon,
   ClearIcon,
   EyeIcon,
-  InfoIcon,
   RefreshIcon,
 } from "@b4.icons";
-import { B4Alert, B4Badge, B4PlusButton, B4TextField } from "@b4.elements";
+import {
+  B4Alert,
+  B4Badge,
+  B4Help,
+  B4PlusButton,
+  B4TextField,
+} from "@b4.elements";
 import { colors, radius, typography } from "@design";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "@api/apiClient";
@@ -249,16 +254,22 @@ export const AsnPanel = ({
             display: "flex",
             alignItems: "center",
             gap: 1,
-            mb: 2,
+            mb: 0.5,
             scrollMarginTop: 16,
           }}
         >
           <AsnIcon /> {t("sets.targets.asn.title")}
-          <Tooltip
-            title={`${t("sets.targets.asn.tooltip")} ${t("sets.targets.asn.hint")}`}
-          >
-            <InfoIcon fontSize="small" color="action" />
-          </Tooltip>
+          <B4Help
+            label={t("sets.targets.asn.title")}
+            info={t("sets.targets.asn.hint")}
+            learnMore="sets/targets#asn"
+          />
+        </Typography>
+        <Typography
+          variant="caption"
+          sx={{ display: "block", color: "text.secondary", mb: 2 }}
+        >
+          {t("sets.targets.asn.description")}
         </Typography>
 
         <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>

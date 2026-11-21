@@ -9,14 +9,16 @@ import {
   SliderProps,
 } from "@mui/material";
 import { colors } from "@design";
-import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
+import { B4Help, type B4HelpContent } from "./B4Help";
 import { useChangedField, useChangedFields } from "@context/ChangedFieldsContext";
 import { useEditableNumber } from "./useEditableNumber";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { useFieldLabel } from "./dialogLabels";
 
-interface B4RangeSliderProps extends Omit<SliderProps, "onChange" | "value"> {
+interface B4RangeSliderProps
+  extends Omit<SliderProps, "onChange" | "value">,
+    B4HelpContent {
   label?: string;
   value: [number, number];
   onChange: (value: [number, number]) => void;
@@ -29,9 +31,6 @@ interface B4RangeSliderProps extends Omit<SliderProps, "onChange" | "value"> {
   alert?: React.ReactNode;
   disabled?: boolean;
   path?: string;
-  aiTopic?: string;
-  aiContext?: Record<string, unknown>;
-  aiQuestion?: string;
 }
 function RangeValueInput({
   editor,
@@ -107,6 +106,9 @@ export const B4RangeSlider = ({
   disabled,
   alert,
   path,
+  info,
+  learnMore,
+  credit,
   aiTopic,
   aiContext,
   aiQuestion,
@@ -160,7 +162,7 @@ export const B4RangeSlider = ({
   const hiEditor = useEditableNumber(value[1], commitHi, min, max);
 
   return (
-    <Box sx={{ width: "100%", ...aiHoverRevealSx }}>
+    <Box sx={{ width: "100%" }}>
       <Box
         sx={{
           display: "flex",
@@ -190,22 +192,23 @@ export const B4RangeSlider = ({
               }}
             />
           )}
+          <B4Help
+            label={resolvedLabel}
+            info={info}
+            learnMore={learnMore}
+            credit={credit}
+            aiTopic={aiTopic}
+            aiContext={aiContext}
+            aiQuestion={aiQuestion}
+            fieldDoc={helperText}
+            value={
+              isRange
+                ? `${value[0]}${valueSuffix} - ${value[1]}${valueSuffix}`
+                : `${value[0]}${valueSuffix}`
+            }
+          />
         </Stack>
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-          {aiTopic && (
-            <B4AiExplain
-              topic={aiTopic}
-              fieldLabel={resolvedLabel}
-              fieldDoc={helperText}
-              value={
-                isRange
-                  ? `${value[0]}${valueSuffix} - ${value[1]}${valueSuffix}`
-                  : `${value[0]}${valueSuffix}`
-              }
-              context={aiContext}
-              question={aiQuestion}
-            />
-          )}
           {showValue &&
             ((loEditor.editing || hiEditor.editing) && !disabled ? (
               <Stack ref={pairRef} direction="row" spacing={0.5} alignItems="center">

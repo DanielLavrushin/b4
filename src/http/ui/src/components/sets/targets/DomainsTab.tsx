@@ -226,7 +226,6 @@ export const DomainsTab = ({
           <ManualEntryPanel
             icon={<DomainIcon />}
             title={t("sets.targets.manualDomains")}
-            tooltip={t("sets.targets.manualDomainsTooltip")}
             inputLabel={t("sets.targets.addDomainLabel")}
             inputHelper={t("sets.targets.addDomainHelper")}
             inputPlaceholder={t("sets.targets.addDomainPlaceholder")}
@@ -251,7 +250,7 @@ export const DomainsTab = ({
           <Grid size={{ xs: 12, md: 6 }}>
             <GeoCategoryPanel
               title={t("sets.targets.geositeCategories")}
-              tooltip={t("sets.targets.geositeCatTooltip")}
+              description={t("sets.targets.geositeCatDesc")}
               inputLabel={t("sets.targets.addGeositeLabel")}
               inputPlaceholder={t("sets.targets.addGeositePlaceholder")}
               helperText={t("sets.targets.geositeCatAvailable", {
