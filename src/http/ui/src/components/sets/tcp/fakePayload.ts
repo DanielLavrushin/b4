@@ -1,9 +1,15 @@
 import { B4SetConfig, FakingPayloadType } from "@models/config";
 import type { ChosenPayloadFile } from "../payloadFile";
 
+export function sendsComboFragments(config: B4SetConfig): boolean {
+  const pool = config.fragmentation.strategy_pool ?? [];
+  const strategies = pool.length > 0 ? pool : [config.fragmentation.strategy];
+  return strategies.some((s) => s === "combo" || s === "hybrid");
+}
+
 export const sendsSynOrDecoyFake = (config: B4SetConfig) =>
   (!!config.tcp.syn_fake && (config.tcp.syn_fake_len ?? 0) > 0) ||
-  !!config.fragmentation.combo?.decoy_enabled;
+  (!!config.fragmentation.combo?.decoy_enabled && sendsComboFragments(config));
 
 export const sendsFake = (config: B4SetConfig) =>
   config.faking.sni || sendsSynOrDecoyFake(config);
