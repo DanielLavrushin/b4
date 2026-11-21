@@ -2395,6 +2395,7 @@
       "fakePayloadTruncated_other": "Only the first {{len}} of {{count}} bytes go out.",
       "fakePayloadOverOneFake": "One UDP fake carries at most {{max}} bytes.",
       "fakePayloadUseSize": "Use the file size",
+      "fakePayloadUseMax": "Use {{size}}",
       "fakePayloadFileAutoQuicOption": "(auto: QUIC Initial)",
       "fakePayloadFileAutoStunOption": "(auto: STUN request)",
       "fakePayloadFileAutoQuic": "b4 generates a fresh randomized QUIC Initial for each fake packet, with random connection IDs. Recommended size: 1200 bytes.",

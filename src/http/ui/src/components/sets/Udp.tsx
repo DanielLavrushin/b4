@@ -634,7 +634,11 @@ export const UdpSettings = ({
                             )
                           }
                         >
-                          {t("sets.udp.fakePayloadUseSize")}
+                          {truncatedPayloadSize > UDP_FAKE_LEN_MAX
+                            ? t("sets.udp.fakePayloadUseMax", {
+                                size: bytesLabel(t, UDP_FAKE_LEN_MAX),
+                              })
+                            : t("sets.udp.fakePayloadUseSize")}
                         </Button>
                       ) : undefined
                     }

@@ -2490,6 +2490,7 @@
       "fakePayloadTruncated_other": "Отправляется только начало payload: {{len}} из {{count}} байта.",
       "fakePayloadOverOneFake": "Один UDP-фейк вмещает не больше {{max}} байт.",
       "fakePayloadUseSize": "Взять размер файла",
+      "fakePayloadUseMax": "Взять {{size}}",
       "fakePayloadFileAutoQuicOption": "(авто: QUIC Initial)",
       "fakePayloadFileAutoStunOption": "(авто: STUN-запрос)",
       "fakePayloadFileAutoQuic": "b4 генерирует свежий рандомизированный QUIC Initial для каждого фейкового пакета, со случайными connection ID. Рекомендуемый размер: 1200 байт.",
