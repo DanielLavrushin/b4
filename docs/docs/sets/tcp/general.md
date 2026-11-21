@@ -63,7 +63,7 @@ With **Reuse WSSIZE connection** on, the set's TCP connections to port 443 go ou
 | Field | What it does | Default |
 | --- | --- | --- |
 | **Reuse WSSIZE connection** | Turns reuse on. Shown while **Rewrite the real TCP window** is on, and turned off with it. | Off |
-| **Warm validity (seconds)** | How long a warmed router port takes new connections, counted from the start of its warm, 1 to 300. After that, the next connection warms a new port. The validity never cuts a connection that is already relayed. | `120` |
+| **Warm validity (seconds)** | How long a warmed router port takes new connections, counted from the start of its warm, 1 to 300. After that, the next connection warms a new port. The validity never cuts a connection that is already relayed. | `300` |
 
 An enabled set with reuse on is saved only when it meets every condition below. The editor names each one the set breaks.
 
@@ -84,7 +84,7 @@ Reuse does nothing, and the set's connections get its usual strategy, while one 
 
 Discovery runs leave reuse out.
 
-When the warm fails or is skipped, when the relay after a good warm fails, or when no warm slot or port is free, b4 still sends the device's connection: from an ordinary router port, with the set's TCP strategy on the whole connection, as without reuse. The [Traffic](../../connections.md) page labels such a connection `fallback`. A warm fails when the server cannot be reached, refuses TLS 1.3, shows a certificate the router does not trust, sends no TCP timestamps or gives no complete answer. It is skipped while the router lacks TCP timestamps or root certificates. It is also skipped for a while after a warm to the same server and site name failed. A saved change to the settings ends that wait.
+When the warm fails or is skipped, when the relay after a good warm fails, or when no warm slot or port is free, b4 still sends the device's connection: from an ordinary router port, with the set's TCP strategy on the whole connection, as without reuse. The same happens when a device sends only its ClientHello over a warmed port and the server sends nothing back within 5 seconds: b4 closes that connection, drops the port and sends the ClientHello again from an ordinary router port. Reuse stays on for that server. The [Traffic](../../connections.md) page labels such a connection `fallback`. A warm fails when the server cannot be reached, refuses TLS 1.3, shows a certificate the router does not trust, sends no TCP timestamps or gives no complete answer. It is skipped while the router lacks TCP timestamps or root certificates. It is also skipped for a while after a warm to the same server and site name failed. A saved change to the settings ends that wait.
 
 ## Packet Duplication {#packet-duplication}
 
@@ -112,7 +112,7 @@ Some server addresses are blocked at the IP level. A CDN often answers DNS with 
 
 **Collect detected IPs** finds addresses where the TLS handshake stalls and adds them to one pool, the [collected IPs](../targets.md#collected-ips). Sets with **Use collected IPs** on take the connections to these addresses, each with its own strategy or route. Unlike **Block detected IPs**, collecting bans no address and changes no DNS answers or QUIC.
 
-An address is collected after two connections to it in a row, on the same port, connect over TCP and then get no answer to the ClientHello within the **Detection Timeout**. The second must come within the **Retest interval (seconds)** under [Settings > Core](../../settings/core.md#ip-block-detection). A connection that does not connect over TCP does not count, and a connection the server answers starts the count over.
+An address is collected after two connections to it in a row, on the same port, connect over TCP and then get no answer to the ClientHello within the **Detection Timeout**. The second counts only when it opens after the **Detection Timeout** of the first has run out: connections opened at the same time count once. It must also come within the **Retest interval (seconds)** under [Settings > Core](../../settings/core.md#ip-block-detection). A connection that does not connect over TCP does not count, and a connection the server answers starts the count over.
 
 b4 collects the address only when a set with **Use collected IPs** would take the next connection to it, see [Collected IPs](../targets.md#collected-ips). It then resets the connections still waiting on the address, so that the device's retries reach that set. The [Traffic](../../connections.md) page labels these connections `collect`.
 

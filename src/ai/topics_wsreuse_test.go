@@ -80,6 +80,34 @@ func TestWSReuseAgeTopicStatesTheDefaultAndTheCap(t *testing.T) {
 	}
 }
 
+func TestWSReuseAgeTopicKeepsATupleOnlyWhenItsAnswerReachedTheClient(t *testing.T) {
+	facts := TopicFacts("tcp.wssize_reuse.max_age_seconds")
+	if !strings.Contains(facts, "a tuple whose last relayed connection passed no server data to the client before the client closed is dropped when that connection closes") {
+		t.Errorf("tcp.wssize_reuse.max_age_seconds does not say that a tuple is kept only when server data reached the client before it closed: %s", facts)
+	}
+	if strings.Contains(facts, "got no data from the server") {
+		t.Errorf("tcp.wssize_reuse.max_age_seconds still keeps a tuple on any data from the server, but server data read after the client left no longer keeps it: %s", facts)
+	}
+}
+
+func TestWSReuseTopicsSayASilentPassFallsBackToTheSetsStrategy(t *testing.T) {
+	age := TopicFacts("tcp.wssize_reuse.max_age_seconds")
+	for _, want := range []string{
+		"A silent pass is one whose client sent a lone ClientHello, without early data, and got no server data within 5 seconds:",
+		"b4 closes it, drops the tuple and relays that ClientHello over a new connection from an ordinary source port with the set's own TCP strategy, flagged fallback in Traffic",
+		"This is not remembered as a warm failure, so reuse stays on for that address.",
+		"A pass whose server closes without data is not relayed again.",
+	} {
+		if !strings.Contains(age, want) {
+			t.Errorf("tcp.wssize_reuse.max_age_seconds does not say %q: %s", want, age)
+		}
+	}
+	enabled := TopicFacts("tcp.wssize_reuse.enabled")
+	if !strings.Contains(enabled, "the client's bytes go out only after that choice, except on a silent pass (tcp.wssize_reuse.max_age_seconds).") {
+		t.Errorf("tcp.wssize_reuse.enabled does not point to the silent pass, whose ClientHello goes out before the fallback is chosen: %s", enabled)
+	}
+}
+
 func TestWSReuseTopicSaysAnyHTTPStatusWarms(t *testing.T) {
 	facts := TopicFacts("tcp.wssize_reuse.enabled")
 	for _, want := range []string{
