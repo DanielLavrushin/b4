@@ -39,5 +39,4 @@ var helperLineBaseline = map[string]int{
 	"settings.MTProto.wsCustomDomainHelp":         193,
 	"settings.MTProto.wsEndpointHostHelp":         176,
 	"settings.MTProto.wsFrontSniHelp":             363,
-	"settings.Socks5.sourcesDesc":                 255,
 }
