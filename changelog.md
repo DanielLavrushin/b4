@@ -28,9 +28,6 @@ All notable changes to b4 are recorded in this file.
 ### Removed
 
 - The `/api/capture/probe` API, unused by the web interface, is removed. Its hook cost every connection some work and slowly leaked memory when clients sent their ClientHello in two packets. [#646](https://github.com/DanielLavrushin/b4/issues/646)
-
-### Removed
-
 - **Let sets process Worker connections** under **Telegram upstream (shared)** is gone: a **Telegram set** without routing applies its strategy to b4's Worker connections, and without one no set processes them. [#639](https://github.com/DanielLavrushin/b4/issues/639)
 
 ### Fixed
