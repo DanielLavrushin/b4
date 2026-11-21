@@ -55,9 +55,28 @@ func (m *Manager) loadMetadata() {
 		return
 	}
 
-	if err := json.Unmarshal(data, &m.metadata); err != nil {
+	var loaded map[string]map[string]*PayloadMetadata
+	if err := json.Unmarshal(data, &loaded); err != nil {
 		log.Errorf("Failed to parse metadata: %v", err)
+		return
 	}
+	m.metadata = usableMetadata(loaded)
+}
+
+func usableMetadata(loaded map[string]map[string]*PayloadMetadata) map[string]map[string]*PayloadMetadata {
+	usable := make(map[string]map[string]*PayloadMetadata, len(loaded))
+	for name, protocols := range loaded {
+		for protocol, meta := range protocols {
+			if meta == nil {
+				continue
+			}
+			if usable[name] == nil {
+				usable[name] = make(map[string]*PayloadMetadata)
+			}
+			usable[name][protocol] = meta
+		}
+	}
+	return usable
 }
 
 func (m *Manager) saveMetadata() error {
