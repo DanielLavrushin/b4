@@ -115,7 +115,7 @@ The drop set holds a connection by its addresses and ports. A new QUIC connectio
 
 b4 starts to watch a connection of a Collect set at its ClientHello, when it knows where the ClientHello ends and conntrack holds an established entry with packet counters for the connection. At the **Detection Timeout** the connection counts as silent when it is still the same established entry, the server has acknowledged the whole ClientHello and the reply counters show no data from the server since then. Acknowledgements without data do not count as an answer, and neither does a SYN-ACK the server sends again. Server data, a closed or replaced entry or counters b4 cannot read end the watch without a count. b4 never watches the connections of **Reuse WSSIZE connection** that it opens itself.
 
-A silent connection whose ClientHello came before the **Detection Timeout** of the last counted connection to the same address and port had run out is not counted: the two ran at the same time. b4 holds it as long as a counted one and resets it with the others when the address is collected. A server answer on it starts the count over.
+Until two connections are counted, a silent connection whose ClientHello came before the **Detection Timeout** of the last counted connection to the same address and port had run out is not counted: the two ran at the same time. b4 holds it as long as a counted one and resets it with the others when the address is collected. A server answer on it starts the count over.
 
 | Item | Value |
 | --- | --- |
