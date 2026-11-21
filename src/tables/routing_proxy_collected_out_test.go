@@ -34,6 +34,67 @@ func recordProxyRuleOrder(t *testing.T) *[]string {
 	return &calls
 }
 
+func TestTheOutChainRepeatsTheClaimedBypassOnlyBelowACollectedGuard(t *testing.T) {
+	claimed := map[string]string{
+		backendNFTables: fmt.Sprintf("meta mark & 0x%x != 0x0 return", routeSetMarkMask),
+		backendIPTables: fmt.Sprintf("-m mark ! --mark 0x0/0x%x -j RETURN", routeSetMarkMask),
+	}
+	for _, tc := range []struct {
+		mode      string
+		collected bool
+	}{
+		{config.RoutingModeProxy, false},
+		{config.RoutingModeMTProtoWS, false},
+		{config.RoutingModeProxy, true},
+		{config.RoutingModeWSReuse, true},
+	} {
+		for _, be := range []routeBackend{&routeNftBackend{}, &routeIptBackend{}} {
+			t.Run(fmt.Sprintf("%s/collected=%t/%s", tc.mode, tc.collected, be.name()), func(t *testing.T) {
+				staticResetGlobals(t)
+				localGuardReset(t)
+				stubBinaries(t, backendIPTables)
+				calls := recordProxyRuleOrder(t)
+
+				cfg := config.NewConfig()
+				cfg.Queue.IPv4Enabled = true
+				cfg.Queue.IPv6Enabled = false
+				set := orderTestSet("guard", tc.mode, nil)
+				set.Targets.UseCollectedIPs = tc.collected
+				st := proxyGuardState(0x239c9)
+				st.mode = tc.mode
+				st.collected = tc.collected
+
+				if err := routeEnsureProxyRule(be, &cfg, set, st, nil); err != nil {
+					t.Fatalf("routeEnsureProxyRule: %v", err)
+				}
+
+				out := chainRuleLines(*calls, st.chainOut)
+				var sequence []string
+				for _, line := range out {
+					if be.name() == backendIPTables && !strings.HasPrefix(line, backendIPTables+" ") {
+						continue
+					}
+					switch {
+					case strings.HasSuffix(line, claimed[be.name()]):
+						sequence = append(sequence, "bypass")
+					case routeCollectedGuardLine(line) || strings.Contains(line, "@"+st.setV4+"c"):
+						if len(sequence) == 0 || sequence[len(sequence)-1] != "guard" {
+							sequence = append(sequence, "guard")
+						}
+					}
+				}
+				want := []string{"bypass"}
+				if tc.collected {
+					want = []string{"bypass", "guard", "bypass"}
+				}
+				if strings.Join(sequence, ",") != strings.Join(want, ",") {
+					t.Errorf("%s holds %v, want %v:\n%s", st.chainOut, sequence, want, strings.Join(out, "\n"))
+				}
+			})
+		}
+	}
+}
+
 func TestCollectedOutGuardRunsBelowTheClaimedBypass(t *testing.T) {
 	claimed := map[string]string{
 		backendNFTables: fmt.Sprintf("meta mark & 0x%x != 0x0 return", routeSetMarkMask),

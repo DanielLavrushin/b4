@@ -396,10 +396,12 @@ func routeInstallProxyRule(be routeBackend, cfg *config.Config, set *config.SetC
 	if !sourceScoped {
 		routeSelfDialBypass(be, cfg, st.chainOut)
 		be.addClaimedBypassRule(st.chainOut, 0)
-		if err := routeCollectedGuard(be, cfg, set, st, st.chainOut); err != nil {
-			return err
+		if guard, on := routeCollectedGuardOn(be, st, st.chainOut); on {
+			if err := routeCollectedGuardFor(be, cfg, set, st, guard); err != nil {
+				return err
+			}
+			be.addClaimedBypassRule(st.chainOut, 0)
 		}
-		be.addClaimedBypassRule(st.chainOut, 0)
 		routeAddProxyRouterTrafficGuard(be, cfg, st)
 	}
 

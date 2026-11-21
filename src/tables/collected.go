@@ -189,13 +189,25 @@ func routeCollectedGuardChains(be routeBackend, st routeState) []routeCollectedG
 	return []routeCollectedGuardChain{pre, {chain: st.chainOut}}
 }
 
-func routeCollectedGuard(be routeBackend, cfg *config.Config, set *config.SetConfig, st routeState, chain string) error {
+func routeCollectedGuardOn(be routeBackend, st routeState, chain string) (routeCollectedGuardChain, bool) {
 	for _, guard := range routeCollectedGuardChains(be, st) {
 		if guard.chain == chain {
-			return routeCollectedGuardRules(be, cfg, set, st, chain, guard.sources, func(args []string) error { _, err := run(args...); return err })
+			return guard, true
 		}
 	}
-	return nil
+	return routeCollectedGuardChain{}, false
+}
+
+func routeCollectedGuard(be routeBackend, cfg *config.Config, set *config.SetConfig, st routeState, chain string) error {
+	guard, on := routeCollectedGuardOn(be, st, chain)
+	if !on {
+		return nil
+	}
+	return routeCollectedGuardFor(be, cfg, set, st, guard)
+}
+
+func routeCollectedGuardFor(be routeBackend, cfg *config.Config, set *config.SetConfig, st routeState, guard routeCollectedGuardChain) error {
+	return routeCollectedGuardRules(be, cfg, set, st, guard.chain, guard.sources, func(args []string) error { _, err := run(args...); return err })
 }
 
 func routeCollectedGuardRules(be routeBackend, cfg *config.Config, set *config.SetConfig, st routeState, chain string, sources []string, emit func([]string) error) error {
