@@ -18,13 +18,15 @@ import {
   isWSSizeReuseRefusal,
   mssClampIpScope,
   portFilterCovers,
+  reuseTunEngine,
   wssizeReuseIssues,
 } from "@utils";
 import { Trans, useTranslation } from "react-i18next";
 
 interface TcpGeneralProps {
   config: B4SetConfig;
-  tunEngine?: boolean;
+  queueMode?: string;
+  tunRunning?: boolean;
   skipSetup?: boolean;
   queueMark?: number;
   onChange: (
@@ -40,12 +42,14 @@ function wssizeScaleMode(ws: WSSizeConfig): "keep" | "lower" | "strip" {
 
 export const TcpGeneral = ({
   config,
-  tunEngine = false,
+  queueMode,
+  tunRunning = false,
   skipSetup = false,
   queueMark,
   onChange,
 }: TcpGeneralProps) => {
   const { t } = useTranslation();
+  const tunEngine = queueMode === "tun";
   const ws: WSSizeConfig = {
     enabled: false,
     window: 0,
@@ -56,7 +60,7 @@ export const TcpGeneral = ({
   };
   const reuse = config.tcp.wssize_reuse ?? { enabled: false, max_age_seconds: 300 };
   const reuseIssues = wssizeReuseIssues(config, {
-    tunEngine,
+    tunEngine: reuseTunEngine(queueMode, tunRunning),
     skipSetup,
     queueMark,
   });

@@ -27,7 +27,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { B4Tab, B4TabPanel, B4Tabs, B4TextField } from "@b4.elements";
 
 import { colors } from "@design";
-import { rebaseDraft, reuseTunEngine, setByPath } from "@utils";
+import { rebaseDraft, setByPath } from "@utils";
 import { ChangedFieldsProvider } from "@context/ChangedFieldsContext";
 import { useUnsavedChangesGuard } from "@hooks/useUnsavedChangesGuard";
 import { useTunEngine } from "@hooks/useEngineMode";
@@ -426,7 +426,8 @@ export const SetEditorPage = ({
           <TcpTabContainer
             initialSub={requestedSub}
             config={editedSet}
-            tunEngine={reuseTunEngine(config.queue.mode, tunRunning)}
+            queueMode={config.queue.mode}
+            tunRunning={tunRunning}
             skipSetup={config.system.tables.skip_setup}
             queueMark={config.queue.mark}
             onChange={handleChange}

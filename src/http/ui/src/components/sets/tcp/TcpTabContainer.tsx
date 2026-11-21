@@ -21,7 +21,8 @@ export const TCP_SUB_TABS: { labelKey: string; prefixes: string[] }[] = [
 interface TcpTabContainerProps {
   initialSub?: string;
   config: B4SetConfig;
-  tunEngine?: boolean;
+  queueMode?: string;
+  tunRunning?: boolean;
   skipSetup?: boolean;
   queueMark?: number;
   onChange: (
@@ -39,7 +40,8 @@ enum TCP_TABS {
 export const TcpTabContainer = ({
   initialSub,
   config,
-  tunEngine,
+  queueMode,
+  tunRunning,
   skipSetup,
   queueMark,
   onChange,
@@ -87,7 +89,8 @@ export const TcpTabContainer = ({
       <B4TabPanel value={activeTab} index={TCP_TABS.GENERAL} idPrefix="tcp-tab">
         <TcpGeneral
           config={config}
-          tunEngine={tunEngine}
+          queueMode={queueMode}
+          tunRunning={tunRunning}
           skipSetup={skipSetup}
           queueMark={queueMark}
           onChange={onChange}
