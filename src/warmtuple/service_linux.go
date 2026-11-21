@@ -190,6 +190,11 @@ func (s *Service) UpdateConfig(cfg *config.Config) {
 	if s.cfg == cfg {
 		return
 	}
+	if len(s.leases) == 0 && len(s.pending) == 0 && len(s.failures) == 0 {
+		s.epoch++
+		s.cfg = cfg
+		return
+	}
 	if !collectedOnlyUpdate(s.cfg, cfg) {
 		s.epoch++
 		clear(s.failures)
