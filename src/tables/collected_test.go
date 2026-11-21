@@ -92,7 +92,7 @@ func TestCollectedReuseGuardScopesPort443BeforeProtocolOptions(t *testing.T) {
 
 func TestCollectedGuardMonitorDetectsMissingProtection(t *testing.T) {
 	staticResetGlobals(t)
-	stubBinaries(t, backendIPTables)
+	stubBinaries(t, backendIPTables, "ipset")
 	cfg := familyTestConfig(true, false)
 	set := staticTestSet(config.RoutingModeInterface, nil)
 	set.Targets.UseCollectedIPs = true
@@ -539,7 +539,7 @@ func TestCollectedGuardCheckMatchesWhatASourceScopedConsumerGets(t *testing.T) {
 			localGuardReset(t)
 			emitted := captureProxyRuleArgv(t)
 			run = refuseDeletes(run)
-			stubBinaries(t, backendIPTables)
+			stubBinaries(t, backendIPTables, "ipset")
 			cfg := collectedGuardTestConfig(config.RoutingModeProxy, true)
 			set := cfg.Sets[0]
 			set.Targets.SourceDevices = []string{"aa:bb:cc:dd:ee:ff"}
