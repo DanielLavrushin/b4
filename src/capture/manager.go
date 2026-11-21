@@ -155,8 +155,49 @@ func (m *Manager) GenerateCapture(domain, protocol string) error {
 	return nil
 }
 
+func (m *Manager) fileNameFor(protocol, name string) (string, error) {
+	if previous := m.metadata[name][protocol]; previous != nil {
+		return previous.Filepath, nil
+	}
+	sum := sha256.Sum256([]byte(protocol + "/" + name))
+	tagged := sanitizeDomain(name) + "-" + hex.EncodeToString(sum[:4])
+	for i := range 64 {
+		label := sanitizeDomain(name)
+		switch {
+		case i == 1:
+			label = tagged
+		case i > 1:
+			label = fmt.Sprintf("%s-%d", tagged, i)
+		}
+		filename := fmt.Sprintf(payloadFilenameFmt, protocol, label)
+		if m.fileNameFree(filename) {
+			return filename, nil
+		}
+	}
+	return "", fmt.Errorf("no free file name for the %s payload %q", protocol, name)
+}
+
+func (m *Manager) fileNameFree(filename string) bool {
+	for _, protocols := range m.metadata {
+		for _, meta := range protocols {
+			if meta.Filepath == filename {
+				return false
+			}
+		}
+	}
+	path, err := m.payloadPath(filename)
+	if err != nil {
+		return false
+	}
+	_, err = os.Lstat(path)
+	return os.IsNotExist(err)
+}
+
 func (m *Manager) storeLocked(protocol, name string, data []byte) error {
-	filename := fmt.Sprintf(payloadFilenameFmt, protocol, sanitizeDomain(name))
+	filename, err := m.fileNameFor(protocol, name)
+	if err != nil {
+		return err
+	}
 	path, err := m.payloadPath(filename)
 	if err != nil {
 		return err

@@ -47,6 +47,37 @@ func TestPayloadUploadOfABlankNameIsRefused(t *testing.T) {
 	}
 }
 
+func TestPayloadUploadNamesTheFormAcceptsGetTheirOwnFile(t *testing.T) {
+	mux, api := captureTestMux(t)
+	manager := capture.GetManager(api.getCfg())
+	uploads := map[string][]byte{"пример.рф": bytes.Repeat([]byte{0x41}, 150), "тест.рф": bytes.Repeat([]byte{0x42}, 250)}
+	for name, data := range uploads {
+		t.Cleanup(func() { manager.DeleteCapture("tls", name) })
+		if rec := uploadCapturePayload(t, mux, name, "tls", data); rec.Code != http.StatusOK {
+			t.Fatalf("upload %q: %d %s", name, rec.Code, rec.Body.String())
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/capture/list", nil))
+	var listed []capture.Capture
+	decodeInto(t, rec, &listed)
+	files := map[string]string{}
+	for _, c := range listed {
+		if _, ours := uploads[c.Domain]; !ours {
+			continue
+		}
+		files[c.Domain] = c.Filepath
+		data, err := manager.LoadCaptureData(&c)
+		if err != nil || !bytes.Equal(data, uploads[c.Domain]) {
+			t.Errorf("the %q card points at %s, which holds %d bytes (%v), not its own %d-byte upload", c.Domain, c.Filepath, len(data), err, len(uploads[c.Domain]))
+		}
+	}
+	if len(files) != 2 || files["пример.рф"] == files["тест.рф"] {
+		t.Errorf("the cards пример.рф and тест.рф must point at files of their own, got %v", files)
+	}
+}
+
 func TestPayloadUploadSaysWhyTheFormFailed(t *testing.T) {
 	mux, _ := captureTestMux(t)
 

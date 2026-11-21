@@ -229,6 +229,76 @@ func TestAFailedMetadataSaveLeavesNothingListed(t *testing.T) {
 	}
 }
 
+func TestNamesThatSanitizeAlikeKeepTheirOwnFiles(t *testing.T) {
+	m := testManager(t)
+	var problems []string
+	saved := func(name string) (*Capture, []byte) {
+		t.Helper()
+		c, ok := m.GetCapture("tls", name)
+		if !ok {
+			t.Fatalf("%q is not listed", name)
+		}
+		data, err := m.LoadCaptureData(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c, data
+	}
+
+	first, second := []byte("payload of пример.рф"), []byte("payload of яндекс.рф")
+	if err := m.SaveUploadedCapture("tls", "пример.рф", first); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SaveUploadedCapture("tls", "яндекс.рф", second); err != nil {
+		t.Fatal(err)
+	}
+	a, aData := saved("пример.рф")
+	b, bData := saved("яндекс.рф")
+	if a.Filepath == b.Filepath || !bytes.Equal(aData, first) || !bytes.Equal(bData, second) {
+		problems = append(problems, fmt.Sprintf("uploads пример.рф and яндекс.рф: files %s and %s, пример.рф (size %d) now holds %q", a.Filepath, b.Filepath, a.Size, aData))
+	}
+
+	again := []byte("payload of пример.рф, uploaded again")
+	if err := m.SaveUploadedCapture("tls", "пример.рф", again); err != nil {
+		t.Fatal(err)
+	}
+	if c, data := saved("пример.рф"); c.Filepath != a.Filepath || !bytes.Equal(data, again) {
+		problems = append(problems, fmt.Sprintf("a re-upload of пример.рф must replace its own file %s, got %s holding %q", a.Filepath, c.Filepath, data))
+	}
+	if _, data := saved("яндекс.рф"); !bytes.Equal(data, second) {
+		problems = append(problems, fmt.Sprintf("a re-upload of пример.рф changed яндекс.рф to %q", data))
+	}
+
+	for _, name := range []string{"ab.sanitize.example", "a_b.sanitize.example"} {
+		if err := m.GenerateCapture(name, "tls"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plain, plainData := saved("ab.sanitize.example")
+	underscored, underscoredData := saved("a_b.sanitize.example")
+	if plain.Filepath == underscored.Filepath || !bytes.Contains(plainData, []byte("ab.sanitize.example")) || !bytes.Contains(underscoredData, []byte("a_b.sanitize.example")) {
+		problems = append(problems, fmt.Sprintf("generated ab.sanitize.example and a_b.sanitize.example share %s", plain.Filepath))
+	}
+
+	orphan := filepath.Join(m.outputPath, "tls_orphan_sanitize_example.bin")
+	if err := os.WriteFile(orphan, []byte("a file no entry lists"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SaveUploadedCapture("tls", "orphan.sanitize.example", []byte("new upload")); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(orphan); string(data) != "a file no entry lists" {
+		problems = append(problems, fmt.Sprintf("an upload overwrote %s, a file no entry lists, with %q", filepath.Base(orphan), data))
+	}
+	if _, data := saved("orphan.sanitize.example"); string(data) != "new upload" {
+		problems = append(problems, fmt.Sprintf("the upload next to an unlisted file holds %q", data))
+	}
+
+	if len(problems) > 0 {
+		t.Fatal(strings.Join(problems, "; "))
+	}
+}
+
 func TestNullEntriesInPayloadsJSONDoNotPanic(t *testing.T) {
 	calls := []struct {
 		name string
