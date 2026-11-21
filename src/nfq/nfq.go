@@ -1,6 +1,7 @@
 package nfq
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -572,6 +573,7 @@ func (w *Worker) sendFakeSNISequence(cfg *config.SetConfig, original []byte, dst
 const tcpMD5OptionLen = 20
 
 func tlsRecordContinuesPast(payload []byte) bool {
+	payload = bytes.TrimPrefix(payload, changeCipherSpecRecord)
 	return len(payload) >= 5 && payload[0] == TLSHandshakeType && 5+int(binary.BigEndian.Uint16(payload[3:5])) > len(payload)
 }
 
