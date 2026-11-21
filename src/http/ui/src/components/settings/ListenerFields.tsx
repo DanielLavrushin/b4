@@ -1,6 +1,12 @@
+import type { ReactNode } from "react";
 import { Grid } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import { B4NumberField, B4Switch, B4TextField } from "@b4.elements";
+import {
+  B4FieldMessage,
+  B4NumberField,
+  B4Switch,
+  B4TextField,
+} from "@b4.elements";
 import { spacing } from "@design";
 import { SettingsPropHandlerType } from "@models/settings";
 
@@ -25,13 +31,17 @@ export const ExposeSwitch = ({
 }: ExposeSwitchProps) => {
   const { t } = useTranslation();
 
-  let description = t("settings.Listener.exposeDesc");
+  let message: ReactNode;
   if (skipSetup) {
-    description = t("settings.Listener.exposeSkipped");
+    message = (
+      <B4FieldMessage severity={checked ? "warning" : "info"}>
+        {t("settings.Listener.exposeSkipped")}
+      </B4FieldMessage>
+    );
   } else if (!checked && blocked) {
-    description = blocked;
-  } else if (note) {
-    description = `${description} ${note}`;
+    message = <B4FieldMessage severity="info">{blocked}</B4FieldMessage>;
+  } else if (checked && note && !disabled) {
+    message = <B4FieldMessage severity="info">{note}</B4FieldMessage>;
   }
 
   return (
@@ -41,7 +51,13 @@ export const ExposeSwitch = ({
       path={path}
       onChange={onChange}
       disabled={disabled || (!checked && (skipSetup || !!blocked))}
-      description={description}
+      description={t("settings.Listener.exposeDesc")}
+      message={message}
+      info={[t("settings.Listener.exposeInfo"), note]
+        .filter(Boolean)
+        .join("\n\n")}
+      learnMore="settings/security#expose-to-internet"
+      aiTopic={path}
     />
   );
 };

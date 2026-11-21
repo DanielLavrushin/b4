@@ -130,7 +130,7 @@ export const MTProtoSecrets = ({
               size="small"
               sx={{ flex: "1 1 160px" }}
             />
-            <Tooltip title={t("settings.MTProto.secretMaxNetworksHelp")}>
+            <Box sx={{ flex: "none" }}>
               <B4NumberField
                 label={t("settings.MTProto.secretMaxNetworks")}
                 value={s.max_networks ?? 0}
@@ -139,9 +139,11 @@ export const MTProtoSecrets = ({
                 min={0}
                 max={1000}
                 size="small"
-                sx={{ width: 120, flexShrink: 0 }}
+                info={t("settings.MTProto.secretMaxNetworksInfo")}
+                learnMore="settings/mtproto"
+                sx={{ width: 120 }}
               />
-            </Tooltip>
+            </Box>
             <Tooltip title={t("settings.MTProto.removeSecret")}>
               <span>
                 <IconButton

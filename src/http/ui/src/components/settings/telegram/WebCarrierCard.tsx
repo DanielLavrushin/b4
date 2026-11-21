@@ -1,9 +1,9 @@
 import { useTranslation } from "react-i18next";
-import { Grid, Typography } from "@mui/material";
+import { Grid } from "@mui/material";
 import { DomainIcon } from "@b4.icons";
 import {
   B4Accordion,
-  B4Hint,
+  B4FieldMessage,
   B4IntegrationCard,
   B4TextField,
 } from "@b4.elements";
@@ -26,12 +26,26 @@ export const WebCarrierCard = ({ config, onChange }: WebCarrierCardProps) => {
   const exposed = webProxy?.expose ?? false;
   const webServerPort = config.system.web_server?.port ?? 0;
   const portClash = port > 0 && port === webServerPort;
+  const ownCert = !!webProxy?.tls_cert;
+  const ownKey = !!webProxy?.tls_key;
+  const webCert = !!config.system.web_server?.tls_cert;
+  const webKey = !!config.system.web_server?.tls_key;
+  let tlsSummary: string | undefined;
+  if (ownCert && ownKey) {
+    tlsSummary = t("settings.MTProto.webProxyTlsSummaryOwn");
+  } else if (!ownCert && !ownKey && webCert && webKey) {
+    tlsSummary = t("settings.MTProto.webProxyTlsSummaryWeb");
+  } else if (!ownCert && !ownKey && !webCert && !webKey) {
+    tlsSummary = t("settings.MTProto.webProxyTlsSummaryNone");
+  }
 
   return (
     <B4IntegrationCard
       icon={<DomainIcon />}
       title={t("settings.MTProto.webProxyTitle")}
       description={t("settings.MTProto.webProxyDesc")}
+      info={t("settings.MTProto.webProxyInfo")}
+      learnMore="telegram/web-proxy"
       enabled={enabled}
       onToggle={(checked) => {
         onChange("system.mtproto.web_proxy.enabled", checked);
@@ -52,11 +66,13 @@ export const WebCarrierCard = ({ config, onChange }: WebCarrierCardProps) => {
             }
             placeholder="relay.example.org"
             error={!hostname}
-            helperText={
+            helperText={t(
               hostname
-                ? t("settings.MTProto.webProxyHostnameHelp")
-                : t("settings.MTProto.webProxyNoHost")
-            }
+                ? "settings.MTProto.webProxyHostnameHelp"
+                : "settings.MTProto.webProxyNoHost",
+            )}
+            info={t("settings.MTProto.webProxyHostnameInfo")}
+            learnMore="telegram/web-proxy"
             selectOnFocus
           />
         </Grid>
@@ -72,13 +88,20 @@ export const WebCarrierCard = ({ config, onChange }: WebCarrierCardProps) => {
             placeholder="443"
             inputMode="numeric"
             error={portClash}
-            helperText={
-              portClash
-                ? t("settings.MTProto.webProxyPortClash")
-                : port > 0
-                  ? t("settings.MTProto.webProxyPortOwn")
-                  : t("settings.MTProto.webProxyPortShared")
+            helperText={t(
+              port > 0
+                ? "settings.MTProto.webProxyPortOwn"
+                : "settings.MTProto.webProxyPortShared",
+            )}
+            message={
+              portClash ? (
+                <B4FieldMessage severity="error">
+                  {t("settings.MTProto.webProxyPortClash")}
+                </B4FieldMessage>
+              ) : undefined
             }
+            info={t("settings.MTProto.webProxyPortInfo")}
+            learnMore="telegram/web-proxy"
           />
         </Grid>
         {(port > 0 || exposed) && (
@@ -93,22 +116,12 @@ export const WebCarrierCard = ({ config, onChange }: WebCarrierCardProps) => {
             />
           </Grid>
         )}
-        {port === 0 && (
-          <B4Hint>{t("settings.MTProto.webProxyExposeShared")}</B4Hint>
-        )}
-      </Grid>
-      <Grid container>
-        <B4Hint>
-          {port > 0
-            ? t("settings.MTProto.webProxyRequirementsOwnPort")
-            : t("settings.MTProto.webProxyRequirements")}
-        </B4Hint>
       </Grid>
       {port > 0 && (
-        <B4Accordion title={t("settings.MTProto.webProxyTlsTitle")}>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            {t("settings.MTProto.webProxyTlsDesc")}
-          </Typography>
+        <B4Accordion
+          title={t("settings.MTProto.webProxyTlsTitle")}
+          summary={tlsSummary}
+        >
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, md: 6 }}>
               <B4TextField
@@ -119,6 +132,8 @@ export const WebCarrierCard = ({ config, onChange }: WebCarrierCardProps) => {
                 }
                 placeholder="/etc/b4/relay.crt"
                 helperText={t("settings.MTProto.webProxyTlsCertHelp")}
+                info={t("settings.MTProto.webProxyTlsInfo")}
+                learnMore="telegram/web-proxy"
               />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
