@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { Button, Grid } from "@mui/material";
 import { Link } from "react-router";
 import { DnsIcon, WarningIcon } from "@b4.icons";
@@ -21,7 +21,11 @@ import {
   UDP_FAKE_PAYLOAD_PRESET_1,
   UDP_FAKE_PAYLOAD_PRESET_2,
 } from "@models/config";
-import { useCaptures } from "@b4.capture";
+import {
+  chosenPayloadFile,
+  samePayloadFile,
+  useListedCaptures,
+} from "./payloadFile";
 import { udpPortRouting } from "./routing/portRouting";
 import { useTranslation, Trans } from "react-i18next";
 import {
@@ -36,6 +40,14 @@ import {
 } from "./udpL7";
 
 const UNKNOWN_WHICH = "unknown";
+
+const UDP_BUILTIN_PAYLOADS = [
+  "",
+  UDP_FAKE_PAYLOAD_AUTO_QUIC,
+  UDP_FAKE_PAYLOAD_AUTO_STUN,
+  UDP_FAKE_PAYLOAD_PRESET_1,
+  UDP_FAKE_PAYLOAD_PRESET_2,
+];
 
 interface UdpSettingsProps {
   config: B4SetConfig;
@@ -54,11 +66,7 @@ export const UdpSettings = ({
   onChange,
 }: UdpSettingsProps) => {
   const { t } = useTranslation();
-  const { captures, loadCaptures } = useCaptures();
-
-  useEffect(() => {
-    loadCaptures().catch(() => {});
-  }, [loadCaptures]);
+  const { captures, listed: capturesListed } = useListedCaptures();
 
   const UDP_MODES = [
     {
@@ -257,25 +265,47 @@ export const UdpSettings = ({
   const isAutoStun =
     config.udp.fake_payload_file === UDP_FAKE_PAYLOAD_AUTO_STUN;
 
-  let payloadFileHelperKey: string;
-  if (isAutoQuic) {
-    payloadFileHelperKey = "sets.udp.fakePayloadFileAutoQuic";
-  } else if (isAutoStun) {
-    payloadFileHelperKey = "sets.udp.fakePayloadFileAutoStun";
-  } else if (captures.length === 0) {
-    payloadFileHelperKey = "sets.udp.fakePayloadFileEmpty";
-  } else {
-    payloadFileHelperKey = "sets.udp.fakePayloadFileHelper";
-  }
+  const udpPayloadFile = config.udp.fake_payload_file ?? "";
+  const chosenUdpFile = chosenPayloadFile(
+    captures,
+    capturesListed,
+    UDP_BUILTIN_PAYLOADS.includes(udpPayloadFile) ? "" : udpPayloadFile,
+  );
 
   const sortedCaptures = useMemo(
     () =>
-      [...captures].sort(
-        (a, b) =>
-          (a.protocol === "quic" ? 0 : 1) - (b.protocol === "quic" ? 0 : 1),
-      ),
+      captures
+        .filter((c) => !c.missing)
+        .sort(
+          (a, b) =>
+            (a.protocol === "quic" ? 0 : 1) - (b.protocol === "quic" ? 0 : 1),
+        ),
     [captures],
   );
+
+  let payloadFileHelper: string;
+  if (chosenUdpFile.state === "missing") {
+    payloadFileHelper = t("sets.udp.fakePayloadFileMissingHelper", {
+      file: udpPayloadFile,
+    });
+  } else if (isAutoQuic) {
+    payloadFileHelper = t("sets.udp.fakePayloadFileAutoQuic");
+  } else if (isAutoStun) {
+    payloadFileHelper = t("sets.udp.fakePayloadFileAutoStun");
+  } else if (sortedCaptures.length === 0) {
+    payloadFileHelper = t("sets.udp.fakePayloadFileEmpty");
+  } else {
+    payloadFileHelper = t("sets.udp.fakePayloadFileHelper");
+  }
+
+  let chosenUdpFileLabel: string | undefined;
+  if (chosenUdpFile.state === "missing") {
+    chosenUdpFileLabel = t("sets.udp.fakePayloadFileMissing", {
+      name: chosenUdpFile.name,
+    });
+  } else if (chosenUdpFile.state === "unknown") {
+    chosenUdpFileLabel = chosenUdpFile.name;
+  }
 
   const showSniWarning =
     !onlyCalls &&
@@ -513,7 +543,7 @@ export const UdpSettings = ({
 
                 <Grid size={{ xs: 12, md: 6 }}>
                   <B4Select
-                    value={config.udp.fake_payload_file ?? ""}
+                    value={udpPayloadFile}
                     path="udp.fake_payload_file"
                     options={[
                       {
@@ -536,15 +566,20 @@ export const UdpSettings = ({
                         value: UDP_FAKE_PAYLOAD_PRESET_2,
                         label: t("sets.udp.fakePayloadFilePreset2"),
                       },
+                      ...(chosenUdpFileLabel
+                        ? [{ value: udpPayloadFile, label: chosenUdpFileLabel }]
+                        : []),
                       ...sortedCaptures.map((c) => ({
-                        value: c.filepath,
+                        value: samePayloadFile(c.filepath, udpPayloadFile)
+                          ? udpPayloadFile
+                          : c.filepath,
                         label: `[${c.protocol}] ${c.domain} (${c.size} bytes)`,
                       })),
                     ]}
                     onChange={(e) =>
                       onChange("udp.fake_payload_file", e.target.value)
                     }
-                    helperText={t(payloadFileHelperKey)}
+                    helperText={payloadFileHelper}
                   />
                   <B4Hint>
                     <Link to="/settings/payloads">
