@@ -25,6 +25,7 @@ type CaptureRequest struct {
 
 func (api *API) RegisterCaptureApi() {
 	api.mux.HandleFunc("/api/capture/generate", api.handleGenerateCapture)
+	api.mux.HandleFunc("/api/capture/regenerate", api.handleRegenerateCapture)
 	api.mux.HandleFunc("/api/capture/list", api.handleListCaptures)
 	api.mux.HandleFunc("/api/capture/delete", api.handleDeleteCapture)
 	api.mux.HandleFunc("/api/capture/clear", api.handleClearCaptures)
@@ -123,6 +124,61 @@ func normalizeHostName(raw string) (string, bool) {
 		return "", false
 	}
 	return host, true
+}
+
+type RegenerateRequest struct {
+	Domain string `json:"domain"`
+}
+
+// @Summary Regenerate a generated payload
+// @Description Rebuilds a payload made by Generate with the current generator, under the same name and file, and reloads the sets that name it.
+// @Tags Capture
+// @Accept json
+// @Produce json
+// @Param body body RegenerateRequest true "Name of a generated TLS payload"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {string} string
+// @Failure 404 {string} string
+// @Failure 409 {string} string
+// @Security BearerAuth
+// @Router /capture/regenerate [post]
+func (api *API) handleRegenerateCapture(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req RegenerateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	domain := strings.ToLower(strings.TrimSpace(req.Domain))
+
+	manager := capture.GetManager(api.getCfg())
+	regenerated, err := manager.RegenerateCapture(domain)
+	switch {
+	case errors.Is(err, capture.ErrPayloadNotFound):
+		http.Error(w, fmt.Sprintf("No TLS payload named %q", domain), http.StatusNotFound)
+		return
+	case errors.Is(err, capture.ErrNotGenerated):
+		http.Error(w, fmt.Sprintf("The TLS payload %q was not made by Generate, so it cannot be regenerated", domain), http.StatusConflict)
+		return
+	case err != nil:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Regenerated the %d-byte TLS ClientHello of %s", regenerated.Size, domain),
+		"size":    regenerated.Size,
+		"domain":  domain,
+		"facts":   regenerated.Facts,
+	}
+	api.reloadSetsNaming([]string{regenerated.Filepath}, response)
+	setJsonHeader(w)
+	json.NewEncoder(w).Encode(response)
 }
 
 func generatedPayloadMessage(domain string, size int) string {

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -79,24 +80,30 @@ func (m *Manager) loadMetadata() {
 		return
 	}
 	m.metadata = usableMetadata(loaded)
-	if m.completeFacts() {
+	if m.completeLegacyEntries() {
 		m.saveMetadata()
 	}
 }
 
-func (m *Manager) completeFacts() bool {
+func (m *Manager) completeLegacyEntries() bool {
 	changed := false
 	for _, protocols := range m.metadata {
 		for protocol, meta := range protocols {
-			if meta.Facts != nil {
+			if meta.Facts != nil && meta.Origin != "" {
 				continue
 			}
 			data, err := m.readPayloadFile(meta.Filepath)
 			if err != nil {
 				continue
 			}
-			meta.Facts = FactsOf(protocol, data)
-			changed = true
+			if meta.Facts == nil {
+				meta.Facts = FactsOf(protocol, data)
+				changed = true
+			}
+			if meta.Origin == "" && protocol == "tls" && madeByTheGenerator(data, meta.Facts.SNI) {
+				meta.Origin = OriginGenerated
+				changed = true
+			}
 		}
 	}
 	return changed
@@ -197,13 +204,44 @@ func (m *Manager) GenerateCapture(domain, protocol string) error {
 		return fmt.Errorf("failed to generate payload: %v", err)
 	}
 
-	if err := m.storeLocked(protocol, domain, payload); err != nil {
+	if err := m.storeLocked(protocol, domain, payload, OriginGenerated); err != nil {
 		return err
 	}
 
 	log.Infof("✓ Generated a %d-byte TLS ClientHello for %s", len(payload), domain)
 
 	return nil
+}
+
+var (
+	ErrPayloadNotFound = errors.New("payload not found")
+	ErrNotGenerated    = errors.New("not a generated payload")
+)
+
+func (m *Manager) RegenerateCapture(domain string) (*Capture, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	meta := m.metadata[domain]["tls"]
+	if meta == nil {
+		return nil, ErrPayloadNotFound
+	}
+	if meta.Origin != OriginGenerated {
+		return nil, ErrNotGenerated
+	}
+	host := domain
+	if meta.Facts != nil && meta.Facts.SNI != "" {
+		host = meta.Facts.SNI
+	}
+	payload, err := tlsgen.GenerateTLSClientHello(host)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate payload: %v", err)
+	}
+	if err := m.storeLocked("tls", domain, payload, OriginGenerated); err != nil {
+		return nil, err
+	}
+	log.Infof("Regenerated the %d-byte TLS ClientHello of %s for %s", len(payload), domain, host)
+	return captureOf("tls", domain, m.metadata[domain]["tls"]), nil
 }
 
 func (m *Manager) fileNameFor(protocol, name string) (string, error) {
@@ -244,7 +282,7 @@ func (m *Manager) fileNameFree(filename string) bool {
 	return os.IsNotExist(err)
 }
 
-func (m *Manager) storeLocked(protocol, name string, data []byte) error {
+func (m *Manager) storeLocked(protocol, name string, data []byte, origin string) error {
 	filename, err := m.fileNameFor(protocol, name)
 	if err != nil {
 		return err
@@ -267,6 +305,7 @@ func (m *Manager) storeLocked(protocol, name string, data []byte) error {
 		Timestamp: time.Now(),
 		Size:      len(data),
 		Filepath:  filename,
+		Origin:    origin,
 		Facts:     FactsOf(protocol, data),
 	})
 	if err := m.saveMetadata(); err != nil {
@@ -342,6 +381,7 @@ func captureOf(protocol, domain string, meta *PayloadMetadata) *Capture {
 		Timestamp: meta.Timestamp,
 		Size:      meta.Size,
 		Filepath:  filepath.Join("captures", meta.Filepath),
+		Origin:    meta.Origin,
 		Facts:     meta.Facts,
 		Warnings:  []string{},
 	}
@@ -437,7 +477,7 @@ func (m *Manager) SaveUploadedCapture(protocol, domain string, data []byte) erro
 	defer m.mu.Unlock()
 
 	domain = strings.ToLower(strings.TrimSpace(domain))
-	if err := m.storeLocked(protocol, domain, data); err != nil {
+	if err := m.storeLocked(protocol, domain, data, OriginUploaded); err != nil {
 		return err
 	}
 
@@ -498,6 +538,7 @@ func (m *Manager) registerImportedPayload(name, protocol, filename string, data 
 		Timestamp: at,
 		Size:      len(data),
 		Filepath:  filename,
+		Origin:    OriginImported,
 		Facts:     FactsOf(protocol, data),
 	}
 	if err := m.saveMetadata(); err != nil {

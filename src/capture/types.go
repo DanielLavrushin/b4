@@ -16,8 +16,15 @@ type PayloadMetadata struct {
 	Timestamp time.Time `json:"timestamp"`
 	Size      int       `json:"size"`
 	Filepath  string    `json:"filepath"`
+	Origin    string    `json:"origin,omitempty"`
 	Facts     *Facts    `json:"facts,omitempty"`
 }
+
+const (
+	OriginGenerated = "generated"
+	OriginUploaded  = "uploaded"
+	OriginImported  = "imported"
+)
 
 type Capture struct {
 	Protocol  string    `json:"protocol"`
@@ -25,6 +32,7 @@ type Capture struct {
 	Timestamp time.Time `json:"timestamp"`
 	Size      int       `json:"size"`
 	Filepath  string    `json:"filepath"`
+	Origin    string    `json:"origin"`
 	Facts     *Facts    `json:"facts,omitempty"`
 	Warnings  []string  `json:"warnings"`
 	Missing   bool      `json:"missing"`

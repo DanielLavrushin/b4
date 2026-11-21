@@ -8,6 +8,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/quic"
 	"github.com/daniellavrushin/b4/sni"
+	"github.com/daniellavrushin/b4/tlsgen"
 	"golang.org/x/crypto/cryptobyte"
 )
 
@@ -109,10 +110,26 @@ func dtlsServerName(data []byte) string {
 }
 
 type helloWalk struct {
-	sni        string
-	extensions int
-	ech        bool
-	faults     []string
+	sni          string
+	extensions   int
+	ech          bool
+	faults       []string
+	cipherSuites []uint16
+	extTypes     []uint16
+}
+
+func madeByTheGenerator(data []byte, name string) bool {
+	if name == "" || !isTLSClientHelloRecord(data) {
+		return false
+	}
+	reference, err := tlsgen.GenerateTLSClientHello(name)
+	if err != nil {
+		return false
+	}
+	got, want := walkTLSRecord(data), walkTLSRecord(reference)
+	return len(got.cipherSuites) > 0 && len(got.extTypes) > 0 &&
+		slices.Equal(got.cipherSuites, want.cipherSuites) &&
+		slices.Equal(got.extTypes, want.extTypes)
 }
 
 func (h *helloWalk) fault(code string) {
@@ -164,6 +181,11 @@ func (h *helloWalk) walkBody(body []byte) {
 		h.fault("cipher_suites")
 		return
 	}
+	for !suites.Empty() {
+		var suite uint16
+		suites.ReadUint16(&suite)
+		h.cipherSuites = append(h.cipherSuites, suite)
+	}
 	var compression cryptobyte.String
 	if !s.ReadUint8LengthPrefixed(&compression) || compression.Empty() {
 		h.fault("handshake")
@@ -192,6 +214,7 @@ func (h *helloWalk) walkBody(body []byte) {
 			return
 		}
 		h.extensions++
+		h.extTypes = append(h.extTypes, typ)
 		if typ == extECH {
 			h.ech = true
 		}

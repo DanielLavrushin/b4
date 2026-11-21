@@ -85,7 +85,10 @@ func TestThePayloadListEntryKeepsTheContractsNames(t *testing.T) {
 	useSets(api, set)
 
 	entry := listedPayloadObject(t, mux, "tls", tlsName)
-	requireKeys(t, "a list entry", entry, "protocol", "domain", "timestamp", "size", "filepath", "facts", "warnings", "missing", "used_by")
+	requireKeys(t, "a list entry", entry, "protocol", "domain", "timestamp", "size", "filepath", "origin", "facts", "warnings", "missing", "used_by")
+	if entry["origin"] != "imported" {
+		t.Errorf("a payload saved through SaveImportedPayload is listed with origin %v, want imported", entry["origin"])
+	}
 	facts := objectAt(t, "a list entry", entry, "facts")
 	requireKeys(t, "the facts of a TLS ClientHello", facts, "kind", "sni", "extensions", "ech", "fits_one_packet", "faults")
 	if facts["kind"] != "tls_client_hello" || facts["sni"] != "www.google.com" || facts["fits_one_packet"] != true {
