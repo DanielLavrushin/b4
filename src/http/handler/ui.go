@@ -9,8 +9,65 @@ import (
 	"github.com/daniellavrushin/b4/log"
 )
 
+const newSetTemplateBodyLimit = 1 << 20
+
+type NewSetTemplateResponse struct {
+	NewSetTemplate map[string]interface{} `json:"new_set_template"`
+}
+
 func (api *API) RegisterUIApi() {
 	api.mux.HandleFunc("/api/ui/dashboard", api.handleDashboardLayout)
+	api.mux.HandleFunc("/api/ui/new-set-template", api.handleNewSetTemplate)
+}
+
+// @Summary Get or replace the new set template
+// @Description The values a set created on the Sets page starts with, as the fields that differ from b4's set defaults. PUT takes a set or part of one, keeps only what differs from the defaults and drops the set's own fields (id, name, enabled, targets, hub link, discovery) and the proxy username and password. An empty object clears the template. Imports, shared sets, Discovery, MCP and the sets API keep b4's set defaults.
+// @Tags UI
+// @Accept json
+// @Produce json
+// @Param template body object false "A set or part of one (PUT only)"
+// @Success 200 {object} NewSetTemplateResponse
+// @Security BearerAuth
+// @Router /ui/new-set-template [get]
+// @Router /ui/new-set-template [put]
+func (a *API) handleNewSetTemplate(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		setJsonHeader(w)
+		_ = json.NewEncoder(w).Encode(NewSetTemplateResponse{NewSetTemplate: a.getCfg().UI.NewSetTemplate})
+
+	case http.MethodPut:
+		r.Body = http.MaxBytesReader(w, r.Body, newSetTemplateBodyLimit)
+		var raw map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+			writeAPIError(w, ErrInvalidJSON())
+			return
+		}
+		template, err := config.NormalizeSetTemplate(raw)
+		if err != nil {
+			writeAPIError(w, err)
+			return
+		}
+
+		unlock := config.LockWrites()
+		newCfg := a.getCfg().Clone()
+		newCfg.UI.NewSetTemplate = template
+
+		if err := newCfg.SaveToFile(newCfg.ConfigPath); err != nil {
+			unlock()
+			log.Errorf("Failed to save the new set template: %v", err)
+			writeAPIError(w, ErrInternal("Failed to save the new set template"))
+			return
+		}
+		a.cfgPtr.Store(newCfg)
+		unlock()
+
+		setJsonHeader(w)
+		_ = json.NewEncoder(w).Encode(NewSetTemplateResponse{NewSetTemplate: template})
+
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
 }
 
 // @Summary Get the dashboard layout

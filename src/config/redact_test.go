@@ -62,12 +62,14 @@ var notSecretPaths = map[string]string{
 }
 
 var placeholderOnlyPaths = map[string]string{
-	"system.web_server.tls_cert":        "file path; host names inside it are masked",
-	"system.web_server.tls_key":         "file path; host names inside it are masked",
-	"system.mtproto.web_proxy.tls_cert": "file path; host names inside it are masked",
-	"system.mtproto.web_proxy.tls_key":  "file path; host names inside it are masked",
-	"system.mtproto.secret":             "legacy single secret that the v50 migration moves into secrets",
-	"system.checker.watchdog.domains[]": "URL entries are masked like Discovery URLs",
+	"system.web_server.tls_cert":          "file path; host names inside it are masked",
+	"system.web_server.tls_key":           "file path; host names inside it are masked",
+	"system.mtproto.web_proxy.tls_cert":   "file path; host names inside it are masked",
+	"system.mtproto.web_proxy.tls_key":    "file path; host names inside it are masked",
+	"system.mtproto.secret":               "legacy single secret that the v50 migration moves into secrets",
+	"system.checker.watchdog.domains[]":   "URL entries are masked like Discovery URLs",
+	"ui.new_set_template.dns.doh_url":     "the new set template, an untyped map, masks its resolver like sets[].dns.doh_url",
+	"ui.new_set_template.dns.upstreams[]": "the new set template masks its resolvers like sets[].dns.upstreams[]",
 }
 
 var indexInPath = regexp.MustCompile(`\[\d+\]`)

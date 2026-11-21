@@ -9,7 +9,8 @@ const (
 )
 
 type UIConfig struct {
-	Dashboard DashboardLayout `json:"dashboard"`
+	Dashboard      DashboardLayout        `json:"dashboard"`
+	NewSetTemplate map[string]interface{} `json:"new_set_template,omitempty"`
 }
 
 type DashboardLayout struct {

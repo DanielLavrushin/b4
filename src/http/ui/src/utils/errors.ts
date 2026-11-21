@@ -2,7 +2,11 @@ import i18n from "../i18n";
 import type { TFunction } from "i18next";
 import { ApiError, type FieldError } from "@api/apiClient";
 
-const SET_PATH_PREFIX = /^sets\[\d+\]\./;
+const SET_PATH_PREFIX = /^(sets\[\d+\]|ui\.new_set_template)\./;
+const SET_TEMPLATE_PATH = "ui.new_set_template";
+
+const isSetTemplatePath = (path: string) =>
+  path === SET_TEMPLATE_PATH || path.startsWith(`${SET_TEMPLATE_PATH}.`);
 
 const SET_FIELD_ERRORS: Record<string, string> = {
   "udp.dport_filter:required": "udp_l7_ports",
@@ -20,7 +24,10 @@ function fieldErrorKey(f: FieldError): string {
 export function localizeFieldError(f: FieldError, lng?: string): string {
   const key = fieldErrorKey(f);
   if (i18n.exists(key, { lng })) {
-    const out: unknown = i18n.t(key, { ...(f.params ?? {}), lng });
+    const params = isSetTemplatePath(f.path)
+      ? { ...f.params, set: i18n.t("settings.NewSetTemplate.title", { lng }) }
+      : f.params;
+    const out: unknown = i18n.t(key, { ...params, lng });
     if (typeof out === "string") return out;
   }
   return f.message;

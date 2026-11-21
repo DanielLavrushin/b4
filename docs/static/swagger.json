@@ -4368,7 +4368,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "A field the body leaves out takes its set default, the value a new set gets in the web interface. A set created without \"enabled\" is enabled.",
+                "description": "A field the body leaves out takes b4's set default, the value a config file or a set export means when it leaves the field out. The new set template (/ui/new-set-template) does not apply here: only the web interface's Create Set reads it. A set created without \"enabled\" is enabled.",
                 "consumes": [
                     "application/json"
                 ],
@@ -5183,6 +5183,80 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/config.DashboardLayout"
+                        }
+                    }
+                }
+            }
+        },
+        "/ui/new-set-template": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The values a set created on the Sets page starts with, as the fields that differ from b4's set defaults. PUT takes a set or part of one, keeps only what differs from the defaults and drops the set's own fields (id, name, enabled, targets, hub link, discovery) and the proxy username and password. An empty object clears the template. Imports, shared sets, Discovery, MCP and the sets API keep b4's set defaults.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "UI"
+                ],
+                "summary": "Get or replace the new set template",
+                "parameters": [
+                    {
+                        "description": "A set or part of one (PUT only)",
+                        "name": "template",
+                        "in": "body",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.NewSetTemplateResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The values a set created on the Sets page starts with, as the fields that differ from b4's set defaults. PUT takes a set or part of one, keeps only what differs from the defaults and drops the set's own fields (id, name, enabled, targets, hub link, discovery) and the proxy username and password. An empty object clears the template. Imports, shared sets, Discovery, MCP and the sets API keep b4's set defaults.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "UI"
+                ],
+                "summary": "Get or replace the new set template",
+                "parameters": [
+                    {
+                        "description": "A set or part of one (PUT only)",
+                        "name": "template",
+                        "in": "body",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.NewSetTemplateResponse"
                         }
                     }
                 }
@@ -7162,6 +7236,10 @@
             "properties": {
                 "dashboard": {
                     "$ref": "#/definitions/config.DashboardLayout"
+                },
+                "new_set_template": {
+                    "type": "object",
+                    "additionalProperties": true
                 }
             }
         },
@@ -10057,6 +10135,15 @@
                 },
                 "uptime_s": {
                     "type": "integer"
+                }
+            }
+        },
+        "handler.NewSetTemplateResponse": {
+            "type": "object",
+            "properties": {
+                "new_set_template": {
+                    "type": "object",
+                    "additionalProperties": true
                 }
             }
         },

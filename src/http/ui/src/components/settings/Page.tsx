@@ -9,6 +9,7 @@ import {
   Grid,
   Paper,
   Stack,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
@@ -129,7 +130,7 @@ const TAB_SECTIONS = new Map<TABS, SettingsSection[]>([
 ]);
 
 const TAB_GROUP_PREFIXES: Record<TABS, { labelKey: string; prefixes: string[] }> = {
-  [TABS.GENERAL]: { labelKey: "settings.tabs.core", prefixes: ["queue", "system.tables", "system.dns", "system.socks5", "system.ip_health"] },
+  [TABS.GENERAL]: { labelKey: "settings.tabs.core", prefixes: ["queue", "system.tables", "system.dns", "system.socks5", "system.ip_health", "ui.new_set_template"] },
   [TABS.SYSTEM]: { labelKey: "settings.tabs.system", prefixes: ["system.logging", "system.memory_limit", "system.timezone", "system.update", "system.web_server"] },
   [TABS.DOMAINS]: { labelKey: "settings.tabs.geodat", prefixes: ["system.geo"] },
   [TABS.DISCOVERY]: { labelKey: "settings.tabs.discovery", prefixes: ["system.checker"] },
@@ -156,6 +157,28 @@ export function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
+  const [invalidDrafts, setInvalidDrafts] = useState<
+    ReadonlyMap<string, string>
+  >(() => new Map());
+  const [formResetToken, setFormResetToken] = useState(0);
+  const handleFieldDraft = useCallback(
+    (field: string, invalidText: string | null) => {
+      setInvalidDrafts((prev) => {
+        if (
+          invalidText === null
+            ? !prev.has(field)
+            : prev.get(field) === invalidText
+        ) {
+          return prev;
+        }
+        const next = new Map(prev);
+        if (invalidText === null) next.delete(field);
+        else next.set(field, invalidText);
+        return next;
+      });
+    },
+    [],
+  );
   const [showRestartDialog, setShowRestartDialog] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const lastSection = useRef<Partial<Record<TABS, string>>>({});
@@ -290,7 +313,9 @@ export function SettingsPage() {
     [draftSets, baselineSets],
   );
   const hasChanges = changedLeaves.length > 0 || setsChanged;
-  const hasUnsavedChanges = hasChanges || config !== deferredConfig;
+  const saveBlocked = invalidDrafts.size > 0;
+  const anyChanges = hasChanges || saveBlocked;
+  const hasUnsavedChanges = anyChanges || config !== deferredConfig;
   const shouldBlock = useCallback<BlockerFunction>(
     ({ nextLocation }) =>
       hasUnsavedChanges && !nextLocation.pathname.startsWith("/settings"),
@@ -330,13 +355,14 @@ export function SettingsPage() {
 
   const sectionState = useMemo(() => {
     const state: Partial<Record<TABS, SectionState[]>> = {};
+    const dirtyPaths = [...changedPaths, ...invalidDrafts.keys()];
     for (const [tab, sections] of TAB_SECTIONS) {
       state[tab] = sections.map((section) => {
-        if (!hasChanges || !deferredConfig || !originalConfig) {
+        if (!anyChanges || !deferredConfig || !originalConfig) {
           return { dirty: false, restart: false };
         }
         let dirty = false;
-        for (const p of changedPaths) {
+        for (const p of dirtyPaths) {
           if (
             section.exceptPrefixes?.some(
               (e) => p === e || p.startsWith(`${e}.`),
@@ -362,11 +388,11 @@ export function SettingsPage() {
       });
     }
     return state;
-  }, [deferredConfig, originalConfig, hasChanges, changedPaths]);
+  }, [deferredConfig, originalConfig, anyChanges, changedPaths, invalidDrafts]);
 
   // Check which categories have changes
   const categoryHasChanges = useMemo(() => {
-    if (!hasChanges) return {};
+    if (!anyChanges) return {};
 
     return {
       // Core
@@ -398,7 +424,7 @@ export function SettingsPage() {
       // System
       [TABS.SYSTEM]: !!sectionState[TABS.SYSTEM]?.some((s) => s.dirty),
     };
-  }, [changedPaths, hasChanges, sectionState]);
+  }, [changedPaths, anyChanges, sectionState]);
 
   const needsRestart = Object.values(sectionState).some((list) =>
     list.some((s) => s.restart),
@@ -413,6 +439,8 @@ export function SettingsPage() {
       const data = await configApi.get();
       setConfig(data);
       setOriginalConfig(structuredClone(data));
+      setInvalidDrafts(new Map());
+      setFormResetToken((n) => n + 1);
       setLanguage(data.system.web_server.language ?? "en");
       return data;
     } catch (error) {
@@ -437,7 +465,7 @@ export function SettingsPage() {
   const invalidateSystemAddresses = useSystemAddressesInvalidate();
 
   const saveConfig = async () => {
-    if (!config) return;
+    if (!config || saveBlocked) return;
 
     let stale = false;
     try {
@@ -477,6 +505,8 @@ export function SettingsPage() {
   const resetChanges = () => {
     if (originalConfig) {
       setConfig(structuredClone(originalConfig));
+      setInvalidDrafts(new Map());
+      setFormResetToken((n) => n + 1);
       setLanguage(originalConfig.system.web_server.language ?? "en");
       setShowResetDialog(false);
       showSuccess(t("core.changesDiscarded"));
@@ -547,7 +577,7 @@ export function SettingsPage() {
               >
                 {t("core.configuration")}
               </Typography>
-              {hasChanges && (
+              {anyChanges && (
                 <Chip
                   label={t("core.modified")}
                   size="small"
@@ -582,7 +612,7 @@ export function SettingsPage() {
                 size="small"
                 variant="text"
                 onClick={() => setShowResetDialog(true)}
-                disabled={!hasChanges || saving}
+                disabled={!anyChanges || saving}
               >
                 {t("core.discard")}
               </Button>
@@ -599,19 +629,23 @@ export function SettingsPage() {
                 {t("core.reload")}
               </Button>
 
-              <Button
-                size="small"
-                variant="contained"
-                startIcon={
-                  saving ? <CircularProgress size={16} /> : <SaveIcon />
-                }
-                onClick={() => {
-                  void saveConfig();
-                }}
-                disabled={!hasChanges || saving}
-              >
-                {saving ? t("core.saving") : t("core.save")}
-              </Button>
+              <Tooltip title={saveBlocked ? t("core.saveBlockedInvalid") : ""}>
+                <span>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    startIcon={
+                      saving ? <CircularProgress size={16} /> : <SaveIcon />
+                    }
+                    onClick={() => {
+                      void saveConfig();
+                    }}
+                    disabled={!hasChanges || saving || saveBlocked}
+                  >
+                    {saving ? t("core.saving") : t("core.save")}
+                  </Button>
+                </span>
+              </Tooltip>
             </Stack>
           </Stack>
 
@@ -665,6 +699,9 @@ export function SettingsPage() {
             section={currentSectionId}
             config={config}
             onChange={handleChange}
+            onFieldDraft={handleFieldDraft}
+            invalidDrafts={invalidDrafts}
+            resetToken={formResetToken}
           />
         </TabPanel>
 
@@ -720,7 +757,7 @@ export function SettingsPage() {
       <UnsavedChangesDialog
         open={showResetDialog}
         groups={changeGroups}
-        total={changeItems.length}
+        total={changeItems.length + invalidDrafts.size}
         onStay={() => setShowResetDialog(false)}
         onLeave={resetChanges}
         title={t("core.discardChanges")}
@@ -736,7 +773,7 @@ export function SettingsPage() {
       <UnsavedChangesDialog
         open={blocker.state === "blocked"}
         groups={changeGroups}
-        total={changeItems.length}
+        total={changeItems.length + invalidDrafts.size}
         onStay={() => blocker.reset?.()}
         onLeave={() => blocker.proceed?.()}
       />

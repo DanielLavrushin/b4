@@ -16,6 +16,7 @@ import {
 } from "./Firewall";
 import { IPHealthSettings } from "./IPHealth";
 import { MSSClampingSettings } from "./MSSClamping";
+import { NewSetTemplateSettings } from "./NewSetTemplate";
 import { QueueSettings } from "./Queue";
 import { Socks5Settings } from "./Socks5";
 
@@ -23,9 +24,12 @@ interface CoreSettingsProps {
   section: string | undefined;
   config: B4Config;
   onChange: (field: string, value: SettingsPropHandlerType) => void;
+  onFieldDraft?: (field: string, invalidText: string | null) => void;
+  invalidDrafts?: ReadonlyMap<string, string>;
+  resetToken?: number;
 }
 
-type SectionProps = Omit<CoreSettingsProps, "section">;
+type SectionProps = Pick<CoreSettingsProps, "config" | "onChange">;
 
 const EngineSection = (props: SectionProps) => {
   const { ipv6BypassesSets, engineFailure } = useEngineStatus();
@@ -52,6 +56,9 @@ export const CoreSettings = ({
   section,
   config,
   onChange,
+  onFieldDraft,
+  invalidDrafts,
+  resetToken,
 }: CoreSettingsProps) => {
   const props = { config, onChange };
 
@@ -81,6 +88,14 @@ export const CoreSettings = ({
         ),
         dns: <DnsSettings {...props} />,
         socks5: <Socks5Settings {...props} />,
+        other: (
+          <NewSetTemplateSettings
+            key={resetToken}
+            {...props}
+            onDraftChange={onFieldDraft}
+            invalidDrafts={invalidDrafts}
+          />
+        ),
       }}
     />
   );
