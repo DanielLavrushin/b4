@@ -231,9 +231,8 @@ func (api *API) handleDownloadCapture(w http.ResponseWriter, r *http.Request) {
 	filename := filepath.Base(fileParam)
 	absPath := filepath.Join(absCapturesDir, filename)
 
-	// Check file exists and is a .bin file
 	info, err := os.Stat(absPath)
-	if os.IsNotExist(err) {
+	if err != nil {
 		http.Error(w, "File not found", http.StatusNotFound)
 		return
 	}
