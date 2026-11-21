@@ -29,7 +29,7 @@ import {
   samePayloadFile,
   useListedCaptures,
 } from "../payloadFile";
-import { sendsFake } from "./fakePayload";
+import { sendsFake, tlsModChangesTheFake } from "./fakePayload";
 
 interface TcpFakingProps {
   config: B4SetConfig;
@@ -493,8 +493,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               )}
             </Grid>
           )}
-          {/* TLS Mod Options - only show when payload has TLS structure */}
-          {config.faking.sni_type !== FakingPayloadType.RANDOM && (
+          {tlsModChangesTheFake(config, chosenFile) && (
             <Grid size={{ xs: 12 }}>
               <Typography variant="subtitle2" sx={{ mb: 1 }}>
                 {t("sets.faking.fakeSni.tlsModTitle")}
@@ -506,7 +505,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               >
                 {t("sets.faking.fakeSni.tlsModDesc")}
               </Typography>
-              <Stack direction="row" spacing={2}>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                 <B4Switch
                   label={t("sets.faking.fakeSni.randomizeTlsRandom")}
                   checked={(config.faking.tls_mod || []).includes("rnd")}

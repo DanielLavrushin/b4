@@ -23,8 +23,14 @@ func TestSetEditorFlagsAnEmptyFakePayloadChoice(t *testing.T) {
 	if body == nil {
 		t.Fatal("no sendsFake helper mirroring SetConfig.SendsFake")
 	}
+	reads := body[1]
+	if strings.Contains(reads, "sendsSynOrDecoyFake(") {
+		if inner := regexp.MustCompile(`(?s)export const sendsSynOrDecoyFake\b(.*?);\n`).FindStringSubmatch(helpers); inner != nil {
+			reads += inner[1]
+		}
+	}
 	for _, field := range []string{"faking.sni", "tcp.syn_fake", "tcp.syn_fake_len", "decoy_enabled"} {
-		if !strings.Contains(body[1], field) {
+		if !strings.Contains(reads, field) {
 			t.Errorf("sendsFake does not read %s, as SetConfig.SendsFake does", field)
 		}
 	}
