@@ -156,7 +156,7 @@ func (api *API) handleRegenerateCapture(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
-	domain := strings.ToLower(strings.TrimSpace(req.Domain))
+	domain := strings.TrimSpace(req.Domain)
 
 	manager := capture.GetManager(api.getCfg())
 	regenerated, err := manager.RegenerateCapture(domain)

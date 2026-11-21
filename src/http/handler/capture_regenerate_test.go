@@ -96,6 +96,19 @@ func TestRegenerateRepairsAnOldGeneratedPayloadForTheSetsThatUseIt(t *testing.T)
 	}
 }
 
+func TestRegenerateFindsAPayloadByTheNameItIsListedUnder(t *testing.T) {
+	mux, api := captureTestMux(t)
+	manager := capture.GetManager(api.getCfg())
+	const name = "Mixed-Case.Regenerate.Example"
+	plantLegacyPayload(t, manager, name, "tls_mixed-case_regenerate_example.bin", legacyGeneratedFixture(t, "max.ru"))
+	if entry := listedPayloadObject(t, mux, "tls", name); entry["origin"] != "generated" {
+		t.Fatalf("setup: the planted hello is listed with origin %v", entry["origin"])
+	}
+	if rec := regenerate(t, mux, name); rec.Code != http.StatusOK {
+		t.Errorf("regenerating %q, the name the list shows, answered %d %q, want 200", name, rec.Code, strings.TrimSpace(rec.Body.String()))
+	}
+}
+
 func TestRegenerateTakesOnlyAGeneratedTLSPayload(t *testing.T) {
 	mux, api := captureTestMux(t)
 	manager := capture.GetManager(api.getCfg())
