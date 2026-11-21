@@ -700,73 +700,6 @@
                 }
             }
         },
-        "/capture/builtin": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "The payloads compiled into b4 (google, vk, stun, quic1, quic2), each with its protocol, size and facts.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Capture"
-                ],
-                "summary": "List the built-in payloads",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/capture.Builtin"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/capture/builtin/download": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/octet-stream"
-                ],
-                "tags": [
-                    "Capture"
-                ],
-                "summary": "Download a built-in payload",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Built-in payload id (google, vk, stun, quic1, quic2)",
-                        "name": "id",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "file"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
         "/capture/clear": {
             "post": {
                 "security": [
@@ -879,7 +812,6 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Generates a TLS ClientHello for a host name and reloads the sets that already name its file.",
                 "consumes": [
                     "application/json"
                 ],
@@ -912,50 +844,6 @@
                 }
             }
         },
-        "/capture/inspect": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Reads an uploaded file and answers what it is: its facts, the protocol to save it under, its server name, whether it fits one packet as a TCP and as a UDP fake, and the limits behind those answers. Nothing is saved.",
-                "consumes": [
-                    "multipart/form-data"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Capture"
-                ],
-                "summary": "Describe a payload file without saving it",
-                "parameters": [
-                    {
-                        "type": "file",
-                        "description": "Payload binary file",
-                        "name": "file",
-                        "in": "formData",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
         "/capture/list": {
             "get": {
                 "security": [
@@ -983,14 +871,13 @@
                 }
             }
         },
-        "/capture/regenerate": {
+        "/capture/probe": {
             "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Rebuilds a payload made by Generate with the current generator, under the same name and file, and reloads the sets that name it.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1000,15 +887,15 @@
                 "tags": [
                     "Capture"
                 ],
-                "summary": "Regenerate a generated payload",
+                "summary": "Probe domain for capture",
                 "parameters": [
                     {
-                        "description": "Name of a generated TLS payload",
+                        "description": "Capture request",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handler.RegenerateRequest"
+                            "$ref": "#/definitions/handler.CaptureRequest"
                         }
                     }
                 ],
@@ -1018,64 +905,6 @@
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/capture/resolve": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Cleans the path the way the payload loader does and answers it in the form the payload list uses, whether a list entry names that file, whether the file exists, its size, whether it is larger than a payload may be (too_large) and its facts. Facts are judged for the protocol of the list entry, or the protocol the file suits when no entry names it, and are omitted when the file cannot be read, is empty or is larger than a payload may be. A path that leaves captures/ or does not end in .bin is refused.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Capture"
-                ],
-                "summary": "Resolve a payload file as a set names it",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Payload file as the set names it, e.g. captures/tls_example_com.bin",
-                        "name": "file",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handler.PayloadFileResolution"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "string"
                         }
                     }
                 }
@@ -1088,7 +917,6 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Saves a payload file under a name and protocol. A name and protocol that already exist are replaced only with replace=1; otherwise the answer is 409 with code \"exists\" and the sets that use the payload in used_by.",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -1109,7 +937,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "Payload name, at most 200 characters",
+                        "description": "Domain name",
                         "name": "domain",
                         "in": "formData",
                         "required": true
@@ -1120,30 +948,11 @@
                         "description": "Protocol (tls or quic)",
                         "name": "protocol",
                         "in": "formData"
-                    },
-                    {
-                        "type": "string",
-                        "description": "1 to replace an existing payload of this name and protocol",
-                        "name": "replace",
-                        "in": "formData"
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1181,7 +990,6 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "A field a set in \"sets\" leaves out takes its set default.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2281,7 +2089,7 @@
                         }
                     },
                     "400": {
-                        "description": "routed_set, reserved_host, no_urls, too_many_urls, bad_dns_server, bad_pin or note_too_long",
+                        "description": "reserved_host, no_urls, too_many_urls, bad_dns_server, bad_pin or note_too_long",
                         "schema": {
                             "$ref": "#/definitions/handler.APIError"
                         }
@@ -2293,7 +2101,7 @@
                         }
                     },
                     "409": {
-                        "description": "dscp_rules_pending while b4 is still applying its DSCP rules; under the TUN engine tun_carrier_unavailable while the engine cannot carry the probes, ipv6_unsupported_tun for a run that asks for IPv6, dscp_unsupported_tun for a set with its own DSCP value; another run in progress answers in plain text",
+                        "description": "dscp_rules_pending while b4 is still applying its DSCP rules; another run in progress answers in plain text",
                         "schema": {
                             "$ref": "#/definitions/handler.APIError"
                         }
@@ -4088,13 +3896,11 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Tests every route to the data centre, three at a time, and answers with all results once the run ends.\nWith Accept: text/event-stream the answer is a Server-Sent Events stream instead: \"plan\" with the routes in order,\n\"start\" and \"result\" for each route by its index as it happens, then \"done\".",
                 "consumes": [
                     "application/json"
                 ],
                 "produces": [
-                    "application/json",
-                    "text/event-stream"
+                    "application/json"
                 ],
                 "tags": [
                     "MTProto"
@@ -4102,7 +3908,7 @@
                 "summary": "Probe MTProto upstream transports",
                 "parameters": [
                     {
-                        "description": "optional overrides: upstream_mode, ws_custom_domain, ws_endpoint_host, cfworker_domain, cfproxy_enabled, dc_relay, upstream_set, dc",
+                        "description": "optional overrides: upstream_mode, ws_custom_domain, ws_endpoint_host, cfworker_domain, cfproxy_enabled, dc_relay, dc",
                         "name": "body",
                         "in": "body",
                         "schema": {
@@ -4281,7 +4087,6 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "A field the body leaves out takes b4's set default, the value a config file or a set export means when it leaves the field out. The new set template (/ui/new-set-template) does not apply here: only the web interface's Create Set reads it. A set created without \"enabled\" is enabled.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4549,7 +4354,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "The body replaces the whole set. It must carry \"name\", \"enabled\" and \"targets\", otherwise the write is refused with 400 validation_failed and the set is left as it was. Any other field the body leaves out takes its set default, not the value the set had. When the body carries the \"revision\" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before.",
+                "description": "When the body carries the \"revision\" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4583,12 +4388,6 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handler.SetWithRevision"
-                        }
-                    },
-                    "400": {
-                        "description": "code: validation_failed",
-                        "schema": {
-                            "$ref": "#/definitions/handler.APIError"
                         }
                     },
                     "404": {
@@ -5096,80 +4895,6 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/config.DashboardLayout"
-                        }
-                    }
-                }
-            }
-        },
-        "/ui/new-set-template": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "The values a set created on the Sets page starts with, as the fields that differ from b4's set defaults. PUT takes a set or part of one, keeps only what differs from the defaults and drops the set's own fields (id, name, enabled, targets, hub link, discovery). An empty object clears the template. Imports, shared sets, Discovery, MCP and the sets API keep b4's set defaults.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "UI"
-                ],
-                "summary": "Get or replace the new set template",
-                "parameters": [
-                    {
-                        "description": "A set or part of one (PUT only)",
-                        "name": "template",
-                        "in": "body",
-                        "schema": {
-                            "type": "object"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handler.NewSetTemplateResponse"
-                        }
-                    }
-                }
-            },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "The values a set created on the Sets page starts with, as the fields that differ from b4's set defaults. PUT takes a set or part of one, keeps only what differs from the defaults and drops the set's own fields (id, name, enabled, targets, hub link, discovery). An empty object clears the template. Imports, shared sets, Discovery, MCP and the sets API keep b4's set defaults.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "UI"
-                ],
-                "summary": "Get or replace the new set template",
-                "parameters": [
-                    {
-                        "description": "A set or part of one (PUT only)",
-                        "name": "template",
-                        "in": "body",
-                        "schema": {
-                            "type": "object"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handler.NewSetTemplateResponse"
                         }
                     }
                 }
@@ -5723,55 +5448,6 @@
                 },
                 "name": {
                     "type": "string"
-                }
-            }
-        },
-        "capture.Builtin": {
-            "type": "object",
-            "properties": {
-                "facts": {
-                    "$ref": "#/definitions/capture.Facts"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "protocol": {
-                    "type": "string"
-                },
-                "size": {
-                    "type": "integer"
-                }
-            }
-        },
-        "capture.Facts": {
-            "type": "object",
-            "properties": {
-                "ech": {
-                    "type": "boolean"
-                },
-                "extensions": {
-                    "type": "integer"
-                },
-                "faults": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "fits_one_packet": {
-                    "type": "boolean"
-                },
-                "kind": {
-                    "type": "string"
-                },
-                "quic_version": {
-                    "type": "integer"
-                },
-                "sni": {
-                    "type": "string"
-                },
-                "tls_mod": {
-                    "type": "boolean"
                 }
             }
         },
@@ -6521,6 +6197,9 @@
                     "description": "user's Cloudflare Worker domain(s) (workers.dev), comma-separated; free per-user WS relay tried before the shared CF pool",
                     "type": "string"
                 },
+                "cfworker_dpi": {
+                    "type": "boolean"
+                },
                 "dc_fallback_enabled": {
                     "description": "fetch the DC IP list from DCFallbackURL when Telegram's official endpoint is blocked",
                     "type": "boolean"
@@ -6567,9 +6246,6 @@
                     "type": "integer"
                 },
                 "upstream_mode": {
-                    "type": "string"
-                },
-                "upstream_set": {
                     "type": "string"
                 },
                 "web_proxy": {
@@ -7140,10 +6816,6 @@
             "properties": {
                 "dashboard": {
                     "$ref": "#/definitions/config.DashboardLayout"
-                },
-                "new_set_template": {
-                    "type": "object",
-                    "additionalProperties": true
                 }
             }
         },
@@ -8007,6 +7679,7 @@
                     "type": "string"
                 },
                 "protocol": {
+                    "description": "\"tls\", \"quic\", or \"both\"",
                     "type": "string"
                 }
             }
@@ -9345,12 +9018,6 @@
                 },
                 "success": {
                     "type": "boolean"
-                },
-                "unmatched": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/handler.GeodatUnmatched"
-                    }
                 }
             }
         },
@@ -9395,29 +9062,6 @@
                     "type": "string"
                 },
                 "name": {
-                    "type": "string"
-                }
-            }
-        },
-        "handler.GeodatUnmatched": {
-            "type": "object",
-            "properties": {
-                "geoip_categories": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "geosite_categories": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "set_id": {
-                    "type": "string"
-                },
-                "set_name": {
                     "type": "string"
                 }
             }
@@ -10001,38 +9645,6 @@
                 }
             }
         },
-        "handler.NewSetTemplateResponse": {
-            "type": "object",
-            "properties": {
-                "new_set_template": {
-                    "type": "object",
-                    "additionalProperties": true
-                }
-            }
-        },
-        "handler.PayloadFileResolution": {
-            "type": "object",
-            "properties": {
-                "exists": {
-                    "type": "boolean"
-                },
-                "facts": {
-                    "$ref": "#/definitions/capture.Facts"
-                },
-                "file": {
-                    "type": "string"
-                },
-                "listed": {
-                    "type": "boolean"
-                },
-                "size": {
-                    "type": "integer"
-                },
-                "too_large": {
-                    "type": "boolean"
-                }
-            }
-        },
         "handler.PublicDNSServer": {
             "type": "object",
             "properties": {
@@ -10053,14 +9665,6 @@
                 },
                 "reliability": {
                     "type": "number"
-                }
-            }
-        },
-        "handler.RegenerateRequest": {
-            "type": "object",
-            "properties": {
-                "domain": {
-                    "type": "string"
                 }
             }
         },
