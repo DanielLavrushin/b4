@@ -148,20 +148,27 @@ function post(server, opt, body, protocol) {
   };
   if (protocol) headers["MCP-Protocol-Version"] = protocol;
   return new Promise((resolve, reject) => {
-    const req = lib.request(
-      url,
-      { method: "POST", headers, rejectUnauthorized: !opt.insecure, timeout: opt.timeout * 1000 },
-      (res) => {
-        const chunks = [];
-        res.on("data", (c) => chunks.push(c));
-        res.on("error", reject);
-        res.on("end", () =>
-          resolve({ status: res.statusCode, type: res.headers["content-type"] || "", text: Buffer.concat(chunks).toString("utf8") }),
-        );
-      },
-    );
-    req.on("timeout", () => req.destroy(new Error(`no answer within ${opt.timeout} s`)));
-    req.on("error", (e) => reject(networkError(server, e)));
+    let settled = false;
+    let deadline;
+    const settle = (done, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      done(value);
+    };
+    const req = lib.request(url, { method: "POST", headers, rejectUnauthorized: !opt.insecure }, (res) => {
+      const chunks = [];
+      res.on("data", (c) => chunks.push(c));
+      res.on("error", (e) => settle(reject, networkError(server, e)));
+      res.on("end", () =>
+        settle(resolve, { status: res.statusCode, type: res.headers["content-type"] || "", text: Buffer.concat(chunks).toString("utf8") }),
+      );
+    });
+    deadline = setTimeout(() => {
+      settle(reject, new Error(`${server.name}: no answer within ${opt.timeout} s`));
+      req.destroy();
+    }, opt.timeout * 1000);
+    req.on("error", (e) => settle(reject, networkError(server, e)));
     req.end(data);
   });
 }
