@@ -163,4 +163,7 @@ func TestWSReuseTopicSaysARefusedTProxyRuleLeavesTheSetUndiverted(t *testing.T) 
 	if strings.Contains(facts, "connections that the firewall does not divert get") {
 		t.Errorf("tcp.wssize_reuse.enabled still ties the set's strategy to what the firewall does not divert, which a refused TPROXY rule contradicts: %s", facts)
 	}
+	if !strings.Contains(facts, "In both cases the set's TCP/443 connections reaching b4's packet queue get its own TCP strategy too.") {
+		t.Errorf("tcp.wssize_reuse.enabled does not name the set as the owner of the TCP/443 connections that still get its strategy without TPROXY; after 'b4' and 'the rule', a bare 'its' reads as b4's own connections: %s", facts)
+	}
 }
