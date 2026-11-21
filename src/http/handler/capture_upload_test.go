@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/daniellavrushin/b4/capture"
 )
 
 func uploadCapturePayload(t *testing.T, mux *http.ServeMux, name, protocol string, data []byte) *httptest.ResponseRecorder {
@@ -28,6 +30,21 @@ func uploadCapturePayload(t *testing.T, mux *http.ServeMux, name, protocol strin
 		t.Fatalf("upload of %d bytes as %q panicked: %s", len(data), name, panicked)
 	}
 	return rec
+}
+
+func TestPayloadUploadOfABlankNameIsRefused(t *testing.T) {
+	mux, api := captureTestMux(t)
+	manager := capture.GetManager(api.getCfg())
+	t.Cleanup(func() { manager.DeleteCapture("tls", "") })
+	for _, name := range []string{"   ", "\t\n"} {
+		rec := uploadCapturePayload(t, mux, name, "tls", []byte{0x16, 0x03, 0x01})
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("an upload named %q was answered %d %q, want 400", name, rec.Code, strings.TrimSpace(rec.Body.String()))
+		}
+	}
+	if _, saved := manager.GetCapture("tls", ""); saved {
+		t.Errorf("a payload was saved under the empty name; Delete refuses an empty name, so only Clear All removes it")
+	}
 }
 
 func TestPayloadUploadSaysWhyTheFormFailed(t *testing.T) {

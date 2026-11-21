@@ -287,7 +287,7 @@ func (api *API) handleUploadCapture(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	domain := r.FormValue("domain")
+	domain := strings.ToLower(strings.TrimSpace(r.FormValue("domain")))
 	protocol := r.FormValue("protocol")
 
 	if domain == "" {
@@ -301,8 +301,6 @@ func (api *API) handleUploadCapture(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Protocol must be 'tls' or 'quic'", http.StatusBadRequest)
 		return
 	}
-
-	domain = strings.ToLower(strings.TrimSpace(domain))
 
 	data, err := io.ReadAll(file)
 	if err != nil {
