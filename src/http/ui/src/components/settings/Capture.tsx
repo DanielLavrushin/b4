@@ -45,7 +45,6 @@ import { bytesToHex } from "./payloads/hex";
 import {
   asProtocol,
   builtinLabel,
-  builtinSource,
   bytesLabel,
   captureWarnings,
   inspectionWarnings,
@@ -785,7 +784,6 @@ export const CaptureSettings = () => {
                   protocol={asProtocol(builtin.protocol)}
                   size={builtin.size}
                   facts={builtin.facts}
-                  source={builtinSource(t, builtin)}
                   onViewHex={() =>
                     void openHex({
                       name: builtinLabel(t, builtin),

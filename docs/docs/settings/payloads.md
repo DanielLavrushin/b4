@@ -93,17 +93,17 @@ Deleting, replacing and regenerating reach the sets that use the payload at once
 
 ## Built In {#built-in}
 
-The section lists the payloads compiled into b4, with the same facts as the cards above and their source. They cannot be changed or deleted. **View/Copy hex** and **Download .bin** work as on the other cards.
+The section lists the payloads compiled into b4, with the same facts as the cards above. They cannot be changed or deleted. **View/Copy hex** and **Download .bin** work as on the other cards.
 
 ![The Built In section](/img/payloads/20261121100200.png)
 
-| Payload | What it is | Source |
-| --- | --- | --- |
-| **Preset: Google (classic)** | TLS ClientHello for `www.google.com`, 1,235 bytes | [youtubeUnblock](https://github.com/Waujito/youtubeUnblock) |
-| **Preset: VK** | TLS ClientHello for `vk.com`, 517 bytes | Derived from youtubeUnblock |
-| **Preset: STUN** | STUN message, 100 bytes | [zapret](https://github.com/bol-van/zapret) (MIT, bol-van) |
-| **QUIC preset 1** | QUIC v1 Initial for `www.google.com`, 1,200 bytes | zapret (MIT, bol-van) |
-| **QUIC preset 2** | QUIC v1 Initial for `dbankcloud.ru`, 1,357 bytes | Not recorded |
+| Payload | What it is |
+| --- | --- |
+| **Preset: Google (classic)** | TLS ClientHello for `www.google.com`, 1,235 bytes |
+| **Preset: VK** | TLS ClientHello for `vk.com`, 517 bytes |
+| **Preset: STUN** | STUN message, 100 bytes |
+| **QUIC preset 1** | QUIC v1 Initial for `www.google.com`, 1,200 bytes |
+| **QUIC preset 2** | QUIC v1 Initial for `dbankcloud.ru`, 1,357 bytes |
 
 The UDP options **(auto: QUIC Initial)** and **(auto: STUN request)** build a new payload for every fake and are not listed.
 

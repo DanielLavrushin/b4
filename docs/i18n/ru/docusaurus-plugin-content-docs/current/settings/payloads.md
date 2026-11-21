@@ -93,17 +93,17 @@ ClientHello собирается на самом роутере. Соедине�
 
 ## Встроенные {#built-in}
 
-Раздел перечисляет payload, встроенные в b4, с теми же сведениями, что на карточках выше, и с источником. Изменить или удалить их нельзя. **Просмотр/Копирование hex** и **Скачать .bin** работают как на остальных карточках.
+Раздел перечисляет payload, встроенные в b4, с теми же сведениями, что на карточках выше. Изменить или удалить их нельзя. **Просмотр/Копирование hex** и **Скачать .bin** работают как на остальных карточках.
 
 ![Раздел «Встроенные»](/img/payloads/ru/20261121100200.png)
 
-| Payload | Что это | Источник |
-| --- | --- | --- |
-| **Пресет: Google (классический)** | TLS ClientHello для `www.google.com`, 1235 байт | [youtubeUnblock](https://github.com/Waujito/youtubeUnblock) |
-| **Пресет: VK** | TLS ClientHello для `vk.com`, 517 байт | Основан на youtubeUnblock |
-| **Пресет: STUN** | STUN-сообщение, 100 байт | [zapret](https://github.com/bol-van/zapret) (MIT, bol-van) |
-| **QUIC preset 1** | QUIC v1 Initial для `www.google.com`, 1200 байт | zapret (MIT, bol-van) |
-| **QUIC preset 2** | QUIC v1 Initial для `dbankcloud.ru`, 1357 байт | Не записан |
+| Payload | Что это |
+| --- | --- |
+| **Пресет: Google (классический)** | TLS ClientHello для `www.google.com`, 1235 байт |
+| **Пресет: VK** | TLS ClientHello для `vk.com`, 517 байт |
+| **Пресет: STUN** | STUN-сообщение, 100 байт |
+| **QUIC preset 1** | QUIC v1 Initial для `www.google.com`, 1200 байт |
+| **QUIC preset 2** | QUIC v1 Initial для `dbankcloud.ru`, 1357 байт |
 
 Варианты UDP **(авто: QUIC Initial)** и **(авто: STUN-запрос)** собирают новый payload для каждого фейка и в этом списке не показываются.
 

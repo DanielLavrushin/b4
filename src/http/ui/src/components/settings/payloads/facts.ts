@@ -39,17 +39,9 @@ const builtinLabelKeys: Record<string, string> = {
   quic2: "sets.udp.fakePayloadFilePreset2",
 };
 
-const knownSources = new Set(["youtubeunblock", "youtubeunblock_derived", "zapret"]);
-
 export function builtinLabel(t: TFunction, builtin: BuiltinPayload): string {
   const key = builtinLabelKeys[builtin.id];
   return key ? t(key) : builtin.id;
-}
-
-export function builtinSource(t: TFunction, builtin: BuiltinPayload): string {
-  return knownSources.has(builtin.source)
-    ? t(`settings.Capture.sources.${builtin.source}`)
-    : t("settings.Capture.sources.unknown");
 }
 
 export function captureWarnings(capture: Capture): PayloadWarning[] {

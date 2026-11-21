@@ -14,14 +14,7 @@ var builtinLabelKeys = map[string]string{
 	"quic2":  "sets.udp.fakePayloadFilePreset2",
 }
 
-var builtinSourceNames = map[string][]string{
-	"youtubeunblock":         {"youtubeUnblock"},
-	"youtubeunblock_derived": {"youtubeUnblock"},
-	"zapret":                 {"zapret", "MIT", "bol-van"},
-	"unknown":                nil,
-}
-
-func TestBuiltinPayloadsAreListedReadOnlyWithTheirSource(t *testing.T) {
+func TestBuiltinPayloadsAreListedReadOnly(t *testing.T) {
 	api := readUI(t, "api/capture.ts")
 	for _, route := range []string{`"/api/capture/builtin"`, "/api/capture/builtin/download?"} {
 		if !strings.Contains(api, route) {
@@ -29,7 +22,7 @@ func TestBuiltinPayloadsAreListedReadOnlyWithTheirSource(t *testing.T) {
 		}
 	}
 	body := regexp.MustCompile(`(?s)interface BuiltinPayload \{(.*?)\n\}`).FindStringSubmatch(readUI(t, "models/capture.ts"))
-	for _, field := range []string{"id", "protocol", "size", "facts", "source"} {
+	for _, field := range []string{"id", "protocol", "size", "facts"} {
 		if body == nil || !regexp.MustCompile(`(?m)^\s*`+field+`\??:`).MatchString(body[1]) {
 			t.Errorf("the BuiltinPayload model has no %s field", field)
 		}
@@ -39,9 +32,6 @@ func TestBuiltinPayloadsAreListedReadOnlyWithTheirSource(t *testing.T) {
 	}
 
 	page := payloadsPageSource(t)
-	if !regexp.MustCompile(`\.source\b`).MatchString(page) {
-		t.Error("the built-in rows never show their source")
-	}
 	m := regexp.MustCompile(`(?s)builtins\.map\(.*?<PayloadCard\b(.*?)/>`).FindStringSubmatch(page)
 	if m == nil {
 		t.Fatal("the Payloads page lists no built-in payload cards")
@@ -66,17 +56,4 @@ func TestBuiltinPayloadsAreListedReadOnlyWithTheirSource(t *testing.T) {
 	}
 	keys = append(keys, "settings.Capture.builtinTitle", "settings.Capture.builtinDesc", "settings.Capture.builtinFailed")
 	requireKeysInBothLocales(t, keys)
-
-	for _, locale := range locales {
-		doc := loadLocale(t, locale)
-		for source, names := range builtinSourceNames {
-			for k, text := range requireKey(t, doc, locale, "settings.Capture.sources."+source) {
-				for _, name := range names {
-					if !strings.Contains(text, name) {
-						t.Errorf("%s settings.Capture.sources.%s does not name %s: %q", locale, k, name, text)
-					}
-				}
-			}
-		}
-	}
 }
