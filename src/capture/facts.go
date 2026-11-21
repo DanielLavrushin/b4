@@ -8,6 +8,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/quic"
 	"github.com/daniellavrushin/b4/sni"
+	"github.com/daniellavrushin/b4/sock"
 	"github.com/daniellavrushin/b4/tlsgen"
 	"golang.org/x/crypto/cryptobyte"
 )
@@ -26,6 +27,7 @@ type Facts struct {
 	SNI           string   `json:"sni"`
 	Extensions    *int     `json:"extensions,omitempty"`
 	ECH           *bool    `json:"ech,omitempty"`
+	TLSMod        *bool    `json:"tls_mod,omitempty"`
 	FitsOnePacket bool     `json:"fits_one_packet"`
 	Faults        []string `json:"faults,omitempty"`
 }
@@ -56,6 +58,7 @@ func FactsOf(protocol string, data []byte) *Facts {
 		f.SNI = h.sni
 		f.Extensions = &h.extensions
 		f.ECH = &h.ech
+		f.TLSMod = tlsModChanges(data)
 		f.Faults = h.faults
 	case isDTLSClientHelloRecord(data):
 		f.Kind = KindDTLSClientHello
@@ -71,6 +74,12 @@ func FactsOf(protocol string, data []byte) *Facts {
 		f.Kind = KindSTUN
 	}
 	return f
+}
+
+func tlsModChanges(data []byte) *bool {
+	modified := sock.ApplyTLSMod(slices.Clone(data), nil, sock.TLSModFlags{Randomize: true})
+	changed := !slices.Equal(modified, data)
+	return &changed
 }
 
 func isTLSClientHelloRecord(data []byte) bool {

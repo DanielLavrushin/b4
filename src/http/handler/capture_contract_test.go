@@ -90,7 +90,7 @@ func TestThePayloadListEntryKeepsTheContractsNames(t *testing.T) {
 		t.Errorf("a payload saved through SaveImportedPayload is listed with origin %v, want imported", entry["origin"])
 	}
 	facts := objectAt(t, "a list entry", entry, "facts")
-	requireKeys(t, "the facts of a TLS ClientHello", facts, "kind", "sni", "extensions", "ech", "fits_one_packet", "faults")
+	requireKeys(t, "the facts of a TLS ClientHello", facts, "kind", "sni", "extensions", "ech", "tls_mod", "fits_one_packet", "faults")
 	if facts["kind"] != "tls_client_hello" || facts["sni"] != "www.google.com" || facts["fits_one_packet"] != true {
 		t.Errorf("the facts of a generated hello read %v", facts)
 	}
@@ -104,7 +104,7 @@ func TestThePayloadListEntryKeepsTheContractsNames(t *testing.T) {
 	if quic["protocol"] != "quic" || quicFacts["kind"] != "quic_initial" || quicFacts["quic_version"] != float64(1) {
 		t.Errorf("QUIC preset 1 uploaded as a UDP payload is listed as %v with facts %v, want protocol quic, kind quic_initial, version 1", quic["protocol"], quicFacts)
 	}
-	for _, key := range []string{"extensions", "ech", "faults"} {
+	for _, key := range []string{"extensions", "ech", "tls_mod", "faults"} {
 		if _, carried := quicFacts[key]; carried {
 			t.Errorf("the facts of a QUIC Initial carry %q, which belongs to a TLS ClientHello only: %v", key, quicFacts)
 		}
