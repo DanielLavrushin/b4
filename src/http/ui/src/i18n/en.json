@@ -2148,6 +2148,8 @@
         "selectPayloadHelper": "Select a generated or uploaded TLS ClientHello",
         "payloadFileMissing": "{{name}} (file missing)",
         "payloadFileMissingHelper": "This set names {{file}}, which does not exist. Until another payload is picked, the set sends Preset: Google (classic).",
+        "payloadFileEmpty": "{{name}} (file empty)",
+        "payloadFileEmptyHelper": "This set names {{file}}, which is empty. Until another payload is picked, the set sends Preset: Google (classic).",
         "payloadFileMissingNote": "The set sends Preset: Google (classic) instead",
         "payloadFaults_one": "{{count}} malformed field",
         "payloadFaults_other": "{{count}} malformed fields",

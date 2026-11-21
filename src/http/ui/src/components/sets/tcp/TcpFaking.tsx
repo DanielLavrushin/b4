@@ -27,6 +27,7 @@ import { useChangedFields } from "@context/ChangedFieldsContext";
 import {
   byPayloadName,
   chosenPayloadFile,
+  isEmptyPayload,
   payloadNote,
   samePayloadFile,
   useListedCaptures,
@@ -64,7 +65,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
   const [newWinValue, setNewWinValue] = useState("");
   const { captures, listed: capturesListed } = useListedCaptures();
   const tlsCaptures = captures
-    .filter((c) => c.protocol === "tls" && !c.missing)
+    .filter((c) => c.protocol === "tls" && !c.missing && !isEmptyPayload(c))
     .sort(byPayloadName);
   const payloadFile = config.faking.payload_file;
   const chosenFile = chosenPayloadFile(
@@ -216,6 +217,16 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
       note: t("sets.faking.fakeSni.payloadFileMissingNote"),
     };
     payloadFileHelper = t("sets.faking.fakeSni.payloadFileMissingHelper", {
+      file: payloadFile,
+    });
+  } else if (chosenFile.state === "empty") {
+    chosenFileOption = {
+      label: t("sets.faking.fakeSni.payloadFileEmpty", {
+        name: chosenFile.capture.domain,
+      }),
+      note: t("sets.faking.fakeSni.payloadFileMissingNote"),
+    };
+    payloadFileHelper = t("sets.faking.fakeSni.payloadFileEmptyHelper", {
       file: payloadFile,
     });
   } else if (chosenFile.state === "unknown") {

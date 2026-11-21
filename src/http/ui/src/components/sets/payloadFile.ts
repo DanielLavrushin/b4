@@ -7,7 +7,11 @@ export type ChosenPayloadFile =
   | { state: "none" }
   | { state: "unknown"; name: string }
   | { state: "missing"; name: string }
+  | { state: "empty"; capture: Capture }
   | { state: "listed"; capture: Capture };
+
+export const isEmptyPayload = (capture: Capture) =>
+  (capture.warnings ?? []).includes("empty");
 
 export const samePayloadFile = (a: string, b: string) =>
   a.replace(/^\.\//, "") === b.replace(/^\.\//, "");
@@ -37,7 +41,11 @@ export function chosenPayloadFile(
 ): ChosenPayloadFile {
   if (!file) return { state: "none" };
   const capture = captures.find((c) => samePayloadFile(c.filepath, file));
-  if (capture && !capture.missing) return { state: "listed", capture };
+  if (capture && !capture.missing) {
+    return isEmptyPayload(capture)
+      ? { state: "empty", capture }
+      : { state: "listed", capture };
+  }
   if (!listed) return { state: "unknown", name: payloadFileName(file) };
   return { state: "missing", name: capture?.domain ?? payloadFileName(file) };
 }
