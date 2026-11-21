@@ -930,6 +930,13 @@
       "extensions_other": "{{count}} расширения",
       "ech": "ECH",
       "usedBy": "Используют сеты: {{sets}}",
+      "regenerate": "Сгенерировать заново",
+      "regenerateTitle": "Сгенерировать {{domain}} заново?",
+      "regenerateBody": "b4 собирает новый ClientHello для {{domain}} текущим генератором и сохраняет имя. Случайные поля, session ID и key share в нём будут новыми.",
+      "regenerateFixes": "Поля с ошибками будут записаны правильно.",
+      "regenerateInUse": "Его используют сеты, и они сразу начнут отправлять новые байты: {{sets}}.",
+      "regenerateSuccess": "{{domain}} сгенерирован заново",
+      "regenerateFailed": "Не удалось сгенерировать payload заново: {{error}}",
       "origins": {
         "generated": "Сгенерирован",
         "uploaded": "Загружен",

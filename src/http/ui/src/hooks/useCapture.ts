@@ -9,6 +9,7 @@ export function useCaptures() {
   const [listError, setListError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   const refreshCaptures = useCallback(async () => {
     setLoading(true);
@@ -44,6 +45,20 @@ export function useCaptures() {
         return result;
       } finally {
         setGenerating(false);
+      }
+    },
+    [loadCaptures],
+  );
+
+  const regenerate = useCallback(
+    async (domain: string) => {
+      setRegenerating(true);
+      try {
+        const result = await captureApi.regenerate(domain);
+        await loadCaptures();
+        return result;
+      } finally {
+        setRegenerating(false);
       }
     },
     [loadCaptures],
@@ -100,9 +115,11 @@ export function useCaptures() {
     listError,
     uploading,
     generating,
+    regenerating,
     loadCaptures,
     refreshCaptures,
     generate,
+    regenerate,
     deleteCapture,
     clearAll,
     inspect,

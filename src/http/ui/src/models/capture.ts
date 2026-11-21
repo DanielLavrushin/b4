@@ -57,6 +57,16 @@ export interface CaptureGenerateResponse {
   size?: number;
 }
 
+export interface CaptureRegenerateResponse {
+  success: boolean;
+  message: string;
+  size: number;
+  domain: string;
+  facts?: PayloadFacts | null;
+  reloaded?: string[] | null;
+  reload_error?: string;
+}
+
 export interface CaptureUploadResponse {
   success: boolean;
   message: string;

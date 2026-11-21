@@ -3,6 +3,7 @@ import { readErrorBody } from "./errorBody";
 import {
   Capture,
   CaptureGenerateResponse,
+  CaptureRegenerateResponse,
   CaptureUploadResponse,
   PayloadInspection,
 } from "@b4.capture";
@@ -29,6 +30,8 @@ export const captureApi = {
       domain,
       protocol,
     }),
+  regenerate: (domain: string) =>
+    apiPost<CaptureRegenerateResponse>("/api/capture/regenerate", { domain }),
   delete: (protocol: string, domain: string) =>
     apiDelete(
       `/api/capture/delete?${new URLSearchParams({ protocol, domain }).toString()}`,

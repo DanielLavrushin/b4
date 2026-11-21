@@ -97,6 +97,9 @@ export const CaptureSettings = () => {
     protocol: PayloadProtocol;
     sets: string[];
   } | null>(null);
+  const [regenerateDialog, setRegenerateDialog] = useState<Capture | null>(
+    null,
+  );
 
   const {
     captures,
@@ -104,9 +107,11 @@ export const CaptureSettings = () => {
     listError,
     uploading,
     generating,
+    regenerating,
     loadCaptures,
     refreshCaptures,
     generate,
+    regenerate,
     deleteCapture,
     clearAll,
     inspect,
@@ -217,6 +222,25 @@ export const CaptureSettings = () => {
     } catch (error) {
       showError(
         t("settings.Capture.deleteFailed", { error: describeApiError(error) }),
+      );
+    }
+  };
+
+  const confirmRegenerate = async () => {
+    const capture = regenerateDialog;
+    if (!capture) return;
+    try {
+      await regenerate(capture.domain);
+      setRegenerateDialog(null);
+      showSuccess(
+        t("settings.Capture.regenerateSuccess", { domain: capture.domain }),
+      );
+    } catch (error) {
+      setRegenerateDialog(null);
+      showError(
+        t("settings.Capture.regenerateFailed", {
+          error: describeApiError(error),
+        }),
       );
     }
   };
@@ -613,6 +637,11 @@ export const CaptureSettings = () => {
                       ? undefined
                       : () => void handleDownload(capture)
                   }
+                  onRegenerate={
+                    capture.origin === "generated" && capture.protocol === "tls"
+                      ? () => setRegenerateDialog(capture)
+                      : undefined
+                  }
                   onDelete={() => void handleDelete(capture)}
                 />
               </Grid>
@@ -682,6 +711,59 @@ export const CaptureSettings = () => {
                   domain: replaceDialog.domain,
                 })}
           </Typography>
+        )}
+      </B4Dialog>
+
+      <B4Dialog
+        title={t("settings.Capture.regenerateTitle", {
+          domain: regenerateDialog?.domain ?? "",
+        })}
+        icon={<RefreshIcon />}
+        open={regenerateDialog !== null}
+        onClose={() => {
+          if (!regenerating) setRegenerateDialog(null);
+        }}
+        maxWidth="sm"
+        fullWidth
+        actions={
+          <>
+            <Button
+              onClick={() => setRegenerateDialog(null)}
+              disabled={regenerating}
+            >
+              {t("core.cancel")}
+            </Button>
+            <Box sx={{ flex: 1 }} />
+            <Button
+              variant="contained"
+              disabled={regenerating}
+              startIcon={
+                regenerating ? <CircularProgress size={16} /> : <RefreshIcon />
+              }
+              onClick={() => void confirmRegenerate()}
+            >
+              {t("settings.Capture.regenerate")}
+            </Button>
+          </>
+        }
+      >
+        {regenerateDialog && (
+          <Stack spacing={1.5}>
+            <Typography variant="body2">
+              {t("settings.Capture.regenerateBody", {
+                domain: regenerateDialog.domain,
+              })}
+              {(regenerateDialog.warnings ?? []).includes("malformed") &&
+                ` ${t("settings.Capture.regenerateFixes")}`}
+            </Typography>
+            {(regenerateDialog.used_by ?? []).length > 0 && (
+              <Typography variant="body2">
+                {t("settings.Capture.regenerateInUse", {
+                  sets: (regenerateDialog.used_by ?? []).join(", "),
+                })}
+              </Typography>
+            )}
+          </Stack>
         )}
       </B4Dialog>
 

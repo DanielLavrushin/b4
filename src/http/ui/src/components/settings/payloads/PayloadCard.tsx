@@ -8,7 +8,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { ClearIcon, CopyIcon, DownloadIcon } from "@b4.icons";
+import { ClearIcon, CopyIcon, DownloadIcon, RefreshIcon } from "@b4.icons";
 import { colors, radius } from "@design";
 import type {
   PayloadFacts,
@@ -30,6 +30,7 @@ interface PayloadCardProps {
   usedBy?: string[];
   onViewHex?: () => void;
   onDownload?: () => void;
+  onRegenerate?: () => void;
   onDelete?: () => void;
 }
 
@@ -47,6 +48,7 @@ export const PayloadCard = ({
   usedBy = [],
   onViewHex,
   onDownload,
+  onRegenerate,
   onDelete,
 }: PayloadCardProps) => {
   const { t } = useTranslation();
@@ -173,6 +175,13 @@ export const PayloadCard = ({
           </Tooltip>
         )}
         <Box sx={{ flex: 1 }} />
+        {onRegenerate && (
+          <Tooltip title={t("settings.Capture.regenerate")}>
+            <IconButton size="small" onClick={onRegenerate}>
+              <RefreshIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
         {onDelete && (
           <Tooltip title={t("core.delete")}>
             <IconButton size="small" onClick={onDelete}>

@@ -919,6 +919,13 @@
       "extensions_other": "{{count}} extensions",
       "ech": "ECH",
       "usedBy": "Used by: {{sets}}",
+      "regenerate": "Regenerate",
+      "regenerateTitle": "Regenerate {{domain}}?",
+      "regenerateBody": "b4 builds a new ClientHello for {{domain}} with the current generator and keeps the name. Its random fields, session ID and key shares are new.",
+      "regenerateFixes": "The malformed fields are written correctly.",
+      "regenerateInUse": "These sets use it and send the new bytes at once: {{sets}}.",
+      "regenerateSuccess": "Regenerated {{domain}}",
+      "regenerateFailed": "Failed to regenerate payload: {{error}}",
       "origins": {
         "generated": "Generated",
         "uploaded": "Uploaded",
