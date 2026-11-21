@@ -1,6 +1,7 @@
 package nfq
 
 import (
+	"container/heap"
 	"context"
 	"encoding/binary"
 	"net"
@@ -23,7 +24,11 @@ type collectCountRig struct {
 	installs int
 	flows    map[ctnl.Tuple]*ctnl.Flow
 	start    time.Time
+	now      time.Duration
+	stamped  uint64
 }
+
+const collectRigTimeout = time.Second
 
 func newCollectCountRig(t *testing.T, extra ...*config.SetConfig) *collectCountRig {
 	t.Helper()
@@ -36,7 +41,39 @@ func newCollectCountRig(t *testing.T, extra ...*config.SetConfig) *collectCountR
 	lookupFlow = func(tuple ctnl.Tuple, _ ctnl.Direction) (ctnl.Flow, bool, error) {
 		return *r.flowOf(tuple), true, nil
 	}
+	r.detectionTimeout(collectRigTimeout)
 	return r
+}
+
+func (r *collectCountRig) detectionTimeout(timeout time.Duration) {
+	for _, set := range r.w.getConfig().Sets {
+		if set.TCP.IPBlockDetect.Collects() {
+			set.TCP.IPBlockDetect.TimeoutMs = int(timeout / time.Millisecond)
+		}
+	}
+}
+
+func (r *collectCountRig) stamp() {
+	tracker := r.w.destState
+	tracker.watchMu.Lock()
+	defer tracker.watchMu.Unlock()
+	at := r.start.Add(r.now)
+	for _, h := range tracker.watches {
+		if !h.collect || h.gen <= r.stamped {
+			continue
+		}
+		h.deadline = at.Add(h.deadline.Sub(h.opened))
+		h.opened = at
+		if h.collectIndex >= 0 {
+			heap.Fix(&tracker.collectDeadlines, h.collectIndex)
+		}
+	}
+	r.stamped = tracker.watchGen
+}
+
+func (r *collectCountRig) at(now time.Duration) {
+	r.stamp()
+	r.now = now
 }
 
 func (r *collectCountRig) flowOf(tuple ctnl.Tuple) *ctnl.Flow {
@@ -78,6 +115,7 @@ func (r *collectCountRig) hello(t *testing.T, sport uint16) {
 	if !r.watched(sport) {
 		t.Fatalf("the ClientHello from port %d is not watched, so this test proves nothing", sport)
 	}
+	r.stamp()
 }
 
 func (r *collectCountRig) serverSends(t *testing.T, sport uint16, flags byte, payload []byte) {
@@ -96,6 +134,7 @@ func (r *collectCountRig) silent(t *testing.T, sport uint16) {
 }
 
 func (r *collectCountRig) sweep(after time.Duration) {
+	r.at(after)
 	r.p.collectedPass(r.start.Add(after))
 }
 
@@ -136,6 +175,138 @@ func TestTwoSilentConnectionsInARowCollectAndResetBoth(t *testing.T) {
 	}
 	if r.w.destState.Watching() {
 		t.Error("reset connections must not stay watched")
+	}
+}
+
+func TestTwoConnectionsHalfASecondApartToASlowServerAreNotCollected(t *testing.T) {
+	r := newCollectCountRig(t)
+	r.detectionTimeout(3 * time.Second)
+	r.silent(t, 42000)
+	r.at(500 * time.Millisecond)
+	r.silent(t, 42001)
+	r.sweep(3 * time.Second)
+	r.sweep(3500 * time.Millisecond)
+
+	if ports := resetsTo(r.sent()); r.collected() != 0 || r.installs != 0 || len(ports) != 0 {
+		t.Fatalf("two connections opened 0.5 s apart ran alongside each other, not one after the other, yet at 3.5 s the address was collected (candidates=%d installs=%d) and the clients were reset (%v) before the server's answers due at 6 s", r.collected(), r.installs, ports)
+	}
+	if !r.watched(42000) || !r.watched(42001) {
+		t.Fatal("both connections must stay watched, so that an answer on either starts the count over")
+	}
+
+	r.at(6 * time.Second)
+	r.serverSends(t, 42001, 0x18, []byte{0x16, 3, 3, 0, 1, 2})
+	if r.watched(42001) || !r.watched(42000) || r.w.destState.collectRunOpen(net.ParseIP("1.2.3.4"), 443) {
+		t.Fatal("the server's answer at 6 s on the uncounted connection must end its watch and start the count over, and leave the first connection waiting for its own answer")
+	}
+	r.serverSends(t, 42000, 0x18, []byte{0x16, 3, 3, 0, 1, 2})
+	if r.watched(42000) {
+		t.Fatal("the server's answer on the first connection must end its watch")
+	}
+	r.at(10 * time.Second)
+	r.silent(t, 42002)
+	r.sweep(13 * time.Second)
+	if r.collected() != 0 || !r.watched(42002) {
+		t.Fatalf("a silent connection after the answers is the first of a new count: candidates=%d", r.collected())
+	}
+}
+
+func TestOnlyAConnectionOpenedOnceTheFirstTimedOutCountsAsTheSecond(t *testing.T) {
+	const timeout = 3 * time.Second
+	for name, tc := range map[string]struct {
+		second    time.Duration
+		collected bool
+	}{
+		"0.5 s after the first":                {second: 500 * time.Millisecond},
+		"just before the first's timeout ends": {second: timeout - 100*time.Millisecond},
+		"as the first's timeout ends":          {second: timeout, collected: true},
+		"5 s after the first":                  {second: 5 * time.Second, collected: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newCollectCountRig(t)
+			r.detectionTimeout(timeout)
+			r.silent(t, 42000)
+			if tc.second < timeout {
+				r.at(tc.second)
+				r.silent(t, 42001)
+			}
+			r.sweep(timeout)
+			if tc.second >= timeout {
+				r.at(tc.second)
+				r.silent(t, 42001)
+			}
+			r.sweep(tc.second + timeout)
+
+			ports := resetsTo(r.sent())
+			if !tc.collected {
+				if r.collected() != 0 || len(ports) != 0 || !r.watched(42000) || !r.watched(42001) {
+					t.Fatalf("a connection whose ClientHello came before the first one's timeout ended must not complete the count: candidates=%d resets=%v", r.collected(), ports)
+				}
+				return
+			}
+			if r.collected() != 1 || !slices.Equal(ports, []uint16{42000, 42001}) {
+				t.Fatalf("a connection whose ClientHello came once the first one's timeout had ended is the second in a row and must collect the address: candidates=%d resets=%v", r.collected(), ports)
+			}
+		})
+	}
+}
+
+func TestAConnectionThatRanAlongsideIsResetWhenTheCountCompletes(t *testing.T) {
+	r := newCollectCountRig(t)
+	r.detectionTimeout(3 * time.Second)
+	r.silent(t, 42000)
+	r.at(500 * time.Millisecond)
+	r.silent(t, 42001)
+	r.sweep(3 * time.Second)
+	r.sweep(3500 * time.Millisecond)
+	r.at(5 * time.Second)
+	r.silent(t, 42002)
+	r.sweep(8 * time.Second)
+
+	if ports := resetsTo(r.sent()); r.collected() != 1 || !slices.Equal(ports, []uint16{42000, 42001, 42002}) {
+		t.Fatalf("a silent connection opened after the first one's timeout completes the count, and the uncounted one that ran alongside the first is still silent, so all three must be reset: candidates=%d resets=%v", r.collected(), ports)
+	}
+}
+
+func TestASilentConnectionItsClientClosedStillCountsAsTheFirst(t *testing.T) {
+	r := newCollectCountRig(t)
+	r.detectionTimeout(3 * time.Second)
+	r.silent(t, 42000)
+	r.sweep(3 * time.Second)
+	r.at(6 * time.Second)
+	r.w.ProcessPacket(clientPacket(42000, afterHello(), 0x11, nil))
+	if r.watched(42000) {
+		t.Fatal("the client's FIN must end the watch of the first connection, or this test proves nothing")
+	}
+	r.at(8 * time.Second)
+	r.silent(t, 42001)
+	r.sweep(11 * time.Second)
+
+	if ports := resetsTo(r.sent()); r.collected() != 1 || !slices.Equal(ports, []uint16{42001}) {
+		t.Fatalf("a silent connection the client closed after its timeout still counts, so the next silent one must collect the address and be reset: candidates=%d resets=%v", r.collected(), ports)
+	}
+}
+
+func TestAfterAnAnswerTwoNewSilentConnectionsCollectTheAddress(t *testing.T) {
+	r := newCollectCountRig(t)
+	r.detectionTimeout(3 * time.Second)
+	r.silent(t, 42000)
+	r.sweep(3 * time.Second)
+	r.at(5 * time.Second)
+	r.hello(t, 42001)
+	r.serverSends(t, 42001, 0x18, []byte{0x16, 3, 3, 0, 1, 2})
+	r.at(10 * time.Second)
+	r.silent(t, 42002)
+	r.sweep(13 * time.Second)
+	if r.collected() != 0 || len(resetsTo(r.sent())) != 0 {
+		t.Fatalf("silent, answered, silent must not collect the address: candidates=%d resets=%v", r.collected(), resetsTo(r.sent()))
+	}
+
+	r.at(20 * time.Second)
+	r.silent(t, 42003)
+	r.sweep(23 * time.Second)
+	if ports := resetsTo(r.sent()); r.collected() != 1 || !slices.Equal(ports, []uint16{42000, 42002, 42003}) {
+		t.Fatalf("a fourth silent connection is the second in a row after the answer and must collect the address, resetting every silent connection still waiting: candidates=%d resets=%v", r.collected(), ports)
 	}
 }
 

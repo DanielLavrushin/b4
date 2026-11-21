@@ -153,7 +153,13 @@ func (t *destStateTracker) countCollected(readings []collectedReading, now time.
 			t.unwatchLocked(cur.key)
 			continue
 		}
-		count, ok := t.countCollectRunLocked(key, cur.counted, now, window)
+		if !cur.counted && t.collectRunOverlapsLocked(key, cur.opened, now) {
+			log.Tracef("Collected IPs: %s took the ClientHello and sent nothing back, but this connection opened before the timeout of the last counted one ran out, so it ran alongside that one and is not counted (host: %s, set: %s)", key, cur.host, cur.set)
+			cur.replyBytes, cur.replyPackets, cur.replyChecked = r.flow.ReplyBytes, r.flow.ReplyPackets, true
+			t.parkCollectedLocked(cur)
+			continue
+		}
+		count, ok := t.countCollectRunLocked(key, cur.counted, cur.deadline, now, window)
 		if !ok {
 			t.unwatchLocked(cur.key)
 			continue
@@ -162,9 +168,7 @@ func (t *destStateTracker) countCollected(readings []collectedReading, now time.
 		cur.replyBytes, cur.replyPackets, cur.replyChecked = r.flow.ReplyBytes, r.flow.ReplyPackets, true
 		if count < silentHellosToCollect {
 			log.Tracef("Collected IPs: %s took the ClientHello and sent nothing back, unanswered connection %d of the %d in a row that collect the address (host: %s, set: %s)", key, count, silentHellosToCollect, cur.host, cur.set)
-			cur.probing, cur.parked = false, true
-			cur.deadline = cur.deadline.Add(helloWatchTTL)
-			t.addCollectedDeadlineLocked(cur)
+			t.parkCollectedLocked(cur)
 			continue
 		}
 		log.Tracef("Collected IPs: %s took the ClientHello and sent nothing back on %d connections in a row (host: %s, set: %s)", key, count, cur.host, cur.set)

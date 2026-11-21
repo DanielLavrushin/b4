@@ -50,6 +50,7 @@ func newCollectReadyRig(t *testing.T, sets ...*config.SetConfig) *collectCountRi
 		return *r.flowOf(tuple), true, nil
 	}
 	t.Cleanup(func() { lookupFlow = old })
+	r.detectionTimeout(collectRigTimeout)
 	return r
 }
 
@@ -222,7 +223,7 @@ func TestAnAddressAlreadyCollectedIsNotInstalledAgain(t *testing.T) {
 	r.silent(t, 42002)
 	device(otherMac)
 	r.silent(t, 42003)
-	producer.TCP.IPBlockDetect.TimeoutMs = 3000
+	producer.TCP.IPBlockDetect.TimeoutMs = int(collectRigTimeout / time.Millisecond)
 	device(ownedMac)
 	r.silent(t, 42000)
 	r.sweep(4 * time.Second)
@@ -337,6 +338,7 @@ func TestAnAddressCollectedAgainBeforeItsRemovalIsPublishedIsNotInstalledAgain(t
 	}
 
 	r.silent(t, 42002)
+	r.sweep(12 * time.Second)
 	r.silent(t, 42003)
 	r.sweep(14 * time.Second)
 	r.p.configMu.Lock()

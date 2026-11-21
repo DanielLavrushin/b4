@@ -69,6 +69,7 @@ type helloWatch struct {
 	mac                  string
 	scope                *ingressScope
 	tls                  uint16
+	opened               time.Time
 	deadline             time.Time
 	probing              bool
 	parked               bool
@@ -311,7 +312,7 @@ func (t *destStateTracker) unwatchLocked(key string) {
 	t.watching.Store(int32(len(t.watches)))
 }
 
-func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pkt *pktInfo, scope *ingressScope, selfDialed bool, connKey, host, sniSet, ipSet string, sport, dport, tlsVersion uint16, deadline time.Time) {
+func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pkt *pktInfo, scope *ingressScope, selfDialed bool, connKey, host, sniSet, ipSet string, sport, dport, tlsVersion uint16, opened time.Time, timeout time.Duration) {
 	if w == nil || w.destState == nil || cfg == nil || cfg.Queue.IsDiscovery || (!set.TCP.IPBlockDetect.Collects() && (!banEnforced(set) || !w.bans.on())) {
 		return
 	}
@@ -349,7 +350,8 @@ func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pk
 		mac:      pkt.srcMac,
 		scope:    scope.settled(),
 		tls:      tlsVersion,
-		deadline: deadline,
+		opened:   opened,
+		deadline: opened.Add(timeout),
 
 		fakesCloseEntry: w.closingFakesMayHaveHit(cfg, set, host),
 	}

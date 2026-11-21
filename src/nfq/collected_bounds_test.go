@@ -120,7 +120,7 @@ func TestAFullCountIsLoggedOnce(t *testing.T) {
 	count := func(key string) bool {
 		tracker.watchMu.Lock()
 		defer tracker.watchMu.Unlock()
-		_, ok := tracker.countCollectRunLocked(key, false, now, time.Minute)
+		_, ok := tracker.countCollectRunLocked(key, false, now, now, time.Minute)
 		return ok
 	}
 	if count("1.2.3.4:443") || count("1.2.3.5:443") {

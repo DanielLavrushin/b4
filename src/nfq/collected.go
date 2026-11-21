@@ -47,9 +47,10 @@ func (c collectedCandidate) until() time.Time {
 }
 
 type collectRun struct {
-	count   int
-	until   time.Time
-	refused map[string]uint64
+	count        int
+	until        time.Time
+	lastDeadline time.Time
+	refused      map[string]uint64
 }
 
 func collectedRefusalScope(h helloWatch) string {
@@ -931,7 +932,12 @@ func (t *destStateTracker) forgetCollected(removed map[netip.Addr]collectedCandi
 	}
 }
 
-func (t *destStateTracker) countCollectRunLocked(key string, counted bool, now time.Time, window time.Duration) (int, bool) {
+func (t *destStateTracker) collectRunOverlapsLocked(key string, opened, now time.Time) bool {
+	run, known := t.collectRuns[key]
+	return known && now.Before(run.until) && run.count < silentHellosToCollect && opened.Before(run.lastDeadline)
+}
+
+func (t *destStateTracker) countCollectRunLocked(key string, counted bool, deadline, now time.Time, window time.Duration) (int, bool) {
 	run, known := t.collectRuns[key]
 	if known && !now.Before(run.until) {
 		run = collectRun{}
@@ -961,6 +967,7 @@ func (t *destStateTracker) countCollectRunLocked(key string, counted bool, now t
 	}
 	run.count++
 	run.until = now.Add(window)
+	run.lastDeadline = deadline
 	t.collectRuns[key] = run
 	return run.count, true
 }
@@ -1002,11 +1009,15 @@ func (t *destStateTracker) parkCompletedCollected(h helloWatch) bool {
 		return false
 	}
 	if !cur.parked {
-		cur.probing, cur.parked = false, true
-		cur.deadline = cur.deadline.Add(helloWatchTTL)
-		t.addCollectedDeadlineLocked(cur)
+		t.parkCollectedLocked(cur)
 	}
 	return true
+}
+
+func (t *destStateTracker) parkCollectedLocked(h *helloWatch) {
+	h.probing, h.parked = false, true
+	h.deadline = h.deadline.Add(helloWatchTTL)
+	t.addCollectedDeadlineLocked(h)
 }
 
 func (t *destStateTracker) collectRunUnowned(h helloWatch, mark uint64) bool {
