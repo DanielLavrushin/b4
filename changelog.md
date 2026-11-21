@@ -63,6 +63,7 @@ All notable changes to b4 are recorded in this file.
 - A payload file cut short by a full disk replaced the old one, an empty payload file was sent as **Preset: Google (classic)** with no error in the log, and after a backup restore the next payload change lost the restored payload list. [#647](https://github.com/DanielLavrushin/b4/issues/647)
 - The **TCP** tab's warning that the **Port Filter** leaves out port 443 read the filter differently from how b4 saves it, so it could appear when the saved filter covered 443 and stay hidden when it did not.
 - Descriptions on a set's **TCP, Splitting** tab did not match what b4 does: **TLS Record Splitting** was said to write several TLS records, **First-Byte Desync** to wait at least 100 ms, and **Combo** with every split point off to send the packet whole.
+- In the set editor, a set in **Block (blackhole)** mode with **Domain-only matching** on was warned that it routes nothing and the **First-Byte Desync** diagram showed the delay as typed, not the one b4 uses; screen readers announced select boxes without their label.
 
 ### Security
 
