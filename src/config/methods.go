@@ -1405,6 +1405,26 @@ func safeCapturePath(configDir, name string) (string, error) {
 	return candidate, nil
 }
 
+func (c *Config) CapturePayloadPath(name string) (path, file string, err error) {
+	if c.ConfigPath == "" {
+		return "", "", fmt.Errorf("config path is not set")
+	}
+	configDir := filepath.Dir(c.ConfigPath)
+	path, err = safeCapturePath(configDir, name)
+	if err != nil {
+		return "", "", err
+	}
+	configAbs, err := filepath.Abs(configDir)
+	if err != nil {
+		return "", "", err
+	}
+	rel, err := filepath.Rel(configAbs, path)
+	if err != nil {
+		return "", "", err
+	}
+	return path, filepath.ToSlash(rel), nil
+}
+
 func (c *Config) ReadCapturePayload(name string) ([]byte, error) {
 	if c.ConfigPath == "" {
 		return nil, fmt.Errorf("config path is not set")

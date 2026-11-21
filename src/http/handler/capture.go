@@ -31,6 +31,7 @@ func (api *API) RegisterCaptureApi() {
 	api.mux.HandleFunc("/api/capture/delete", api.handleDeleteCapture)
 	api.mux.HandleFunc("/api/capture/clear", api.handleClearCaptures)
 	api.mux.HandleFunc("/api/capture/download", api.handleDownloadCapture)
+	api.mux.HandleFunc("/api/capture/resolve", api.handleResolveCapture)
 	api.mux.HandleFunc("/api/capture/upload", api.handleUploadCapture)
 	api.mux.HandleFunc("/api/capture/inspect", api.handleInspectCapture)
 	api.mux.HandleFunc("/api/capture/builtin", api.handleListBuiltinPayloads)
@@ -418,6 +419,108 @@ func (api *API) handleDownloadCapture(w http.ResponseWriter, r *http.Request) {
 	log.Tracef("Served capture file: %s", filename)
 }
 
+type PayloadFileResolution struct {
+	File   string         `json:"file"`
+	Listed bool           `json:"listed"`
+	Exists bool           `json:"exists"`
+	Size   int64          `json:"size"`
+	Facts  *capture.Facts `json:"facts,omitempty"`
+}
+
+// @Summary Resolve a payload file as a set names it
+// @Description Cleans the path the way the payload loader does and answers it in the form the payload list uses, whether a list entry names that file, whether the file exists, its size and its facts. Facts are judged for the protocol of the list entry, or the protocol the file suits when no entry names it, and are omitted when the file cannot be read, is empty or is larger than a payload may be. A path that leaves captures/ or does not end in .bin is refused.
+// @Tags Capture
+// @Produce json
+// @Param file query string true "Payload file as the set names it, e.g. captures/tls_example_com.bin"
+// @Success 200 {object} PayloadFileResolution
+// @Failure 400 {string} string
+// @Security BearerAuth
+// @Router /capture/resolve [get]
+func (api *API) handleResolveCapture(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	cfg := api.getCfg()
+	path, file, err := cfg.CapturePayloadPath(r.URL.Query().Get("file"))
+	if err != nil {
+		http.Error(w, "Not a payload file: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	answer := PayloadFileResolution{File: file}
+	protocol := ""
+	for _, c := range capture.GetManager(cfg).ListCaptures() {
+		if filepath.ToSlash(filepath.Clean(c.Filepath)) == file {
+			answer.Listed = true
+			protocol = c.Protocol
+			break
+		}
+	}
+
+	if capturesDir, err := filepath.Abs(filepath.Join(filepath.Dir(cfg.ConfigPath), "captures")); err == nil {
+		if real, info, ok := captureFileInside(capturesDir, path); ok {
+			answer.Exists = true
+			answer.Size = info.Size()
+			if data, ok := readCaptureBytes(real, info.Size()); ok {
+				if protocol == "" {
+					answer.Facts = suggestedFacts(data)
+				} else {
+					answer.Facts = capture.FactsOf(protocol, data)
+				}
+			}
+		}
+	}
+
+	setJsonHeader(w)
+	json.NewEncoder(w).Encode(answer)
+}
+
+func captureFileInside(capturesDir, path string) (string, os.FileInfo, bool) {
+	root, err := filepath.EvalSymlinks(capturesDir)
+	if err != nil {
+		return "", nil, false
+	}
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", nil, false
+	}
+	rel, err := filepath.Rel(root, real)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", nil, false
+	}
+	info, err := os.Stat(real)
+	if err != nil || !info.Mode().IsRegular() {
+		return "", nil, false
+	}
+	return real, info, true
+}
+
+func readCaptureBytes(path string, size int64) ([]byte, bool) {
+	if size <= 0 || size > config.MaxCapturePayloadBytes {
+		return nil, false
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, false
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, config.MaxCapturePayloadBytes+1))
+	if err != nil || len(data) == 0 || len(data) > config.MaxCapturePayloadBytes {
+		return nil, false
+	}
+	return data, true
+}
+
+func suggestedFacts(data []byte) *capture.Facts {
+	facts := capture.FactsOf("tls", data)
+	if capture.SuggestedProtocol(facts.Kind) == "quic" {
+		facts.FitsOnePacket = capture.FitsOnePacket("quic", len(data))
+	}
+	return facts
+}
+
 // @Summary List the built-in payloads
 // @Description The payloads compiled into b4 (google, vk, stun, quic1, quic2), each with its protocol, size, facts and source.
 // @Tags Capture
@@ -518,11 +621,8 @@ func (api *API) handleInspectCapture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	facts := capture.FactsOf("tls", data)
+	facts := suggestedFacts(data)
 	protocol := capture.SuggestedProtocol(facts.Kind)
-	if protocol == "quic" {
-		facts.FitsOnePacket = capture.FitsOnePacket("quic", len(data))
-	}
 	setJsonHeader(w)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"size":     len(data),

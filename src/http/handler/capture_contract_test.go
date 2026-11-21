@@ -137,6 +137,13 @@ func TestPayloadAnswersKeepTheContractsNames(t *testing.T) {
 		t.Errorf("the upload answer carries facts %v", facts)
 	}
 
+	if listed, ok := manager.GetCapture("tls", uploaded); ok {
+		answer = answerObject(t, "resolve", resolvePayloadFile(t, mux, "./"+listed.Filepath))
+		requireKeys(t, "the resolve answer", answer, "file", "listed", "exists", "size", "facts")
+	} else {
+		t.Errorf("the uploaded payload %s is not listed", uploaded)
+	}
+
 	rec, _ = serveRecovered(mux, httptest.NewRequest(http.MethodDelete, "/api/capture/delete?protocol=tls&domain="+uploaded, nil))
 	requireKeys(t, "the delete answer", answerObject(t, "delete", rec), "success", "message", "reloaded")
 
