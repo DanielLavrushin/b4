@@ -24,28 +24,29 @@ const (
 )
 
 type Engine struct {
-	cfg           atomic.Pointer[config.Config]
-	pool          *nfq.Pool
-	tunFile       *os.File
-	tunName       string
-	carrierName   string
-	routes        *routeManager
-	limiter       *firstNLimiter
-	conntrack     conntrackDeleter
-	holds         flowHoldCounters
-	sender        *sock.Sender
-	clientSender  *sock.Sender
-	trigger       chan struct{}
-	egressW       *egressWatcher
-	wg            sync.WaitGroup
-	quit          chan struct{}
-	stopOnce      sync.Once
-	fwdCount      uint64
-	fwdErrCount   uint64
-	v6DropCount   uint64
-	lastFwdErrLog int64
-	readMu        sync.Mutex
-	stripes       [flowStripes]flowStripe
+	cfg            atomic.Pointer[config.Config]
+	pool           *nfq.Pool
+	tunFile        *os.File
+	tunName        string
+	carrierName    string
+	routes         *routeManager
+	limiter        *firstNLimiter
+	conntrack      conntrackDeleter
+	holds          flowHoldCounters
+	sender         *sock.Sender
+	telegramSender *sock.Sender
+	clientSender   *sock.Sender
+	trigger        chan struct{}
+	egressW        *egressWatcher
+	wg             sync.WaitGroup
+	quit           chan struct{}
+	stopOnce       sync.Once
+	fwdCount       uint64
+	fwdErrCount    uint64
+	v6DropCount    uint64
+	lastFwdErrLog  int64
+	readMu         sync.Mutex
+	stripes        [flowStripes]flowStripe
 }
 
 func NewEngine(cfg *config.Config, pool *nfq.Pool) *Engine {
@@ -169,6 +170,7 @@ func (e *Engine) Start() error {
 	}
 	e.startFlowHold()
 	e.configureWorkers(e.pool)
+	e.divertOwnTelegramFlows(cfg)
 
 	threads := cfg.Queue.Threads
 	if threads < 1 {
@@ -192,6 +194,20 @@ func (e *Engine) Start() error {
 	}
 
 	return nil
+}
+
+func (e *Engine) divertOwnTelegramFlows(cfg *config.Config) {
+	if e.pool == nil || e.sender == nil {
+		return
+	}
+	mark := int(cfg.Queue.Mark) | engine.ReinjectMarkBit | int(config.TelegramSetDialMark)
+	s, err := sock.NewSenderWithMark(mark)
+	if err != nil {
+		log.Warnf("TUN: no raw socket with mark 0x%x (%v), so the packets of b4's own Telegram connections it re-sends carry the ordinary re-send mark and follow a routing set that lists their address", mark, err)
+		return
+	}
+	e.telegramSender = s
+	e.sender.Divert(s, e.pool.CarriesOwnTelegramFlow)
 }
 
 type workerPool interface {
@@ -230,6 +246,9 @@ func (e *Engine) reconcileLoop() {
 			}
 			if e.limiter != nil {
 				e.limiter.sweep(now)
+			}
+			if e.pool != nil {
+				e.pool.SweepOwnTelegramFlows(now)
 			}
 		}
 	}
@@ -481,6 +500,9 @@ func (e *Engine) Stop() {
 		}
 		if e.sender != nil {
 			e.sender.Close()
+		}
+		if e.telegramSender != nil {
+			e.telegramSender.Close()
 		}
 		if e.clientSender != nil {
 			e.clientSender.Close()

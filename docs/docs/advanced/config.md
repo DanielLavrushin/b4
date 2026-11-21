@@ -299,9 +299,7 @@ The tables list the fields of the web interface with the path that stores each o
 | Telegram upstream (shared) | **DC Relay** | `system.mtproto.dc_relay` |
 | Telegram upstream (shared) | **Telegram set** | `system.mtproto.upstream_set` |
 | Telegram upstream (shared) | **Cloudflare Worker domain** | `system.mtproto.cfworker_domain` |
-| Telegram upstream (shared) | **Let sets process Worker connections** | `system.mtproto.cfworker_dpi` |
 | Telegram upstream (shared) | **Custom WebSocket domain** | `system.mtproto.ws_custom_domain` |
-| Telegram upstream (shared) | **Let sets process CF proxy connections** | `system.mtproto.cfproxy_dpi` |
 | Telegram upstream (shared) | **Telegram WS edge IP** | `system.mtproto.ws_endpoint_host` |
 | Telegram upstream (shared) | **Fronting name for Telegram's WS edge** | `system.mtproto.ws_front_sni` |
 | Telegram upstream (shared) | **CF proxy fallback** | `system.mtproto.cfproxy_enabled` |

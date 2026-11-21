@@ -380,6 +380,47 @@ func TestTheTelegramFlowRegistryFindsEveryPacketOfANotedConnection(t *testing.T)
 	}
 }
 
+func TestTheTUNEnginesLookupKeepsALongLivedTelegramConnectionDiverted(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	f := newTelegramFlows()
+	segment := telegramFlowPacketV4("10.0.0.1", "1.2.3.4", 12345, 443, ipProtoTCP, 0)
+	fragment := telegramFlowPacketV4("10.0.0.1", "1.2.3.4", 0, 0, ipProtoTCP, 3)
+	f.note(segment, now)
+
+	at := now
+	for i := range 5 {
+		at = at.Add(telegramFlowTTL - time.Second)
+		if !f.carriesOnAt(segment, at) {
+			t.Fatalf("lookup %d, %v after the connection was noted: the TUN engine stops diverting it, although without xt_connbytes every packet of the connection passes through the engine and only the first ones reach the worker that notes it", i+1, at.Sub(now))
+		}
+	}
+	if !f.carriesAt(fragment, at.Add(telegramFlowTTL-time.Second)) {
+		t.Fatal("a later fragment of the connection lost the address pair the segments kept alive")
+	}
+	if f.carriesOnAt(segment, at.Add(2*telegramFlowTTL)) {
+		t.Fatal("a connection idle for longer than the expiry is still diverted, so a later connection on the same addresses and ports would be taken for b4's own")
+	}
+
+	f.note(segment, now)
+	if !f.carriesAt(segment, now.Add(telegramFlowTTL-time.Second)) || f.carriesAt(segment, now.Add(telegramFlowTTL)) {
+		t.Fatal("the NFQUEUE lookup extends the expiry, but there only the worker sends into the connection and it notes every packet it handles")
+	}
+}
+
+func TestThePoolsLookupForTheTUNEngineExtendsTheExpiry(t *testing.T) {
+	flows := newTelegramFlows()
+	p := &Pool{state: &runtimeState{telegram: flows}}
+	segment := telegramFlowPacketV4("10.0.0.1", "1.2.3.4", 12345, 443, ipProtoTCP, 0)
+	flows.note(segment, time.Now().Add(-telegramFlowTTL+10*time.Second))
+
+	if !p.CarriesOwnTelegramFlow(segment) {
+		t.Fatal("a connection noted less than the expiry ago is not diverted")
+	}
+	if !flows.carriesAt(segment, time.Now().Add(30*time.Second)) {
+		t.Fatal("the pool's lookup, which the TUN engine diverts its re-sends by, did not extend the expiry, so a long-lived connection falls back to the ordinary re-send mark a minute after its first packets")
+	}
+}
+
 func TestTheTelegramFlowRegistryStaysBounded(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	f := newTelegramFlows()

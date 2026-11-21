@@ -299,9 +299,7 @@ b4 хранит конфигурацию в одном JSON-файле, по у�
 | Транспорт к Telegram (общий) | **DC Relay** | `system.mtproto.dc_relay` |
 | Транспорт к Telegram (общий) | **Сет для Telegram** | `system.mtproto.upstream_set` |
 | Транспорт к Telegram (общий) | **Домен Cloudflare Worker** | `system.mtproto.cfworker_domain` |
-| Транспорт к Telegram (общий) | **Обрабатывать соединения с Worker сетами** | `system.mtproto.cfworker_dpi` |
 | Транспорт к Telegram (общий) | **Свой WebSocket-домен** | `system.mtproto.ws_custom_domain` |
-| Транспорт к Telegram (общий) | **Обрабатывать соединения с CF-доменами сетами** | `system.mtproto.cfproxy_dpi` |
 | Транспорт к Telegram (общий) | **IP edge-сервера Telegram** | `system.mtproto.ws_endpoint_host` |
 | Транспорт к Telegram (общий) | **Имя для фронтинга WS-узла Telegram** | `system.mtproto.ws_front_sni` |
 | Транспорт к Telegram (общий) | **CF-резерв** | `system.mtproto.cfproxy_enabled` |
