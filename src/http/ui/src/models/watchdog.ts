@@ -141,7 +141,7 @@ export type SetWatchBlock =
 interface WatchableSet {
   enabled: boolean;
   routing?: { enabled?: boolean };
-  discovery?: { urls?: string[] };
+  discovery?: { urls?: string[]; watchdog?: boolean };
   targets?: {
     sni_domains?: string[] | null;
     geosite_categories?: string[] | null;
@@ -167,6 +167,12 @@ export function setWatchBlock(set: WatchableSet): SetWatchBlock | null {
     return "ip_only";
   }
   return null;
+}
+
+export function anySetWatched(sets?: WatchableSet[] | null): boolean {
+  return (sets ?? []).some(
+    (set) => !!set.discovery?.watchdog && setWatchBlock(set) === null,
+  );
 }
 
 export function watchBlockClearsFlag(block: SetWatchBlock | null): boolean {

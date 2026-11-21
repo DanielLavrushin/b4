@@ -4,6 +4,7 @@ import { Link as RouterLink } from "react-router";
 import { Box, Grid, IconButton, Link, Stack } from "@mui/material";
 import { AddIcon, DiscoveryIcon, WatchdogIcon } from "@b4.icons";
 import { B4Config } from "@models/config";
+import { anySetWatched } from "@models/watchdog";
 import { colors } from "@design";
 import { dnsEndpointError } from "@utils";
 import {
@@ -35,7 +36,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
   const nothingWatched =
     (watchdog?.enabled ?? false) &&
     (watchdog?.domains ?? []).length === 0 &&
-    !(config.sets ?? []).some((set) => set.discovery?.watchdog);
+    !anySetWatched(config.sets);
 
   const handleAddWatchdogDomain = () => {
     if (newWatchdogDomain.trim()) {
