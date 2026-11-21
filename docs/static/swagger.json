@@ -700,6 +700,73 @@
                 }
             }
         },
+        "/capture/builtin": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The payloads compiled into b4 (google, vk, stun, quic1, quic2), each with its protocol, size, facts and source.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Capture"
+                ],
+                "summary": "List the built-in payloads",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/capture.Builtin"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/capture/builtin/download": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Capture"
+                ],
+                "summary": "Download a built-in payload",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Built-in payload id (google, vk, stun, quic1, quic2)",
+                        "name": "id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/capture/clear": {
             "post": {
                 "security": [
@@ -812,6 +879,7 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "Generates a TLS ClientHello for a host name and reloads the sets that already name its file.",
                 "consumes": [
                     "application/json"
                 ],
@@ -844,6 +912,50 @@
                 }
             }
         },
+        "/capture/inspect": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Reads an uploaded file and answers what it is: its facts, the protocol to save it under, its server name, whether it fits one packet as a TCP and as a UDP fake, and the limits behind those answers. Nothing is saved.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Capture"
+                ],
+                "summary": "Describe a payload file without saving it",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "Payload binary file",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/capture/list": {
             "get": {
                 "security": [
@@ -871,13 +983,14 @@
                 }
             }
         },
-        "/capture/probe": {
+        "/capture/regenerate": {
             "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
+                "description": "Rebuilds a payload made by Generate with the current generator, under the same name and file, and reloads the sets that name it.",
                 "consumes": [
                     "application/json"
                 ],
@@ -887,15 +1000,15 @@
                 "tags": [
                     "Capture"
                 ],
-                "summary": "Probe domain for capture",
+                "summary": "Regenerate a generated payload",
                 "parameters": [
                     {
-                        "description": "Capture request",
+                        "description": "Name of a generated TLS payload",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handler.CaptureRequest"
+                            "$ref": "#/definitions/handler.RegenerateRequest"
                         }
                     }
                 ],
@@ -905,6 +1018,24 @@
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "string"
                         }
                     }
                 }
@@ -917,6 +1048,7 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "Saves a payload file under a name and protocol. A name and protocol that already exist are replaced only with replace=1; otherwise the answer is 409 with code \"exists\" and the sets that use the payload in used_by.",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -937,7 +1069,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "Domain name",
+                        "description": "Payload name, at most 200 characters",
                         "name": "domain",
                         "in": "formData",
                         "required": true
@@ -948,11 +1080,30 @@
                         "description": "Protocol (tls or quic)",
                         "name": "protocol",
                         "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "1 to replace an existing payload of this name and protocol",
+                        "name": "replace",
+                        "in": "formData"
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5461,6 +5612,55 @@
                 }
             }
         },
+        "capture.Builtin": {
+            "type": "object",
+            "properties": {
+                "facts": {
+                    "$ref": "#/definitions/capture.Facts"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "protocol": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
+        "capture.Facts": {
+            "type": "object",
+            "properties": {
+                "ech": {
+                    "type": "boolean"
+                },
+                "extensions": {
+                    "type": "integer"
+                },
+                "faults": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "fits_one_packet": {
+                    "type": "boolean"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "quic_version": {
+                    "type": "integer"
+                },
+                "sni": {
+                    "type": "string"
+                }
+            }
+        },
         "config.AIConfig": {
             "type": "object",
             "properties": {
@@ -7695,7 +7895,6 @@
                     "type": "string"
                 },
                 "protocol": {
-                    "description": "\"tls\", \"quic\", or \"both\"",
                     "type": "string"
                 }
             }
@@ -9034,6 +9233,12 @@
                 },
                 "success": {
                     "type": "boolean"
+                },
+                "unmatched": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.GeodatUnmatched"
+                    }
                 }
             }
         },
@@ -9078,6 +9283,29 @@
                     "type": "string"
                 },
                 "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.GeodatUnmatched": {
+            "type": "object",
+            "properties": {
+                "geoip_categories": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "geosite_categories": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "set_id": {
+                    "type": "string"
+                },
+                "set_name": {
                     "type": "string"
                 }
             }
@@ -9681,6 +9909,14 @@
                 },
                 "reliability": {
                     "type": "number"
+                }
+            }
+        },
+        "handler.RegenerateRequest": {
+            "type": "object",
+            "properties": {
+                "domain": {
+                    "type": "string"
                 }
             }
         },
