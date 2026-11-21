@@ -926,6 +926,15 @@
       "regenerateInUse": "These sets use it and send the new bytes at once: {{sets}}.",
       "regenerateSuccess": "Regenerated {{domain}}",
       "regenerateFailed": "Failed to regenerate payload: {{error}}",
+      "builtinTitle": "Built In",
+      "builtinDesc": "Payloads compiled into b4. The set editor offers them as presets; they cannot be changed or deleted.",
+      "builtinFailed": "The built-in payloads could not be loaded: {{error}}",
+      "sources": {
+        "youtubeunblock": "From youtubeUnblock",
+        "youtubeunblock_derived": "Derived from youtubeUnblock",
+        "zapret": "From zapret (MIT, bol-van)",
+        "unknown": "Source not recorded"
+      },
       "origins": {
         "generated": "Generated",
         "uploaded": "Uploaded",

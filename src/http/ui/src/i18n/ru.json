@@ -937,6 +937,15 @@
       "regenerateInUse": "Его используют сеты, и они сразу начнут отправлять новые байты: {{sets}}.",
       "regenerateSuccess": "{{domain}} сгенерирован заново",
       "regenerateFailed": "Не удалось сгенерировать payload заново: {{error}}",
+      "builtinTitle": "Встроенные",
+      "builtinDesc": "Payload, встроенные в b4. Редактор сета предлагает их как пресеты; изменить или удалить их нельзя.",
+      "builtinFailed": "Не удалось загрузить встроенные payload: {{error}}",
+      "sources": {
+        "youtubeunblock": "Из youtubeUnblock",
+        "youtubeunblock_derived": "Основан на youtubeUnblock",
+        "zapret": "Из zapret (MIT, bol-van)",
+        "unknown": "Источник не записан"
+      },
       "origins": {
         "generated": "Сгенерирован",
         "uploaded": "Загружен",

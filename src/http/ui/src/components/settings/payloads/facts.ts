@@ -1,5 +1,6 @@
 import type { TFunction } from "i18next";
 import type {
+  BuiltinPayload,
   Capture,
   PayloadFacts,
   PayloadInspection,
@@ -28,6 +29,27 @@ export function kindLabel(t: TFunction, facts: PayloadFacts): string {
     });
   }
   return t(`settings.Capture.kinds.${facts.kind}`);
+}
+
+const builtinLabelKeys: Record<string, string> = {
+  google: "sets.faking.fakeSni.payloadGoogle",
+  vk: "sets.faking.fakeSni.payloadVk",
+  stun: "sets.faking.fakeSni.payloadStun",
+  quic1: "sets.udp.fakePayloadFilePreset1",
+  quic2: "sets.udp.fakePayloadFilePreset2",
+};
+
+const knownSources = new Set(["youtubeunblock", "youtubeunblock_derived", "zapret"]);
+
+export function builtinLabel(t: TFunction, builtin: BuiltinPayload): string {
+  const key = builtinLabelKeys[builtin.id];
+  return key ? t(key) : builtin.id;
+}
+
+export function builtinSource(t: TFunction, builtin: BuiltinPayload): string {
+  return knownSources.has(builtin.source)
+    ? t(`settings.Capture.sources.${builtin.source}`)
+    : t("settings.Capture.sources.unknown");
 }
 
 export function captureWarnings(capture: Capture): PayloadWarning[] {

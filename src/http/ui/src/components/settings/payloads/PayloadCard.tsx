@@ -25,6 +25,7 @@ interface PayloadCardProps {
   size: number;
   facts?: PayloadFacts | null;
   origin?: PayloadOrigin;
+  source?: string;
   timestamp?: string;
   warnings?: PayloadWarning[];
   usedBy?: string[];
@@ -43,6 +44,7 @@ export const PayloadCard = ({
   size,
   facts,
   origin,
+  source,
   timestamp,
   warnings = [],
   usedBy = [],
@@ -67,6 +69,7 @@ export const PayloadCard = ({
   ]);
   const provenance = present([
     origin && t(`settings.Capture.origins.${origin}`),
+    source,
     timestamp && new Date(timestamp).toLocaleString(),
   ]);
 

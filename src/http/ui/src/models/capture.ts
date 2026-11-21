@@ -40,6 +40,22 @@ export interface Capture {
   used_by?: string[] | null;
 }
 
+export type BuiltinPayloadId = "google" | "vk" | "stun" | "quic1" | "quic2";
+
+export type BuiltinPayloadSource =
+  | "youtubeunblock"
+  | "youtubeunblock_derived"
+  | "zapret"
+  | "";
+
+export interface BuiltinPayload {
+  id: BuiltinPayloadId | (string & {});
+  protocol: PayloadProtocol;
+  size: number;
+  facts?: PayloadFacts | null;
+  source: BuiltinPayloadSource | (string & {});
+}
+
 export interface PayloadInspection {
   size: number;
   facts?: PayloadFacts | null;

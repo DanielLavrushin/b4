@@ -1,6 +1,7 @@
 import { ApiError, apiGet, apiUpload, apiPost, apiDelete } from "./apiClient";
 import { readErrorBody } from "./errorBody";
 import {
+  BuiltinPayload,
   Capture,
   CaptureGenerateResponse,
   CaptureRegenerateResponse,
@@ -24,6 +25,11 @@ export const captureApi = {
   bytes: (capture: Capture) =>
     fetchBytes(
       `/api/capture/download?${new URLSearchParams({ file: payloadFileName(capture.filepath) }).toString()}`,
+    ),
+  builtins: () => apiGet<BuiltinPayload[]>("/api/capture/builtin"),
+  builtinBytes: (id: string) =>
+    fetchBytes(
+      `/api/capture/builtin/download?${new URLSearchParams({ id }).toString()}`,
     ),
   generate: (domain: string, protocol: string) =>
     apiPost<CaptureGenerateResponse>("/api/capture/generate", {

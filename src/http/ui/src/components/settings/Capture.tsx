@@ -14,6 +14,7 @@ import {
 import {
   CaptureIcon,
   ClearIcon,
+  CoreIcon,
   DownloadIcon,
   RefreshIcon,
   SuccessIcon,
@@ -28,6 +29,7 @@ import {
   B4Select,
 } from "@b4.elements";
 import {
+  useBuiltinPayloads,
   useCaptures,
   Capture,
   PayloadInspection,
@@ -39,6 +41,8 @@ import { copyText, describeApiError } from "@utils";
 import { bytesToHex } from "./payloads/hex";
 import {
   asProtocol,
+  builtinLabel,
+  builtinSource,
   bytesLabel,
   captureWarnings,
   inspectionWarnings,
@@ -119,10 +123,21 @@ export const CaptureSettings = () => {
     readBytes,
     download,
   } = useCaptures();
+  const {
+    builtins,
+    builtinsError,
+    loadBuiltins,
+    readBuiltin,
+    downloadBuiltin,
+  } = useBuiltinPayloads();
 
   useEffect(() => {
     loadCaptures().catch(() => {});
   }, [loadCaptures]);
+
+  useEffect(() => {
+    loadBuiltins().catch(() => {});
+  }, [loadBuiltins]);
 
   const handleFileChange = async (file: File | null) => {
     if (!file) return;
@@ -361,9 +376,9 @@ export const CaptureSettings = () => {
       ].filter((part): part is string => !!part)
     : [];
 
-  const handleDownload = async (capture: Capture) => {
+  const handleDownload = async (save: () => Promise<void>) => {
     try {
-      await download(capture);
+      await save();
     } catch (error) {
       showError(
         t("settings.Capture.downloadFailed", { error: describeApiError(error) }),
@@ -635,7 +650,7 @@ export const CaptureSettings = () => {
                   onDownload={
                     capture.missing
                       ? undefined
-                      : () => void handleDownload(capture)
+                      : () => void handleDownload(() => download(capture))
                   }
                   onRegenerate={
                     capture.origin === "generated" && capture.protocol === "tls"
@@ -672,6 +687,43 @@ export const CaptureSettings = () => {
           </Typography>
         </Paper>
       )}
+
+      <B4Section
+        title={t("settings.Capture.builtinTitle")}
+        description={t("settings.Capture.builtinDesc")}
+        icon={<CoreIcon />}
+      >
+        {builtinsError ? (
+          <B4Alert severity="error" noWrapper>
+            {t("settings.Capture.builtinFailed", { error: builtinsError })}
+          </B4Alert>
+        ) : (
+          <Grid container spacing={3}>
+            {builtins.map((builtin) => (
+              <Grid key={builtin.id} size={{ xs: 12, sm: 6, lg: 4, xl: 3 }}>
+                <PayloadCard
+                  title={builtinLabel(t, builtin)}
+                  protocol={asProtocol(builtin.protocol)}
+                  size={builtin.size}
+                  facts={builtin.facts}
+                  source={builtinSource(t, builtin)}
+                  onViewHex={() =>
+                    void openHex({
+                      name: builtinLabel(t, builtin),
+                      protocol: builtin.protocol,
+                      size: builtin.size,
+                      read: () => readBuiltin(builtin),
+                    })
+                  }
+                  onDownload={() =>
+                    void handleDownload(() => downloadBuiltin(builtin))
+                  }
+                />
+              </Grid>
+            ))}
+          </Grid>
+        )}
+      </B4Section>
 
       <B4Dialog
         title={t("settings.Capture.replaceTitle", {

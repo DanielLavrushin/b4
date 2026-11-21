@@ -1,5 +1,5 @@
 import { captureApi } from "@api/capture";
-import { Capture } from "@b4.capture";
+import { BuiltinPayload, Capture } from "@b4.capture";
 import { describeApiError } from "@utils";
 import { useCallback, useState } from "react";
 
@@ -126,6 +126,41 @@ export function useCaptures() {
     upload,
     readBytes,
     download,
+  };
+}
+
+export function useBuiltinPayloads() {
+  const [builtins, setBuiltins] = useState<BuiltinPayload[]>([]);
+  const [builtinsError, setBuiltinsError] = useState<string | null>(null);
+
+  const loadBuiltins = useCallback(async (): Promise<BuiltinPayload[]> => {
+    try {
+      const list = await captureApi.builtins();
+      setBuiltins(list ?? []);
+      setBuiltinsError(null);
+      return list ?? [];
+    } catch (e) {
+      setBuiltinsError(describeApiError(e));
+      return [];
+    }
+  }, []);
+
+  const readBuiltin = useCallback(
+    (builtin: BuiltinPayload) => captureApi.builtinBytes(builtin.id),
+    [],
+  );
+
+  const downloadBuiltin = useCallback(async (builtin: BuiltinPayload) => {
+    const bytes = await captureApi.builtinBytes(builtin.id);
+    saveBytes(bytes, `builtin_${builtin.id}.bin`);
+  }, []);
+
+  return {
+    builtins,
+    builtinsError,
+    loadBuiltins,
+    readBuiltin,
+    downloadBuiltin,
   };
 }
 
