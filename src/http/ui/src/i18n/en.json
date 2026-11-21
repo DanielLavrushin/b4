@@ -897,6 +897,7 @@
       "copyClose": "Copy & Close",
       "hexCopied": "Hex data copied to clipboard",
       "hexCopyFailed": "Failed to copy hex data",
+      "hexFailed": "The payload bytes could not be loaded: {{error}}",
       "viewHex": "View/Copy hex",
       "downloadBin": "Download .bin",
       "downloadFailed": "Failed to download payload: {{error}}",

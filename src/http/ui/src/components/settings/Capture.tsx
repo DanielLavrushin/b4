@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Grid,
@@ -32,6 +32,14 @@ import {
 import { useCaptures, Capture } from "@b4.capture";
 import { colors, radius } from "@design";
 import { copyText, describeApiError } from "@utils";
+import { bytesToHex } from "./payloads/hex";
+
+interface HexTarget {
+  name: string;
+  protocol: string;
+  size: number;
+  read: () => Promise<Uint8Array>;
+}
 
 export const CaptureSettings = () => {
   const { t } = useTranslation();
@@ -55,6 +63,7 @@ export const CaptureSettings = () => {
     deleteCapture,
     clearAll,
     upload,
+    readBytes,
     download,
   } = useCaptures();
 
@@ -200,9 +209,31 @@ export const CaptureSettings = () => {
   };
 
   const [hexDialog, setHexDialog] = useState<{
-    open: boolean;
-    capture: Capture | null;
-  }>({ open: false, capture: null });
+    target: HexTarget;
+    hex: string | null;
+    error: string | null;
+  } | null>(null);
+  const hexRequest = useRef(0);
+
+  const openHex = async (target: HexTarget) => {
+    const id = ++hexRequest.current;
+    setHexDialog({ target, hex: null, error: null });
+    try {
+      const bytes = await target.read();
+      if (hexRequest.current === id) {
+        setHexDialog({ target, hex: bytesToHex(bytes), error: null });
+      }
+    } catch (error) {
+      if (hexRequest.current === id) {
+        setHexDialog({ target, hex: null, error: describeApiError(error) });
+      }
+    }
+  };
+
+  const closeHex = () => {
+    hexRequest.current += 1;
+    setHexDialog(null);
+  };
 
   const uploadCapture = async () => {
     if (!uploadForm.file || !uploadForm.domain) return;
@@ -420,7 +451,14 @@ export const CaptureSettings = () => {
               >
                 <CaptureCard
                   capture={capture}
-                  onViewHex={() => setHexDialog({ open: true, capture })}
+                  onViewHex={() =>
+                    void openHex({
+                      name: capture.domain,
+                      protocol: capture.protocol,
+                      size: capture.size,
+                      read: () => readBytes(capture),
+                    })
+                  }
                   onDownload={() => void handleDownload(capture)}
                   onDelete={() => void handleDelete(capture)}
                 />
@@ -453,50 +491,64 @@ export const CaptureSettings = () => {
         </Paper>
       )}
 
-      {/* Hex Dialog */}
       <B4Dialog
         title={t("settings.Capture.hexTitle")}
         subtitle={t("settings.Capture.hexSubtitle")}
         icon={<CaptureIcon />}
-        open={hexDialog.open}
-        onClose={() => setHexDialog({ open: false, capture: null })}
+        open={hexDialog !== null}
+        onClose={closeHex}
         maxWidth="md"
         fullWidth
         actions={
-          <Button
-            variant="contained"
-            onClick={() => {
-              if (hexDialog.capture?.hex_data) {
-                void copyHex(hexDialog.capture.hex_data);
-              }
-              setHexDialog({ open: false, capture: null });
-            }}
-          >
-            {t("settings.Capture.copyClose")}
-          </Button>
-        }
-      >
-        {hexDialog.capture && (
-          <Stack spacing={2}>
-            <B4Alert icon={<SuccessIcon />}>
-              TLS payload for {hexDialog.capture.domain} •{" "}
-              {hexDialog.capture.size} bytes
-            </B4Alert>
-            <Box
-              sx={{
-                p: 2,
-                bgcolor: colors.background.dark,
-                borderRadius: radius.sm,
-                fontFamily: "monospace",
-                fontSize: "0.8rem",
-                wordBreak: "break-all",
-                maxHeight: 400,
-                overflow: "auto",
-                userSelect: "all",
+          <>
+            <Button onClick={closeHex}>{t("core.close")}</Button>
+            <Box sx={{ flex: 1 }} />
+            <Button
+              variant="contained"
+              disabled={!hexDialog?.hex}
+              onClick={() => {
+                if (hexDialog?.hex) void copyHex(hexDialog.hex);
+                closeHex();
               }}
             >
-              {hexDialog.capture.hex_data}
-            </Box>
+              {t("settings.Capture.copyClose")}
+            </Button>
+          </>
+        }
+      >
+        {hexDialog && (
+          <Stack spacing={2}>
+            <B4Alert icon={<SuccessIcon />}>
+              TLS payload for {hexDialog.target.name} •{" "}
+              {hexDialog.target.size} bytes
+            </B4Alert>
+            {hexDialog.error && (
+              <B4Alert severity="error">
+                {t("settings.Capture.hexFailed", { error: hexDialog.error })}
+              </B4Alert>
+            )}
+            {!hexDialog.error && hexDialog.hex === null && (
+              <Box sx={{ display: "flex", justifyContent: "center", p: 2 }}>
+                <CircularProgress size={24} />
+              </Box>
+            )}
+            {hexDialog.hex !== null && (
+              <Box
+                sx={{
+                  p: 2,
+                  bgcolor: colors.background.dark,
+                  borderRadius: radius.sm,
+                  fontFamily: "monospace",
+                  fontSize: "0.8rem",
+                  wordBreak: "break-all",
+                  maxHeight: 400,
+                  overflow: "auto",
+                  userSelect: "all",
+                }}
+              >
+                {hexDialog.hex}
+              </Box>
+            )}
           </Stack>
         )}
       </B4Dialog>

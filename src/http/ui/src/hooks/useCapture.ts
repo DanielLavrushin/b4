@@ -1,6 +1,4 @@
-import { ApiError } from "@api/apiClient";
 import { captureApi } from "@api/capture";
-import { readErrorBody } from "@api/errorBody";
 import { Capture } from "@b4.capture";
 import { describeApiError } from "@utils";
 import { useCallback, useState } from "react";
@@ -78,27 +76,17 @@ export function useCaptures() {
     [loadCaptures],
   );
 
+  const readBytes = useCallback(
+    (capture: Capture) => captureApi.bytes(capture),
+    [],
+  );
+
   const download = useCallback(async (capture: Capture) => {
-    const filename = capture.filepath.split(/[\\/]/).pop() || capture.filepath;
-    const url = `/api/capture/download?file=${encodeURIComponent(filename)}`;
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new ApiError(
-        url,
-        response.status,
-        response.statusText,
-        await readErrorBody(response),
-      );
-    }
-    const blob = await response.blob();
-    const blobUrl = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = blobUrl;
-    link.download = `${capture.protocol}_${capture.domain.replaceAll(".", "_")}.bin`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(blobUrl);
+    const bytes = await captureApi.bytes(capture);
+    saveBytes(
+      bytes,
+      `${capture.protocol}_${capture.domain.replaceAll(".", "_")}.bin`,
+    );
   }, []);
 
   return {
@@ -113,6 +101,18 @@ export function useCaptures() {
     deleteCapture,
     clearAll,
     upload,
+    readBytes,
     download,
   };
+}
+
+function saveBytes(bytes: Uint8Array<ArrayBuffer>, filename: string) {
+  const blobUrl = URL.createObjectURL(new Blob([bytes]));
+  const link = document.createElement("a");
+  link.href = blobUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(blobUrl);
 }

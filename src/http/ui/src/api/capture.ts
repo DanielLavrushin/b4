@@ -1,12 +1,28 @@
-import { apiGet, apiUpload, apiPost, apiDelete } from "./apiClient";
+import { ApiError, apiGet, apiUpload, apiPost, apiDelete } from "./apiClient";
+import { readErrorBody } from "./errorBody";
 import {
   Capture,
   CaptureGenerateResponse,
   CaptureUploadResponse,
 } from "@b4.capture";
 
+async function fetchBytes(url: string): Promise<Uint8Array<ArrayBuffer>> {
+  const r = await fetch(url);
+  if (!r.ok) {
+    throw new ApiError(url, r.status, r.statusText, await readErrorBody(r));
+  }
+  return new Uint8Array(await r.arrayBuffer());
+}
+
+export const payloadFileName = (filepath: string) =>
+  filepath.split(/[\\/]/).pop() || filepath;
+
 export const captureApi = {
   list: () => apiGet<Capture[]>("/api/capture/list"),
+  bytes: (capture: Capture) =>
+    fetchBytes(
+      `/api/capture/download?${new URLSearchParams({ file: payloadFileName(capture.filepath) }).toString()}`,
+    ),
   generate: (domain: string, protocol: string) =>
     apiPost<CaptureGenerateResponse>("/api/capture/generate", {
       domain,

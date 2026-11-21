@@ -4,7 +4,6 @@ export interface Capture {
   timestamp: string;
   size: number;
   filepath: string;
-  hex_data: string;
   missing?: boolean;
   used_by?: string[];
 }
