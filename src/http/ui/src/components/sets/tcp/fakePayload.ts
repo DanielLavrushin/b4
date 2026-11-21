@@ -27,7 +27,8 @@ export function tlsModChangesTheFake(
       return chosen.state === "listed"
         ? chosen.capture.facts?.kind === "tls_client_hello"
         : chosen.state !== "unlisted" ||
-            chosen.facts.kind === "tls_client_hello";
+            chosen.tooLarge ||
+            chosen.facts?.kind === "tls_client_hello";
     case FakingPayloadType.INVERTED:
       return sendsSynOrDecoyFake(config);
     default:

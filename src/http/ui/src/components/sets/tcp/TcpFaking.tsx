@@ -244,6 +244,16 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
     payloadFileHelper = t("sets.faking.fakeSni.payloadFileEmptyHelper", {
       file: payloadFile,
     });
+  } else if (chosenFile.state === "unlisted" && chosenFile.tooLarge) {
+    chosenFileOption = {
+      label: t("sets.faking.fakeSni.payloadFileTooLarge", {
+        name: chosenFile.name,
+      }),
+      note: t("sets.faking.fakeSni.payloadFileMissingNote"),
+    };
+    payloadFileHelper = t("sets.faking.fakeSni.payloadFileTooLargeHelper", {
+      file: payloadFile,
+    });
   } else if (chosenFile.state === "unlisted") {
     chosenFileOption = {
       label: t("sets.faking.fakeSni.payloadFileUnlisted", {
@@ -283,7 +293,9 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
   ];
 
   const chosenSize =
-    chosenFile.state === "unlisted" ? chosenFile.size : selectedCapture?.size;
+    chosenFile.state === "unlisted" && !chosenFile.tooLarge
+      ? chosenFile.size
+      : selectedCapture?.size;
   const oversizedSize =
     config.faking.sni &&
     config.faking.fake_len_mode !== "match" &&

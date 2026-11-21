@@ -47,6 +47,7 @@ export interface PayloadFileResolution {
   listed: boolean;
   exists: boolean;
   size: number;
+  too_large: boolean;
   facts?: PayloadFacts | null;
 }
 

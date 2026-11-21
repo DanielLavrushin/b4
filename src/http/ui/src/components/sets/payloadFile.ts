@@ -15,7 +15,13 @@ export type ChosenPayloadFile =
   | { state: "unknown"; name: string }
   | { state: "missing"; name: string }
   | { state: "empty"; name: string; capture?: Capture }
-  | { state: "unlisted"; name: string; size: number; facts: PayloadFacts }
+  | {
+      state: "unlisted";
+      name: string;
+      size: number;
+      facts?: PayloadFacts;
+      tooLarge: boolean;
+    }
   | { state: "listed"; capture: Capture };
 
 export interface ResolvedPayloadFile {
@@ -72,11 +78,15 @@ export function chosenPayloadFile(
   if (!listed) return { state: "unknown", name };
   if (capture) return { state: "missing", name: capture.domain };
   if (answer === undefined) return { state: "unknown", name };
-  if (answer?.exists && answer.size === 0) return { state: "empty", name };
-  if (answer?.exists && answer.facts) {
-    return { state: "unlisted", name, size: answer.size, facts: answer.facts };
-  }
-  return { state: "missing", name };
+  if (!answer?.exists) return { state: "missing", name };
+  if (answer.size === 0) return { state: "empty", name };
+  return {
+    state: "unlisted",
+    name,
+    size: answer.size,
+    facts: answer.facts ?? undefined,
+    tooLarge: answer.too_large,
+  };
 }
 
 export function useResolvedPayloadFile(

@@ -2152,6 +2152,8 @@
         "payloadFileEmptyHelper": "This set names {{file}}, which is empty. Until another payload is picked, the set sends Preset: Google (classic).",
         "payloadFileUnlisted": "{{name}} (not in the list)",
         "payloadFileUnlistedHelper": "This set names {{file}}, which is not in the payload list. The set sends this file as it is.",
+        "payloadFileTooLarge": "{{name}} (too large)",
+        "payloadFileTooLargeHelper": "This set names {{file}}, which is larger than a payload may be. Until another payload is picked, the set sends Preset: Google (classic).",
         "payloadFileMissingNote": "The set sends Preset: Google (classic) instead",
         "payloadFaults_one": "{{count}} malformed field",
         "payloadFaults_other": "{{count}} malformed fields",

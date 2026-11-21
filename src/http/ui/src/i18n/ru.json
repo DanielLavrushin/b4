@@ -2241,6 +2241,8 @@
         "payloadFileEmptyHelper": "Сет указывает на {{file}}, но этот файл пуст. Пока не выбран другой payload, сет отправляет «Пресет: Google (классический)».",
         "payloadFileUnlisted": "{{name}} (нет в списке)",
         "payloadFileUnlistedHelper": "Сет указывает на {{file}}: этого файла нет в списке payload. Сет отправляет этот файл как есть.",
+        "payloadFileTooLarge": "{{name}} (файл слишком большой)",
+        "payloadFileTooLargeHelper": "Сет указывает на {{file}}, но этот файл больше допустимого размера payload. Пока не выбран другой payload, сет отправляет «Пресет: Google (классический)».",
         "payloadFileMissingNote": "Вместо него сет отправляет «Пресет: Google (классический)»",
         "payloadFaults_one": "{{count}} поле с ошибкой",
         "payloadFaults_few": "{{count}} поля с ошибками",
