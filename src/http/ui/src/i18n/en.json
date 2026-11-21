@@ -905,7 +905,7 @@
       "emptyTitle": "No generated payloads yet",
       "emptyDesc": "Enter a domain above and click Generate to create a payload",
       "hexTitle": "Payload Hex Data",
-      "hexSubtitle": "Copy for use in Faking → Custom Payload",
+      "hexSubtitle": "The payload's bytes in hex, as the file holds them",
       "copyClose": "Copy & Close",
       "hexCopied": "Hex data copied to clipboard",
       "hexCopyFailed": "Failed to copy hex data",

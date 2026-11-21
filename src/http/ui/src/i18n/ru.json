@@ -914,7 +914,7 @@
       "emptyTitle": "Пэйлоадов пока нет",
       "emptyDesc": "Введите домен выше и нажмите Сгенерировать, чтобы создать payload",
       "hexTitle": "Hex данные пэйлоада",
-      "hexSubtitle": "Скопируйте для использования в Faking → Custom Payload",
+      "hexSubtitle": "Байты payload в hex, как они записаны в файле",
       "copyClose": "Копировать и закрыть",
       "hexCopied": "Hex данные скопированы в буфер обмена",
       "hexCopyFailed": "Не удалось скопировать hex данные",
