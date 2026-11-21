@@ -11,7 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/daniellavrushin/b4/capture"
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/discord"
 	"github.com/daniellavrushin/b4/log"
@@ -787,10 +786,6 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			helloGen = w.tlsCache.Store(connKey, host, tlsVersion, helloSeq, clientHelloID(helloRecord), helloRecordLen(helloRecord))
 		}
 
-		if captureManager := capture.GetManager(cfg); captureManager != nil {
-			captureManager.CapturePayload(connKey, host, "tls", payload)
-		}
-
 		if host != "" {
 			var decided *config.SetConfig
 			if mSNI, stSNI := matcher.MatchSNIWithSourceTLS(host, pkt.srcMac, tlsVersion, pkt.ver, keep); mSNI {
@@ -1282,10 +1277,6 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	if host == "" {
 		host = learnedHost
-	}
-
-	if captureManager := capture.GetManager(cfg); captureManager != nil {
-		captureManager.CapturePayload(connKey, host, "quic", payload)
 	}
 
 	matchedFlow := false

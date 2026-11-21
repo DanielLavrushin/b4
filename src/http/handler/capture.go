@@ -16,11 +16,10 @@ import (
 
 type CaptureRequest struct {
 	Domain   string `json:"domain"`
-	Protocol string `json:"protocol"` // "tls", "quic", or "both"
+	Protocol string `json:"protocol"`
 }
 
 func (api *API) RegisterCaptureApi() {
-	api.mux.HandleFunc("/api/capture/probe", api.handleProbeCapture)
 	api.mux.HandleFunc("/api/capture/generate", api.handleGenerateCapture)
 	api.mux.HandleFunc("/api/capture/list", api.handleListCaptures)
 	api.mux.HandleFunc("/api/capture/delete", api.handleDeleteCapture)
@@ -104,89 +103,6 @@ func generatedPayloadMessage(domain string, size int) string {
 		return fmt.Sprintf("Generated a TLS ClientHello for %s", domain)
 	}
 	return fmt.Sprintf("Generated a %d-byte TLS ClientHello for %s", size, domain)
-}
-
-// @Summary Probe domain for capture
-// @Tags Capture
-// @Accept json
-// @Produce json
-// @Param body body CaptureRequest true "Capture request"
-// @Success 200 {object} map[string]interface{}
-// @Security BearerAuth
-// @Router /capture/probe [post]
-func (api *API) handleProbeCapture(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req CaptureRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
-		return
-	}
-
-	if req.Domain == "" {
-		http.Error(w, "Domain required", http.StatusBadRequest)
-		return
-	}
-
-	// Normalize domain (lowercase, no protocol)
-	req.Domain = strings.ToLower(strings.TrimSpace(req.Domain))
-	req.Domain = strings.TrimPrefix(req.Domain, "http://")
-	req.Domain = strings.TrimPrefix(req.Domain, "https://")
-	req.Domain = strings.Split(req.Domain, "/")[0] // Remove path if any
-
-	if req.Protocol == "" {
-		req.Protocol = "both"
-	}
-
-	manager := capture.GetManager(api.getCfg())
-
-	var errors []string
-
-	// Probe for the requested protocol(s)
-	if req.Protocol == "both" || req.Protocol == "tls" {
-		if err := manager.ProbeCapture(req.Domain, "tls"); err != nil {
-			errors = append(errors, fmt.Sprintf("TLS: %v", err))
-			log.Tracef("TLS probe error for %s: %v", req.Domain, err)
-		}
-	}
-
-	if req.Protocol == "both" || req.Protocol == "quic" {
-		if err := manager.ProbeCapture(req.Domain, "quic"); err != nil {
-			errors = append(errors, fmt.Sprintf("QUIC: %v", err))
-			log.Tracef("QUIC probe error for %s: %v", req.Domain, err)
-		}
-	}
-
-	// If all probes failed with "already captured", that's actually fine
-	if len(errors) > 0 {
-		allAlreadyCaptured := true
-		for _, err := range errors {
-			if !strings.Contains(err, "already captured") {
-				allAlreadyCaptured = false
-				break
-			}
-		}
-
-		if allAlreadyCaptured {
-			setJsonHeader(w)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"success":          true,
-				"message":          fmt.Sprintf("Payload for %s already captured", req.Domain),
-				"already_captured": true,
-			})
-			return
-		}
-	}
-
-	setJsonHeader(w)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"message": fmt.Sprintf("Probing %s for %s payload", req.Domain, req.Protocol),
-		"errors":  errors,
-	})
 }
 
 // @Summary List all captures

@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 )
 
 func testManager(t *testing.T) *Manager {
@@ -14,14 +13,7 @@ func testManager(t *testing.T) *Manager {
 
 func testManagerIn(t *testing.T, dir string) *Manager {
 	t.Helper()
-	return &Manager{
-		metadata:        make(map[string]map[string]*PayloadMetadata),
-		outputPath:      dir,
-		metadataFile:    filepath.Join(dir, "payloads.json"),
-		activeProbes:    make(map[string]time.Time),
-		pendingCaptures: make(map[string]*PendingCapture),
-		connToDomain:    make(map[string]string),
-	}
+	return newManager(dir)
 }
 
 func TestSaveImportedPayloadReusesIdenticalFileAndRenamesOnConflict(t *testing.T) {

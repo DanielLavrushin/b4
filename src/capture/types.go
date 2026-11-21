@@ -6,20 +6,10 @@ import (
 )
 
 type Manager struct {
-	mu              sync.RWMutex
-	metadata        map[string]map[string]*PayloadMetadata
-	outputPath      string
-	metadataFile    string
-	activeProbes    map[string]time.Time
-	pendingCaptures map[string]*PendingCapture
-	connToDomain    map[string]string
-}
-
-type PendingCapture struct {
-	protocol  string
-	domain    string
-	data      []byte
-	firstSeen time.Time
+	mu           sync.RWMutex
+	metadata     map[string]map[string]*PayloadMetadata
+	outputPath   string
+	metadataFile string
 }
 
 type PayloadMetadata struct {
