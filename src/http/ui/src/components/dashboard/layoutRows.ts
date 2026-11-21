@@ -1,4 +1,6 @@
-import { GRID_COLUMNS, MIN_SPAN } from "./registry";
+export const GRID_COLUMNS = 12;
+
+export const MIN_SPAN = 3;
 
 export const ROW_CAPACITY = Math.floor(GRID_COLUMNS / MIN_SPAN);
 

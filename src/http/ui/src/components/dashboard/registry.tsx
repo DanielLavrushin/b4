@@ -14,9 +14,7 @@ import {
   type PanelAvailability,
 } from "./panels";
 
-export const GRID_COLUMNS = 12;
-
-export const MIN_SPAN = 3;
+export { GRID_COLUMNS, MIN_SPAN } from "./layoutRows";
 
 export type PanelCondition = keyof PanelAvailability;
 
