@@ -1,8 +1,9 @@
 import { Box, Divider, Paper, Switch, Typography } from "@mui/material";
 import { colors, radiusPx } from "@design";
 import { useChangedField } from "@context/ChangedFieldsContext";
+import { B4Help, type B4HelpContent } from "./B4Help";
 
-export interface B4IntegrationCardProps {
+export interface B4IntegrationCardProps extends B4HelpContent {
   icon: React.ReactNode;
   title: string;
   description?: string;
@@ -24,6 +25,12 @@ export const B4IntegrationCard = ({
   toggleLabel,
   togglePath,
   children,
+  info,
+  learnMore,
+  credit,
+  aiTopic,
+  aiContext,
+  aiQuestion,
 }: B4IntegrationCardProps) => {
   const open = !onToggle || enabled;
   const changed = useChangedField(togglePath, toggleLabel ?? title);
@@ -63,16 +70,29 @@ export const B4IntegrationCard = ({
           {icon}
         </Box>
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography
-            sx={{
-              fontSize: 17,
-              fontWeight: 600,
-              lineHeight: 1.3,
-              color: changed ? colors.secondary : colors.text.primary,
-            }}
-          >
-            {title}
-          </Typography>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <Typography
+              sx={{
+                fontSize: 17,
+                fontWeight: 600,
+                lineHeight: 1.3,
+                color: changed ? colors.secondary : colors.text.primary,
+              }}
+            >
+              {title}
+            </Typography>
+            <B4Help
+              label={title}
+              info={info}
+              learnMore={learnMore}
+              credit={credit}
+              aiTopic={aiTopic}
+              aiContext={aiContext}
+              aiQuestion={aiQuestion}
+              fieldDoc={description}
+              value={onToggle ? enabled : undefined}
+            />
+          </Box>
           {description && (
             <Typography
               variant="caption"

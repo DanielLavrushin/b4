@@ -715,10 +715,10 @@
       "description": "Lets an AI app (Claude Desktop, Cursor, LM Studio) read b4's state over the Model Context Protocol at /api/mcp.",
       "enabled": "Enable MCP server",
       "allowWrites": "Allow configuration changes",
-      "allowWritesHelp": "Lets the AI change any setting inside a strategy set, plus the MTProto and SOCKS5 subsystems. Credentials, the web server, the capture engine and the firewall backend stay read-only. Any change can be undone by asking the AI to revert it.",
+      "allowWritesHelp": "Lets the AI change any setting inside a set, plus the MTProto and SOCKS5 subsystems.",
       "allowWritesWarning": "The AI can change settings, not just read them. The AI app should ask for approval before each change; do not approve one that is not understood. A change that turns out to be wrong can be undone by asking the AI to revert it.",
       "allowProbes": "Allow active probes",
-      "allowProbesHelp": "Lets the AI make b4 fetch a domain to see whether it actually loads, and run a discovery search that tries strategies until one works. These send real traffic from the router. Separate from configuration changes, because emitting traffic is a different permission from editing settings.",
+      "allowProbesHelp": "Lets the AI make b4 fetch a domain and run a discovery search. Both send real traffic from the router.",
       "allowProbesWarning": "The AI can make the router fetch sites and run discovery. A discovery run takes minutes, sends heavy traffic, holds firewall rules for its duration and blocks the watchdog while it runs. Private and local addresses are refused.",
       "noAuthWarning": "Web authentication is off, so anyone who can reach this port can read b4's status, configuration and diagnostics through MCP. Fine on a trusted home network; set a username and password under <a>Settings -> System -> Web Server</a> if the port is reachable from elsewhere.",
       "noTokenWarning": "No MCP token is set, so clients have to use a web login token instead. Those expire after a day and are discarded when b4 restarts, which leaves the AI app unable to connect until you paste a new one. Generate an MCP token to avoid that.",
@@ -731,7 +731,9 @@
       "tokenRegenerate": "Regenerate",
       "tokenSnippetPlaceholder": "<token>",
       "clientConfig": "Client configuration",
-      "clientConfigCopied": "Client configuration copied"
+      "clientConfigCopied": "Client configuration copied",
+      "allowWritesInfo": "Credentials, the web server, the capture engine and the firewall backend stay read-only. Any change can be undone by asking the AI to revert it.",
+      "allowProbesInfo": "A fetch shows whether the domain actually loads, and a discovery search tries strategies until one works. This is separate from configuration changes, because emitting traffic is a different permission from editing settings."
     },
     "Checker": {
       "title": "Testing Configuration",
@@ -1074,13 +1076,12 @@
     },
     "Hub": {
       "title": "Community Hub",
-      "description": "Browse strategies other b4 users published, apply one in a click, and report whether it works. The set editor gets a Share section that prepares a set with everything private left out.",
+      "description": "Browse strategies other b4 users published, apply one in a click, and report whether it works.",
       "enabled": "Enable Community Hub",
-      "note": "The Community page lists the catalogue signed by the hub. Reports on what works are sent under the author identity below; nothing else about this router leaves it. A shared set pasted into Import is accepted whether or not this is on.",
       "urls": "Hub mirrors",
-      "urlsHelp": "Addresses of the same hub, one per line, tried in order until one answers. Empty means {{url}}. A mirror serves the same signed catalogue, so the key below stays the same.",
+      "urlsHelp": "Addresses of the same hub, one per line, tried in order until one answers. Empty means {{url}}.",
       "publicKey": "Hub public key",
-      "publicKeyHelp": "Only for a self-hosted hub with its own key, for example a development hub on this network. The key of hub.b4core.app is built in; leave this empty to use it.",
+      "publicKeyHelp": "Only for a self-hosted hub with its own key. Leave it empty to use the built-in key of hub.b4core.app.",
       "status": {
         "title": "Hub status",
         "savedOff": "The Community Hub is off in the saved configuration. Save to turn it on.",
@@ -1145,7 +1146,10 @@
         "restored": "Identity restored, key {{key}}.",
         "restoreFailed": "Could not restore the identity: {{error}}"
       },
-      "publicKeyPlaceholder": "Key id printed by b4hub keygen"
+      "publicKeyPlaceholder": "Key id printed by b4hub keygen",
+      "info": "The set editor gets a Share section that prepares a set with everything private left out.\n\nThe Community page lists the catalogue signed by the hub. Reports on what works are sent under the author identity below; nothing else about this router leaves it. A shared set pasted into Import is accepted whether or not this is on.",
+      "urlsInfo": "A mirror serves the same signed catalogue, so the key below stays the same.",
+      "publicKeyInfo": "A self-hosted hub is, for example, a development hub on this network."
     }
   },
   "dashboard": {

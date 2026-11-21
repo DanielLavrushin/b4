@@ -14,6 +14,7 @@ import {
 import {
   B4Alert,
   B4Dialog,
+  B4Help,
   B4IntegrationCard,
   B4TextField,
 } from "@b4.elements";
@@ -152,10 +153,11 @@ interface StatusRowProps {
   label: string;
   value: React.ReactNode;
   hint?: string;
+  note?: string;
   title?: string;
 }
 
-const StatusRow = ({ label, value, hint, title }: StatusRowProps) => (
+const StatusRow = ({ label, value, hint, note, title }: StatusRowProps) => (
   <Box
     sx={{
       display: "grid",
@@ -175,21 +177,29 @@ const StatusRow = ({ label, value, hint, title }: StatusRowProps) => (
       {label}
     </Typography>
     <Box sx={{ minWidth: 0 }}>
-      <Typography
-        component="div"
-        variant="body2"
-        title={title}
-        sx={{ color: colors.text.primary, overflowWrap: "anywhere" }}
-      >
-        {value}
-      </Typography>
-      {hint && (
+      <Box sx={{ display: "flex", alignItems: "flex-start", gap: 0.5 }}>
+        <Typography
+          component="div"
+          variant="body2"
+          title={title}
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            color: colors.text.primary,
+            overflowWrap: "anywhere",
+          }}
+        >
+          {value}
+        </Typography>
+        <B4Help label={label} info={hint} mt="-4px" />
+      </Box>
+      {note && (
         <Typography
           component="div"
           variant="caption"
           sx={{ color: colors.text.secondary, display: "block", mt: 0.25 }}
         >
-          {hint}
+          {note}
         </Typography>
       )}
     </Box>
@@ -284,13 +294,13 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
       icon={<CommunityIcon />}
       title={t("settings.Hub.title")}
       description={t("settings.Hub.description")}
+      info={t("settings.Hub.info")}
+      learnMore="settings/integrations#community-hub"
       enabled={enabled}
       onToggle={(checked) => onChange("system.hub.enabled", checked)}
       toggleLabel={t("settings.Hub.enabled")}
       togglePath="system.hub.enabled"
     >
-      <B4Alert severity="info">{t("settings.Hub.note")}</B4Alert>
-
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, md: 6 }}>
           <B4TextField
@@ -302,6 +312,7 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
             minRows={2}
             placeholder={DEFAULT_HUB_URL}
             helperText={t("settings.Hub.urlsHelp", { url: DEFAULT_HUB_URL })}
+            info={t("settings.Hub.urlsInfo")}
           />
         </Grid>
         <Grid size={{ xs: 12, md: 6 }}>
@@ -311,6 +322,7 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
             onChange={(e) => onChange("system.hub.public_key", e.target.value)}
             placeholder={t("settings.Hub.publicKeyPlaceholder")}
             helperText={t("settings.Hub.publicKeyHelp")}
+            info={t("settings.Hub.publicKeyInfo")}
           />
         </Grid>
       </Grid>
@@ -461,7 +473,7 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
                           {data.last_error}
                         </Box>
                       }
-                      hint={t("settings.Hub.status.lastErrorHint")}
+                      note={t("settings.Hub.status.lastErrorHint")}
                     />
                   )}
                   <StatusRow
@@ -506,7 +518,7 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
                           ))}
                         </Stack>
                       }
-                      hint={t("settings.Hub.status.matchedByHint")}
+                      note={t("settings.Hub.status.matchedByHint")}
                     />
                   )}
                   {data.self_bypass && (
@@ -520,7 +532,7 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
                           {t("settings.Hub.status.selfBypassValue")}
                         </Box>
                       }
-                      hint={t(
+                      note={t(
                         matchedSets.length > 0
                           ? "settings.Hub.status.selfBypassHintSet"
                           : "settings.Hub.status.selfBypassHint",

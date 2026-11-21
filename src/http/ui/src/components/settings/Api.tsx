@@ -23,6 +23,7 @@ import {
   B4Alert,
   B4ConnectDetails,
   B4Dialog,
+  B4Help,
   B4IntegrationCard,
   B4NumberField,
   B4SecretField,
@@ -86,6 +87,7 @@ const IPInfoCard = ({ config, onChange }: ApiSettingsProps) => {
       icon={<IpInfoIcon />}
       title={t("settings.Api.ipinfoTitle")}
       description={t("settings.Api.ipinfoDescription")}
+      learnMore="settings/integrations#ipinfo"
     >
       <Box sx={{ maxWidth: 560 }}>
         <B4SecretField
@@ -276,6 +278,7 @@ const AICard = ({ config, onChange }: ApiSettingsProps) => {
       icon={<AiIcon />}
       title={t("settings.Ai.title")}
       description={t("settings.Ai.description")}
+      learnMore="settings/integrations#ai-assistant"
       status={notReady}
       enabled={ai?.enabled ?? false}
       onToggle={(checked) => onChange("system.ai.enabled", checked)}
@@ -581,6 +584,8 @@ const MCPCard = ({ config, onChange }: ApiSettingsProps) => {
       icon={<McpIcon />}
       title={t("settings.Mcp.title")}
       description={t("settings.Mcp.description")}
+      learnMore="settings/integrations#mcp-server"
+      aiTopic="system.web_server.mcp.enabled"
       enabled={enabled}
       onToggle={(checked) => onChange("system.web_server.mcp.enabled", checked)}
       togglePath="system.web_server.mcp.enabled"
@@ -621,9 +626,20 @@ const MCPCard = ({ config, onChange }: ApiSettingsProps) => {
               }}
             >
               <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography sx={{ color: colors.text.primary, fontWeight: 500 }}>
-                  {t("settings.Mcp.allowWrites")}
-                </Typography>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                  <Typography
+                    sx={{ color: colors.text.primary, fontWeight: 500 }}
+                  >
+                    {t("settings.Mcp.allowWrites")}
+                  </Typography>
+                  <B4Help
+                    label={t("settings.Mcp.allowWrites")}
+                    info={t("settings.Mcp.allowWritesInfo")}
+                    learnMore="settings/integrations#mcp-server"
+                    aiTopic="system.web_server.mcp.allow_writes"
+                    value={allowWrites}
+                  />
+                </Box>
                 <Typography
                   variant="caption"
                   sx={{
@@ -666,9 +682,20 @@ const MCPCard = ({ config, onChange }: ApiSettingsProps) => {
               }}
             >
               <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography sx={{ color: colors.text.primary, fontWeight: 500 }}>
-                  {t("settings.Mcp.allowProbes")}
-                </Typography>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                  <Typography
+                    sx={{ color: colors.text.primary, fontWeight: 500 }}
+                  >
+                    {t("settings.Mcp.allowProbes")}
+                  </Typography>
+                  <B4Help
+                    label={t("settings.Mcp.allowProbes")}
+                    info={t("settings.Mcp.allowProbesInfo")}
+                    learnMore="settings/integrations#mcp-server"
+                    aiTopic="system.web_server.mcp.allow_active_probes"
+                    value={allowProbes}
+                  />
+                </Box>
                 <Typography
                   variant="caption"
                   sx={{
