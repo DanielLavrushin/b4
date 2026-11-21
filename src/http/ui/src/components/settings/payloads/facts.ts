@@ -1,5 +1,6 @@
 import type { TFunction } from "i18next";
 import type {
+  Capture,
   PayloadFacts,
   PayloadInspection,
   PayloadKind,
@@ -27,6 +28,13 @@ export function kindLabel(t: TFunction, facts: PayloadFacts): string {
     });
   }
   return t(`settings.Capture.kinds.${facts.kind}`);
+}
+
+export function captureWarnings(capture: Capture): PayloadWarning[] {
+  const warnings = capture.warnings ?? [];
+  return capture.missing && !warnings.includes("missing")
+    ? ["missing", ...warnings]
+    : warnings;
 }
 
 export function inspectionWarnings(

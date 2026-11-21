@@ -10,11 +10,9 @@ import {
   CircularProgress,
   Tooltip,
   IconButton,
-  Chip,
 } from "@mui/material";
 import {
   CaptureIcon,
-  CopyIcon,
   ClearIcon,
   DownloadIcon,
   RefreshIcon,
@@ -42,9 +40,11 @@ import { bytesToHex } from "./payloads/hex";
 import {
   asProtocol,
   bytesLabel,
+  captureWarnings,
   inspectionWarnings,
   kindLabel,
 } from "./payloads/facts";
+import { PayloadCard } from "./payloads/PayloadCard";
 import { PayloadWarnings } from "./payloads/PayloadWarnings";
 
 interface HexTarget {
@@ -588,17 +588,31 @@ export const CaptureSettings = () => {
                 key={`${capture.protocol}:${capture.domain}`}
                 size={{ xs: 12, sm: 6, lg: 4, xl: 3 }}
               >
-                <CaptureCard
-                  capture={capture}
-                  onViewHex={() =>
-                    void openHex({
-                      name: capture.domain,
-                      protocol: capture.protocol,
-                      size: capture.size,
-                      read: () => readBytes(capture),
-                    })
+                <PayloadCard
+                  title={capture.domain}
+                  protocol={asProtocol(capture.protocol)}
+                  size={capture.size}
+                  facts={capture.facts}
+                  origin={capture.origin}
+                  timestamp={capture.timestamp}
+                  warnings={captureWarnings(capture)}
+                  usedBy={capture.used_by ?? []}
+                  onViewHex={
+                    capture.missing
+                      ? undefined
+                      : () =>
+                          void openHex({
+                            name: capture.domain,
+                            protocol: capture.protocol,
+                            size: capture.size,
+                            read: () => readBytes(capture),
+                          })
                   }
-                  onDownload={() => void handleDownload(capture)}
+                  onDownload={
+                    capture.missing
+                      ? undefined
+                      : () => void handleDownload(capture)
+                  }
                   onDelete={() => void handleDelete(capture)}
                 />
               </Grid>
@@ -736,138 +750,5 @@ export const CaptureSettings = () => {
         )}
       </B4Dialog>
     </Stack>
-  );
-};
-
-// Card component styled like SetCard
-interface CaptureCardProps {
-  capture: Capture;
-  onViewHex: () => void;
-  onDownload: () => void;
-  onDelete: () => void;
-}
-
-const CaptureCard = ({
-  capture,
-  onViewHex,
-  onDownload,
-  onDelete,
-}: CaptureCardProps) => {
-  const { t } = useTranslation();
-
-  return (
-    <Paper
-      elevation={0}
-      sx={{
-        p: 2,
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        border: `1px solid ${colors.border.default}`,
-        borderRadius: radius.md,
-        transition: "all 0.2s ease",
-        "&:hover": {
-          borderColor: colors.secondary,
-          transform: "translateY(-2px)",
-          boxShadow: `0 4px 12px ${colors.accent.primary}40`,
-        },
-      }}
-    >
-      {/* Header */}
-      <Stack
-        direction="row"
-        justifyContent="space-between"
-        alignItems="flex-start"
-        mb={1}
-      >
-        <Box sx={{ minWidth: 0, flex: 1 }}>
-          <Typography
-            variant="subtitle1"
-            fontWeight={600}
-            sx={{
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {capture.domain}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {bytesLabel(t, capture.size)}
-          </Typography>
-        </Box>
-        <Chip
-          label={capture.protocol.toUpperCase()}
-          size="small"
-          sx={{
-            ml: 1,
-            height: 20,
-            fontSize: "0.65rem",
-            fontWeight: 700,
-            letterSpacing: "0.05em",
-            bgcolor:
-              capture.protocol === "quic"
-                ? colors.accent.secondary
-                : `${colors.state.info}26`,
-            color:
-              capture.protocol === "quic"
-                ? colors.secondary
-                : colors.state.info,
-            border: `1px solid ${
-              capture.protocol === "quic"
-                ? colors.border.strong
-                : `${colors.state.info}66`
-            }`,
-            "& .MuiChip-label": { px: 0.75 },
-          }}
-        />
-      </Stack>
-
-      <Typography variant="caption" color="text.secondary" sx={{ mb: 2 }}>
-        {new Date(capture.timestamp).toLocaleString()}
-      </Typography>
-
-      {capture.missing && (
-        <B4Alert severity="warning" noWrapper sx={{ mb: 2 }}>
-          {capture.protocol === "quic"
-            ? t("settings.Capture.missingFileQuic")
-            : t("settings.Capture.missingFileTls")}
-        </B4Alert>
-      )}
-
-      {/* Spacer */}
-      <Box sx={{ flex: 1 }} />
-
-      {/* Actions */}
-      <Stack
-        direction="row"
-        spacing={1}
-        sx={{
-          pt: 2,
-          borderTop: `1px solid ${colors.border.light}`,
-        }}
-      >
-        {!capture.missing && (
-          <>
-            <Tooltip title={t("settings.Capture.viewHex")}>
-              <IconButton size="small" onClick={onViewHex}>
-                <CopyIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title={t("settings.Capture.downloadBin")}>
-              <IconButton size="small" onClick={onDownload}>
-                <DownloadIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          </>
-        )}
-        <Box sx={{ flex: 1 }} />
-        <Tooltip title={t("core.delete")}>
-          <IconButton size="small" onClick={onDelete}>
-            <ClearIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      </Stack>
-    </Paper>
   );
 };

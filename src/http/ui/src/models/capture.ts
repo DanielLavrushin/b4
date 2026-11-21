@@ -25,14 +25,19 @@ export interface PayloadFacts {
   faults?: string[] | null;
 }
 
+export type PayloadOrigin = "generated" | "uploaded" | "imported" | "";
+
 export interface Capture {
   protocol: string;
   domain: string;
   timestamp: string;
   size: number;
   filepath: string;
+  origin?: PayloadOrigin;
+  facts?: PayloadFacts | null;
+  warnings?: PayloadWarning[] | null;
   missing?: boolean;
-  used_by?: string[];
+  used_by?: string[] | null;
 }
 
 export interface PayloadInspection {
