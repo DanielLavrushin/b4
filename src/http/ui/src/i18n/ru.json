@@ -877,6 +877,8 @@
       "chooseFile": "Выбрать файл...",
       "inspecting": "Проверка файла...",
       "inspectFailed": "Не удалось проверить файл: {{error}}. Его всё равно можно загрузить.",
+      "cannotUpload": "Этот файл нельзя загрузить: {{error}}",
+      "cannotUploadEmpty": "Этот файл пуст, его нельзя загрузить.",
       "found": "Найдено: {{facts}}",
       "sni": "SNI {{sni}}",
       "bytes_one": "{{size}} байт",

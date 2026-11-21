@@ -96,6 +96,7 @@ export const CaptureSettings = () => {
     file: File;
     result: PayloadInspection | null;
     error: string | null;
+    refused?: boolean;
   } | null>(null);
   const [replaceDialog, setReplaceDialog] = useState<{
     domain: string;
@@ -176,7 +177,12 @@ export const CaptureSettings = () => {
     } catch (error) {
       setInspection((prev) =>
         prev?.file === file
-          ? { file, result: null, error: describeApiError(error) }
+          ? {
+              file,
+              result: null,
+              error: describeApiError(error),
+              refused: error instanceof ApiError && error.status === 400,
+            }
           : prev,
       );
     }
@@ -387,9 +393,15 @@ export const CaptureSettings = () => {
 
   const inspected = inspection?.result ?? null;
   const inspecting = !!inspection && !inspection.result && !inspection.error;
-  const uploadWarnings = inspected
-    ? inspectionWarnings(inspected, uploadForm.protocol)
-    : [];
+  const uploadRefusal = inspection?.refused
+    ? t("settings.Capture.cannotUpload", { error: inspection.error })
+    : inspected?.size === 0
+      ? t("settings.Capture.cannotUploadEmpty")
+      : null;
+  const uploadWarnings =
+    inspected && !uploadRefusal
+      ? inspectionWarnings(inspected, uploadForm.protocol)
+      : [];
   const foundParts = inspected
     ? [
         inspected.facts ? kindLabel(t, inspected.facts) : null,
@@ -494,12 +506,18 @@ export const CaptureSettings = () => {
                   </Typography>
                 )}
               </Box>
-              {inspection?.error && (
-                <B4Alert severity="warning" noWrapper>
-                  {t("settings.Capture.inspectFailed", {
-                    error: inspection.error,
-                  })}
+              {uploadRefusal ? (
+                <B4Alert severity="error" noWrapper>
+                  {uploadRefusal}
                 </B4Alert>
+              ) : (
+                inspection?.error && (
+                  <B4Alert severity="warning" noWrapper>
+                    {t("settings.Capture.inspectFailed", {
+                      error: inspection.error,
+                    })}
+                  </B4Alert>
+                )
               )}
               <B4TextField
                 label={t("settings.Capture.nameDomain")}
@@ -546,25 +564,31 @@ export const CaptureSettings = () => {
                 protocol={uploadForm.protocol}
                 facts={inspected?.facts}
               />
-              <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
-                <Button
-                  variant="contained"
-                  startIcon={
-                    uploading ? <CircularProgress size={16} /> : <UploadIcon />
-                  }
-                  onClick={() => {
-                    uploadCapture().catch(() => {});
-                  }}
-                  disabled={
-                    uploading ||
-                    inspecting ||
-                    !uploadForm.file ||
-                    !uploadForm.domain.trim()
-                  }
-                >
-                  {uploading ? t("core.uploading") : t("core.upload")}
-                </Button>
-              </Box>
+              {!uploadRefusal && (
+                <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+                  <Button
+                    variant="contained"
+                    startIcon={
+                      uploading ? (
+                        <CircularProgress size={16} />
+                      ) : (
+                        <UploadIcon />
+                      )
+                    }
+                    onClick={() => {
+                      uploadCapture().catch(() => {});
+                    }}
+                    disabled={
+                      uploading ||
+                      inspecting ||
+                      !uploadForm.file ||
+                      !uploadForm.domain.trim()
+                    }
+                  >
+                    {uploading ? t("core.uploading") : t("core.upload")}
+                  </Button>
+                </Box>
+              )}
             </Stack>
           </B4Section>
         </Grid>

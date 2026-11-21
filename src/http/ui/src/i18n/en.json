@@ -872,6 +872,8 @@
       "chooseFile": "Choose File...",
       "inspecting": "Checking the file...",
       "inspectFailed": "The file could not be checked: {{error}}. It can still be uploaded.",
+      "cannotUpload": "This file cannot be uploaded: {{error}}",
+      "cannotUploadEmpty": "This file is empty and cannot be uploaded.",
       "found": "Found: {{facts}}",
       "sni": "SNI {{sni}}",
       "bytes_one": "{{size}} byte",
