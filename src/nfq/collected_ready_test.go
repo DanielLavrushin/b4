@@ -338,8 +338,11 @@ func TestAnAddressCollectedAgainBeforeItsRemovalIsPublishedIsNotInstalledAgain(t
 	}
 
 	r.silent(t, 42002)
-	r.sweep(12 * time.Second)
+	r.at(12 * time.Second)
 	r.silent(t, 42003)
+	if !slices.Equal(r.p.publishedCollected(), []string{"1.2.3.4"}) {
+		t.Fatalf("setup: the address's removal must still be unpublished when the next pair comes due, or this test checks an address published again after its removal: published=%v", r.p.publishedCollected())
+	}
 	r.sweep(14 * time.Second)
 	r.p.configMu.Lock()
 	again, pooled := r.p.collected[addr]
