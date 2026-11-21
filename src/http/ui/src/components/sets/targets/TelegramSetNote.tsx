@@ -1,7 +1,6 @@
-import { Link, Stack } from "@mui/material";
+import { Box, Link, Stack } from "@mui/material";
 import { Trans, useTranslation } from "react-i18next";
-import { TelegramIcon } from "@b4.icons";
-import { B4Alert } from "@b4.elements";
+import { B4FieldMessage, B4Help } from "@b4.elements";
 import { B4SetConfig } from "@models/config";
 import {
   TelegramSetProblem,
@@ -28,32 +27,45 @@ export const TelegramSetNote = ({
   ].filter(Boolean);
 
   return (
-    <Stack spacing={1}>
+    <Stack spacing={0.5}>
       {problem && (
-        <B4Alert severity="warning">
-          {telegramSetProblemText(t, problem)}
-        </B4Alert>
+        <Box>
+          <B4FieldMessage>{telegramSetProblemText(t, problem)}</B4FieldMessage>
+        </Box>
       )}
-      <B4Alert severity="info" icon={<TelegramIcon />}>
-        <Trans
-          i18nKey={
-            problem
-              ? "sets.editor.telegramSetNoteInactive"
-              : "sets.editor.telegramSetNote"
-          }
-          components={{
-            a: (
-              <Link
-                href={t("sets.editor.telegramSetDocsUrl")}
-                target="_blank"
-                rel="noopener noreferrer"
-              />
-            ),
-          }}
-        />
-      </B4Alert>
+      <Box sx={{ display: "flex", alignItems: "flex-start", gap: 0.5 }}>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <B4FieldMessage severity="info">
+            <Trans
+              i18nKey={
+                problem
+                  ? "sets.editor.telegramSetNoteInactive"
+                  : "sets.editor.telegramSetNote"
+              }
+              components={{
+                a: (
+                  <Link
+                    href={t("sets.editor.telegramSetDocsUrl")}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  />
+                ),
+              }}
+            />
+          </B4FieldMessage>
+        </Box>
+        {!problem && (
+          <B4Help
+            label={t("sets.card.telegramSet")}
+            info={t("sets.editor.telegramSetNoteInfo")}
+            mt="6px"
+          />
+        )}
+      </Box>
       {!problem && caveats.length > 0 && (
-        <B4Alert severity="warning">{caveats.join(" ")}</B4Alert>
+        <Box>
+          <B4FieldMessage>{caveats.join(" ")}</B4FieldMessage>
+        </Box>
       )}
     </Stack>
   );

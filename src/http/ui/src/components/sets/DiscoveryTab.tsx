@@ -15,7 +15,8 @@ import {
   B4Alert,
   B4Badge,
   B4ChipList,
-  B4Hint,
+  B4FieldMessage,
+  B4Help,
   B4PlusButton,
   B4Section,
   B4Switch,
@@ -198,19 +199,65 @@ export const DiscoveryTab = ({
 
   const disabled = routed;
 
+  const watchSeverity = watching ? "warning" : "info";
+  const watchMessages = [
+    watchBlock && (
+      <B4FieldMessage key="block" severity={watchSeverity}>
+        {watching && watchBlockClearsFlag(watchBlock)
+          ? t("sets.discovery.watchdog.willTurnOff", {
+              reason: t(`watchdog.errors.${watchBlock}`),
+            })
+          : watching
+            ? t("sets.discovery.watchdog.paused", {
+                reason: t(`watchdog.errors.${watchBlock}`),
+              })
+            : t(`watchdog.errors.${watchBlock}`)}
+      </B4FieldMessage>
+    ),
+    tunDscpNoHeal && (
+      <B4FieldMessage key="tun-dscp" severity={watchSeverity}>
+        {t("sets.discovery.watchdog.tunDscp", {
+          value: config.dscp?.value,
+        })}
+      </B4FieldMessage>
+    ),
+    !globalWatchdog && (
+      <B4FieldMessage key="global-off" severity={watchSeverity}>
+        <Trans
+          i18nKey="sets.discovery.watchdog.globalOff"
+          components={{
+            a: <Link component={RouterLink} to="/settings/discovery" />,
+          }}
+        />
+      </B4FieldMessage>
+    ),
+  ].filter(Boolean);
+
   return (
     <B4Section
       title={t("sets.discovery.sectionTitle")}
       description={t("sets.discovery.sectionDescription")}
       icon={<DiscoveryIcon />}
+      learnMore="sets/discovery"
     >
       <Stack spacing={2}>
         {routed && (
-          <B4Alert severity="info" noWrapper>
-            {t("sets.discovery.routed")}
-          </B4Alert>
+          <Box>
+            <B4FieldMessage severity="info">
+              {t("sets.discovery.routed")}
+            </B4FieldMessage>
+          </Box>
         )}
-        <B4Hint>{t("sets.discovery.explain")}</B4Hint>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+          <Typography variant="body2" sx={{ color: "text.secondary" }}>
+            {t("sets.discovery.explain")}
+          </Typography>
+          <B4Help
+            label={t("sets.discovery.addressesTitle")}
+            info={t("sets.discovery.explainInfo")}
+            learnMore="sets/discovery"
+          />
+        </Box>
 
         <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
           <B4TextField
@@ -278,14 +325,16 @@ export const DiscoveryTab = ({
           </Button>
         </Stack>
         {isNew && !routed && (
-          <Typography variant="caption" sx={{ color: colors.text.secondary }}>
-            {t("sets.discovery.saveFirst")}
-          </Typography>
+          <Box>
+            <B4FieldMessage severity="info">
+              {t("sets.discovery.saveFirst")}
+            </B4FieldMessage>
+          </Box>
         )}
         {dirty && !isNew && !routed && (
-          <Typography variant="caption" sx={{ color: colors.text.secondary }}>
-            {t("sets.discovery.unsaved")}
-          </Typography>
+          <Box>
+            <B4FieldMessage>{t("sets.discovery.unsaved")}</B4FieldMessage>
+          </Box>
         )}
 
         <Box
@@ -299,52 +348,15 @@ export const DiscoveryTab = ({
             <B4Switch
               label={t("sets.discovery.watchdog.label")}
               description={t("sets.discovery.watchdog.explain")}
+              message={
+                watchMessages.length > 0 ? <>{watchMessages}</> : undefined
+              }
+              info={t("sets.discovery.watchdog.info")}
+              learnMore="watchdog"
               checked={watching}
               disabled={!watching && !!watchBlock}
               onChange={(checked) => onChange("discovery.watchdog", checked)}
             />
-            {watchBlock && (
-              <Typography
-                variant="caption"
-                sx={{
-                  color: watching ? colors.state.warning : colors.text.secondary,
-                  display: "block",
-                }}
-              >
-                {watching && watchBlockClearsFlag(watchBlock)
-                  ? t("sets.discovery.watchdog.willTurnOff", {
-                      reason: t(`watchdog.errors.${watchBlock}`),
-                    })
-                  : watching
-                    ? t("sets.discovery.watchdog.paused", {
-                        reason: t(`watchdog.errors.${watchBlock}`),
-                      })
-                    : t(`watchdog.errors.${watchBlock}`)}
-              </Typography>
-            )}
-            {tunDscpNoHeal && (
-              <Typography
-                variant="caption"
-                sx={{ color: colors.text.secondary, display: "block" }}
-              >
-                {t("sets.discovery.watchdog.tunDscp", {
-                  value: config.dscp?.value,
-                })}
-              </Typography>
-            )}
-            {!globalWatchdog && (
-              <Typography
-                variant="caption"
-                sx={{ color: colors.text.secondary, display: "block" }}
-              >
-                <Trans
-                  i18nKey="sets.discovery.watchdog.globalOff"
-                  components={{
-                    a: <Link component={RouterLink} to="/settings/discovery" />,
-                  }}
-                />
-              </Typography>
-            )}
             {showWatchStatus && watchStatuses.loaded && (
               <Box
                 sx={{

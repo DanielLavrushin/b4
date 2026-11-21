@@ -8,7 +8,12 @@ import {
   Typography,
 } from "@mui/material";
 import { ClearIcon, RefreshIcon } from "@b4.icons";
-import { B4Alert, B4Hint, B4Switch, B4TooltipButton } from "@b4.elements";
+import {
+  B4FieldMessage,
+  B4Help,
+  B4Switch,
+  B4TooltipButton,
+} from "@b4.elements";
 import { DeviceInfo } from "@b4.devices";
 import { B4DeviceTable } from "@common/B4DeviceTable";
 import { colors } from "@design";
@@ -123,33 +128,41 @@ export const DevicesTab = ({
 
   return (
     <>
-      <B4Hint>{t("sets.targets.deviceAlert")}</B4Hint>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+        <Typography variant="body2" sx={{ color: "text.secondary" }}>
+          {t("sets.targets.deviceAlert")}
+        </Typography>
+        <B4Help
+          label={t("sets.targets.tabs.sourceDevices")}
+          info={t("sets.targets.deviceInfo")}
+          learnMore="sets/targets"
+          aiTopic="targets.source_devices"
+        />
+      </Box>
 
       {showNoDestination && (
-        <Box sx={{ mt: 2 }}>
-          <B4Alert severity="warning">
-            {t("sets.targets.deviceNoDestination")}
-          </B4Alert>
+        <Box sx={{ mt: 1 }}>
+          <B4FieldMessage>{t("sets.targets.deviceNoDestination")}</B4FieldMessage>
         </Box>
       )}
 
       {selectedManual.length > 0 && (
-        <Box sx={{ mt: 2 }}>
-          <B4Alert severity="info">
+        <Box sx={{ mt: 1 }}>
+          <B4FieldMessage severity="info">
             {t("sets.targets.manualDeviceInfo")}
-          </B4Alert>
+          </B4FieldMessage>
         </Box>
       )}
 
       {manualWithoutIp.length > 0 && (
-        <Box sx={{ mt: 2 }}>
-          <B4Alert severity="warning">
+        <Box sx={{ mt: 1 }}>
+          <B4FieldMessage>
             {t("sets.targets.manualDeviceNoIp", {
               names: manualWithoutIp
                 .map((d) => d.alias?.trim() || d.hostname?.trim() || d.mac)
                 .join(", "),
             })}
-          </B4Alert>
+          </B4FieldMessage>
         </Box>
       )}
 
@@ -160,6 +173,8 @@ export const DevicesTab = ({
               <B4Switch
                 label={t("sets.targets.excludeDevices")}
                 description={t("sets.targets.excludeDevicesDesc")}
+                learnMore="sets/targets"
+                aiTopic="targets.source_devices_exclude"
                 checked={exclude}
                 path="targets.source_devices_exclude"
                 onChange={onExcludeChange}
@@ -248,10 +263,8 @@ export const DevicesTab = ({
           </Grid>
         </Grid>
       ) : (
-        <Box sx={{ mt: 2 }}>
-          <B4Alert severity="warning">
-            {t("sets.targets.arpUnavailable")}
-          </B4Alert>
+        <Box sx={{ mt: 1 }}>
+          <B4FieldMessage>{t("sets.targets.arpUnavailable")}</B4FieldMessage>
         </Box>
       )}
     </>

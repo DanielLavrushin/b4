@@ -2,8 +2,8 @@ import { useState, ReactNode } from "react";
 import { Box, Button, Typography } from "@mui/material";
 import { ClearIcon, EditIcon } from "@b4.icons";
 import {
-  B4Alert,
   B4ChipList,
+  B4FieldMessage,
   B4Help,
   B4PlusButton,
   B4TextField,
@@ -134,15 +134,11 @@ export const ManualEntryPanel = ({
         />
         <B4PlusButton onClick={handleAdd} disabled={!input.trim()} />
       </Box>
-      {notice && (
-        <B4Alert severity="info" sx={{ mt: 1 }}>
-          {notice}
-        </B4Alert>
-      )}
+      {notice && <B4FieldMessage severity="info">{notice}</B4FieldMessage>}
       {warning && (
-        <B4Alert severity="warning" sx={{ mt: 1 }}>
+        <B4FieldMessage>
           {t("sets.targets.duplicateWarning")} {warning}
-        </B4Alert>
+        </B4FieldMessage>
       )}
       <Box sx={{ mt: 2 }}>
         {items.length > 0 && (
@@ -151,11 +147,13 @@ export const ManualEntryPanel = ({
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
+              gap: 1,
               mb: 1,
+              flexWrap: "wrap",
             }}
           >
             <Typography variant="subtitle2">{activeTitle}</Typography>
-            <Box sx={{ display: "flex", gap: 1 }}>
+            <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
               <Button
                 size="small"
                 onClick={() => setBulkOpen(true)}

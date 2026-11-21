@@ -1,10 +1,10 @@
 import { useMemo } from "react";
-import { Box, Grid, Stack } from "@mui/material";
+import { Box, Grid, Stack, Typography } from "@mui/material";
 import { EscalateIcon } from "@b4.icons";
 import {
-  B4Alert,
+  B4FieldMessage,
   B4FormHeader,
-  B4Hint,
+  B4Help,
   B4Section,
   B4Select,
   B4Slider,
@@ -66,6 +66,7 @@ export const EscalationSettings = ({
         title={t("sets.escalation.sectionTitle")}
         description={t("sets.escalation.sectionDescription")}
         icon={<EscalateIcon />}
+        learnMore="sets/escalation"
       >
         <B4FormHeader label={t("sets.escalation.target")} />
         <Grid container spacing={3}>
@@ -92,25 +93,32 @@ export const EscalationSettings = ({
                   })),
               ]}
               onChange={(e) => onChange("escalate.to", e.target.value)}
+              helperText={t("sets.escalation.escalateHelper")}
+              info={t("sets.escalation.escalateToInfo")}
+              learnMore="sets/escalation"
+              aiTopic="escalate.to"
             />
-          </Grid>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <B4Hint sx={{ mt: 1 }}>{t("sets.escalation.escalateHelper")}</B4Hint>
+            {showRstWarn && (
+              <B4FieldMessage severity="info">
+                {t("sets.escalation.escalateNeedsRstProtection")}
+              </B4FieldMessage>
+            )}
           </Grid>
         </Grid>
-
-        {showRstWarn && (
-          <Box>
-            <B4Alert severity="warning" noWrapper>
-              {t("sets.escalation.escalateNeedsRstProtection")}
-            </B4Alert>
-          </Box>
-        )}
 
         {escalateOn && (
           <>
             <B4FormHeader label={t("sets.escalation.triggers")} />
-            <B4Hint sx={{ mb: 1 }}>{t("sets.escalation.triggersHelper")}</B4Hint>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                {t("sets.escalation.triggersHelper")}
+              </Typography>
+              <B4Help
+                label={t("sets.escalation.triggers")}
+                info={t("sets.escalation.triggersInfo")}
+                learnMore="sets/escalation"
+              />
+            </Box>
             <Grid container spacing={3}>
               <Grid size={{ xs: 12, md: 6 }}>
                 <B4Slider
@@ -124,6 +132,8 @@ export const EscalationSettings = ({
                   max={20}
                   step={1}
                   helperText={t("sets.escalation.stallThresholdHelper")}
+                  learnMore="sets/escalation"
+                  aiTopic="escalate.stall_threshold"
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
@@ -138,6 +148,8 @@ export const EscalationSettings = ({
                   step={500}
                   valueSuffix={t("core.units.ms")}
                   helperText={t("sets.escalation.stallTimeoutHelper")}
+                  learnMore="sets/escalation"
+                  aiTopic="escalate.stall_timeout_ms"
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
@@ -151,6 +163,8 @@ export const EscalationSettings = ({
                   max={20}
                   step={1}
                   helperText={t("sets.escalation.rstThresholdHelper")}
+                  learnMore="sets/escalation"
+                  aiTopic="escalate.rst_threshold"
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
@@ -166,6 +180,8 @@ export const EscalationSettings = ({
                   step={5}
                   valueSuffix={t("core.units.s")}
                   helperText={t("sets.escalation.rstWindowHelper")}
+                  learnMore="sets/escalation"
+                  aiTopic="escalate.rst_window_sec"
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
@@ -179,6 +195,9 @@ export const EscalationSettings = ({
                   max={10}
                   step={1}
                   helperText={t("sets.escalation.dnsThresholdHelper")}
+                  info={t("sets.escalation.dnsThresholdInfo")}
+                  learnMore="sets/escalation"
+                  aiTopic="escalate.dns_threshold"
                 />
               </Grid>
             </Grid>
@@ -198,6 +217,8 @@ export const EscalationSettings = ({
                   step={15}
                   valueSuffix={t("core.units.min")}
                   helperText={t("sets.escalation.ttlHelper")}
+                  learnMore="sets/escalation"
+                  aiTopic="escalate.ttl_sec"
                 />
               </Grid>
             </Grid>

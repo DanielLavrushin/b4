@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useDeferredValue } from "react";
 import type { ClipboardEvent } from "react";
-import { Button, Stack, Typography } from "@mui/material";
+import { Box, Button, Stack, Typography } from "@mui/material";
 import { Link } from "react-router";
 import {
   ImportExportIcon,
@@ -9,7 +9,12 @@ import {
   CheckCircleIcon,
   WarningIcon,
 } from "@b4.icons";
-import { B4Alert, B4Section, B4TextField } from "@b4.elements";
+import {
+  B4Alert,
+  B4FieldMessage,
+  B4Section,
+  B4TextField,
+} from "@b4.elements";
 import { useCaptures } from "@b4.capture";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useTranslation, Trans } from "react-i18next";
@@ -375,9 +380,10 @@ export const ImportExportSettings = ({
   return (
     <B4Section
       title={t("sets.importExport.sectionTitle")}
+      description={t("sets.importExport.sectionDescription")}
       icon={<ImportExportIcon />}
     >
-      {importSuccess ? (
+      {importSuccess && (
         <B4Alert severity="success" icon={<CheckCircleIcon />} sx={{ mb: 2 }}>
           <Trans
             i18nKey={
@@ -386,10 +392,6 @@ export const ImportExportSettings = ({
                 : "sets.importExport.importSuccess"
             }
           />
-        </B4Alert>
-      ) : (
-        <B4Alert severity="info" sx={{ mb: 2 }}>
-          {t("sets.importExport.infoAlert")}
         </B4Alert>
       )}
       {importWarnings.length > 0 && (
@@ -427,26 +429,41 @@ export const ImportExportSettings = ({
         </B4Alert>
       )}
       <Stack spacing={2}>
-        <B4TextField
-          label={t("sets.importExport.jsonLabel")}
-          value={jsonValue}
-          onFocus={(e) => (e.target as HTMLTextAreaElement).select()}
-          onChange={(e) => {
-            setJsonValue(e.target.value);
-            setJsonEdited(e.target.value.trim() !== "");
-            clearImportOutcome();
-          }}
-          onPaste={handlePaste}
-          multiline
-          rows={10}
-          error={!jsonParse.ok && Boolean(jsonValue.trim() && jsonParse.error)}
-          helperText={
-            !jsonParse.ok && jsonValue.trim() && jsonParse.error
-              ? `${t("sets.importExport.invalidJson")}: ${jsonParse.error}`
-              : t("sets.importExport.jsonHelper")
-          }
-        />
-        <Stack direction="row" spacing={2} alignItems="center">
+        <Box>
+          <B4TextField
+            label={t("sets.importExport.jsonLabel")}
+            value={jsonValue}
+            onFocus={(e) => (e.target as HTMLTextAreaElement).select()}
+            onChange={(e) => {
+              setJsonValue(e.target.value);
+              setJsonEdited(e.target.value.trim() !== "");
+              clearImportOutcome();
+            }}
+            onPaste={handlePaste}
+            multiline
+            rows={10}
+            error={
+              !jsonParse.ok && Boolean(jsonValue.trim() && jsonParse.error)
+            }
+            helperText={
+              !jsonParse.ok && jsonValue.trim() && jsonParse.error
+                ? `${t("sets.importExport.invalidJson")}: ${jsonParse.error}`
+                : t("sets.importExport.jsonHelper")
+            }
+          />
+          {hasSourceDevices && (
+            <B4FieldMessage>
+              {t("sets.importExport.deviceFilterWarning")}
+            </B4FieldMessage>
+          )}
+        </Box>
+        <Stack
+          direction="row"
+          spacing={2}
+          alignItems="center"
+          flexWrap="wrap"
+          useFlexGap
+        >
           <Button
             variant="outlined"
             startIcon={<CopyIcon />}
@@ -465,11 +482,6 @@ export const ImportExportSettings = ({
           >
             {t("sets.importExport.import")}
           </Button>
-          {hasSourceDevices && (
-            <Typography variant="caption" color="warning.main">
-              {t("sets.importExport.deviceFilterWarning")}
-            </Typography>
-          )}
         </Stack>
       </Stack>
     </B4Section>

@@ -24,8 +24,8 @@ import {
   RefreshIcon,
 } from "@b4.icons";
 import {
-  B4Alert,
   B4Badge,
+  B4FieldMessage,
   B4Help,
   B4PlusButton,
   B4TextField,
@@ -263,6 +263,7 @@ export const AsnPanel = ({
             label={t("sets.targets.asn.title")}
             info={t("sets.targets.asn.hint")}
             learnMore="sets/targets#asn"
+            aiTopic="targets.asns"
           />
         </Typography>
         <Typography
@@ -297,49 +298,41 @@ export const AsnPanel = ({
         </Box>
 
         {overlapSets && overlapSets.length > 0 && (
-          <B4Alert severity="info" sx={{ mt: 1 }}>
+          <B4FieldMessage severity="info">
             {t("sets.targets.asn.otherSets", {
               asn: parsed?.kind === "asn" ? formatAsn(parsed.id) : "",
               sets: overlapSets.join(", "),
             })}
-          </B4Alert>
+          </B4FieldMessage>
         )}
-        {notice && (
-          <B4Alert severity="info" sx={{ mt: 1 }}>
-            {notice}
-          </B4Alert>
-        )}
+        {notice && <B4FieldMessage severity="info">{notice}</B4FieldMessage>}
         {inputError && (
-          <B4Alert severity="error" sx={{ mt: 1 }}>
-            {inputError}
-          </B4Alert>
+          <B4FieldMessage severity="error">{inputError}</B4FieldMessage>
         )}
         {failure && (
-          <B4Alert
-            severity="error"
-            sx={{ mt: 1 }}
-            action={
-              failure.retryable ? (
-                <Button color="inherit" size="small" onClick={addAnyway}>
+          <B4FieldMessage severity="error">
+            <Stack spacing={1} alignItems="flex-start">
+              <span>
+                {t("sets.targets.asn.resolveFailed", {
+                  asn: formatAsn(failure.id),
+                  error: failure.message,
+                })}
+              </span>
+              {failure.retryable && (
+                <span>{t("sets.targets.asn.addAnywayHint")}</span>
+              )}
+              {failure.retryable && (
+                <Button
+                  color="inherit"
+                  variant="outlined"
+                  size="small"
+                  onClick={addAnyway}
+                >
                   {t("sets.targets.asn.addAnyway")}
                 </Button>
-              ) : undefined
-            }
-          >
-            {t("sets.targets.asn.resolveFailed", {
-              asn: formatAsn(failure.id),
-              error: failure.message,
-            })}
-            {failure.retryable && (
-              <Typography
-                variant="caption"
-                component="div"
-                sx={{ mt: 0.5, opacity: 0.85 }}
-              >
-                {t("sets.targets.asn.addAnywayHint")}
-              </Typography>
-            )}
-          </B4Alert>
+              )}
+            </Stack>
+          </B4FieldMessage>
         )}
         {lookup && (
           <LookupResult
@@ -388,11 +381,13 @@ export const AsnPanel = ({
           </Box>
 
           {viewsQuery.isError && (
-            <B4Alert severity="warning" sx={{ mb: 1 }}>
-              {t("sets.targets.asn.loadFailed", {
-                error: localizeApiError(viewsQuery.error),
-              })}
-            </B4Alert>
+            <Box sx={{ mb: 1 }}>
+              <B4FieldMessage>
+                {t("sets.targets.asn.loadFailed", {
+                  error: localizeApiError(viewsQuery.error),
+                })}
+              </B4FieldMessage>
+            </Box>
           )}
 
           <Stack spacing={1}>

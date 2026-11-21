@@ -1896,7 +1896,7 @@
         "prefixesNoMatch": "No prefix matches the filter",
         "description": "An AS number names one operator's network. The set matches all its prefixes."
       },
-      "deviceAlert": "Restrict this set to specific source devices. When devices are selected, this set will only apply to traffic from those devices. Device-specific sets take priority over general sets.",
+      "deviceAlert": "With devices selected, this set applies only to traffic from those devices.",
       "selectedCount": "{{count}} selected",
       "excludedCount": "{{count}} excluded",
       "excludeDevices": "All devices except selected",
@@ -1906,9 +1906,9 @@
       "previewTotal": "Total domains in category: {{count}}",
       "previewShowing": "showing first {{count}}",
       "previewFailed": "Failed to load category preview",
-      "manualDeviceInfo": "Manually added devices have no MAC address on the network, so they are matched by the IP address you entered. Give such a device a fixed or reserved address, and note that it cannot be matched at all when an intermediate router replaces the source address of its traffic.",
-      "manualDeviceNoIp": "These manually added devices have no IP address, so they cannot be matched: {{names}}. If they are the only devices selected, the set matches nothing; with \"all devices except selected\" enabled, it applies to every device instead.",
-      "deviceNoDestination": "Source devices narrow who this set applies to; they do not select traffic on their own. With routing on and no domain, IP or ASN target, this set steers nothing. To send everything from these devices, turn on \"Match any IP address\" on the IP Addresses tab.",
+      "manualDeviceInfo": "Manually added devices are matched by the IP address you entered: give each a fixed or reserved address. A device cannot be matched at all when an intermediate router replaces the source address of its traffic.",
+      "manualDeviceNoIp": "These manually added devices have no IP address, so they cannot be matched: {{names}}. If they are the only devices selected, the set matches nothing; with \"All devices except selected\" on, it applies to every device instead.",
+      "deviceNoDestination": "With routing on and no domain, IP or ASN target, this set steers nothing. To send everything from these devices, turn on \"Match any IP address\" on the IP Addresses tab.",
       "catchAllIpsPartial": "This set holds {{present}}, but not {{missing}}. Turn the switch on to cover every address, or add the missing entry below.",
       "useCollectedIps": "Use collected IPs",
       "useCollectedIpsDesc": "Adds candidates from the shared detected-IP pool to this set's IP targets.",
@@ -1922,7 +1922,8 @@
       "geositeCatDesc": "Predefined domain lists from the GeoSite database.",
       "ipOverlapTitle": "When sets overlap",
       "catchAllDomainsInfo": "For DPI matching, a domain listed literally in any other set is handled there first, whatever position either set holds in the list, so this set picks up only what nothing else claims.",
-      "domainOnlyInfo": "Use it on shared CDN addresses, where a neighbouring domain on the same IP would otherwise be pulled into this set and given its strategy.\n\nRouting selects traffic by IP address, so a set with this on routes only the addresses you list explicitly."
+      "domainOnlyInfo": "Use it on shared CDN addresses, where a neighbouring domain on the same IP would otherwise be pulled into this set and given its strategy.\n\nRouting selects traffic by IP address, so a set with this on routes only the addresses you list explicitly.",
+      "deviceInfo": "With no device selected, the set applies to all traffic. Device-specific sets take priority over general sets.\n\nSource devices narrow who this set applies to; they do not select traffic on their own.\n\nDevices found in the router's ARP table are matched by their MAC address. A manually added device has no MAC address on the network, so it is matched by the IP address entered for it."
     },
     "tcp": {
       "sectionTitle": "TCP Configuration",
@@ -2744,7 +2745,6 @@
     "importExport": {
       "sectionTitle": "Import/Export Set configuration",
       "importSuccess": "Configuration imported successfully! Review your changes in the other tabs, then click <strong>Save</strong> to apply.",
-      "infoAlert": "Copy JSON to share this set, or paste a configuration to import it.",
       "jsonLabel": "Set Configuration JSON",
       "jsonHelper": "Paste or type a set configuration JSON to import it.",
       "copyJson": "Copy JSON",
@@ -2788,14 +2788,15 @@
         "foreign_hub_link": "The pasted set was linked to community set {{pasted}}; this set stays linked to {{kept}} and publishing it creates its next version.",
         "asn_unresolved": "No prefixes are known on this device yet for ASNs {{asns}}. b4 fetches them from RIPEstat in the background; until then they add no addresses to the set.",
         "dscp_off": "This set's own DSCP value {{value}} was switched off because it was not applied to the set before the import, and the imported version could apply it more widely. Turn it back on in DNS & Routing -> Traffic Routing if it should apply."
-      }
+      },
+      "sectionDescription": "Copy JSON to share this set, or paste a configuration to import it."
     },
     "editor": {
       "namePlaceholder": "Set name...",
       "newSet": "New Set",
       "defaultName": "Set {{n}}",
       "createSet": "Create Set",
-      "telegramSetNote": "This is the <a>Telegram set</a>. It handles b4's own connections to Telegram whatever it targets, so it needs no targets. Domains and addresses added here make it also handle devices' connections to them, like any set, and do not change its job for b4's connections.",
+      "telegramSetNote": "This is the <a>Telegram set</a>. It handles b4's own connections to Telegram whatever it targets, so it needs no targets.",
       "telegramSetNoteInactive": "This is the <a>Telegram set</a>. Once the problem above is fixed, it handles b4's own connections to Telegram whatever it targets, so it needs no targets.",
       "telegramSetPortFilter": "Without routing, the port filter on the TCP tab also applies to b4's connections: on ports it leaves out they get no strategy, so keep 443 in it.",
       "telegramSetPortFilterNoTargets": "While the set has no targets, that filter also makes it handle devices' TCP connections on those ports that no other set claims.",
@@ -2808,13 +2809,14 @@
         "escalation": "Escalation",
         "discovery": "Discovery",
         "importExport": "Import/Export"
-      }
+      },
+      "telegramSetNoteInfo": "Domains and addresses added here make it also handle devices' connections to them, like any set, and do not change its job for b4's connections."
     },
     "discovery": {
       "sectionTitle": "Discovery",
       "sectionDescription": "Addresses Discovery tests for this set",
       "routed": "This set routes its traffic instead of applying a bypass strategy, so Discovery does not apply to it.",
-      "explain": "Discovery tests these addresses for this set. A strategy found on them is applied to every domain of the set, so pick pages that represent it, for example the main page of each service.",
+      "explain": "A strategy found on these addresses is applied to every domain of the set.",
       "inputLabel": "Address",
       "inputPlaceholder": "https://www.youtube.com/",
       "inputHelper": "Up to {{max}} addresses, one per host. Enter adds it.",
@@ -2840,20 +2842,23 @@
       "openDiscovery": "Open in Discovery",
       "watchdog": {
         "label": "Keep this set working with the watchdog",
-        "explain": "The watchdog checks these addresses on a schedule. When they keep failing, it searches for a new strategy, writes it into this set, checks the addresses again and undoes the change if they still fail.",
+        "explain": "The watchdog checks these addresses on a schedule and searches for a new strategy when they keep failing.",
         "willTurnOff": "The watchdog turns off for this set when it is saved. {{reason}}",
-        "globalOff": "It only runs while the watchdog is on in <a>Settings > Discovery</a>.",
+        "globalOff": "The watchdog only runs while \"Enable Watchdog\" is on in <a>Settings > Discovery</a>.",
         "lastCheck": "Checked {{time}}",
         "lastHeal": "Last heal: {{preset}}, {{time}}",
         "openWatchdog": "Open the watchdog",
         "notTracked": "The watchdog has not checked this set yet.",
         "paused": "The watchdog stays on for this set but does not check it while this holds. {{reason}}",
-        "tunDscp": "The set has its own DSCP value ({{value}}). Under the TUN engine Discovery cannot write it into its probes, so the watchdog cannot heal this set: it still checks the addresses but does not search for a new strategy."
-      }
+        "tunDscp": "The set has its own DSCP value ({{value}}). Under the TUN engine Discovery cannot write it into its probes, so the watchdog cannot heal this set: it still checks the addresses but does not search for a new strategy.",
+        "info": "The watchdog checks the set's Discovery addresses on a schedule. When they keep failing, it searches for a new strategy, writes it into this set, checks the addresses again and undoes the change if they still fail."
+      },
+      "explainInfo": "Pick pages that represent the set, for example the main page of each service, and pages that do not open without b4. A page that loads without b4 cannot show whether the set works.",
+      "addressesTitle": "Discovery addresses"
     },
     "escalation": {
       "sectionTitle": "Strategy Escalation",
-      "sectionDescription": "If this set keeps failing to reach a website, b4 switches that website to another set. It reacts to a stalled TLS handshake, forged resets, a destination that stops answering, and DNS answers that carry no usable address.",
+      "sectionDescription": "If this set keeps failing to reach a website, b4 switches that website to another set.",
       "target": "Switch to",
       "tuning": "Tuning",
       "rstThreshold": "Forged resets",
@@ -2870,23 +2875,26 @@
       "stallTimeoutMs": "Handshake wait",
       "stallTimeoutHelper": "A resent ClientHello older than this also counts as a stalled handshake.",
       "dnsThreshold": "Unusable DNS answers",
-      "dnsThresholdHelper": "How many NXDOMAIN, SERVFAIL or address-less answers for the same domain before b4 asks the backup set to resolve it.",
+      "dnsThresholdHelper": "How many NXDOMAIN, SERVFAIL or address-less answers for the same domain before the backup set resolves it.",
       "escalateTo": "Escalate to set",
       "escalateNone": "None",
-      "escalateHelper": "If this set keeps failing for a site, b4 will use the chosen set for that site instead. After a while, b4 tries this set again.",
-      "escalateNeedsRstProtection": "Tip: also enable RST Injection Protection in the TCP tab. It helps keep the current page working while b4 detects the block."
+      "escalateHelper": "The set for sites this set keeps failing on. After a while, b4 tries this set again.",
+      "escalateNeedsRstProtection": "Tip: also turn on \"RST Injection Protection\" on the TCP tab. It helps keep the current page working while b4 detects the block.",
+      "escalateToInfo": "b4 reacts to a stalled TLS handshake, forged resets, DNS answers that carry no usable address, and a destination that stops answering.\n\nA set that handles only calls is not offered, and neither is a set whose own escalation leads back to this one. A set marked \"disabled\" can be chosen: the link stays and sits idle until that set is enabled again.\n\nSets can form a chain: b4 moves a site along it as each set fails, up to eight steps.",
+      "triggersInfo": "b4 reacts to a stalled TLS handshake, forged resets, DNS answers that carry no usable address, and a destination that stops answering.\n\nThe last one has no setting: connection attempts to an address go unanswered, and the address does not answer the router either when b4 tests it.",
+      "dnsThresholdInfo": "IPv4 and IPv6 lookups count separately. An empty answer to an IPv6 (AAAA) lookup does not count, since a site without IPv6 answers that way. Lookups other than A and AAAA are not counted."
     },
     "convert": {
       "title": "Import from another tool",
       "subtitle": "Translate a byedpi or zapret command line into b4 sets",
-      "disclaimer": "b4 is an independent implementation, not a fork of byedpi or zapret, so this is a best-effort translation rather than an exact copy. Every option is reported below with what it became. Run Discovery afterwards to verify and tune the result.",
+      "disclaimer": "A best-effort translation rather than an exact copy. Run Discovery afterwards to verify and tune the result.",
       "inputLabel": "Command line",
-      "inputHelper": "Paste a command line, a systemd ExecStart= line, or a whole configuration file such as /opt/zapret/config or nfqws.conf.",
+      "inputHelper": "A command line, a systemd ExecStart= line, or a whole configuration file such as /opt/zapret/config or nfqws.conf.",
       "tool": "Source tool",
       "version": "Version",
       "autoDetect": "Detect automatically",
       "domainsLabel": "Domains (optional)",
-      "domainsHelper": "Comma separated. They go to the first set that takes targets and has no host list of its own; give the others their own domains below. A b4 set without targets matches nothing.",
+      "domainsHelper": "Comma separated, for the first set that takes targets and has no host list. A b4 set without targets matches nothing.",
       "analyze": "Analyze",
       "createSets_one": "Create {{count}} set",
       "createSets_other": "Create {{count}} sets",
@@ -3091,7 +3099,9 @@
       },
       "editInput": "Edit",
       "unresolvedForProfile": "This profile reads {{files}}, which is not available here. Open that file on the machine running zapret and paste the domains from it into this field - the converter cannot read it for you.",
-      "movedFrom": "{{count}} domain(s) moved to the imported sets from: {{sets}}. A domain resolves in one set only, so {{domains}} no longer applies there."
+      "movedFrom": "{{count}} domain(s) moved to the imported sets from: {{sets}}. A domain resolves in one set only, so {{domains}} no longer applies there.",
+      "disclaimerInfo": "b4 is an independent implementation, not a fork of byedpi or zapret, so this is a best-effort translation rather than an exact copy. Every option is reported below with what it became.",
+      "domainsInfo": "The shared domains go to the first set that takes targets and has no host list of its own. Give the other sets their own domains below."
     },
     "share": {
       "linkId": "Hub set ID",
@@ -3099,7 +3109,7 @@
       "linkVote": "Your report",
       "linkVotedAt": "Reported on",
       "sectionTitle": "Share with other b4 users",
-      "info": "A shared set carries the strategy and its targets only. Routing (except block mode), device filters, escalation, the DNS server address and anything else tied to this router are left out. Payload files travel inside the shared set.",
+      "info": "Routing (except block mode), device filters, escalation, the DNS server address and anything else tied to this router are left out.",
       "prepare": "Prepare shared set",
       "prepareFailed": "The shared set could not be prepared",
       "refresh": "Prepare again",
@@ -3144,7 +3154,8 @@
       "publishDuplicate": "The hub already has this strategy with the same targets as {{id}} (version {{version}}). The upload was counted as a report that it works.",
       "publishUnreachable": "No hub answered, so the set was not published. Try again later.",
       "publishFailed": "The hub refused the set: {{error}}",
-      "openHub": "Open in Community"
+      "openHub": "Open in Community",
+      "intro": "A shared set carries the strategy and its targets only. Payload files travel inside the shared set."
     }
   },
   "notify": {

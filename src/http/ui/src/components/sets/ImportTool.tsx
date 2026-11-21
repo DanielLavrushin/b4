@@ -17,7 +17,13 @@ import {
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
 
-import { B4Alert, B4Dialog, B4TextField } from "@b4.elements";
+import {
+  B4Alert,
+  B4Dialog,
+  B4FieldMessage,
+  B4Help,
+  B4TextField,
+} from "@b4.elements";
 import { ImportExportIcon } from "@b4.icons";
 import { colors } from "@design";
 import { useSnackbar } from "@context/SnackbarProvider";
@@ -207,9 +213,16 @@ export function ImportToolDialog({
       }
     >
       <Stack gap={2}>
-        <B4Alert severity="info" noWrapper>
-          {t("sets.convert.disclaimer")}
-        </B4Alert>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+          <Typography variant="body2" sx={{ color: "text.secondary" }}>
+            {t("sets.convert.disclaimer")}
+          </Typography>
+          <B4Help
+            label={t("sets.convert.title")}
+            info={t("sets.convert.disclaimerInfo")}
+            learnMore="sets/import"
+          />
+        </Box>
 
         {collapsed ? (
           <Stack
@@ -285,12 +298,16 @@ export function ImportToolDialog({
                   </MenuItem>
                 ))}
               </B4TextField>
-              <B4TextField
-                label={t("sets.convert.sharedDomainsLabel")}
-                helperText={t("sets.convert.domainsHelper")}
-                value={domains}
-                onChange={(e) => setDomains(e.target.value)}
-              />
+              <Box sx={{ width: "100%", minWidth: 0 }}>
+                <B4TextField
+                  label={t("sets.convert.sharedDomainsLabel")}
+                  helperText={t("sets.convert.domainsHelper")}
+                  info={t("sets.convert.domainsInfo")}
+                  learnMore="sets/import"
+                  value={domains}
+                  onChange={(e) => setDomains(e.target.value)}
+                />
+              </Box>
             </Stack>
           </>
         )}
@@ -484,18 +501,16 @@ function ProfileHeader({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           helperText={
-            unresolved.length > 0
-              ? t("sets.convert.unresolvedForProfile", {
-                  files: unresolved.map((u) => u.path).join(", "),
-                })
-              : usingShared && value
-                ? t("sets.convert.usingShared")
-                : undefined
+            usingShared && value ? t("sets.convert.usingShared") : undefined
           }
-          slotProps={
-            unresolved.length > 0
-              ? { formHelperText: { sx: { color: colors.state.warning } } }
-              : undefined
+          message={
+            unresolved.length > 0 ? (
+              <B4FieldMessage>
+                {t("sets.convert.unresolvedForProfile", {
+                  files: unresolved.map((u) => u.path).join(", "),
+                })}
+              </B4FieldMessage>
+            ) : undefined
           }
         />
       ) : (
