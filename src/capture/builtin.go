@@ -6,33 +6,25 @@ import (
 	"github.com/daniellavrushin/b4/config"
 )
 
-const (
-	SourceYoutubeUnblock        = "youtubeunblock"
-	SourceYoutubeUnblockDerived = "youtubeunblock_derived"
-	SourceZapret                = "zapret"
-)
-
 type Builtin struct {
 	ID       string `json:"id"`
 	Protocol string `json:"protocol"`
 	Size     int    `json:"size"`
 	Facts    *Facts `json:"facts"`
-	Source   string `json:"source"`
 }
 
 type builtinPayload struct {
 	id       string
 	protocol string
 	data     []byte
-	source   string
 }
 
 var builtinPayloads = []builtinPayload{
-	{"google", "tls", config.FakeSNI1, SourceYoutubeUnblock},
-	{"vk", "tls", config.FakeSNI2, SourceYoutubeUnblockDerived},
-	{"stun", "tls", config.FakeSTUN, SourceZapret},
-	{"quic1", "quic", config.FakeQUIC1, SourceZapret},
-	{"quic2", "quic", config.FakeQUIC2, ""},
+	{"google", "tls", config.FakeSNI1},
+	{"vk", "tls", config.FakeSNI2},
+	{"stun", "tls", config.FakeSTUN},
+	{"quic1", "quic", config.FakeQUIC1},
+	{"quic2", "quic", config.FakeQUIC2},
 }
 
 var builtinRows = sync.OnceValue(func() []Builtin {
@@ -43,7 +35,6 @@ var builtinRows = sync.OnceValue(func() []Builtin {
 			Protocol: p.protocol,
 			Size:     len(p.data),
 			Facts:    FactsOf(p.protocol, p.data),
-			Source:   p.source,
 		})
 	}
 	return rows

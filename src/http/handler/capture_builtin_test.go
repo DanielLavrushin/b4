@@ -10,7 +10,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 )
 
-func TestTheBuiltInPayloadsAreListedWithTheirSource(t *testing.T) {
+func TestTheBuiltInPayloadsAreListed(t *testing.T) {
 	mux, _ := captureTestMux(t)
 	rec, _ := serveRecovered(mux, httptest.NewRequest(http.MethodGet, "/api/capture/builtin", nil))
 	if rec.Code != http.StatusOK {
@@ -23,23 +23,25 @@ func TestTheBuiltInPayloadsAreListedWithTheirSource(t *testing.T) {
 		id, protocol string
 		data         []byte
 		kind, sni    string
-		source       string
 	}{
-		{"google", "tls", config.FakeSNI1, "tls_client_hello", "www.google.com", "youtubeunblock"},
-		{"vk", "tls", config.FakeSNI2, "tls_client_hello", "vk.com", "youtubeunblock_derived"},
-		{"stun", "tls", config.FakeSTUN, "stun", "", "zapret"},
-		{"quic1", "quic", config.FakeQUIC1, "quic_initial", "www.google.com", "zapret"},
-		{"quic2", "quic", config.FakeQUIC2, "quic_initial", "dbankcloud.ru", ""},
+		{"google", "tls", config.FakeSNI1, "tls_client_hello", "www.google.com"},
+		{"vk", "tls", config.FakeSNI2, "tls_client_hello", "vk.com"},
+		{"stun", "tls", config.FakeSTUN, "stun", ""},
+		{"quic1", "quic", config.FakeQUIC1, "quic_initial", "www.google.com"},
+		{"quic2", "quic", config.FakeQUIC2, "quic_initial", "dbankcloud.ru"},
 	}
 	if len(rows) != len(want) {
 		t.Fatalf("the built-in list holds %d rows, want %d: %v", len(rows), len(want), rows)
 	}
 	for i, w := range want {
 		row := rows[i]
-		requireKeys(t, "a built-in row", row, "id", "protocol", "size", "facts", "source")
+		requireKeys(t, "a built-in row", row, "id", "protocol", "size", "facts")
+		if len(row) != 4 {
+			t.Errorf("built-in row %d has keys beyond id, protocol, size and facts: %v", i, row)
+		}
 		facts := objectAt(t, "a built-in row", row, "facts")
-		if row["id"] != w.id || row["protocol"] != w.protocol || row["size"] != float64(len(w.data)) || row["source"] != w.source {
-			t.Errorf("built-in row %d is %v, want id %s, protocol %s, %d bytes, source %q", i, row, w.id, w.protocol, len(w.data), w.source)
+		if row["id"] != w.id || row["protocol"] != w.protocol || row["size"] != float64(len(w.data)) {
+			t.Errorf("built-in row %d is %v, want id %s, protocol %s, %d bytes", i, row, w.id, w.protocol, len(w.data))
 		}
 		if facts["kind"] != w.kind || facts["sni"] != w.sni {
 			t.Errorf("built-in %s has facts %v, want kind %s and SNI %q", w.id, facts, w.kind, w.sni)

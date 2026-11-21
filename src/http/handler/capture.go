@@ -538,7 +538,7 @@ func suggestedFacts(data []byte) *capture.Facts {
 }
 
 // @Summary List the built-in payloads
-// @Description The payloads compiled into b4 (google, vk, stun, quic1, quic2), each with its protocol, size, facts and source.
+// @Description The payloads compiled into b4 (google, vk, stun, quic1, quic2), each with its protocol, size and facts.
 // @Tags Capture
 // @Produce json
 // @Success 200 {array} capture.Builtin

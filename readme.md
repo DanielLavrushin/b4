@@ -362,12 +362,6 @@ Based on research from:
 - [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy) - Telegram MTProto-over-WebSocket bridging
 - [ori](https://ntc.party/u/ori/summary) - GoodCheck ideas in Discovery
 
-Built-in fake payloads:
-
-- [zapret](https://github.com/bol-van/zapret) (MIT, (c) 2016-2024 bol-van) - [`files/fake/quic_initial_www_google_com.bin`](https://github.com/bol-van/zapret/blob/1e1d1e24c2ad5f9def2825e2eac7a89979a8a023/files/fake/quic_initial_www_google_com.bin) is QUIC preset 1 (`src/config/bin/quic1.bin`) and [`files/fake/stun.bin`](https://github.com/bol-van/zapret/blob/1e1d1e24c2ad5f9def2825e2eac7a89979a8a023/files/fake/stun.bin) is Preset: STUN (`src/config/bin/stun.bin`); zapret's licence ships next to them in `src/config/bin/zapret-LICENSE-for-quic1.bin-and-stun.bin.txt`
-- [youtubeUnblock](https://github.com/Waujito/youtubeUnblock) - [`fake_sni_old`](https://github.com/Waujito/youtubeUnblock/blob/2d579d5479bc87a1b61ee89a43fed2219243721c/src/raw_replacements.h) is Preset: Google (classic), and [`fake_sni`](https://github.com/Waujito/youtubeUnblock/blob/b35b6ed29c66ade74c2db961c97d5dc65877ad8c/src/raw_replacements.h) is the base of Preset: VK, which keeps that hello's structure with the server name vk.com
-- QUIC preset 2 (`src/config/bin/quic2.bin`) - source not recorded
-
 ## License
 
 This project is provided for educational purposes. Users are responsible for compliance with applicable laws and regulations.
