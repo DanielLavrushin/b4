@@ -1,8 +1,9 @@
 import { useTranslation } from "react-i18next";
+import { Box, Typography } from "@mui/material";
 import { DnsIcon } from "@b4.icons";
 import {
   B4FormGroup,
-  B4Hint,
+  B4Help,
   B4NumberField,
   B4Section,
   B4Switch,
@@ -32,8 +33,21 @@ export const DnsSettings = ({ config, onChange }: DnsSettingsProps) => {
   const tcpOn = !dns.tcp_disabled;
 
   return (
-    <B4Section title={t("settings.Dns.title")} icon={<DnsIcon />}>
-      <B4Hint>{t("settings.Dns.info")}</B4Hint>
+    <B4Section
+      title={t("settings.Dns.title")}
+      icon={<DnsIcon />}
+      learnMore="settings/core#dns"
+    >
+      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+        <Typography variant="body2" sx={{ color: "text.secondary" }}>
+          {t("settings.Dns.intro")}
+        </Typography>
+        <B4Help
+          label={t("settings.Dns.title")}
+          info={t("settings.Dns.info")}
+          learnMore="dns#copied-requests"
+        />
+      </Box>
 
       <B4FormGroup label={t("settings.Dns.tcpGroup")} columns={2}>
         <B4Switch

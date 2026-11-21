@@ -26,11 +26,11 @@ import { colors } from "@design";
 import {
   B4Section,
   B4Switch,
-  B4Alert,
+  B4FieldMessage,
+  B4Help,
   B4TooltipButton,
   B4Badge,
   B4InlineEdit,
-  B4Hint,
 } from "@b4.elements";
 import { useDevices, DevicesSettingsProps, DeviceInfo } from "@b4.devices";
 import { B4DeviceTable } from "@common/B4DeviceTable";
@@ -318,7 +318,11 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
   const setsWriteDscp = anySetDscp(config.sets);
 
   return (
-    <B4Section title={t("settings.Devices.title")} icon={<DeviceUnknowIcon />}>
+    <B4Section
+      title={t("settings.Devices.title")}
+      icon={<DeviceUnknowIcon />}
+      learnMore="settings/core#device-filtering"
+    >
       <Grid container spacing={2}>
         <Grid size={{ xs: 12 }}>
           <Box
@@ -334,7 +338,15 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
               path="queue.devices.enabled"
               onChange={(checked) => onChange("queue.devices.enabled", checked)}
               description={
-                enabled || wisb ? undefined : t("settings.Devices.enableDesc")
+                enabled
+                  ? t(
+                      wisb
+                        ? "settings.Devices.blacklistAlert"
+                        : "settings.Devices.whitelistAlert",
+                    )
+                  : wisb
+                    ? undefined
+                    : t("settings.Devices.enableDesc")
               }
             />
             <B4Switch
@@ -356,20 +368,18 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
 
         {enabled && (
           <>
-            <B4Alert severity={wisb ? "warning" : "info"}>
-              {wisb
-                ? t("settings.Devices.blacklistAlert")
-                : t("settings.Devices.whitelistAlert")}
-            </B4Alert>
-
             {setsWriteDscp && (
-              <B4Alert
-                severity={
-                  deviceFilterSelects(config.queue.devices) ? "warning" : "info"
-                }
-              >
-                {t("settings.Devices.dscpNote")}
-              </B4Alert>
+              <Grid size={{ xs: 12 }}>
+                <B4FieldMessage
+                  severity={
+                    deviceFilterSelects(config.queue.devices)
+                      ? "warning"
+                      : "info"
+                  }
+                >
+                  {t("settings.Devices.dscpNote")}
+                </B4FieldMessage>
+              </Grid>
             )}
 
             {available ? (
@@ -535,16 +545,32 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                 />
               </Grid>
             ) : (
-              <B4Alert severity="warning">
-                {t("settings.Devices.arpUnavailable")}
-              </B4Alert>
+              <Grid size={{ xs: 12 }}>
+                <B4FieldMessage>
+                  {t("settings.Devices.arpUnavailable")}
+                </B4FieldMessage>
+              </Grid>
             )}
 
             <Grid size={{ xs: 12 }}>
-              <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>
-                {t("settings.Devices.manualDevices")}
-              </Typography>
-              <B4Hint>{t("settings.Devices.manualDevicesDesc")}</B4Hint>
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 0.5,
+                  mt: 2,
+                  mb: 1,
+                }}
+              >
+                <Typography variant="subtitle2">
+                  {t("settings.Devices.manualDevices")}
+                </Typography>
+                <B4Help
+                  label={t("settings.Devices.manualDevices")}
+                  info={t("settings.Devices.manualDevicesDesc")}
+                  learnMore="settings/core#manual-devices"
+                />
+              </Box>
 
               <Box
                 sx={{

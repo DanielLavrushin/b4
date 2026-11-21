@@ -2,7 +2,7 @@ import { Link } from "@mui/material";
 import { Link as RouterLink } from "react-router";
 import { Trans, useTranslation } from "react-i18next";
 import { FragIcon } from "@b4.icons";
-import { B4Section, B4Slider, B4Switch, B4Hint } from "@b4.elements";
+import { B4Section, B4Slider, B4Switch } from "@b4.elements";
 import { B4Config } from "@models/config";
 
 interface MSSClampingSettingsProps {
@@ -21,7 +21,11 @@ export const MSSClampingSettings = ({
   const mss = config.queue.mss_clamp ?? { enabled: false, size: 88 };
 
   return (
-    <B4Section title={t("settings.MSSClamping.title")} icon={<FragIcon />}>
+    <B4Section
+      title={t("settings.MSSClamping.title")}
+      icon={<FragIcon />}
+      learnMore="settings/core#global-mss-clamping"
+    >
       <B4Switch
         checked={mss.enabled}
         path="queue.mss_clamp.enabled"
@@ -29,6 +33,14 @@ export const MSSClampingSettings = ({
           onChange("queue.mss_clamp.enabled", checked)
         }
         description={t("settings.MSSClamping.enableDesc")}
+        info={
+          <Trans
+            i18nKey="settings.MSSClamping.info"
+            components={{
+              a: <Link component={RouterLink} to="/settings/general/devices" />,
+            }}
+          />
+        }
       />
       {mss.enabled && (
         <B4Slider
@@ -41,14 +53,6 @@ export const MSSClampingSettings = ({
           helperText={t("settings.MSSClamping.mssSizeHelp")}
         />
       )}
-      <B4Hint>
-        <Trans
-          i18nKey="settings.MSSClamping.info"
-          components={{
-            a: <Link component={RouterLink} to="/settings/general/devices" />,
-          }}
-        />
-      </B4Hint>
     </B4Section>
   );
 };
