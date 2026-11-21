@@ -27,6 +27,7 @@ import {
   chosenPayloadFile,
   samePayloadFile,
   useListedCaptures,
+  useResolvedPayloadFile,
 } from "./payloadFile";
 import { udpPortRouting } from "./routing/portRouting";
 import { bytesLabel } from "@components/settings/payloads/facts";
@@ -293,11 +294,24 @@ export const UdpSettings = ({
     config.udp.fake_payload_file === UDP_FAKE_PAYLOAD_AUTO_STUN;
 
   const udpPayloadFile = config.udp.fake_payload_file ?? "";
+  const udpPayloadPath = UDP_BUILTIN_PAYLOADS.includes(udpPayloadFile)
+    ? ""
+    : udpPayloadFile;
+  const resolvedUdpFile = useResolvedPayloadFile(
+    captures,
+    capturesListed,
+    udpPayloadPath,
+  );
   const chosenUdpFile = chosenPayloadFile(
     captures,
     capturesListed,
-    UDP_BUILTIN_PAYLOADS.includes(udpPayloadFile) ? "" : udpPayloadFile,
+    udpPayloadPath,
+    resolvedUdpFile,
   );
+  const chosenUdpCapture =
+    chosenUdpFile.state === "listed" || chosenUdpFile.state === "empty"
+      ? chosenUdpFile.capture
+      : undefined;
 
   const sortedCaptures = useMemo(
     () =>
@@ -310,9 +324,20 @@ export const UdpSettings = ({
     [captures],
   );
 
+  const unlistedEmptyUdpFile =
+    chosenUdpFile.state === "empty" && !chosenUdpFile.capture;
+
   let payloadFileHelper: string;
   if (chosenUdpFile.state === "missing") {
     payloadFileHelper = t("sets.udp.fakePayloadFileMissingHelper", {
+      file: udpPayloadFile,
+    });
+  } else if (unlistedEmptyUdpFile) {
+    payloadFileHelper = t("sets.udp.fakePayloadFileIsEmptyHelper", {
+      file: udpPayloadFile,
+    });
+  } else if (chosenUdpFile.state === "unlisted") {
+    payloadFileHelper = t("sets.udp.fakePayloadFileUnlistedHelper", {
       file: udpPayloadFile,
     });
   } else if (isAutoQuic) {
@@ -332,6 +357,14 @@ export const UdpSettings = ({
     chosenUdpFileLabel = t("sets.udp.fakePayloadFileMissing", {
       name: chosenUdpFile.name,
     });
+  } else if (unlistedEmptyUdpFile) {
+    chosenUdpFileLabel = t("sets.udp.fakePayloadFileIsEmpty", {
+      name: chosenUdpFile.name,
+    });
+  } else if (chosenUdpFile.state === "unlisted") {
+    chosenUdpFileLabel = t("sets.udp.fakePayloadFileUnlisted", {
+      name: chosenUdpFile.name,
+    });
   } else if (chosenUdpFile.state === "unknown") {
     chosenUdpFileLabel = chosenUdpFile.name;
   }
@@ -340,9 +373,11 @@ export const UdpSettings = ({
   const fakePayloadSize =
     chosenUdpFile.state === "listed"
       ? chosenUdpFile.capture.size
-      : presetBuiltin
-        ? builtins.find((b) => b.id === presetBuiltin)?.size
-        : undefined;
+      : chosenUdpFile.state === "unlisted"
+        ? chosenUdpFile.size
+        : presetBuiltin
+          ? builtins.find((b) => b.id === presetBuiltin)?.size
+          : undefined;
   const fakeLen = config.udp.fake_len;
   const truncatedPayloadSize =
     fakePayloadSize !== undefined && fakeLen < fakePayloadSize
@@ -604,9 +639,11 @@ export const UdpSettings = ({
                         ? [{ value: udpPayloadFile, label: chosenUdpFileLabel }]
                         : []),
                       ...sortedCaptures.map((c) => ({
-                        value: samePayloadFile(c.filepath, udpPayloadFile)
-                          ? udpPayloadFile
-                          : c.filepath,
+                        value:
+                          c === chosenUdpCapture ||
+                          samePayloadFile(c.filepath, udpPayloadFile)
+                            ? udpPayloadFile
+                            : c.filepath,
                         label: `[${c.protocol}] ${c.domain} (${bytesLabel(t, c.size)})`,
                       })),
                     ]}

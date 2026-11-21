@@ -7,6 +7,7 @@ import {
   CaptureGenerateResponse,
   CaptureRegenerateResponse,
   CaptureUploadResponse,
+  PayloadFileResolution,
   PayloadInspection,
 } from "@b4.capture";
 
@@ -26,6 +27,10 @@ export const captureApi = {
   bytes: (capture: Capture) =>
     fetchBytes(
       `/api/capture/download?${new URLSearchParams({ file: payloadFileName(capture.filepath) }).toString()}`,
+    ),
+  resolve: (file: string) =>
+    apiGet<PayloadFileResolution>(
+      `/api/capture/resolve?${new URLSearchParams({ file }).toString()}`,
     ),
   builtins: () => apiGet<BuiltinPayload[]>("/api/capture/builtin"),
   builtinBytes: (id: string) =>

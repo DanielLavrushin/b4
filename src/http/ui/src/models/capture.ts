@@ -42,6 +42,14 @@ export interface Capture {
   used_by?: string[] | null;
 }
 
+export interface PayloadFileResolution {
+  file: string;
+  listed: boolean;
+  exists: boolean;
+  size: number;
+  facts?: PayloadFacts | null;
+}
+
 export type BuiltinPayloadId = "google" | "vk" | "stun" | "quic1" | "quic2";
 
 export type BuiltinPayloadSource =

@@ -24,10 +24,10 @@ export function tlsModChangesTheFake(
     case FakingPayloadType.DOMAIN:
       return true;
     case FakingPayloadType.CAPTURE:
-      return (
-        chosen.state !== "listed" ||
-        chosen.capture.facts?.kind === "tls_client_hello"
-      );
+      return chosen.state === "listed"
+        ? chosen.capture.facts?.kind === "tls_client_hello"
+        : chosen.state !== "unlisted" ||
+            chosen.facts.kind === "tls_client_hello";
     case FakingPayloadType.INVERTED:
       return sendsSynOrDecoyFake(config);
     default:
