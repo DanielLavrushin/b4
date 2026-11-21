@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -270,7 +271,12 @@ func (api *API) handleUploadCapture(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, config.MaxCapturePayloadBytes)
 
 	if err := r.ParseMultipartForm(config.MaxCapturePayloadBytes); err != nil {
-		http.Error(w, "File too large (max 64KB)", http.StatusBadRequest)
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			http.Error(w, "File too large (max 64KB)", http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "Invalid upload form: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
