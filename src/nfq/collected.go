@@ -738,9 +738,14 @@ func (p *Pool) publishCollectedWith(requireConsumer bool, prepared *collectedPre
 	for ip := range p.collected {
 		ips = append(ips, ip.String())
 	}
-	p.configMu.Unlock()
 	sort.Strings(ips)
 	unchanged := slices.Equal(ips, p.publishedCollected())
+	if !cfg.CollectedViewNeeded() && (len(p.Workers) == 0 || p.Workers[0].getConfig() == cfg) {
+		p.recordPublishedLocked(cfg, cfg, ips, unchanged)
+		p.configMu.Unlock()
+		return collectedPublish{outcome: collectedApplied, unchanged: unchanged}
+	}
+	p.configMu.Unlock()
 	var view *config.Config
 	var matcher *sni.SuffixSet
 	switch {
@@ -799,6 +804,15 @@ func (p *Pool) publishCollectedWith(requireConsumer bool, prepared *collectedPre
 			w.matcher.Store(matcher)
 		}
 	}
+	p.recordPublishedLocked(cfg, view, ips, unchanged)
+	if rebuild && p.collectedChanged != nil {
+		p.collectedChanged(matcher)
+	}
+	result.outcome = collectedApplied
+	return result
+}
+
+func (p *Pool) recordPublishedLocked(cfg, view *config.Config, ips []string, unchanged bool) {
 	p.stampPublishedLocked(ips)
 	p.collectedMu.Lock()
 	if !unchanged {
@@ -809,11 +823,6 @@ func (p *Pool) publishCollectedWith(requireConsumer bool, prepared *collectedPre
 	p.collectedMu.Unlock()
 	p.collectedDirty = false
 	p.collectedRetryWait, p.collectedRetryAt = 0, time.Time{}
-	if rebuild && p.collectedChanged != nil {
-		p.collectedChanged(matcher)
-	}
-	result.outcome = collectedApplied
-	return result
 }
 
 func (p *Pool) rollbackCollected() {

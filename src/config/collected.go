@@ -82,7 +82,7 @@ func (c *Config) collectedDuplicateSetIDs() []string {
 	return ids
 }
 
-func (c *Config) collectedViewNeeded() bool {
+func (c *Config) CollectedViewNeeded() bool {
 	for _, set := range c.Sets {
 		if len(set.Targets.CollectedIPs) > 0 || set.Enabled && set.Targets.UseCollectedIPs && !c.Queue.IsDiscovery {
 			return true
@@ -99,7 +99,7 @@ func (c *Config) Origin() *Config {
 }
 
 func (c *Config) WithCollectedIPs(ips []string) *Config {
-	if !c.collectedViewNeeded() {
+	if !c.CollectedViewNeeded() {
 		return c
 	}
 	view := *c
