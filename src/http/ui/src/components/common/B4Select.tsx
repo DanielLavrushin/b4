@@ -13,7 +13,7 @@ import { colors } from "@design";
 import { B4Help, useHelpVisible, type B4HelpContent } from "./B4Help";
 import { fieldMessage } from "./B4FieldMessage";
 import { useChangedField, useChangedFields } from "@context/ChangedFieldsContext";
-import { useEffect } from "react";
+import { useEffect, useId } from "react";
 import { useFieldLabel } from "./dialogLabels";
 
 interface B4SelectOption {
@@ -52,6 +52,12 @@ export const B4Select = ({
   const resolvedLabel = useFieldLabel(path, label);
   const changed = useChangedField(path, changeLabel ?? resolvedLabel);
   const helpVisible = useHelpVisible({ info, learnMore, credit, aiTopic });
+  const baseId = useId();
+  const labelId = `${baseId}-label`;
+  const selectId = props.id ?? `${baseId}-select`;
+  const helperId = `${baseId}-helper`;
+  const shownMessage = fieldMessage(message);
+  const described = shownMessage !== null || Boolean(helperText);
   const { registerValueLabels, scopeVersion } = useChangedFields();
   const optionLabels = JSON.stringify(
     options.map((o) => [String(o.value), o.label]),
@@ -66,6 +72,7 @@ export const B4Select = ({
   const fc = (
     <FormControl fullWidth size="small">
       <InputLabel
+        id={labelId}
         shrink
         sx={{
           color: changed ? colors.secondary : colors.text.secondary,
@@ -79,6 +86,9 @@ export const B4Select = ({
       </InputLabel>
       <Select
         {...props}
+        id={selectId}
+        labelId={labelId}
+        aria-describedby={described ? helperId : undefined}
         label={resolvedLabel}
         displayEmpty
         renderValue={(selected) => {
@@ -139,12 +149,18 @@ export const B4Select = ({
           </MenuItem>
         ))}
       </Select>
-      {fieldMessage(message) ??
-        (helperText && (
-          <FormHelperText sx={{ color: colors.text.secondary, ml: 0.1 }}>
+      {shownMessage !== null ? (
+        <Box id={helperId}>{shownMessage}</Box>
+      ) : (
+        helperText && (
+          <FormHelperText
+            id={helperId}
+            sx={{ color: colors.text.secondary, ml: 0.1 }}
+          >
             {helperText}
           </FormHelperText>
-        ))}
+        )
+      )}
     </FormControl>
   );
 
