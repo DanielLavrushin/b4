@@ -188,6 +188,14 @@ export const CaptureSettings = () => {
     }
   };
 
+  const reportReload = (result: { reload_error?: string }) => {
+    if (result.reload_error) {
+      showError(
+        t("settings.Capture.reloadFailed", { error: result.reload_error }),
+      );
+    }
+  };
+
   const generateCapture = async () => {
     if (!probeForm.domain) return;
 
@@ -208,6 +216,7 @@ export const CaptureSettings = () => {
           }),
         );
         setProbeForm({ domain: "" });
+        reportReload(result);
       }
     } catch (error) {
       showError(
@@ -237,14 +246,6 @@ export const CaptureSettings = () => {
       return;
     }
     await deletePayload(capture);
-  };
-
-  const reportReload = (result: { reload_error?: string }) => {
-    if (result.reload_error) {
-      showError(
-        t("settings.Capture.reloadFailed", { error: result.reload_error }),
-      );
-    }
   };
 
   const deletePayload = async (capture: Capture) => {

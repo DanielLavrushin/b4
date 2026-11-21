@@ -71,6 +71,8 @@ export interface CaptureGenerateResponse {
   already_captured?: boolean;
   errors?: string[];
   size?: number;
+  reloaded?: string[] | null;
+  reload_error?: string;
 }
 
 export interface CaptureChangeResponse {
