@@ -269,6 +269,24 @@ export const CaptureSettings = () => {
     if (pending) void deletePayload(pending.capture);
   };
 
+  const handleRegenerate = async (capture: Capture) => {
+    let latest: Capture[];
+    try {
+      latest = await refreshCaptures();
+    } catch (error) {
+      showError(
+        t("settings.Capture.regenerateFailed", {
+          error: describeApiError(error),
+        }),
+      );
+      return;
+    }
+    const current = latest.find(
+      (c) => c.protocol === capture.protocol && c.domain === capture.domain,
+    );
+    setRegenerateDialog(current ?? capture);
+  };
+
   const confirmRegenerate = async () => {
     const capture = regenerateDialog;
     if (!capture) return;
@@ -710,7 +728,7 @@ export const CaptureSettings = () => {
                   }
                   onRegenerate={
                     capture.origin === "generated" && capture.protocol === "tls"
-                      ? () => setRegenerateDialog(capture)
+                      ? () => void handleRegenerate(capture)
                       : undefined
                   }
                   onDelete={() => void handleDelete(capture)}
