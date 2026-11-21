@@ -479,7 +479,9 @@ and `xt_socket` on iptables, `nft_tproxy` and `nft_socket` on nftables, or when 
 firewall refuses the rule, b4 logs a warning for the set. While the set is diverted, the
 queue releases unchanged a TCP packet to port 443 of the set, of an address family its
 **IP Version Filter** allows, whose mark lacks bit `0x40000`. Otherwise the set's
-connections that reach the queue get its own TCP strategy.
+connections that reach the queue get its own TCP strategy. Either way, a connection whose
+ClientHello the queue saw before a change to the collected addresses keeps the set it had
+then.
 b4's own connections with bit `0x40000` to the set's addresses always get that strategy.
 
 | Connection | Source port | Mark | Packet processing |

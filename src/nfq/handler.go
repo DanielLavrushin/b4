@@ -204,7 +204,7 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 	switch pkt.proto {
 	case 6:
 		if len(pkt.raw) >= pkt.ihl+TCPHeaderMinLen {
-			if !vc.selfDialed && cfg.WSReuseActive(set) && set.MatchesIPVersion(pkt.ver) && binary.BigEndian.Uint16(pkt.raw[pkt.ihl+2:]) == 443 && wsReuseDiverts(set.Id) {
+			if !vc.selfDialed && cfg.WSReuseActive(set) && set.MatchesIPVersion(pkt.ver) && binary.BigEndian.Uint16(pkt.raw[pkt.ihl+2:]) == 443 && wsReuseDiverts(set.Id) && !w.pinnedByCollected(vc, pkt, matcher) {
 				return vc.accept()
 			}
 			return w.handleTCPPacket(vc, pkt, cfg, matcher, matched, set, st, stPrefix)
@@ -228,6 +228,27 @@ func (w *Worker) addressSet(vc *verdictCtx, pkt *pktInfo, matcher *sni.SuffixSet
 		return true, vc.telegramSet, telegramSetPrefix
 	}
 	return matcher.MatchIPWithSourceDetail(pkt.dst, pkt.srcMac, keep)
+}
+
+func (w *Worker) collectedPin(vc *verdictCtx, matcher *sni.SuffixSet, flags byte, connKey, srcMac string) (string, bool) {
+	if flags&0x02 != 0 || vc.telegramSet != nil || !w.tlsCache.HasPinned() {
+		return "", false
+	}
+	decision, ok := w.tlsCache.Decision(connKey)
+	if !ok || !decision.collectedPinned || !matcher.SameConnectionPolicy(decision.decidedBy) || decision.decidedMac != srcMac {
+		return "", false
+	}
+	if decision.set != nil {
+		return decision.set.Id, true
+	}
+	return decision.priorSet, true
+}
+
+func (w *Worker) pinnedByCollected(vc *verdictCtx, pkt *pktInfo, matcher *sni.SuffixSet) bool {
+	tcp := pkt.raw[pkt.ihl:]
+	connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, binary.BigEndian.Uint16(tcp[0:2]), pkt.dstStr, binary.BigEndian.Uint16(tcp[2:4]))
+	_, pinned := w.collectedPin(vc, matcher, tcp[13], connKey, pkt.srcMac)
+	return pinned
 }
 
 const maxInjectInflight = 512
@@ -488,24 +509,18 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 	escalationKeep := keep
-	if tcp[13]&0x02 == 0 && vc.telegramSet == nil && w.tlsCache.HasPinned() {
-		if decision, ok := w.tlsCache.Decision(connKey); ok && decision.collectedPinned && matcher.SameConnectionPolicy(decision.decidedBy) && decision.decidedMac == pkt.srcMac {
-			previousKeep := keep
-			pinnedID := decision.priorSet
-			if decision.set != nil {
-				pinnedID = decision.set.Id
-			}
-			keep = func(candidate *config.SetConfig) bool {
-				return pinnedID != "" && candidate.Id == pinnedID && previousKeep.Keeps(candidate)
-			}
-			matched, set, stPrefix = matcher.MatchIPWithSourceDetail(pkt.dst, pkt.srcMac, keep)
-			st = set
-			if matched && !set.MatchesTCPDPort(dport) {
-				matched, set, st = false, nil, nil
-			}
-			hold = addressHold{set: st, prefix: stPrefix}
-			addressMatched = st != nil
+	if pinnedID, pinned := w.collectedPin(vc, matcher, tcp[13], connKey, pkt.srcMac); pinned {
+		previousKeep := keep
+		keep = func(candidate *config.SetConfig) bool {
+			return pinnedID != "" && candidate.Id == pinnedID && previousKeep.Keeps(candidate)
 		}
+		matched, set, stPrefix = matcher.MatchIPWithSourceDetail(pkt.dst, pkt.srcMac, keep)
+		st = set
+		if matched && !set.MatchesTCPDPort(dport) {
+			matched, set, st = false, nil, nil
+		}
+		hold = addressHold{set: st, prefix: stPrefix}
+		addressMatched = st != nil
 	}
 
 	vc.hellos, vc.helloKey = w.pendingHello, connKey
