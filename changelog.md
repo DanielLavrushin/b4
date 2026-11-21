@@ -9,6 +9,10 @@ All notable changes to b4 are recorded in this file.
 - A **Telegram set** under **Telegram upstream (shared)** takes b4's own connections to Telegram on every route, the CF proxy domains and the Worker included, in NFQUEUE and TUN mode: its strategy, or its interface or proxy route; **Create a Telegram set** adds one, and a **Telegram set** badge marks it on the **Sets** page. [#615](https://github.com/DanielLavrushin/b4/issues/615), [#639](https://github.com/DanielLavrushin/b4/issues/639), [#640](https://github.com/DanielLavrushin/b4/issues/640)
 - After an **Update** or **Upload** on the **Geo Databases** page, the card lists the sets with categories that match nothing in the new file, and the set editor marks a category absent from the file in red with the reason on hover. [#620](https://github.com/DanielLavrushin/b4/issues/620)
 - **Discovery** and the watchdog's heals run under the TUN engine, routers without NFQUEUE included. Under TUN they test IPv4 only, skip strategies with **Incoming Mode** or **RST Injection Protection**, and cannot test a set with its own DSCP value. [#528](https://github.com/DanielLavrushin/b4/issues/528)
+- The **Payloads** page shows what each payload is: its kind, size and server name, whether it fits one packet, where it came from, any malformed fields and the sets that use it. A file chosen for upload is described the same way, and replacing a payload asks first. [#651](https://github.com/DanielLavrushin/b4/issues/651)
+- **Regenerate** on the **Payloads** page rebuilds a generated payload under the same name, and the sets that use it send the new one at once. [#651](https://github.com/DanielLavrushin/b4/issues/651)
+- The **Payloads** page lists the payloads built into b4 under **Built In**, read-only, with their size and what each one is. [#651](https://github.com/DanielLavrushin/b4/issues/651)
+- In a set, the **My own Payload File** list is sorted and describes each payload, and the **UDP** tab says how much of a payload file a fake carries, with **Use the file size**. [#651](https://github.com/DanielLavrushin/b4/issues/651)
 
 ### Changed
 
@@ -19,9 +23,11 @@ All notable changes to b4 are recorded in this file.
 - The **Payloads** page and the message after a payload is generated describe it by its size and domain, no longer as an "optimized" payload for getting past blocks. [#648](https://github.com/DanielLavrushin/b4/issues/648)
 - With a splitting strategy such as **Combo**, the second packet of a ClientHello sent in two packets waits until the first has gone out in pieces, which adds one **First Segment Delay** (30 ms by default) to such connections. [#653](https://github.com/DanielLavrushin/b4/issues/653)
 - A set that worked only while the second packet of a ClientHello overtook the first, such as one with a **Preset: STUN** fake and no splitting, can stop working after the update; **Discovery** run again for its sites finds a new strategy. [#653](https://github.com/DanielLavrushin/b4/issues/653)
+- The Russian interface writes "payload" in English throughout, the **Payloads** tab included. [#650](https://github.com/DanielLavrushin/b4/issues/650)
 
 ### Removed
 
+- The `/api/capture/probe` API, unused by the web interface, is removed. Its hook cost every connection some work and slowly leaked memory when clients sent their ClientHello in two packets. [#646](https://github.com/DanielLavrushin/b4/issues/646)
 - **Let sets process Worker connections** under **Telegram upstream (shared)** is gone: a **Telegram set** without routing applies its strategy to b4's Worker connections, and without one no set processes them. [#639](https://github.com/DanielLavrushin/b4/issues/639)
 
 ### Fixed
@@ -37,9 +43,20 @@ All notable changes to b4 are recorded in this file.
 - **Randomize TLS Random** left the fakes of **Enable Decoy**, **SYN Fake Packets** and **Match Fake Size** unchanged, and **Duplicate Session ID** did nothing for a ClientHello longer than one packet, as current browsers send. [#649](https://github.com/DanielLavrushin/b4/issues/649)
 - A **Past Sequence** or **Random Sequence** fake with a **Sequence Offset** smaller than the fake, set by hand or by a zapret import, reached the server as the start of the connection's data. [#649](https://github.com/DanielLavrushin/b4/issues/649)
 - With **Match Fake Size**, the fake for a site whose name ends the payload's own, such as `google.com` with **Preset: Google (classic)**, was a byte-for-byte copy of the real ClientHello. [#649](https://github.com/DanielLavrushin/b4/issues/649)
-- A payload generated on the **Payloads** page or by **Generated from Domain** had three malformed fields that a strict parser rejects. Payloads generated before this version keep them until they are deleted and generated again. [#648](https://github.com/DanielLavrushin/b4/issues/648)
+- A payload generated on the **Payloads** page or by **Generated from Domain** had three malformed fields that a strict parser rejects. Payloads generated before this version keep them until **Regenerate** on the **Payloads** page rebuilds them. [#648](https://github.com/DanielLavrushin/b4/issues/648)
 - A zapret import reported `rndsni` as matched exactly although the fake kept its name, and left out the `rnd` and `dupsid` that zapret applies to its own fake when none is given. [#649](https://github.com/DanielLavrushin/b4/issues/649)
 - When a browser sent its ClientHello in two packets, as current Chrome and Firefox do, the second packet often left before the fake and the first one, so whether a set worked depended on timing and on the router's load. [#653](https://github.com/DanielLavrushin/b4/issues/653)
+- Deleting, replacing or uploading a payload on the **Payloads** page reached the sets that use it only after the next configuration save or restart. [#647](https://github.com/DanielLavrushin/b4/issues/647)
+- A payload whose file was gone looked like any other on the **Payloads** page, and the set editor showed no warning for a missing or unchosen payload file while the set sent **Preset: Google (classic)**. [#650](https://github.com/DanielLavrushin/b4/issues/650)
+- In a set, the **My own Payload File** list also offered QUIC files, which then went out inside TCP, and **Fake Packet TLS Modification** was shown for fakes it cannot change, such as **All Zeros** and **Preset: STUN**. [#650](https://github.com/DanielLavrushin/b4/issues/650)
+- On the **Payloads** page, a second file chosen for upload kept the first one's name, choosing the same file again did nothing, and names that differ only in punctuation or Cyrillic letters shared one file, so an upload could overwrite another payload. [#647](https://github.com/DanielLavrushin/b4/issues/647), [#650](https://github.com/DanielLavrushin/b4/issues/650)
+- Deleting a payload with `&`, `#`, `+` or `%` in its name could delete another one, a payload with a blank name could not be deleted, a 64 KB file was refused, and errors on the **Payloads** page gave no reason. [#647](https://github.com/DanielLavrushin/b4/issues/647), [#650](https://github.com/DanielLavrushin/b4/issues/650)
+- **Generate** wrote a port typed with the domain into the payload and put a Cyrillic domain into it as raw text instead of its punycode form. [#647](https://github.com/DanielLavrushin/b4/issues/647)
+- A payload file cut short by a full disk replaced the old one, an empty payload file was sent as **Preset: Google (classic)** with no error in the log, and after a backup restore the next payload change lost the restored payload list. [#647](https://github.com/DanielLavrushin/b4/issues/647)
+
+### Security
+
+- A restored backup with a crafted payload list could make the **Payloads** page show and delete files outside its folder. [#647](https://github.com/DanielLavrushin/b4/issues/647)
 
 ## [1.92.0] - 2026-11-17
 

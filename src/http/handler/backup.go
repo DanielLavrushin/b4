@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/daniellavrushin/b4/capture"
 	"github.com/daniellavrushin/b4/log"
 	"golang.org/x/sys/unix"
 )
@@ -294,6 +295,7 @@ func (api *API) handleRestore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Infof("Backup restored to %s: %d file(s) written, %d skipped", configDir, restored, skipped)
+	capture.Reload()
 	sendResponse(w, map[string]interface{}{
 		"success": true,
 		"files":   restored,

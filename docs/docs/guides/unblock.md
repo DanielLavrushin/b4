@@ -40,7 +40,7 @@ The card's badge says why no strategy was found:
 | **intercepted by the gateway** | The first hop in front of b4's host answers the connection itself. When that hop is another router, b4 has to run on it, or b4's host has to be excluded from its redirect. When b4 runs on the main router, only a proxy helps. |
 | **does not resolve** | The name has no address, as with a misspelled domain. |
 | **link answers 400** | The link answers HTTP 400 even without b4. The link of a page or a file the site serves is needed. |
-| **nothing found** | A new run with **TLS version for the probes** set to **TLS 1.2**, or with a captured ClientHello, sometimes helps. Otherwise a [VPN](./vpn.md) or a [proxy](./proxy.md) is left. |
+| **nothing found** | A new run with **TLS version for the probes** set to **TLS 1.2**, or with a generated ClientHello, sometimes helps. Otherwise a [VPN](./vpn.md) or a [proxy](./proxy.md) is left. |
 
 The [DPI Detector](../detector.md) shows how the ISP blocks a site: by resetting connections, dropping them, forging DNS answers or cutting long transfers. It checks many sites at once, and **Fix N with Discovery** opens Discovery with the sites still blocked filled in.
 

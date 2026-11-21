@@ -162,7 +162,9 @@ export const DiscoveryOptionsPanel = ({
     localStorage.setItem(EXPANDED_KEY, String(expanded));
   }, [expanded]);
 
-  const tlsCaptures = captures.filter((c) => c.protocol === "tls");
+  const tlsCaptures = captures.filter(
+    (c) => c.protocol === "tls" && !c.missing,
+  );
   const allPayloadDomains = tlsCaptures.map((c) => c.domain);
   const allPayloadsSelected =
     allPayloadDomains.length > 0 &&
