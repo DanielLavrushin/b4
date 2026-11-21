@@ -3519,7 +3519,7 @@
       "title": "Options",
       "defaults": "defaults",
       "checkDns": "Check DNS for tampering",
-      "checkDnsHint": "Finds sites whose address is being lied about and adds a DNS fix to the set. When every known address of a site is unreachable, other regions' DNS answers are tried for one that is.",
+      "checkDnsHint": "Finds sites whose address is being lied about and adds a DNS fix to the set.",
       "useCache": "Try strategies that worked before",
       "useCacheHint": "Winners from earlier runs go first.",
       "forget": "Forget them",
@@ -3545,16 +3545,16 @@
       "summaryPayloads_one": "{{count}} payload",
       "summaryPayloads_other": "{{count}} payloads",
       "useCommunity": "Try community sets first",
-      "useCommunityHint": "Refreshes the catalogue from the hub, then tests up to three sets other users published for these domains before the presets.",
+      "useCommunityHint": "Tests up to three sets other users published for these domains before the presets.",
       "stopWhenCovered": "Stop at the first strategy that works for every address",
-      "stopWhenCoveredHint": "Ends the search once a strategy passes the confirmation on every address of the set. Turned off, every strategy is tested, which takes longer but can find a faster one.",
+      "stopWhenCoveredHint": "Ends the search once a strategy passes the confirmation on every address of the set.",
       "summaryFullSearch": "full search",
       "trustedDns": "Trusted DNS server",
       "trustedDnsHint": "For this run only. Empty: the server set under Settings, Discovery.",
       "trustedDnsFromSettings": "From Settings: {{server}}",
       "trustedDnsBuiltin": "Built-in public resolvers",
       "pins": "Pinned addresses",
-      "pinsHint": "Hosts file order, one line per address: the address first, then the names it serves; text after # is ignored. Discovery tests those names through these addresses, skips their DNS check, and the proposed set keeps the pins. For a site DNS has no or a wrong address for.",
+      "pinsHint": "Hosts file order, one line per address: the address, then its names. For a site DNS has no or a wrong address for.",
       "pinsError": {
         "line": "\"{{value}}\" needs an IP address and at least one name on the same line.",
         "address": "\"{{value}}\" is not an IP address.",
@@ -3565,7 +3565,11 @@
       "summaryDns": "DNS {{server}}",
       "summaryPins_one": "{{count}} pinned name",
       "summaryPins_other": "{{count}} pinned names",
-      "summaryInvalid": "Some options are not valid"
+      "summaryInvalid": "Some options are not valid",
+      "checkDnsInfo": "When every known address of a site is unreachable, other regions' DNS answers are tried for one that is.",
+      "pinsInfo": "One line per address: the address first, then the names it serves; text after # is ignored.\n\nDiscovery tests those names through these addresses, skips their DNS check, and the proposed set keeps the pins.",
+      "stopWhenCoveredInfo": "Turned off, every strategy is tested, which takes longer but can find a faster one.",
+      "useCommunityInfo": "The catalogue is refreshed from the hub first."
     },
     "logs": {
       "title": "Discovery log",
@@ -4161,7 +4165,7 @@
   "watchdog": {
     "title": "Watchdog Monitor",
     "description": "Health checks of sets and domains with automatic healing",
-    "alert": "<strong>Watchdog:</strong> Checks the addresses of watched sets, and the domains of the older list, on a schedule. When they keep failing, it runs Discovery. For a watched set, the strategy found is written into that set, every address is checked again live, and the change is undone if they still fail. Failures are classified to tell DPI interference apart from genuine server-side rejection (e.g. servers that require a client certificate).",
+    "alert": "Checks the addresses of watched sets, and the domains of the older list, on a schedule. When they keep failing, it runs Discovery.\n\nFor a watched set, the strategy found is written into that set, every address is checked again live, and the change is undone if they still fail.\n\nFailures are classified to tell DPI interference apart from genuine server-side rejection (e.g. servers that require a client certificate).",
     "inspiredBy": "Reactive detection approach inspired by",
     "project": "project",
     "enabled": "Enabled",
@@ -4271,12 +4275,13 @@
     "domains": {
       "title": "Older domain list",
       "description": "Domains watched one by one",
-      "explain": "Each domain here is checked on its own, and a heal writes into whichever set handles that domain at the time. Watching a set instead checks all of its addresses together and keeps that set's own strategy working. A domain whose set is known can be moved to it.",
+      "explain": "Each domain here is checked on its own, and a heal writes into whichever set handles that domain at the time.",
       "moveTo": "Watch through {{name}}",
       "moveHint": "Adds this address to the Discovery addresses of {{name}}, turns on the watchdog for that set and removes the domain from this list.",
       "moved": "{{domain}} is now watched through {{name}}",
       "moveFailed": "Could not move {{domain}}: {{error}}",
-      "watchedBy": "Checked through set {{name}}"
+      "watchedBy": "Checked through set {{name}}",
+      "explainInfo": "Watching a set instead checks all of its addresses together and keeps that set's own strategy working. A domain whose set is known can be moved to it."
     }
   },
   "errors": {

@@ -3,7 +3,7 @@ import { useTranslation, Trans } from "react-i18next";
 import { Link as RouterLink } from "react-router";
 import { IconButton, Link, Stack } from "@mui/material";
 import { WatchdogIcon, RefreshIcon } from "@b4.icons";
-import { B4Section, B4Alert, B4Badge } from "@b4.elements";
+import { B4Section, B4Alert, B4Badge, B4Help } from "@b4.elements";
 import { setsApi } from "@api/sets";
 import { B4SetConfig } from "@models/config";
 import { useWatchdog } from "@hooks/useWatchdog";
@@ -67,30 +67,39 @@ export function WatchdogMonitor() {
         title={t("watchdog.title")}
         description={t("watchdog.description")}
         icon={<WatchdogIcon />}
+        learnMore="watchdog"
       >
         <Stack spacing={2}>
-          <B4Alert icon={<WatchdogIcon />}>
-            <Trans i18nKey="watchdog.alert" />{" "}
-            {t("watchdog.inspiredBy")}{" "}
-            <a
-              href="https://github.com/belotserkovtsev/ladon"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              belotserkovtsev/ladon
-            </a>{" "}
-            {t("watchdog.project")}
-          </B4Alert>
-
           <Stack direction="row" justifyContent="space-between" alignItems="center">
-            <B4Badge
-              label={state.enabled ? t("watchdog.enabled") : t("watchdog.disabled")}
-              color={state.enabled ? "primary" : "default"}
-              onClick={() => {
-                void toggleEnabled(!state.enabled);
-              }}
-              sx={{ cursor: "pointer" }}
-            />
+            <Stack direction="row" alignItems="center" spacing={0.5}>
+              <B4Badge
+                label={
+                  state.enabled ? t("watchdog.enabled") : t("watchdog.disabled")
+                }
+                color={state.enabled ? "primary" : "default"}
+                onClick={() => {
+                  void toggleEnabled(!state.enabled);
+                }}
+                sx={{ cursor: "pointer" }}
+              />
+              <B4Help
+                label={t("watchdog.title")}
+                info={t("watchdog.alert")}
+                credit={
+                  <>
+                    {t("watchdog.inspiredBy")}{" "}
+                    <Link
+                      href="https://github.com/belotserkovtsev/ladon"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      belotserkovtsev/ladon
+                    </Link>{" "}
+                    {t("watchdog.project")}
+                  </>
+                }
+              />
+            </Stack>
             <IconButton onClick={handleRefresh} size="small">
               <RefreshIcon sx={{ fontSize: 20 }} />
             </IconButton>

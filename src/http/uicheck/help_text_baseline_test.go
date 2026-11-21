@@ -1,10 +1,6 @@
 package uicheck
 
 var helperLineBaseline = map[string]int{
-	"discovery.options.checkDnsHint":              196,
-	"discovery.options.pinsHint":                  299,
-	"discovery.options.stopWhenCoveredHint":       171,
-	"discovery.options.useCommunityHint":          129,
 	"discovery.options.validationTriesHint":       121,
 	"hub.description":                             124,
 	"sets.convert.domainsHelper":                  176,
