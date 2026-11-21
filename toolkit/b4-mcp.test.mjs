@@ -98,3 +98,12 @@ test("restore refuses a fingerprint from the same address with another query str
   assert.equal(JSON.parse(same.out).restored, true);
   assert.deepEqual(reverts, { a: 0, b: 0 });
 });
+
+test("a result larger than a pipe's buffer reaches the reader whole", async (t) => {
+  const lines = Array.from({ length: 4000 }, (_, i) => `line ${i} ${"x".repeat(40)}`);
+  const url = await standIn(t, (req, res, msg) => answerJSON(res, msg.id, { content: [], structuredContent: { lines } }));
+  const r = await run(["call", url, "b4_logs_tail"]);
+  assert.equal(r.code, 0, r.err);
+  assert.ok(r.out.length > 200000, `got ${r.out.length} bytes`);
+  assert.equal(JSON.parse(r.out).lines.length, lines.length);
+});
