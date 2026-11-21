@@ -415,6 +415,9 @@ export const SetEditorPage = ({
               otherSetsTargets={otherSetsTargets}
               ipv4={config.queue.ipv4}
               ipv6={config.queue.ipv6}
+              queueMode={config.queue.mode}
+              skipSetup={config.system.tables.skip_setup}
+              queueMark={config.queue.mark}
               onChange={handleChange}
             />
           </Stack>

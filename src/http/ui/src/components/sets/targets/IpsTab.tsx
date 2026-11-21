@@ -11,6 +11,8 @@ import { GeoCategoryPanel } from "./GeoCategoryPanel";
 import { AsnPanel } from "./AsnPanel";
 import { OtherSetsTargets, findSetOverlaps } from "./overlap";
 import { useChangedFields } from "@context/ChangedFieldsContext";
+import { useTunEngine } from "@hooks/useEngineMode";
+import { collectedTakes, reuseTunEngine } from "@utils";
 import {
   IPV4_CATCH_ALL,
   IPV6_CATCH_ALL,
@@ -31,6 +33,9 @@ interface IpsTabProps {
   geoipCategories: string[];
   geoipLoading: boolean;
   ipv6?: boolean;
+  queueMode?: string;
+  skipSetup?: boolean;
+  queueMark?: number;
   scrollToAsn?: boolean;
   onChange: (field: string, value: string | string[] | boolean) => void;
 }
@@ -49,10 +54,14 @@ export const IpsTab = ({
   geoipCategories,
   geoipLoading,
   ipv6,
+  queueMode,
+  skipSetup = false,
+  queueMark,
   scrollToAsn,
   onChange,
 }: IpsTabProps) => {
   const { t } = useTranslation();
+  const tunRunning = useTunEngine();
   const { changedValues } = useChangedFields();
   const [duplicateWarning, setDuplicateWarning] = useState("");
   const [entryNotice, setEntryNotice] = useState("");
@@ -83,15 +92,19 @@ export const IpsTab = ({
   const tlsFiltered = !!config.targets.tls;
   const hasGeoip = !!geo.ipdat_path && geoipCategories.length > 0;
   const usesCollected = config.targets.use_collected_ips ?? false;
-  const routingMode = config.routing?.mode;
-  const collectedRoutes =
-    usesCollected &&
-    !!config.routing?.enabled &&
-    routingMode !== "block" &&
-    routingMode !== "mtproto-ws";
-  const collectedTakes =
-    collectedRoutes ||
-    (usesCollected && !!config.tcp.wssize_reuse?.enabled);
+  const takes = collectedTakes(config, {
+    tunEngine: reuseTunEngine(queueMode, tunRunning),
+    skipSetup,
+    queueMark,
+  });
+  const takesText =
+    takes === "all"
+      ? t("sets.targets.useCollectedIpsTakes")
+      : takes === "tcp"
+        ? t("sets.targets.useCollectedIpsTakesTcp")
+        : takes === "reuse"
+          ? t("sets.targets.useCollectedIpsTakesReuse")
+          : null;
 
   const checkDuplicates = (input: string) => {
     const notice = ipEntryNotice(input, !!ipv6);
@@ -144,14 +157,8 @@ export const IpsTab = ({
             label={t("sets.targets.useCollectedIps")}
             description={t("sets.targets.useCollectedIpsDesc")}
             message={
-              collectedTakes ? (
-                <B4FieldMessage severity="info">
-                  {t(
-                    collectedRoutes
-                      ? "sets.targets.useCollectedIpsTakes"
-                      : "sets.targets.useCollectedIpsTakesReuse",
-                  )}
-                </B4FieldMessage>
+              takesText ? (
+                <B4FieldMessage severity="info">{takesText}</B4FieldMessage>
               ) : undefined
             }
             info={t("sets.targets.useCollectedIpsInfo")}
