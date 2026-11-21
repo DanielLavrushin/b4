@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -287,6 +288,12 @@ func (m *Manager) ListCaptures() []*Capture {
 		}
 	}
 
+	sort.Slice(captures, func(i, j int) bool {
+		if captures[i].Domain != captures[j].Domain {
+			return captures[i].Domain < captures[j].Domain
+		}
+		return captures[i].Protocol < captures[j].Protocol
+	})
 	return captures
 }
 
