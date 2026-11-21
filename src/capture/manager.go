@@ -146,30 +146,63 @@ func (m *Manager) GenerateCapture(domain, protocol string) error {
 		return fmt.Errorf("failed to generate payload: %v", err)
 	}
 
-	filename := fmt.Sprintf(payloadFilenameFmt, protocol, sanitizeDomain(domain))
-	filepath := filepath.Join(m.outputPath, filename)
-
-	if err := utils.WriteFileAtomic(filepath, payload, 0644); err != nil {
-		return fmt.Errorf("failed to save payload: %v", err)
-	}
-
-	if m.metadata[domain] == nil {
-		m.metadata[domain] = make(map[string]*PayloadMetadata)
-	}
-
-	m.metadata[domain][protocol] = &PayloadMetadata{
-		Timestamp: time.Now(),
-		Size:      len(payload),
-		Filepath:  filename,
-	}
-
-	if err := m.saveMetadata(); err != nil {
-		log.Errorf("Failed to save metadata: %v", err)
+	if err := m.storeLocked(protocol, domain, payload); err != nil {
+		return err
 	}
 
 	log.Infof("✓ Generated a %d-byte TLS ClientHello for %s", len(payload), domain)
 
 	return nil
+}
+
+func (m *Manager) storeLocked(protocol, name string, data []byte) error {
+	filename := fmt.Sprintf(payloadFilenameFmt, protocol, sanitizeDomain(name))
+	path, err := m.payloadPath(filename)
+	if err != nil {
+		return err
+	}
+	previous := m.metadata[name][protocol]
+	var previousData []byte
+	if previous != nil {
+		previousData, _ = os.ReadFile(path)
+	}
+
+	if err := utils.WriteFileAtomic(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to save file: %v", err)
+	}
+
+	m.setEntry(name, protocol, &PayloadMetadata{
+		Timestamp: time.Now(),
+		Size:      len(data),
+		Filepath:  filename,
+	})
+	if err := m.saveMetadata(); err != nil {
+		if previous == nil {
+			m.removeEntry(name, protocol)
+			os.Remove(path)
+		} else {
+			m.setEntry(name, protocol, previous)
+			if previousData != nil {
+				utils.WriteFileAtomic(path, previousData, 0644)
+			}
+		}
+		return fmt.Errorf("failed to save metadata: %v", err)
+	}
+	return nil
+}
+
+func (m *Manager) setEntry(name, protocol string, meta *PayloadMetadata) {
+	if m.metadata[name] == nil {
+		m.metadata[name] = make(map[string]*PayloadMetadata)
+	}
+	m.metadata[name][protocol] = meta
+}
+
+func (m *Manager) removeEntry(name, protocol string) {
+	delete(m.metadata[name], protocol)
+	if len(m.metadata[name]) == 0 {
+		delete(m.metadata, name)
+	}
 }
 
 func (m *Manager) ListCaptures() []*Capture {
@@ -232,11 +265,7 @@ func (m *Manager) DeleteCapture(protocol, domain string) error {
 	}
 
 	m.removePayloadFile(m.metadata[domain][protocol].Filepath)
-
-	delete(m.metadata[domain], protocol)
-	if len(m.metadata[domain]) == 0 {
-		delete(m.metadata, domain)
-	}
+	m.removeEntry(domain, protocol)
 
 	if err := m.saveMetadata(); err != nil {
 		log.Errorf("Failed to save metadata: %v", err)
@@ -284,25 +313,8 @@ func (m *Manager) SaveUploadedCapture(protocol, domain string, data []byte) erro
 	defer m.mu.Unlock()
 
 	domain = strings.ToLower(strings.TrimSpace(domain))
-	filename := fmt.Sprintf(payloadFilenameFmt, protocol, sanitizeDomain(domain))
-	filePath := filepath.Join(m.outputPath, filename)
-
-	if err := utils.WriteFileAtomic(filePath, data, 0644); err != nil {
-		return fmt.Errorf("failed to save file: %v", err)
-	}
-
-	if m.metadata[domain] == nil {
-		m.metadata[domain] = make(map[string]*PayloadMetadata)
-	}
-
-	m.metadata[domain][protocol] = &PayloadMetadata{
-		Timestamp: time.Now(),
-		Size:      len(data),
-		Filepath:  filename,
-	}
-
-	if err := m.saveMetadata(); err != nil {
-		return fmt.Errorf("failed to save metadata: %v", err)
+	if err := m.storeLocked(protocol, domain, data); err != nil {
+		return err
 	}
 
 	log.Infof("✓ Saved uploaded %s payload for %s (%d bytes)", protocol, domain, len(data))

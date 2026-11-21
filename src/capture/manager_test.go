@@ -177,6 +177,58 @@ func TestAFailedPayloadWriteKeepsTheFileItWouldReplace(t *testing.T) {
 	}
 }
 
+func TestAFailedMetadataSaveLeavesNothingListed(t *testing.T) {
+	m := testManager(t)
+	const kept, added, generated = "kept.rollback.example", "added.rollback.example", "generated.rollback.example"
+	old := bytes.Repeat([]byte{0x16}, 40)
+	if err := m.SaveUploadedCapture("tls", kept, old); err != nil {
+		t.Fatal(err)
+	}
+	keptCapture, _ := m.GetCapture("tls", kept)
+
+	if err := os.Remove(m.metadataFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(m.metadataFile, "blocker"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	var problems []string
+	if err := m.SaveUploadedCapture("tls", added, []byte{0x16, 0x03}); err == nil {
+		problems = append(problems, "fixture: an upload whose metadata save fails must return the error")
+	}
+	if _, listed := m.GetCapture("tls", added); listed {
+		problems = append(problems, "an upload whose metadata save failed is listed until the next restart drops it")
+	}
+	if err := m.GenerateCapture(generated, "tls"); err == nil {
+		problems = append(problems, "a generate whose metadata save failed returned no error")
+	}
+	if _, listed := m.GetCapture("tls", generated); listed {
+		problems = append(problems, "a generate whose metadata save failed is listed")
+	}
+	if err := m.SaveUploadedCapture("tls", kept, bytes.Repeat([]byte{0x17}, 80)); err == nil {
+		problems = append(problems, "a re-upload whose metadata save fails must return the error")
+	}
+	if c, listed := m.GetCapture("tls", kept); !listed || c.Size != len(old) {
+		problems = append(problems, fmt.Sprintf("after a failed re-upload the earlier payload must stay listed with its size %d, got listed %t", len(old), listed))
+	}
+	if got, err := m.LoadCaptureData(keptCapture); err != nil || !bytes.Equal(got, old) {
+		problems = append(problems, fmt.Sprintf("after a failed re-upload the file must hold the earlier %d bytes, got %d (%v)", len(old), len(got), err))
+	}
+	if files := binFiles(t, m.outputPath); len(files) != 1 || files[0] != filepath.Base(keptCapture.Filepath) {
+		problems = append(problems, fmt.Sprintf("payloads whose metadata was not saved left their files: %q", files))
+	}
+
+	if err := os.RemoveAll(m.metadataFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.GenerateCapture(generated, "tls"); err != nil {
+		problems = append(problems, fmt.Sprintf("a generate retried after the failed save must succeed, got %v", err))
+	}
+	if len(problems) > 0 {
+		t.Fatal(strings.Join(problems, "; "))
+	}
+}
+
 func TestNullEntriesInPayloadsJSONDoNotPanic(t *testing.T) {
 	calls := []struct {
 		name string
