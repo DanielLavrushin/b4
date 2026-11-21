@@ -707,7 +707,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "The payloads compiled into b4 (google, vk, stun, quic1, quic2), each with its protocol, size, facts and source.",
+                "description": "The payloads compiled into b4 (google, vk, stun, quic1, quic2), each with its protocol, size and facts.",
                 "produces": [
                     "application/json"
                 ],
@@ -5666,9 +5666,6 @@
                 },
                 "size": {
                     "type": "integer"
-                },
-                "source": {
-                    "type": "string"
                 }
             }
         },
