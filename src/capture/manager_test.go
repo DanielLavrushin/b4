@@ -1,10 +1,13 @@
 package capture
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -99,6 +102,78 @@ func TestPayloadsJSONCannotReachOutsideCaptures(t *testing.T) {
 
 	if len(problems) > 0 {
 		t.Fatal(strings.Join(problems, "; "))
+	}
+}
+
+func withFileSizeLimit(t *testing.T, limit uint64, f func()) {
+	t.Helper()
+	signal.Ignore(syscall.SIGXFSZ)
+	defer signal.Reset(syscall.SIGXFSZ)
+	var prev syscall.Rlimit
+	if err := syscall.Getrlimit(syscall.RLIMIT_FSIZE, &prev); err != nil {
+		t.Fatal(err)
+	}
+	limited := prev
+	limited.Cur = limit
+	if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &limited); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &prev); err != nil {
+			t.Fatal(err)
+		}
+	}()
+	f()
+}
+
+func binFiles(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".bin") {
+			names = append(names, e.Name())
+		}
+	}
+	return names
+}
+
+func TestAFailedPayloadWriteKeepsTheFileItWouldReplace(t *testing.T) {
+	m := testManager(t)
+	const domain = "replace.atomic.example"
+	old := bytes.Repeat([]byte{0x16}, 100)
+	if err := m.SaveUploadedCapture("tls", domain, old); err != nil {
+		t.Fatal(err)
+	}
+	c, ok := m.GetCapture("tls", domain)
+	if !ok {
+		t.Fatal("the first upload is not listed")
+	}
+
+	var replaceErr, generateErr, importErr error
+	withFileSizeLimit(t, 50, func() {
+		replaceErr = m.SaveUploadedCapture("tls", domain, bytes.Repeat([]byte{0x17}, 200))
+		generateErr = m.GenerateCapture("generate.atomic.example", "tls")
+		_, importErr = m.SaveImportedPayload("tls", "import.atomic.example", bytes.Repeat([]byte{0x18}, 200))
+	})
+	if replaceErr == nil || generateErr == nil || importErr == nil {
+		t.Fatalf("fixture: every write past the file size limit must fail, got replace %v, generate %v, import %v", replaceErr, generateErr, importErr)
+	}
+
+	got, err := m.LoadCaptureData(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, old) {
+		now, _ := m.GetCapture("tls", domain)
+		t.Errorf("a failed replace (%v) destroyed the previous payload: the file now holds %d bytes (% x...) while the list reports size %d",
+			replaceErr, len(got), got[:min(4, len(got))], now.Size)
+	}
+	if files := binFiles(t, m.outputPath); len(files) != 1 || files[0] != filepath.Base(c.Filepath) {
+		t.Errorf("failed writes must leave no partial payload files, the captures folder holds %q", files)
 	}
 }
 

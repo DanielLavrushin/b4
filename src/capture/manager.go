@@ -149,7 +149,7 @@ func (m *Manager) GenerateCapture(domain, protocol string) error {
 	filename := fmt.Sprintf(payloadFilenameFmt, protocol, sanitizeDomain(domain))
 	filepath := filepath.Join(m.outputPath, filename)
 
-	if err := os.WriteFile(filepath, payload, 0644); err != nil {
+	if err := utils.WriteFileAtomic(filepath, payload, 0644); err != nil {
 		return fmt.Errorf("failed to save payload: %v", err)
 	}
 
@@ -287,7 +287,7 @@ func (m *Manager) SaveUploadedCapture(protocol, domain string, data []byte) erro
 	filename := fmt.Sprintf(payloadFilenameFmt, protocol, sanitizeDomain(domain))
 	filePath := filepath.Join(m.outputPath, filename)
 
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
+	if err := utils.WriteFileAtomic(filePath, data, 0644); err != nil {
 		return fmt.Errorf("failed to save file: %v", err)
 	}
 
@@ -342,7 +342,7 @@ func (m *Manager) SaveImportedPayload(protocol, domain string, data []byte) (str
 		if !os.IsNotExist(err) {
 			return "", fmt.Errorf("failed to inspect %s: %v", filename, err)
 		}
-		if err := os.WriteFile(filePath, data, 0644); err != nil {
+		if err := utils.WriteFileAtomic(filePath, data, 0644); err != nil {
 			return "", fmt.Errorf("failed to save file: %v", err)
 		}
 		if err := m.registerImportedPayload(name, protocol, filename, len(data), time.Now()); err != nil {
