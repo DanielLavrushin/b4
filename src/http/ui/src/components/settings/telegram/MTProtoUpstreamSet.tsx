@@ -52,6 +52,7 @@ export const MTProtoUpstreamSet = ({
   };
 
   const problemText = telegramSetProblemText(t, problem);
+  const chosenSet = config.sets.find((set) => set.id === chosen);
 
   return (
     <Stack spacing={1}>
@@ -80,6 +81,12 @@ export const MTProtoUpstreamSet = ({
             message={
               problemText ? (
                 <B4FieldMessage>{problemText}</B4FieldMessage>
+              ) : chosenSet?.routing?.enabled ? (
+                <B4FieldMessage severity="info">
+                  {t("settings.MTProto.upstreamSetRouted", {
+                    name: chosenSet.name,
+                  })}
+                </B4FieldMessage>
               ) : undefined
             }
             info={t("settings.MTProto.upstreamSetInfo")}
