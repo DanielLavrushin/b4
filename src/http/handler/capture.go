@@ -54,8 +54,7 @@ func (api *API) handleGenerateCapture(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req CaptureRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+	if !decodeCaptureRequest(w, r, &req) {
 		return
 	}
 
@@ -188,8 +187,7 @@ func (api *API) handleRegenerateCapture(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var req RegenerateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+	if !decodeCaptureRequest(w, r, &req) {
 		return
 	}
 	domain := strings.TrimSpace(req.Domain)
@@ -221,6 +219,22 @@ func (api *API) handleRegenerateCapture(w http.ResponseWriter, r *http.Request) 
 	api.reloadSetsNaming([]string{regenerated.Filepath}, response)
 	setJsonHeader(w)
 	json.NewEncoder(w).Encode(response)
+}
+
+const maxCaptureRequestBytes = 8 << 10
+
+func decodeCaptureRequest(w http.ResponseWriter, r *http.Request, v any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxCaptureRequestBytes)
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			http.Error(w, fmt.Sprintf("Request too large: at most %d bytes", maxCaptureRequestBytes), http.StatusBadRequest)
+			return false
+		}
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return false
+	}
+	return true
 }
 
 func generatedPayloadMessage(domain string, size int) string {

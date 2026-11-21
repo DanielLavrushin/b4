@@ -50,3 +50,21 @@ func TestHostToASCIIEncodesOnlyTheLabelsThatNeedIt(t *testing.T) {
 		}
 	}
 }
+
+func TestHostToASCIIRefusesALabelTooLongBeforeEncodingIt(t *testing.T) {
+	label := func(n int) string {
+		runes := make([]rune, n)
+		for i := range runes {
+			runes[i] = rune(0x4E00 + i)
+		}
+		return string(runes)
+	}
+	if _, err := HostToASCII(label(63) + ".example"); err != nil {
+		t.Errorf("a label of 63 characters was refused before encoding: %v", err)
+	}
+	for _, n := range []int{64, 10000} {
+		if got, err := HostToASCII(label(n) + ".example"); err == nil {
+			t.Errorf("a label of %d characters was encoded (%d bytes) instead of being refused, although no label over 63 characters can fit a host name", n, len(got))
+		}
+	}
+}

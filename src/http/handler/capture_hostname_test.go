@@ -112,3 +112,19 @@ func TestTheHostNameNormalizerKeepsOnlyWhatAnSNIMayCarry(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateAndRegenerateRefuseAnOversizedRequest(t *testing.T) {
+	mux, _ := captureTestMux(t)
+	huge := strings.Repeat("a", 300*1024) + ".example"
+	for _, route := range []string{"/api/capture/generate", "/api/capture/regenerate"} {
+		body, _ := json.Marshal(map[string]string{"domain": huge})
+		rec, panicked := serveRecovered(mux, httptest.NewRequest(http.MethodPost, route, bytes.NewReader(body)))
+		if panicked != "" {
+			t.Fatalf("%s panicked: %s", route, panicked)
+		}
+		text := strings.TrimSpace(rec.Body.String())
+		if rec.Code != http.StatusBadRequest || !strings.Contains(text, "Request too large") {
+			t.Errorf("%s with a %d-byte body answered %d %.80q, want 400 naming the request size limit", route, len(body), rec.Code, text)
+		}
+	}
+}

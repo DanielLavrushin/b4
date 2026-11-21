@@ -20,7 +20,12 @@ const (
 	punyACEPrefix   = "xn--"
 )
 
-var errPunycodeOverflow = errors.New("punycode: overflow")
+const maxLabelLength = 63
+
+var (
+	errPunycodeOverflow = errors.New("punycode: overflow")
+	errLabelTooLong     = errors.New("a host name label is longer than 63 characters")
+)
 
 func HostToASCII(host string) (string, error) {
 	if !utf8.ValidString(host) {
@@ -30,6 +35,9 @@ func HostToASCII(host string) (string, error) {
 	for i, label := range labels {
 		if isASCII(label) {
 			continue
+		}
+		if utf8.RuneCountInString(label) > maxLabelLength {
+			return "", errLabelTooLong
 		}
 		for _, r := range label {
 			if r >= utf8.RuneSelf && !unicode.IsLetter(r) && !unicode.IsDigit(r) && !unicode.IsMark(r) {
