@@ -16,8 +16,9 @@ const (
 )
 
 var (
-	helperAttrRe  = regexp.MustCompile(`\b(helperText|description)=\{`)
+	helperAttrRe  = regexp.MustCompile(`\b(helperText|description|inputHelper)=\{`)
 	quotedKeyRe   = regexp.MustCompile(`"([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)+)"`)
+	keyFamilyRe   = regexp.MustCompile("`([a-zA-Z0-9_]+(?:\\.[a-zA-Z0-9_]+)+)\\.\\$\\{[^{}]+\\}`")
 	markupRe      = regexp.MustCompile(`<[^>]+>`)
 	sentenceEndRe = regexp.MustCompile(`[.!?;]\s+(?:[\p{Lu}"«(]|b4\b)`)
 )
@@ -88,8 +89,30 @@ func helperLineKeys(t *testing.T) map[string]string {
 				}
 				keys[m[1]] = rel
 			}
+			for _, m := range keyFamilyRe.FindAllStringSubmatch(expr, -1) {
+				members := familyKeys(en, m[1])
+				if len(members) == 0 {
+					t.Errorf("%s picks a helper line under %s. at run time, but en.json has no key there", rel, m[1])
+				}
+				for _, key := range members {
+					if _, seen := keys[key]; !seen {
+						keys[key] = rel
+					}
+				}
+			}
 		}
 	}
+	return keys
+}
+
+func familyKeys(doc map[string]any, prefix string) []string {
+	var keys []string
+	for name, value := range lookupBlock(doc, strings.Split(prefix, ".")) {
+		if _, ok := value.(string); ok {
+			keys = append(keys, prefix+"."+name)
+		}
+	}
+	sort.Strings(keys)
 	return keys
 }
 
