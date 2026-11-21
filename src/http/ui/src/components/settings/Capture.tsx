@@ -273,6 +273,7 @@ export const CaptureSettings = () => {
                     accept=".bin,application/octet-stream"
                     onChange={(e) => {
                       const file = e.target.files?.[0] || null;
+                      e.target.value = "";
                       void handleFileChange(file);
                     }}
                   />
