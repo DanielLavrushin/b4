@@ -31,7 +31,7 @@ import {
 } from "@b4.elements";
 import { useCaptures, Capture } from "@b4.capture";
 import { colors, radius } from "@design";
-import { copyText } from "@utils";
+import { copyText, describeApiError } from "@utils";
 
 export const CaptureSettings = () => {
   const { t } = useTranslation();
@@ -46,9 +46,11 @@ export const CaptureSettings = () => {
   const {
     captures,
     loading,
+    listError,
     uploading,
     generating,
     loadCaptures,
+    refreshCaptures,
     generate,
     deleteCapture,
     clearAll,
@@ -125,21 +127,28 @@ export const CaptureSettings = () => {
         setProbeForm({ domain: "" });
       }
     } catch (error) {
-      console.error("Failed to generate:", error);
-      showError(t("settings.Capture.generateFailed"));
+      showError(
+        t("settings.Capture.generateFailed", {
+          error: describeApiError(error),
+        }),
+      );
     }
   };
 
   const handleDelete = async (capture: Capture) => {
-    const latest = await loadCaptures();
+    let latest: Capture[];
+    try {
+      latest = await refreshCaptures();
+    } catch (error) {
+      showError(
+        t("settings.Capture.deleteFailed", { error: describeApiError(error) }),
+      );
+      return;
+    }
     const current = latest.find(
       (c) => c.protocol === capture.protocol && c.domain === capture.domain,
     );
-    if (!current) {
-      showError(t("settings.Capture.deleteFailed"));
-      return;
-    }
-    const sets = current.used_by ?? [];
+    const sets = current?.used_by ?? [];
     if (
       sets.length > 0 &&
       !confirm(
@@ -156,17 +165,24 @@ export const CaptureSettings = () => {
       showSuccess(
         t("settings.Capture.deleteSuccess", { domain: capture.domain }),
       );
-    } catch {
-      showError(t("settings.Capture.deleteFailed"));
+    } catch (error) {
+      showError(
+        t("settings.Capture.deleteFailed", { error: describeApiError(error) }),
+      );
     }
   };
 
   const handleClear = async () => {
-    const latest = await loadCaptures();
-    if (latest.length === 0) {
-      showError(t("settings.Capture.clearFailed"));
+    let latest: Capture[];
+    try {
+      latest = await refreshCaptures();
+    } catch (error) {
+      showError(
+        t("settings.Capture.clearFailed", { error: describeApiError(error) }),
+      );
       return;
     }
+    if (latest.length === 0) return;
     const sets = [...new Set(latest.flatMap((c) => c.used_by ?? []))];
     const question =
       sets.length > 0
@@ -176,8 +192,10 @@ export const CaptureSettings = () => {
     try {
       await clearAll();
       showSuccess(t("settings.Capture.allCleared"));
-    } catch {
-      showError(t("settings.Capture.clearFailed"));
+    } catch (error) {
+      showError(
+        t("settings.Capture.clearFailed", { error: describeApiError(error) }),
+      );
     }
   };
 
@@ -195,8 +213,10 @@ export const CaptureSettings = () => {
         t("settings.Capture.uploadedSuccess", { domain: uploadForm.domain }),
       );
       setUploadForm({ domain: "", protocol: "tls", file: null });
-    } catch {
-      showError(t("settings.Capture.uploadFailed"));
+    } catch (error) {
+      showError(
+        t("settings.Capture.uploadFailed", { error: describeApiError(error) }),
+      );
     }
   };
 
@@ -218,7 +238,13 @@ export const CaptureSettings = () => {
         </Typography>
       </B4Alert>
 
-      {/* Upload + Capture side by side */}
+      {listError && (
+        <B4Alert severity="error">
+          {t("settings.Capture.listFailed", { error: listError })}
+        </B4Alert>
+      )}
+
+
       <Grid container spacing={3}>
         <Grid size={{ xs: 12, md: 6 }}>
           <B4Section
@@ -395,7 +421,7 @@ export const CaptureSettings = () => {
       )}
 
       {/* Empty State */}
-      {captures.length === 0 && !loading && (
+      {captures.length === 0 && !loading && !listError && (
         <Paper
           elevation={0}
           sx={{

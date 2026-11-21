@@ -1,26 +1,37 @@
 import { captureApi } from "@api/capture";
 import { Capture } from "@b4.capture";
+import { describeApiError } from "@utils";
 import { useCallback, useState } from "react";
 
 export function useCaptures() {
   const [captures, setCaptures] = useState<Capture[]>([]);
   const [loading, setLoading] = useState(false);
+  const [listError, setListError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [generating, setGenerating] = useState(false);
 
-  const loadCaptures = useCallback(async () => {
+  const refreshCaptures = useCallback(async () => {
+    setLoading(true);
     try {
-      setLoading(true);
       const list = await captureApi.list();
       setCaptures(list);
+      setListError(null);
       return list;
     } catch (e) {
-      console.error("Failed to load captures:", e);
-      return [];
+      setListError(describeApiError(e));
+      throw e;
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const loadCaptures = useCallback(async (): Promise<Capture[]> => {
+    try {
+      return await refreshCaptures();
+    } catch {
+      return [];
+    }
+  }, [refreshCaptures]);
 
   const generate = useCallback(
     async (domain: string, protocol: string) => {
@@ -86,9 +97,11 @@ export function useCaptures() {
   return {
     captures,
     loading,
+    listError,
     uploading,
     generating,
     loadCaptures,
+    refreshCaptures,
     generate,
     deleteCapture,
     clearAll,
