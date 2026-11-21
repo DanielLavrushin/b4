@@ -302,6 +302,11 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
       togglePath="system.hub.enabled"
     >
       <Grid container spacing={2}>
+        <Grid size={{ xs: 12 }}>
+          <Typography variant="caption" color="text.secondary">
+            {t("settings.Hub.privacy")}
+          </Typography>
+        </Grid>
         <Grid size={{ xs: 12, md: 6 }}>
           <B4TextField
             value={urlsText}

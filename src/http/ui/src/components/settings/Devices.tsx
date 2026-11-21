@@ -559,7 +559,6 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                   alignItems: "center",
                   gap: 0.5,
                   mt: 2,
-                  mb: 1,
                 }}
               >
                 <Typography variant="subtitle2">
@@ -571,6 +570,13 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                   learnMore="settings/core#manual-devices"
                 />
               </Box>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: "block", mb: 1 }}
+              >
+                {t("settings.Devices.manualDevicesIntro")}
+              </Typography>
 
               <Box
                 sx={{

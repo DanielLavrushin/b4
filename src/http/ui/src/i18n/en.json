@@ -264,7 +264,7 @@
       "dscpSkipped": "Not applied while Skip IPTables/NFTables Setup is on: b4 is not managing firewall rules.",
       "dscpSettings": "DSCP",
       "dscpValue": "DSCP value",
-      "dscpValueHelp": "Written into the DSCP field of the outgoing packets (0-63). 0 clears the field.",
+      "dscpValueHelp": "The DSCP value of outgoing packets (0-63); 0 clears the field. The router that reads it should reset it on its uplink.",
       "dscpInterfacesDesc": "Write DSCP values only into packets leaving through these interfaces. None selected = every interface except loopback.",
       "dscpSetsList": "Sets that write their own value, whether or not Set DSCP is on:",
       "missingIface": "unavailable",
@@ -281,8 +281,9 @@
       "firewallMonitorTunInfo": "b4 checks the TUN capture rules, masquerade, MSS clamp, DSCP and routing-set rules it installed. In TUN mode the check cannot be turned off.",
       "masqueradeInterfaceInfo": "Typically these are your internet uplinks (WAN). Others, like your LAN, are left untouched.",
       "dscpInfo": "ECN bits and the packets going back to LAN clients keep their value.\n\nPackets to a set's addresses can carry that set's own value instead, even while this switch is off: DNS & Routing -> Traffic Routing in the set editor.",
-      "dscpValueInfo": "7 comes from the range left for local use and keeps normal priority on Wi-Fi and on Linux routers.\n\nThe router that reads the value should reset it before its internet uplink.",
-      "dscpInterfacesInfo": "The list applies to the Set DSCP value and to the sets' own values alike."
+      "dscpValueInfo": "7 comes from the range left for local use and keeps normal priority on Wi-Fi and on Linux routers.\n\nThe router that reads the value should reset it before its internet uplink: otherwise the provider sees it on every connection b4 carries.",
+      "dscpInterfacesInfo": "The list applies to the Set DSCP value and to the sets' own values alike.",
+      "skipIptablesOn": "Packets reach the queue only through rules you add yourself. NAT Masquerade, MSS clamping, DSCP, DNS over TCP interception and Expose to internet are not applied."
     },
     "Listener": {
       "bindAddress": "Bind Address",
@@ -323,7 +324,7 @@
       "exposeNeedsAuth": "Needs a username and password or at least one allowed source: b4 does not expose a proxy that anyone could relay through.",
       "exposeOpenRelay": "The proxy has no credentials and no source list, so b4 does not expose it to the internet, and any client that already reaches the port can relay traffic through it. Set a username and password or add an allowed source.",
       "username": "Username",
-      "usernameHelp": "Leave both empty to disable authentication",
+      "usernameHelp": "Leave both empty to disable authentication. Chrome and Chromium do not support SOCKS5 passwords: limit them by source.",
       "password": "Password",
       "sources": "Allowed Sources",
       "sourcesDesc": "Restricts which client addresses may open a SOCKS5 connection. It is a network gate, not an authentication factor.",
@@ -675,7 +676,8 @@
         "setWarning": "Set {{name}} then has no source devices left and applies to every device.",
         "mssBlocked": "Set {{name}} uses MSS Clamping, which needs a source device, an IP, GeoIP or ASN target, or Use collected IPs. Without its source devices the set has none of these, and b4 cannot save it. Turn off MSS Clamping in the set or add such a target first.",
         "confirm": "Forget ({{count}})"
-      }
+      },
+      "manualDevicesIntro": "IP addresses of devices behind another router, which the ARP table does not show."
     },
     "RestartDialog": {
       "title": "Restart B4 Service",
@@ -865,7 +867,7 @@
     "Backup": {
       "downloadTitle": "Download Backup",
       "downloadDescription": "Generate and download a tar.gz archive of your b4 configuration",
-      "downloadInfo": "Includes every file of the configuration directory: the configuration, the Discovery and DPI Detector history and payload files. Geodat files (.dat) and the OUI database are excluded.",
+      "downloadInfo": "Includes the files of the configuration directory, among them the configuration, the Discovery and DPI Detector history and payload files. Geodat files (.dat) and the OUI database are excluded.",
       "generating": "Generating...",
       "downloadButton": "Download Backup",
       "downloadSuccess": "Backup downloaded successfully",
@@ -875,11 +877,11 @@
       "restoreInfo": "Upload a .tar.gz backup file. Files will be extracted into the configuration directory. A service restart is recommended after restoring.",
       "restoring": "Restoring...",
       "restoreButton": "Upload & Restore",
-      "restoreSuccess": "Backup restored successfully. Restart B4 to apply changes.",
+      "restoreSuccess": "Backup restored successfully. Restart b4 to apply changes.",
       "restoreFailed": "Failed to restore backup",
       "configTitle": "Download Configuration",
       "configDescription": "The configuration b4 is running with, as a b4.json file",
-      "configInfo": "The safe copy is for sharing when you ask for help: passwords and tokens are removed, and b4 does not load it back while it holds [redacted] placeholders. The \"as is\" copy includes every password and token.",
+      "configInfo": "The safe copy is for sharing when you ask for help: passwords and tokens are removed, sets, devices and target domains stay, and b4 does not load it back while it holds [redacted] placeholders. The \"as is\" copy includes every password and token.",
       "configDownload": "Download as is",
       "configDownloadSafe": "Download safe copy",
       "configDownloadSuccess": "Configuration downloaded",
@@ -1176,9 +1178,10 @@
         "restoreFailed": "Could not restore the identity: {{error}}"
       },
       "publicKeyPlaceholder": "Key id printed by b4hub keygen",
-      "info": "The set editor gets a Share section that prepares a set with everything private left out.\n\nThe Community page lists the catalogue signed by the hub. Reports on what works are sent under the author identity below; nothing else about this router leaves it. A shared set pasted into Import is accepted whether or not this is on.",
+      "info": "The set editor gets a Share section that prepares a set with everything private left out.\n\nThe Community page lists the catalogue signed by the hub. A shared set pasted into Import is accepted whether or not this is on.",
       "urlsInfo": "A mirror serves the same signed catalogue, so the key below stays the same.",
-      "publicKeyInfo": "A self-hosted hub is, for example, a development hub on this network."
+      "publicKeyInfo": "A self-hosted hub is, for example, a development hub on this network.",
+      "privacy": "Reports on what works are sent under the author identity below; nothing else about this router leaves it."
     }
   },
   "dashboard": {
@@ -1628,11 +1631,11 @@
       "failedToToggleSets": "Failed to update sets",
       "failedToUpdate": "Failed to update",
       "failedToReorder": "Failed to reorder sets",
-      "orderHint": "When several sets match the same traffic, b4 picks the most specific match, not the first set in this list.",
+      "orderHint": "When several sets match the same traffic, the most specific match wins. The order of the list decides only between equally specific matches and for sets with IP priority on.",
       "noSets": "No configuration sets",
       "noSetsHint": "Create your first set to start configuring bypass rules",
       "importFromTool": "Import",
-      "orderInfo": "The most specific match is a set restricted to source devices, then the longest matching domain or IP range.\n\nOrder decides only between matches that are equally specific, and for sets with IP priority on: connections to their addresses stay with them even when a set lower in the list matches the domain.",
+      "orderInfo": "The most specific match is a set restricted to source devices, then the longest matching domain or IP range.\n\nFor a set with IP priority on, connections to its addresses stay with it even when a set lower in the list matches the domain.",
       "orderTitle": "Order of sets"
     },
     "deleteDialog": {
@@ -1797,7 +1800,7 @@
       "domainOnlyDesc": "Matches these domains only by the name in the handshake, never by their IP address.",
       "catchAllDomains": "Match any domain",
       "catchAllDomainsDesc": "Adds the {{value}} entry, which matches every domain.",
-      "catchAllDomainsActive": "This set matches every domain. For routing it steers only the addresses it has actually resolved, so it is not a substitute for \"Match any IP address\".",
+      "catchAllDomainsActive": "This set matches every domain. For DPI matching, a domain listed in another set stays with that set. For routing this set steers only the addresses it has actually resolved, so it is not a substitute for \"Match any IP address\".",
       "catchAllChipDomain": "Any domain",
       "catchAllDomainNotice": "Matches every domain. \"{{value}}\" will be added.",
       "wildcardStrippedNotice": "b4 already matches subdomains, so \"{{from}}\" will be added as \"{{to}}\".",
@@ -1814,7 +1817,7 @@
         "ips": "IP Addresses",
         "sourceDevices": "Source Devices"
       },
-      "domainAlert": "Domains this set applies to: manual entries and GeoSite categories in one list.",
+      "domainAlert": "Domains this set applies to: manual entries and GeoSite categories.",
       "manualDomains": "Manual Domains",
       "addDomainLabel": "Add Domain",
       "addDomainHelper": "e.g., youtube.com, google.com",
@@ -2459,7 +2462,7 @@
       "blockHeader": "Blocking QUIC",
       "blockQuic": "Block QUIC (force TCP)",
       "blockQuicDesc": "Match every QUIC packet to this set's targets and answer it with ICMP port unreachable.",
-      "blockQuicInfo": "QUIC payloads are encrypted end to end, so b4 cannot desync the handshake the way it desyncs TLS over TCP. Only decoys and a fragmented Initial are available, and both are weak.\n\nMany DPI systems simply blackhole UDP/443, which leaves a video stalling with no error at all. Blocking QUIC here makes the browser fall back to TCP straight away, where the set's TCP strategies apply.\n\nThe switch sets QUIC Matching to By SNI or matched destination and Action Mode to Reject. Turning it off sets them to By SNI and Fake & Fragment.",
+      "blockQuicInfo": "QUIC payloads are encrypted end to end, so b4 cannot desync the handshake the way it desyncs TLS over TCP. Only decoys and a fragmented Initial are available, and both are weak.\n\nMany DPI systems simply blackhole UDP/443, which leaves a video stalling with no error at all. Blocking QUIC here makes the browser fall back to TCP straight away, where the set's TCP strategies apply.\n\nThe switch sets \"QUIC Matching\" to \"By SNI or matched destination\" and \"Action Mode\" to \"Reject\". Turning it off sets them to \"By SNI\" and \"Fake & Fragment\".",
       "trafficHeader": "What UDP Traffic to Match",
       "quicFilter": "QUIC Matching",
       "quicSni": "By SNI",
@@ -2468,12 +2471,12 @@
       "quicAllDesc": "Matches by SNI, and also any QUIC packet to a destination this set already matches by IP or port.",
       "portFilter": "Port Filter",
       "portFilterPlaceholder": "e.g., 5000-6000,8000",
-      "portFilterHelper": "UDP ports this set acts on, such as 5000-6000,8000: a list limits the whole set to them. Empty means any port.",
+      "portFilterHelper": "UDP ports this set acts on, such as 5000-6000,8000: a list limits the whole set to them. Empty: no port limit.",
       "portFilterCallsHelper": "UDP ports the calls arrive on, such as 19294-19344,50000-50100 for Discord. Required.",
       "calls": "Calls",
       "callsPass": "Pass call setup",
       "callsPassNote": "The set leaves the packets that start calls alone",
-      "callsPassDesc": "STUN requests, which start calls, and the Discord app's voice packets pass unchanged.",
+      "callsPassDesc": "STUN requests and the Discord app's voice packets pass unchanged. Action Mode still applies to the rest of a call.",
       "callsOnly": "Handle only calls",
       "callsOnlyNote": "For a separate set without targets, such as one that sends fakes before calls",
       "callsOnlyDesc": "The set applies its Action Mode only to the packet that opens each call on its UDP ports, whatever the address.",
@@ -2530,8 +2533,8 @@
       "fakeSizeHelper": "Size of each fake UDP packet payload",
       "fakePayloadFile": "Fake Packet Payload",
       "fakePayloadFileNone": "(zero fill)",
-      "fakePayloadFileHelper": "The body of each fake UDP packet. A preset or an uploaded payload is truncated or zero-padded to the size above.",
-      "fakePayloadFileEmpty": "No payloads uploaded yet. Default = zero fill.",
+      "fakePayloadFileHelper": "The body of each fake UDP packet. A QUIC preset or an uploaded payload is truncated or zero-padded to the size above.",
+      "fakePayloadFileEmpty": "No payloads uploaded yet: add them in Settings → Payloads. Default = zero fill.",
       "fakePayloadFileMissing": "{{name}} (file missing)",
       "fakePayloadFileMissingHelper": "This set names {{file}}, which does not exist. Until another payload is picked, the set's UDP fakes carry zeros.",
       "fakePayloadFileIsEmpty": "{{name}} (file empty)",

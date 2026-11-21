@@ -89,6 +89,13 @@ export const FirewallRulesSettings = ({
                 onChange("system.tables.skip_setup", checked)
               }
               description={t("settings.Feature.skipIptablesDesc")}
+              message={
+                skipTables ? (
+                  <B4FieldMessage>
+                    {t("settings.Feature.skipIptablesOn")}
+                  </B4FieldMessage>
+                ) : undefined
+              }
               info={t("settings.Feature.skipIptablesInfo")}
             />
           </B4FormRow>
