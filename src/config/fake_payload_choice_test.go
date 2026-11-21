@@ -5,6 +5,52 @@ import (
 	"testing"
 )
 
+func TestAnEmptyPayloadChoiceIsWarnedAboutNotRefused(t *testing.T) {
+	buf := captureValidationWarnings(t)
+	for _, c := range []struct {
+		name   string
+		build  func(*SetConfig)
+		warned bool
+	}{
+		{"generated-from-an-empty-domain", func(s *SetConfig) {
+			s.Faking.SNIType = FakePayloadDomain
+			s.Faking.PayloadDomain = ""
+		}, true},
+		{"payload-file-not-chosen", func(s *SetConfig) {
+			s.Faking.SNIType = FakePayloadCapture
+			s.Faking.PayloadFile = ""
+		}, true},
+		{"payload-file-not-chosen-faking-off", func(s *SetConfig) {
+			s.Faking.SNI = false
+			s.Faking.SNIType = FakePayloadCapture
+			s.Faking.PayloadFile = ""
+		}, false},
+		{"generated-from-a-domain", func(s *SetConfig) {
+			s.Faking.SNIType = FakePayloadDomain
+			s.Faking.PayloadDomain = "www.example.com"
+		}, false},
+	} {
+		name := runUnique(c.name)
+		set := NewSetConfig()
+		set.Id, set.Name, set.Enabled = name, name, true
+		set.Faking.SNI = true
+		c.build(&set)
+		cfg := NewConfig()
+		cfg.ConfigPath = filepath.Join(t.TempDir(), "b4.json")
+		cfg.Sets = []*SetConfig{&set}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("%s: an empty payload choice is warned about, never refused: %v", c.name, err)
+		}
+		lines := warningLines(buf, "[WARN]", "'"+name+"'")
+		if c.warned && len(lines) == 0 {
+			t.Errorf("%s: saves without a word while its fakes carry the built-in google payload; log: %s", c.name, buf.String())
+		}
+		if !c.warned && len(lines) > 0 {
+			t.Errorf("%s: must not be warned about, got %q", c.name, lines)
+		}
+	}
+}
+
 func TestAnEmptyPayloadFileIsLoggedLikeAMissingOne(t *testing.T) {
 	buf := captureValidationWarnings(t)
 	dir := t.TempDir()
