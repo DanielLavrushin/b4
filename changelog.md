@@ -11,7 +11,7 @@ All notable changes to b4 are recorded in this file.
 - **Discovery** and the watchdog's heals run under the TUN engine, routers without NFQUEUE included. Under TUN they test IPv4 only, skip strategies with **Incoming Mode** or **RST Injection Protection**, and cannot test a set with its own DSCP value. [#528](https://github.com/DanielLavrushin/b4/issues/528)
 - The **Payloads** page shows what each payload is: its kind, size and server name, whether it fits one packet, where it came from, any malformed fields and the sets that use it. A file chosen for upload is described the same way, and replacing a payload asks first. [#651](https://github.com/DanielLavrushin/b4/issues/651)
 - **Regenerate** on the **Payloads** page rebuilds a generated payload under the same name, and the sets that use it send the new one at once. [#651](https://github.com/DanielLavrushin/b4/issues/651)
-- The **Payloads** page lists the payloads built into b4 under **Built In**, with where each came from: [zapret](https://github.com/bol-van/zapret) and [youtubeUnblock](https://github.com/Waujito/youtubeUnblock). [#651](https://github.com/DanielLavrushin/b4/issues/651), [#652](https://github.com/DanielLavrushin/b4/issues/652)
+- The **Payloads** page lists the payloads built into b4 under **Built In**, read-only, with their size and what each one is. [#651](https://github.com/DanielLavrushin/b4/issues/651)
 - In a set, the **My own Payload File** list is sorted and describes each payload, and the **UDP** tab says how much of a payload file a fake carries, with **Use the file size**. [#651](https://github.com/DanielLavrushin/b4/issues/651)
 
 ### Changed
