@@ -458,3 +458,20 @@ func TestWSReuseClientLeavingDuringTheWatchEndsThePass(t *testing.T) {
 		t.Fatalf("a pass whose client left during the watch was not logged once: %s", logged.buf.String())
 	}
 }
+
+func TestWSReuseFirstAnswerHoldsNoSniffSizedBuffer(t *testing.T) {
+	client, app := net.Pipe()
+	defer client.Close()
+	defer app.Close()
+	backend, server := net.Pipe()
+	defer backend.Close()
+	defer server.Close()
+	go func() { _, _ = server.Write([]byte("server hello")) }()
+	first, verdict := awaitPassAnswer(client, backend, 2*time.Second)
+	if verdict != passRelay || string(first) != "server hello" {
+		t.Fatalf("the pass's first answer was not read: %q, verdict %d", first, verdict)
+	}
+	if cap(first) >= sniffMaxBytes {
+		t.Fatalf("the pass's %d-byte first answer keeps a %d-byte buffer alive for the whole relay", len(first), cap(first))
+	}
+}

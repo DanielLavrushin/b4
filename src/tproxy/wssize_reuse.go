@@ -164,7 +164,7 @@ func awaitPassAnswer(client, backend net.Conn, window time.Duration) ([]byte, pa
 	_ = backend.SetReadDeadline(time.Time{})
 	switch {
 	case n > 0:
-		return buf[:n], passRelay
+		return append([]byte(nil), buf[:n]...), passRelay
 	case !errors.Is(err, os.ErrDeadlineExceeded):
 		return nil, passRelay
 	case gone.Err() != nil:
