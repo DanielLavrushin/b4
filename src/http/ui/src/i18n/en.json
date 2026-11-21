@@ -866,8 +866,6 @@
       "configSafeInfo": "The safe copy removes passwords and tokens or replaces them with [redacted], together with user names, the host names of your router and your relays, and credentials inside URLs. Sets, devices and target domains stay.\n\nb4 refuses to load or save a configuration that still holds these [redacted] placeholders."
     },
     "Capture": {
-      "alert": "Generate a TLS ClientHello that names a domain of your choice",
-      "alertSub": "The ClientHello is built locally, without connecting to the domain. One payload per domain. Use it in Faking → My own Payload File",
       "uploadTitle": "Upload Custom Payload",
       "uploadDescription": "Upload your own binary payload file",
       "nameDomain": "Name/Domain",
@@ -968,7 +966,8 @@
         "malformed": "Malformed fields: {{fields}}.",
         "kind_mismatch_tls": "The file is a {{kind}}, but its protocol is TLS, for TCP fakes.",
         "kind_mismatch_quic": "The file is a TLS ClientHello, but its protocol is QUIC, for UDP fakes."
-      }
+      },
+      "domainInfo": "The ClientHello is built locally, without connecting to the domain. One payload per domain.\n\nUse it in Faking → My own Payload File."
     },
     "SystemInfo": {
       "title": "System Diagnostics",

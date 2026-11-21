@@ -459,16 +459,6 @@ export const CaptureSettings = () => {
 
   return (
     <Stack spacing={3}>
-      {/* Info */}
-      <B4Alert icon={<CaptureIcon />}>
-        <Typography variant="subtitle2" gutterBottom>
-          {t("settings.Capture.alert")}
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          {t("settings.Capture.alertSub")}
-        </Typography>
-      </B4Alert>
-
       {listError && (
         <B4Alert severity="error">
           {t("settings.Capture.listFailed", { error: listError })}
@@ -481,6 +471,7 @@ export const CaptureSettings = () => {
             title={t("settings.Capture.uploadTitle")}
             description={t("settings.Capture.uploadDescription")}
             icon={<UploadIcon />}
+            learnMore="settings/payloads#uploading-a-payload"
           >
             <Stack spacing={2}>
               <Box sx={{ minWidth: 0 }}>
@@ -628,6 +619,7 @@ export const CaptureSettings = () => {
             title={t("settings.Capture.generateTitle")}
             description={t("settings.Capture.generateDescription")}
             icon={<CaptureIcon />}
+            learnMore="settings/payloads#generating-a-payload"
           >
             <Stack spacing={2}>
               <B4TextField
@@ -643,6 +635,7 @@ export const CaptureSettings = () => {
                 }}
                 placeholder="max.ru"
                 helperText={t("settings.Capture.domainHelp")}
+                info={t("settings.Capture.domainInfo")}
                 disabled={generating}
               />
               <Stack direction="row" spacing={1}>
@@ -769,6 +762,7 @@ export const CaptureSettings = () => {
       <B4Section
         title={t("settings.Capture.builtinTitle")}
         description={t("settings.Capture.builtinDesc")}
+        learnMore="settings/payloads#built-in"
         icon={<CoreIcon />}
       >
         {builtinsError ? (
