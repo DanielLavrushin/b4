@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -125,6 +126,80 @@ func TestNormalizeSetTemplateReportsInvalidValuesUnderItsOwnPath(t *testing.T) {
 				t.Errorf("field = %s %s, want %s %s", f.Path, f.Code, tc.path, tc.code)
 			}
 		})
+	}
+}
+
+func TestNormalizeSetTemplateNeverKeepsAProxyLogin(t *testing.T) {
+	input := `{"routing":{"enabled":true,"mode":"proxy","upstream":{"host":"10.0.0.2","port":1080,"username":"alice","password":"s3cret"}}}`
+	got, err := NormalizeSetTemplate(decodeTemplate(t, input))
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	stored := templateJSON(t, got)
+	if strings.Contains(stored, "alice") || strings.Contains(stored, "s3cret") {
+		t.Errorf("template keeps the proxy login, which would reach every new set and every safe copy: %s", stored)
+	}
+	if !strings.Contains(stored, `"host":"10.0.0.2"`) || !strings.Contains(stored, `"port":1080`) {
+		t.Errorf("template lost the proxy address: %s", stored)
+	}
+}
+
+func TestNormalizeSetTemplateRefusesSafeCopyPlaceholders(t *testing.T) {
+	input := `{"dns":{"enabled":true,"doh_url":"https://` + RedactedMarker + `/dns-query"}}`
+	got, err := NormalizeSetTemplate(decodeTemplate(t, input))
+	if got != nil {
+		t.Errorf("template = %s, want none", templateJSON(t, got))
+	}
+	var ve *ValidationError
+	if !errors.As(err, &ve) || len(ve.Fields) != 1 {
+		t.Fatalf("error = %v, want one validation field", err)
+	}
+	if f := ve.Fields[0]; f.Path != "ui.new_set_template.dns.doh_url" || f.Code != "redacted_placeholder" {
+		t.Errorf("field = %s %s", f.Path, f.Code)
+	}
+}
+
+func TestASafeCopyMasksTheSetTemplateLikeASet(t *testing.T) {
+	doh := "https://doh.example.net/private-token"
+	upstreams := []string{"dns.private.example", "203.0.113.53", "192.168.1.53"}
+
+	cfg := NewConfig()
+	set := NewSetConfig()
+	set.Id, set.Name = "a", "A"
+	set.DNS.Enabled = true
+	set.DNS.DoHURL = doh
+	set.DNS.Upstreams = append([]string{}, upstreams...)
+	cfg.Sets = []*SetConfig{&set}
+	upstreamsJSON, _ := json.Marshal(upstreams)
+	template := `{"dns":{"enabled":true,"doh_url":"` + doh + `","upstreams":` + string(upstreamsJSON) + `},"fragmentation":{"strategy":"none"}}`
+	cfg.UI.NewSetTemplate = decodeTemplate(t, template)
+
+	copied, err := cfg.RedactedCopy()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := templateJSON(t, cfg.UI.NewSetTemplate); got != templateJSON(t, decodeTemplate(t, template)) {
+		t.Errorf("making a safe copy changed the live template: %s", got)
+	}
+	shared := copied.UI.NewSetTemplate
+	dns, _ := shared["dns"].(map[string]interface{})
+	if got, want := dns["doh_url"], copied.Sets[0].DNS.DoHURL; got != want {
+		t.Errorf("the safe copy shows the template's DoH URL as %v, a set's as %q", got, want)
+	}
+	gotUpstreams, _ := dns["upstreams"].([]interface{})
+	for i, want := range copied.Sets[0].DNS.Upstreams {
+		if i >= len(gotUpstreams) || gotUpstreams[i] != want {
+			t.Errorf("the safe copy shows the template's resolver %d as %v, a set's as %q", i, gotUpstreams, want)
+		}
+	}
+	if !strings.Contains(templateJSON(t, shared), `"strategy":"none"`) {
+		t.Errorf("the safe copy lost the template's strategy: %s", templateJSON(t, shared))
+	}
+	if strings.Contains(templateJSON(t, shared), "private-token") {
+		t.Errorf("the safe copy shows the template's resolver id: %s", templateJSON(t, shared))
+	}
+	if paths := copied.RedactedValuePaths(); !slices.Contains(paths, "ui.new_set_template.dns.doh_url") {
+		t.Errorf("a safe copy's masked template is not refused on load or save: placeholder paths %v", paths)
 	}
 }
 

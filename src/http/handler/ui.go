@@ -21,7 +21,7 @@ func (api *API) RegisterUIApi() {
 }
 
 // @Summary Get or replace the new set template
-// @Description The values a set created on the Sets page starts with, as the fields that differ from b4's set defaults. PUT takes a set or part of one, keeps only what differs from the defaults and drops the set's own fields (id, name, enabled, targets, hub link, discovery). An empty object clears the template. Imports, shared sets, Discovery, MCP and the sets API keep b4's set defaults.
+// @Description The values a set created on the Sets page starts with, as the fields that differ from b4's set defaults. PUT takes a set or part of one, keeps only what differs from the defaults and drops the set's own fields (id, name, enabled, targets, hub link, discovery) and the proxy username and password. An empty object clears the template. Imports, shared sets, Discovery, MCP and the sets API keep b4's set defaults.
 // @Tags UI
 // @Accept json
 // @Produce json

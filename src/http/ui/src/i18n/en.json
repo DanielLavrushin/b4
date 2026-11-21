@@ -587,7 +587,7 @@
     },
     "NewSetTemplate": {
       "title": "New set defaults",
-      "info": "A set you create on the Sets page starts with these values instead of b4's own defaults. Paste a set's JSON from its Import/Export tab, or choose Use for new sets in a set's menu: b4 keeps only the values that differ from its defaults and leaves out the name, the targets and the Discovery tab's URLs. Imported sets, community sets, Discovery, MCP and the sets API keep b4's defaults, so a shared set means the same on every router.",
+      "info": "A set you create on the Sets page starts with these values instead of b4's own defaults. Paste a set's JSON from its Import/Export tab, or choose Use for new sets in a set's menu: b4 keeps only the values that differ from its defaults and leaves out the name, the targets, the proxy username and password and the Discovery tab's URLs. Imported sets, community sets, Discovery, MCP and the sets API keep b4's defaults, so a shared set means the same on every router.",
       "label": "Values for new sets (JSON)",
       "placeholder": "{\"fragmentation\": {\"strategy\": \"none\"}, \"faking\": {\"sni\": false}}",
       "help": "Empty: new sets start with b4's defaults. After saving, only the values that differ from them stay.",
@@ -1583,7 +1583,7 @@
       "title": "Use for new sets",
       "intro": "Sets you create on the Sets page will start with these values:",
       "empty": "This set keeps b4's defaults, so new sets will start with b4's defaults.",
-      "note": "The name, the targets and the Discovery tab's URLs are not copied. Change or clear these values in Settings > Core > New sets.",
+      "note": "The name, the targets, the proxy username and password and the Discovery tab's URLs are not copied. Change or clear these values in Settings > Core > New sets.",
       "confirm": "Use for new sets",
       "saved": "New sets will start with these values",
       "failed": "Failed to save the values for new sets"

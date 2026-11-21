@@ -197,7 +197,7 @@ Chrome and Chromium cannot log in to a SOCKS5 proxy, so a source list is the way
 
 The sub-tab holds the values a set created with **Create Set** on the **Sets** page starts with, in place of b4's own defaults. When it is empty, new sets start with b4's defaults.
 
-**Values for new sets (JSON)** takes the JSON of a set, such as the one on a set's [Import/Export](../sets/index.md#import-and-export) tab. Saving keeps only the values that differ from b4's defaults and leaves out the name, the targets and the URLs of the **Discovery** tab. **Use for new sets** in a set card's menu fills it from that set, and **Clear** empties it.
+**Values for new sets (JSON)** takes the JSON of a set, such as the one on a set's [Import/Export](../sets/index.md#import-and-export) tab. Saving keeps only the values that differ from b4's defaults and leaves out the name, the targets, the proxy username and password and the URLs of the **Discovery** tab. **Use for new sets** in a set card's menu fills it from that set, and **Clear** empties it.
 
 These values make a new set neither split nor fake the TLS ClientHello, for sets that only route traffic:
 

@@ -44,8 +44,22 @@ export function createSetFromTemplate(
   return overlay(set, withoutOwnKeys(template)) as B4SetConfig;
 }
 
+function withoutProxyLogin(fields: Obj): Obj {
+  const routing = fields.routing;
+  if (!isObj(routing) || !isObj(routing.upstream)) return fields;
+  const { username: _username, password: _password, ...upstream } =
+    routing.upstream;
+  const nextRouting: Obj = { ...routing, upstream };
+  if (Object.keys(upstream).length === 0) delete nextRouting.upstream;
+  const next: Obj = { ...fields, routing: nextRouting };
+  if (Object.keys(nextRouting).length === 0) delete next.routing;
+  return next;
+}
+
 export function setTemplateFromSet(set: B4SetConfig): SetTemplate {
-  return withoutOwnKeys(JSON.parse(exportSetJson(set)) as Obj);
+  return withoutProxyLogin(
+    withoutOwnKeys(JSON.parse(exportSetJson(set)) as Obj),
+  );
 }
 
 export function formatSetTemplate(template?: SetTemplate | null): string {

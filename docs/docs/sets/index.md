@@ -47,7 +47,7 @@ The menu at the top right of a card holds:
 | **Edit** | Opens the set in the editor. |
 | **Duplicate** | Creates a copy of the set right after it. The copy starts with **IP priority** off. |
 | **Compare** | Opens **Compare Sets** with this set and another side by side. **Differences only** hides the fields that match. |
-| **Use for new sets** | Shows the values of the set that differ from b4's defaults and, after a confirmation, makes them the starting values of sets created with **Create Set**, see [New sets](../settings/core.md#new-sets). The name, the targets and the **Discovery** URLs are not copied. |
+| **Use for new sets** | Shows the values of the set that differ from b4's defaults and, after a confirmation, makes them the starting values of sets created with **Create Set**, see [New sets](../settings/core.md#new-sets). The name, the targets, the proxy username and password and the **Discovery** URLs are not copied. |
 | **Find a strategy** | Opens [Discovery](../discovery.md) for the set. Not shown for a set that routes its traffic. |
 | **Delete** | Deletes the set after a confirmation. |
 

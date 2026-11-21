@@ -38,6 +38,8 @@ func NormalizeSetTemplate(raw map[string]interface{}) (map[string]interface{}, e
 	set.Id = setTemplateValidateID
 	set.Name = setTemplateValidateFor
 	set.Enabled = true
+	set.Routing.Upstream.Username = ""
+	set.Routing.Upstream.Password = ""
 
 	cfg := NewConfig()
 	cfg.System.Geo.GeoSitePath = "/dev/null"
@@ -59,7 +61,58 @@ func NormalizeSetTemplate(raw map[string]interface{}) (map[string]interface{}, e
 	if len(sparse) == 0 {
 		return nil, nil
 	}
+	if err := setTemplatePlaceholderError(sparse); err != nil {
+		return nil, err
+	}
 	return sparse, nil
+}
+
+func setTemplatePlaceholderError(template map[string]interface{}) error {
+	paths := placeholderValuePaths(map[string]interface{}{"ui": map[string]interface{}{"new_set_template": template}})
+	if len(paths) == 0 {
+		return nil
+	}
+	out := &ValidationError{Fields: make([]ValidationField, 0, len(paths))}
+	for _, path := range paths {
+		out.Fields = append(out.Fields, ValidationField{
+			Path:    path,
+			Code:    "redacted_placeholder",
+			Message: path + " holds the " + RedactedMarker + " placeholder of a safe copy instead of a real value",
+			Params:  map[string]any{"path": path},
+		})
+	}
+	return out
+}
+
+func redactSetTemplateForSharing(template map[string]interface{}) map[string]interface{} {
+	dns, ok := template["dns"].(map[string]interface{})
+	if !ok {
+		return template
+	}
+	maskedDNS := make(map[string]interface{}, len(dns))
+	for key, value := range dns {
+		maskedDNS[key] = value
+	}
+	if doh, ok := maskedDNS["doh_url"].(string); ok {
+		maskedDNS["doh_url"] = maskDoHURL(doh)
+	}
+	if upstreams, ok := maskedDNS["upstreams"].([]interface{}); ok {
+		masked := make([]interface{}, len(upstreams))
+		for i, upstream := range upstreams {
+			if server, ok := upstream.(string); ok {
+				masked[i] = maskDNSServer(server)
+			} else {
+				masked[i] = upstream
+			}
+		}
+		maskedDNS["upstreams"] = masked
+	}
+	out := make(map[string]interface{}, len(template))
+	for key, value := range template {
+		out[key] = value
+	}
+	out["dns"] = maskedDNS
+	return out
 }
 
 func (c *Config) loadSetTemplate() {
