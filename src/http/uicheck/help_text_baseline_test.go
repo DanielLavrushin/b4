@@ -16,7 +16,6 @@ var helperLineBaseline = map[string]int{
 	"sets.faking.incoming.fakeModeOnly":           140,
 	"sets.faking.synFake.md5Desc":                 144,
 	"sets.faking.synFake.ttlHelper":               156,
-	"sets.tcp.splitting.disorder.splitPosHelper":  141,
 	"settings.MTProto.bridgeWaitHelp":             336,
 	"settings.MTProto.cfProxyEnabledHelp":         236,
 	"settings.MTProto.cfProxyURLHelp":             126,

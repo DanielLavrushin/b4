@@ -1,18 +1,25 @@
+import { useMemo } from "react";
 import { Grid, Box, Typography } from "@mui/material";
 import { B4SetConfig, DisorderShuffleMode } from "@models/config";
+import { createDefaultSet } from "@models/defaults";
 import {
-  B4Alert,
+  B4Advanced,
+  B4FieldMessage,
   B4Slider,
   B4RangeSlider,
   B4Switch,
   B4Select,
   B4FormHeader,
-  B4Hint,
   B4NumberField,
 } from "@b4.elements";
 import { colors } from "@design";
 import { useTranslation } from "react-i18next";
 import { SeqOverlapPatternFields } from "./SeqOverlapPatternFields";
+
+const JITTER_PATHS = [
+  "fragmentation.disorder.min_jitter_us",
+  "fragmentation.disorder.max_jitter_us",
+];
 
 interface DisorderSettingsProps {
   config: B4SetConfig;
@@ -53,25 +60,56 @@ export const DisorderSettings = ({
       ? t("sets.tcp.splitting.disorder.segOverlapOrder")
       : t("sets.tcp.splitting.disorder.segInOrder");
   }
+  const defaults = useMemo(
+    () => createDefaultSet(0).fragmentation.disorder,
+    [],
+  );
+  const jitterCustomized = [
+    disorder.min_jitter_us !== defaults.min_jitter_us,
+    disorder.max_jitter_us !== defaults.max_jitter_us,
+  ].filter(Boolean).length;
+  const jitterUnused =
+    Math.max(config.tcp.seg2delay, config.tcp.seg2delay_max || 0) > 0;
 
-  const shuffleModeOptions: { label: string; value: DisorderShuffleMode }[] = [
-    { label: t("sets.tcp.splitting.disorder.shuffleFull"), value: "full" },
+  const shuffleModeOptions: {
+    label: string;
+    value: DisorderShuffleMode;
+    note: string;
+  }[] = [
+    {
+      label: t("sets.tcp.splitting.disorder.shuffleFull"),
+      value: "full",
+      note: t("sets.tcp.splitting.disorder.shuffleFullDesc"),
+    },
     {
       label: t("sets.tcp.splitting.disorder.shuffleReverse"),
       value: "reverse",
+      note: t("sets.tcp.splitting.disorder.shuffleReverseDesc"),
     },
     {
       label: t("sets.tcp.splitting.disorder.shuffleInOrder"),
       value: "none",
+      note: t("sets.tcp.splitting.disorder.shuffleInOrderDesc"),
     },
   ];
+
+  const overlapMessages = [
+    overlapLength > 0 && !middleSni && splitPosition <= overlapLength && (
+      <B4FieldMessage key="no-room">
+        {t("sets.tcp.splitting.disorder.overlapNoRoomWarning")}
+      </B4FieldMessage>
+    ),
+    overlapLength > 0 && middleSni && (
+      <B4FieldMessage key="sni" severity="info">
+        {t("sets.tcp.splitting.disorder.overlapSniHint")}
+      </B4FieldMessage>
+    ),
+  ].filter(Boolean);
 
   return (
     <>
       <B4FormHeader label={t("sets.tcp.splitting.disorder.header")} />
-      <B4Hint>{t("sets.tcp.splitting.disorder.alert")}</B4Hint>
 
-      {/* SNI Split Toggle */}
       <Grid size={{ xs: 12, md: 6 }}>
         <B4Switch
           label={t("sets.tcp.splitting.disorder.sniSplit")}
@@ -81,6 +119,7 @@ export const DisorderSettings = ({
             onChange("fragmentation.middle_sni", checked)
           }
           description={t("sets.tcp.splitting.disorder.sniSplitDesc")}
+          learnMore="sets/tcp/splitting#disorder"
           aiTopic="fragmentation.middle_sni"
         />
       </Grid>
@@ -93,7 +132,22 @@ export const DisorderSettings = ({
           onChange={(e) =>
             onChange("fragmentation.disorder.shuffle_mode", e.target.value)
           }
-          helperText={t("sets.tcp.splitting.disorder.shuffleHelper")}
+          helperText={t(
+            {
+              full: "sets.tcp.splitting.disorder.shuffleFullDesc",
+              reverse: "sets.tcp.splitting.disorder.shuffleReverseDesc",
+              none: "sets.tcp.splitting.disorder.shuffleInOrderDesc",
+            }[disorder.shuffle_mode],
+          )}
+          message={
+            overlapFits && reversed ? (
+              <B4FieldMessage>
+                {t("sets.tcp.splitting.disorder.overlapReverseWarning")}
+              </B4FieldMessage>
+            ) : undefined
+          }
+          info={t("sets.tcp.splitting.disorder.shuffleModeInfo")}
+          learnMore="sets/tcp/splitting#disorder"
           aiTopic="fragmentation.disorder.shuffle_mode"
           aiContext={{ available: shuffleModeOptions.map((o) => o.value) }}
         />
@@ -112,6 +166,8 @@ export const DisorderSettings = ({
             max={1460}
             placeholder="0"
             helperText={t("sets.tcp.splitting.disorder.splitPosHelper")}
+            info={t("sets.tcp.splitting.disorder.splitPosInfo")}
+            learnMore="sets/tcp/splitting#disorder"
             aiTopic="fragmentation.disorder.split_position"
             aiContext={{
               middle_sni: middleSni,
@@ -121,7 +177,6 @@ export const DisorderSettings = ({
         </Grid>
       )}
 
-      {/* Visual */}
       <Grid size={{ xs: 12 }}>
         <Box
           sx={{
@@ -139,7 +194,14 @@ export const DisorderSettings = ({
           >
             {t("sets.tcp.splitting.disorder.segOrderExample")}
           </Typography>
-          <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+          <Box
+            sx={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 1,
+              alignItems: "center",
+            }}
+          >
             <Box sx={{ display: "flex", gap: 0.5, fontFamily: "monospace" }}>
               {segmentsInOrder.map((n) => (
                 <Box
@@ -184,60 +246,73 @@ export const DisorderSettings = ({
         </Box>
       </Grid>
 
-      <B4FormHeader label={t("sets.tcp.splitting.disorder.timingHeader")} />
-      <B4Hint>{t("sets.tcp.splitting.disorder.timingAlert")}</B4Hint>
+      <Grid size={{ xs: 12 }}>
+        <B4Advanced
+          title={t("sets.tcp.splitting.disorder.timingHeader")}
+          paths={JITTER_PATHS}
+          customized={jitterCustomized}
+        >
+          {jitterUnused && (
+            <B4FieldMessage severity="info">
+              {t("sets.tcp.splitting.disorder.timingAlert")}
+            </B4FieldMessage>
+          )}
+          <Grid container spacing={3}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Slider
+                label={t("sets.tcp.splitting.disorder.minJitter")}
+                value={disorder.min_jitter_us}
+                path="fragmentation.disorder.min_jitter_us"
+                onChange={(value: number) =>
+                  onChange("fragmentation.disorder.min_jitter_us", value)
+                }
+                min={100}
+                max={5000}
+                step={100}
+                helperText={t("sets.tcp.splitting.disorder.minJitterHelper")}
+                info={t("sets.tcp.splitting.disorder.jitterInfo")}
+                learnMore="sets/tcp/splitting#disorder"
+                aiTopic="fragmentation.disorder.jitter"
+                aiContext={{
+                  min_jitter_us: disorder.min_jitter_us,
+                  max_jitter_us: disorder.max_jitter_us,
+                }}
+              />
+            </Grid>
 
-      <Grid size={{ xs: 12, md: 6 }}>
-        <B4Slider
-          label={t("sets.tcp.splitting.disorder.minJitter")}
-          value={disorder.min_jitter_us}
-          path="fragmentation.disorder.min_jitter_us"
-          onChange={(value: number) =>
-            onChange("fragmentation.disorder.min_jitter_us", value)
-          }
-          min={100}
-          max={5000}
-          step={100}
-          helperText={t("sets.tcp.splitting.disorder.minJitterHelper")}
-          aiTopic="fragmentation.disorder.jitter"
-          aiContext={{
-            min_jitter_us: disorder.min_jitter_us,
-            max_jitter_us: disorder.max_jitter_us,
-          }}
-        />
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Slider
+                label={t("sets.tcp.splitting.disorder.maxJitter")}
+                value={disorder.max_jitter_us}
+                path="fragmentation.disorder.max_jitter_us"
+                onChange={(value: number) =>
+                  onChange("fragmentation.disorder.max_jitter_us", value)
+                }
+                min={500}
+                max={10000}
+                step={100}
+                helperText={t("sets.tcp.splitting.disorder.maxJitterHelper")}
+                info={t("sets.tcp.splitting.disorder.jitterInfo")}
+                learnMore="sets/tcp/splitting#disorder"
+                alert={
+                  disorder.min_jitter_us >= disorder.max_jitter_us ? (
+                    <B4FieldMessage>
+                      {t("sets.tcp.splitting.disorder.jitterWarning")}
+                    </B4FieldMessage>
+                  ) : undefined
+                }
+                aiTopic="fragmentation.disorder.jitter"
+                aiContext={{
+                  min_jitter_us: disorder.min_jitter_us,
+                  max_jitter_us: disorder.max_jitter_us,
+                }}
+              />
+            </Grid>
+          </Grid>
+        </B4Advanced>
       </Grid>
-
-      <Grid size={{ xs: 12, md: 6 }}>
-        <B4Slider
-          label={t("sets.tcp.splitting.disorder.maxJitter")}
-          value={disorder.max_jitter_us}
-          path="fragmentation.disorder.max_jitter_us"
-          onChange={(value: number) =>
-            onChange("fragmentation.disorder.max_jitter_us", value)
-          }
-          min={500}
-          max={10000}
-          step={100}
-          helperText={t("sets.tcp.splitting.disorder.maxJitterHelper")}
-          aiTopic="fragmentation.disorder.jitter"
-          aiContext={{
-            min_jitter_us: disorder.min_jitter_us,
-            max_jitter_us: disorder.max_jitter_us,
-          }}
-        />
-      </Grid>
-
-      {disorder.min_jitter_us >= disorder.max_jitter_us && (
-        <B4Alert severity="warning">
-          {t("sets.tcp.splitting.disorder.jitterWarning")}
-        </B4Alert>
-      )}
 
       <B4FormHeader label={t("sets.tcp.splitting.disorder.fakePerSegHeader")} />
-
-      <Grid size={{ xs: 12 }}>
-        <B4Hint>{t("sets.tcp.splitting.disorder.fakePerSegAlert")}</B4Hint>
-      </Grid>
 
       <Grid size={{ xs: 12, md: 6 }}>
         <B4Switch
@@ -248,12 +323,20 @@ export const DisorderSettings = ({
             onChange("fragmentation.disorder.fake_per_segment", checked)
           }
           description={t("sets.tcp.splitting.disorder.fakePerSegDesc")}
+          message={
+            disorder.fake_per_segment && seqPattern.length === 0 ? (
+              <B4FieldMessage>
+                {t("sets.tcp.splitting.disorder.fakePerSegNeedsPattern")}
+              </B4FieldMessage>
+            ) : undefined
+          }
+          info={t("sets.tcp.splitting.disorder.fakePerSegInfo")}
+          learnMore="sets/tcp/splitting#disorder"
           aiTopic="fragmentation.disorder.fake_per_segment"
           aiContext={{
             fake_per_seg_count: disorder.fake_per_seg_count,
             fake_per_seg_count_max: disorder.fake_per_seg_count_max,
-            seq_overlap_pattern_set:
-              (config.fragmentation.seq_overlap_pattern || []).length > 0,
+            seq_overlap_pattern_set: seqPattern.length > 0,
           }}
         />
       </Grid>
@@ -280,6 +363,7 @@ export const DisorderSettings = ({
             max={11}
             step={1}
             helperText={t("sets.tcp.splitting.disorder.fakesPerSegHelper")}
+            learnMore="sets/tcp/splitting#disorder"
           />
         </Grid>
       )}
@@ -293,23 +377,8 @@ export const DisorderSettings = ({
         onLengthChange={(value) =>
           onChange("fragmentation.seq_overlap_length", value)
         }
+        lengthMessages={overlapMessages}
       />
-
-      {overlapLength > 0 && middleSni && (
-        <B4Hint>{t("sets.tcp.splitting.disorder.overlapSniHint")}</B4Hint>
-      )}
-
-      {overlapLength > 0 && !middleSni && splitPosition <= overlapLength && (
-        <B4Alert severity="warning">
-          {t("sets.tcp.splitting.disorder.overlapNoRoomWarning")}
-        </B4Alert>
-      )}
-
-      {overlapFits && reversed && (
-        <B4Alert severity="warning">
-          {t("sets.tcp.splitting.disorder.overlapReverseWarning")}
-        </B4Alert>
-      )}
     </>
   );
 };
