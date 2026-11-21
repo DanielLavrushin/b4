@@ -65,6 +65,8 @@ With **Reuse WSSIZE connection** on, the set's TCP connections to port 443 go ou
 | **Reuse WSSIZE connection** | Turns reuse on. Shown while **Rewrite the real TCP window** is on, and turned off with it. | Off |
 | **Warm validity (seconds)** | How long a warmed router port takes new connections, counted from the start of its warm, 1 to 300. After that, the next connection warms a new port. The validity never cuts a connection that is already relayed. | `300` |
 
+A warmed port that carries no connection for 2 minutes is dropped earlier.
+
 An enabled set with reuse on is saved only when it meets every condition below. The editor names each one the set breaks.
 
 - **Rewrite the real TCP window** is on, with a **Window** above `0`.
