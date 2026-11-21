@@ -19,6 +19,8 @@ type Config struct {
 	UI     UIConfig     `json:"ui"`
 
 	tcpPortMap map[uint16]bool // pre-computed TCP port set for fast lookup in packet handler
+	viewOf     *Config
+	viewAt     *Config
 }
 
 var DefaultSetConfig = SetConfig{

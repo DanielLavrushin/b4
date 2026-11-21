@@ -91,11 +91,19 @@ func (c *Config) collectedViewNeeded() bool {
 	return false
 }
 
+func (c *Config) Origin() *Config {
+	if c != nil && c.viewOf != nil && c.viewAt == c {
+		return c.viewOf
+	}
+	return c
+}
+
 func (c *Config) WithCollectedIPs(ips []string) *Config {
 	if !c.collectedViewNeeded() {
 		return c
 	}
 	view := *c
+	view.viewOf, view.viewAt = c.Origin(), &view
 	view.Sets = make([]*SetConfig, len(c.Sets))
 	for i, set := range c.Sets {
 		copySet := *set
