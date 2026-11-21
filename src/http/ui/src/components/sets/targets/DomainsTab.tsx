@@ -220,7 +220,13 @@ export const DomainsTab = ({
               { value: "1.2", label: "TLS 1.2" },
               { value: "1.3", label: "TLS 1.3" },
             ]}
-            helperText={t("sets.targets.tlsHelperText")}
+            helperText={t(
+              config.targets.tls
+                ? "sets.targets.tlsHelperVersion"
+                : "sets.targets.tlsHelperText",
+              { version: `TLS ${config.targets.tls}` },
+            )}
+            info={t("sets.targets.tlsInfo")}
             learnMore="sets/targets#domains"
             aiTopic="targets.tls"
             onChange={(e) => onChange("targets.tls", e.target.value as string)}
@@ -237,7 +243,13 @@ export const DomainsTab = ({
               { value: "4", label: "IPv4" },
               { value: "6", label: "IPv6" },
             ]}
-              helperText={t("sets.targets.ipVersionHelperText")}
+              helperText={t(
+                config.targets.ip_version
+                  ? "sets.targets.ipVersionHelperVersion"
+                  : "sets.targets.ipVersionHelperText",
+                { version: `IPv${config.targets.ip_version}` },
+              )}
+              info={t("sets.targets.ipVersionInfo")}
               learnMore="sets/targets#domains"
               aiTopic="targets.ip_version"
               onChange={(e) =>
@@ -253,6 +265,7 @@ export const DomainsTab = ({
           <ManualEntryPanel
             icon={<DomainIcon />}
             title={t("sets.targets.manualDomains")}
+            description={t("sets.targets.manualDomainsDesc")}
             inputLabel={t("sets.targets.addDomainLabel")}
             inputHelper={t("sets.targets.addDomainHelper")}
             inputPlaceholder={t("sets.targets.addDomainPlaceholder")}

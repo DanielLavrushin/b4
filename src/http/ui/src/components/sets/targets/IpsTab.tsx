@@ -238,6 +238,7 @@ export const IpsTab = ({
           <ManualEntryPanel
             icon={<IpIcon />}
             title={t("sets.targets.manualIps")}
+            description={t("sets.targets.manualIpsDesc")}
             inputLabel={t("sets.targets.addIpLabel")}
             inputHelper={t("sets.targets.addIpHelper")}
             inputPlaceholder={t("sets.targets.addIpPlaceholder")}
