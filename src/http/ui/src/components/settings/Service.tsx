@@ -66,7 +66,11 @@ export const ServiceSettings = ({ config, onChange }: ServiceCardProps) => {
   };
 
   return (
-    <B4Section title={t("settings.Service.title")} icon={<ControlIcon />}>
+    <B4Section
+      title={t("settings.Service.title")}
+      icon={<ControlIcon />}
+      learnMore="settings/system#service-settings"
+    >
       <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
         <Button
           size="small"
@@ -107,6 +111,7 @@ export const ServiceSettings = ({ config, onChange }: ServiceCardProps) => {
         }
         placeholder={t("settings.Service.memoryLimitPlaceholder")}
         helperText={t("settings.Service.memoryLimitHelp")}
+        info={t("settings.Service.memoryLimitInfo")}
       />
       <B4TextField
         value={(config.system.update?.mirrors ?? []).join(", ")}
@@ -122,6 +127,8 @@ export const ServiceSettings = ({ config, onChange }: ServiceCardProps) => {
         }
         placeholder={t("settings.Service.updateMirrorsPlaceholder")}
         helperText={t("settings.Service.updateMirrorsHelp")}
+        info={t("settings.Service.updateMirrorsInfo")}
+        learnMore="advanced/update-mirrors"
       />
 
       <RestartDialog
@@ -142,7 +149,11 @@ export const LoggingSettings = ({ config, onChange }: ServiceCardProps) => {
   const LOG_LEVELS = useMemo(() => logLevelOptions(t), [t]);
 
   return (
-    <B4Section title={t("settings.Logging.title")} icon={<LogsIcon />}>
+    <B4Section
+      title={t("settings.Logging.title")}
+      icon={<LogsIcon />}
+      learnMore="settings/system#logging"
+    >
       <B4Select
         value={config.system.logging.level}
         options={LOG_LEVELS}

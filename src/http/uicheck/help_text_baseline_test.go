@@ -21,7 +21,6 @@ var helperLineBaseline = map[string]int{
 	"sets.faking.synFake.md5Desc":                 144,
 	"sets.faking.synFake.ttlHelper":               156,
 	"sets.tcp.splitting.disorder.splitPosHelper":  141,
-	"settings.Geo.autoUpdateOnStartupDesc":        151,
 	"settings.MTProto.bridgeWaitHelp":             336,
 	"settings.MTProto.cfProxyEnabledHelp":         236,
 	"settings.MTProto.cfProxyURLHelp":             126,
@@ -44,7 +43,5 @@ var helperLineBaseline = map[string]int{
 	"settings.MTProto.wsCustomDomainHelp":         193,
 	"settings.MTProto.wsEndpointHostHelp":         176,
 	"settings.MTProto.wsFrontSniHelp":             363,
-	"settings.Service.memoryLimitHelp":            141,
-	"settings.Service.updateMirrorsHelp":          149,
 	"settings.Socks5.sourcesDesc":                 255,
 }

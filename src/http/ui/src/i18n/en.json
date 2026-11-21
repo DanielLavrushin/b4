@@ -202,17 +202,20 @@
       "timezoneHelp": "Timezone for log timestamps (default: system)",
       "memoryLimit": "Memory Limit",
       "memoryLimitPlaceholder": "auto",
-      "memoryLimitHelp": "Soft cap on b4 memory use. Accepts e.g. 128MiB, 256m, 1g. Leave empty or 'auto' for half of system RAM. Use 'off' to disable.",
+      "memoryLimitHelp": "Soft cap on b4 memory use, such as 128MiB, 256m or 1g. Empty or 'auto' is half of the system RAM, 'off' disables it.",
       "updateMirrors": "Update mirrors",
       "updateMirrorsPlaceholder": "https://name.account.workers.dev",
-      "updateMirrorsHelp": "Mirrors tried when GitHub cannot be reached, before the built-in ones. Comma-separated, https only. A personal Cloudflare Worker belongs here.",
+      "updateMirrorsHelp": "Mirrors tried when GitHub cannot be reached, before the built-in ones. Comma-separated, https only.",
       "restartService": "Restart Service",
       "systemInfo": "System Info",
       "resetConfig": "Reset Config to Defaults",
       "resetButton": "Reset",
       "resetConfirm": "This will reset the configuration to defaults. Sets, the web server settings (including the login, MCP and the interface language) and the geodata settings are kept. Everything else returns to its default, including every Core setting, logging, the time zone, the memory limit and update mirrors, Discovery and the watchdog, Telegram with its MTProto secrets, the community hub connection, the IPinfo token, the AI assistant settings and the dashboard layout.",
       "resetSuccess": "Configuration reset to defaults",
-      "resetError": "Failed to reset configuration"
+      "resetError": "Failed to reset configuration",
+      "memoryLimitInfo": "Near the cap b4 frees memory more often, and going over it does not stop b4.\n\nA limit below 32 MiB is raised to 32 MiB.",
+      "updateMirrorsInfo": "A personal Cloudflare Worker belongs here.",
+      "resetInfo": "Resets the configuration to defaults. Sets, the web server settings and the geodata settings are kept, and the confirmation lists what returns to its default."
     },
     "Feature": {
       "protoFeatures": "IPv4 / IPv6",
@@ -786,10 +789,8 @@
       "nothingWatched": "Nothing is watched yet. Turn watching on in the Discovery tab of a set in <a>Sets</a>, or add domains below."
     },
     "Geo": {
-      "alert": "GeoSite and GeoIP database files for domain and IP categorization.",
-      "alertSub": "Each database can be downloaded independently from different sources.",
       "title": "Geo Databases",
-      "description": "Download and manage geodat files",
+      "description": "GeoSite and GeoIP database files for domain and IP categorization, each downloaded from its own source.",
       "destDir": "Destination Directory",
       "destDirHelp": "Directory where .dat files will be saved",
       "destDirPending": "Files are currently in {{from}}. They move to {{to}} on the next Update or Upload, and the copy in {{from}} is deleted.",
@@ -830,20 +831,20 @@
       "unmatchedSetsWarning": "{{count}} set(s) use categories that match nothing in this file:",
       "autoUpdate": "Auto-update",
       "autoUpdateOnStartup": "Refresh on startup",
-      "autoUpdateOnStartupDesc": "Re-download both files when b4 starts. Missing or damaged files (e.g. when stored in /tmp) are always re-downloaded if a source URL is set.",
+      "autoUpdateOnStartupDesc": "Re-download both files when b4 starts.",
       "autoUpdateInterval": "Schedule",
       "autoUpdateIntervalHelp": "Run periodic refresh in the background using the configured source URLs",
       "autoUpdateOff": "Off",
       "autoUpdateDaily": "Daily",
       "autoUpdateWeekly": "Weekly",
       "autoUpdateMonthly": "Monthly",
-      "autoUpdateLastRun": "Last run"
+      "autoUpdateLastRun": "Last run",
+      "autoUpdateOnStartupInfo": "Missing or damaged files (e.g. when stored in /tmp) are always re-downloaded if a source URL is set, whether or not this switch is on."
     },
     "Backup": {
-      "alert": "Create a backup of your B4 configuration directory or restore from a previous backup. Backups include the configuration, the Discovery and DPI Detector history, and payload files. Geodat files (.dat) and the OUI database are excluded.",
       "downloadTitle": "Download Backup",
-      "downloadDescription": "Generate and download a tar.gz archive of your B4 configuration",
-      "downloadInfo": "The backup will include all files from the configuration directory except geodat (.dat) files and the OUI database.",
+      "downloadDescription": "Generate and download a tar.gz archive of your b4 configuration",
+      "downloadInfo": "Includes every file of the configuration directory: the configuration, the Discovery and DPI Detector history and payload files. Geodat files (.dat) and the OUI database are excluded.",
       "generating": "Generating...",
       "downloadButton": "Download Backup",
       "downloadSuccess": "Backup downloaded successfully",
@@ -857,11 +858,12 @@
       "restoreFailed": "Failed to restore backup",
       "configTitle": "Download Configuration",
       "configDescription": "The configuration b4 is running with, as a b4.json file",
-      "configInfo": "The safe copy removes passwords and tokens or replaces them with [redacted], together with user names, the host names of your router and your relays, and credentials inside URLs. Sets, devices and target domains stay. Share it when asking for help; b4 refuses to load or save a configuration that still holds these [redacted] placeholders. The \"as is\" copy includes every password and token.",
+      "configInfo": "The safe copy is for sharing when you ask for help: passwords and tokens are removed, and b4 does not load it back while it holds [redacted] placeholders. The \"as is\" copy includes every password and token.",
       "configDownload": "Download as is",
       "configDownloadSafe": "Download safe copy",
       "configDownloadSuccess": "Configuration downloaded",
-      "configDownloadFailed": "Failed to download configuration"
+      "configDownloadFailed": "Failed to download configuration",
+      "configSafeInfo": "The safe copy removes passwords and tokens or replaces them with [redacted], together with user names, the host names of your router and your relays, and credentials inside URLs. Sets, devices and target domains stay.\n\nb4 refuses to load or save a configuration that still holds these [redacted] placeholders."
     },
     "Capture": {
       "alert": "Generate a TLS ClientHello that names a domain of your choice",
