@@ -30,7 +30,6 @@ import { colors } from "@design";
 import { rebaseDraft, setByPath } from "@utils";
 import { ChangedFieldsProvider } from "@context/ChangedFieldsContext";
 import { useUnsavedChangesGuard } from "@hooks/useUnsavedChangesGuard";
-import { useTunEngine } from "@hooks/useEngineMode";
 import {
   UnsavedChangesDialog,
   type ChangeGroupDef,
@@ -106,7 +105,6 @@ export const SetEditorPage = ({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const tunRunning = useTunEngine();
   const [searchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
   const requestedSub = searchParams.get("sub") ?? undefined;
@@ -427,7 +425,6 @@ export const SetEditorPage = ({
             initialSub={requestedSub}
             config={editedSet}
             queueMode={config.queue.mode}
-            tunRunning={tunRunning}
             skipSetup={config.system.tables.skip_setup}
             queueMark={config.queue.mark}
             onChange={handleChange}

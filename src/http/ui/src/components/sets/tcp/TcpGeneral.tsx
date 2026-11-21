@@ -21,12 +21,12 @@ import {
   reuseTunEngine,
   wssizeReuseIssues,
 } from "@utils";
+import { useTunEngine } from "@hooks/useEngineMode";
 import { Trans, useTranslation } from "react-i18next";
 
 interface TcpGeneralProps {
   config: B4SetConfig;
   queueMode?: string;
-  tunRunning?: boolean;
   skipSetup?: boolean;
   queueMark?: number;
   onChange: (
@@ -40,10 +40,49 @@ function wssizeScaleMode(ws: WSSizeConfig): "keep" | "lower" | "strip" {
   return ws.scale > 0 ? "lower" : "keep";
 }
 
+interface WSSizeReuseIssuesProps {
+  config: B4SetConfig;
+  queueMode?: string;
+  skipSetup: boolean;
+  queueMark?: number;
+}
+
+const WSSizeReuseIssues = ({
+  config,
+  queueMode,
+  skipSetup,
+  queueMark,
+}: WSSizeReuseIssuesProps) => {
+  const { t } = useTranslation();
+  const tunRunning = useTunEngine();
+  const issues = wssizeReuseIssues(config, {
+    tunEngine: reuseTunEngine(queueMode, tunRunning),
+    skipSetup,
+    queueMark,
+  });
+  if (issues.length === 0) return null;
+  return (
+    <Grid size={{ xs: 12 }}>
+      <Stack spacing={1}>
+        {issues.map((issue) => (
+          <B4Alert
+            key={issue}
+            noWrapper
+            severity={isWSSizeReuseRefusal(issue) ? "error" : "warning"}
+          >
+            {t(`sets.tcp.general.wssizeReuseIssue.${issue}`, {
+              mark: `0x${effectiveQueueMark(queueMark).toString(16)}`,
+            })}
+          </B4Alert>
+        ))}
+      </Stack>
+    </Grid>
+  );
+};
+
 export const TcpGeneral = ({
   config,
   queueMode,
-  tunRunning = false,
   skipSetup = false,
   queueMark,
   onChange,
@@ -59,11 +98,6 @@ export const TcpGeneral = ({
     ...config.tcp.wssize,
   };
   const reuse = config.tcp.wssize_reuse ?? { enabled: false, max_age_seconds: 300 };
-  const reuseIssues = wssizeReuseIssues(config, {
-    tunEngine: reuseTunEngine(queueMode, tunRunning),
-    skipSetup,
-    queueMark,
-  });
   const dup = config.tcp.duplicate ?? { enabled: false, count: 3 };
   const wsConflict = (config.routing?.enabled ?? false) || dup.enabled;
   const wsTun = ws.enabled && !wsConflict && tunEngine;
@@ -367,22 +401,13 @@ export const TcpGeneral = ({
             )}
           </>
         )}
-        {reuseIssues.length > 0 && (
-          <Grid size={{ xs: 12 }}>
-            <Stack spacing={1}>
-              {reuseIssues.map((issue) => (
-                <B4Alert
-                  key={issue}
-                  noWrapper
-                  severity={isWSSizeReuseRefusal(issue) ? "error" : "warning"}
-                >
-                  {t(`sets.tcp.general.wssizeReuseIssue.${issue}`, {
-                    mark: `0x${effectiveQueueMark(queueMark).toString(16)}`,
-                  })}
-                </B4Alert>
-              ))}
-            </Stack>
-          </Grid>
+        {reuse.enabled && (
+          <WSSizeReuseIssues
+            config={config}
+            queueMode={queueMode}
+            skipSetup={skipSetup}
+            queueMark={queueMark}
+          />
         )}
       </Grid>
 

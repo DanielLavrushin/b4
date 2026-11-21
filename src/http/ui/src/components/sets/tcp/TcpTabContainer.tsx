@@ -22,7 +22,6 @@ interface TcpTabContainerProps {
   initialSub?: string;
   config: B4SetConfig;
   queueMode?: string;
-  tunRunning?: boolean;
   skipSetup?: boolean;
   queueMark?: number;
   onChange: (
@@ -41,7 +40,6 @@ export const TcpTabContainer = ({
   initialSub,
   config,
   queueMode,
-  tunRunning,
   skipSetup,
   queueMark,
   onChange,
@@ -90,7 +88,6 @@ export const TcpTabContainer = ({
         <TcpGeneral
           config={config}
           queueMode={queueMode}
-          tunRunning={tunRunning}
           skipSetup={skipSetup}
           queueMark={queueMark}
           onChange={onChange}
