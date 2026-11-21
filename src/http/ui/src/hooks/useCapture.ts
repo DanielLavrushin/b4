@@ -36,36 +36,6 @@ export function useCaptures() {
     [loadCaptures],
   );
 
-  const probe = useCallback(async (domain: string, protocol: string) => {
-    setLoading(true);
-    try {
-      const result = await captureApi.probe(domain, protocol);
-
-      if (result.already_captured) {
-        return result;
-      }
-
-      const normalizedDomain = domain.toLowerCase().trim();
-      for (let i = 0; i < 30; i++) {
-        await new Promise((r) => setTimeout(r, 1000));
-        const list = await captureApi.list();
-        const found = list.some(
-          (c) =>
-            c.domain === normalizedDomain &&
-            (protocol === "both" || c.protocol === protocol),
-        );
-        if (found) {
-          setCaptures(list);
-          return result;
-        }
-      }
-
-      return result;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   const deleteCapture = useCallback(
     async (protocol: string, domain: string) => {
       await captureApi.delete(protocol, domain);
@@ -116,7 +86,6 @@ export function useCaptures() {
     loading,
     loadCaptures,
     generate,
-    probe,
     deleteCapture,
     clearAll,
     upload,

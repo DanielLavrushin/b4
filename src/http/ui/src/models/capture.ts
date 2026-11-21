@@ -8,7 +8,7 @@ export interface Capture {
   used_by?: string[];
 }
 
-export interface CaptureProbeResponse {
+export interface CaptureGenerateResponse {
   success: boolean;
   message: string;
   already_captured?: boolean;
