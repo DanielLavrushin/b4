@@ -120,7 +120,7 @@ func serviceDial(t *testing.T, s *Service, set *config.SetConfig) net.Conn {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.(*serviceConn).received.Store(1)
+	c.(*serviceConn).Answered()
 	t.Cleanup(func() { c.Close() })
 	return c
 }
@@ -340,7 +340,7 @@ func TestRouteChangeAndSilentPassInvalidateCache(t *testing.T) {
 	if second.LocalAddr().String() == local || count.Load() != 2 {
 		t.Fatal("changed egress reused a warm tuple")
 	}
-	second.(*serviceConn).received.Store(0)
+	second.(*serviceConn).answered.Store(false)
 	second.Close()
 	third := serviceDial(t, s, set)
 	if count.Load() != 3 {

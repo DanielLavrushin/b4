@@ -114,7 +114,7 @@ type serviceConn struct {
 	service  *Service
 	lease    *serviceLease
 	once     sync.Once
-	received atomic.Uint64
+	answered atomic.Bool
 }
 
 func NewService(flows *Flows) *Service {
@@ -472,7 +472,7 @@ func (c *serviceConn) Close() error {
 		defer s.mu.Unlock()
 		c.lease.busy = false
 		c.lease.idle = time.Now()
-		if s.closed || !s.keepsLease(c.lease) || c.received.Load() == 0 {
+		if s.closed || !s.keepsLease(c.lease) || !c.answered.Load() {
 			s.discardLocked(c.lease, c.lease.idle)
 		}
 	})
@@ -534,10 +534,6 @@ func (s *Service) AcquireClient() (func(), bool) {
 	}
 }
 
-func (c *serviceConn) Read(p []byte) (int, error) {
-	n, err := c.Conn.Read(p)
-	if n > 0 {
-		c.received.Add(uint64(n))
-	}
-	return n, err
+func (c *serviceConn) Answered() {
+	c.answered.Store(true)
 }

@@ -77,7 +77,42 @@ func (l *Listener) serveWSReuse(client net.Conn, ip net.IP, port int, given *sni
 	if err := writePrefix(backend, sniffed.prefix); err != nil {
 		return
 	}
-	_ = socks5.Relay(client, backend)
+	relayed := client
+	if pass, ok := backend.(interface{ Answered() }); ok {
+		relayed = &passClient{Conn: client, answered: pass.Answered}
+	}
+	_ = socks5.Relay(relayed, backend)
+}
+
+type passClient struct {
+	net.Conn
+	answered func()
+	left     atomic.Bool
+	once     sync.Once
+}
+
+func (c *passClient) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	if err != nil {
+		c.left.Store(true)
+	}
+	return n, err
+}
+
+func (c *passClient) Write(p []byte) (int, error) {
+	open := !c.left.Load()
+	n, err := c.Conn.Write(p)
+	if n > 0 && open {
+		c.once.Do(c.answered)
+	}
+	return n, err
+}
+
+func (c *passClient) CloseWrite() error {
+	if cw, ok := c.Conn.(interface{ CloseWrite() error }); ok {
+		return cw.CloseWrite()
+	}
+	return nil
 }
 
 const warmWarnInterval = time.Minute

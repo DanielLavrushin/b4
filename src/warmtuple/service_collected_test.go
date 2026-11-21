@@ -65,7 +65,7 @@ func TestServiceCollectedUpdatePreservesPendingWarm(t *testing.T) {
 		if got.err != nil {
 			t.Fatal("compatible pending warm was cancelled", got.err)
 		}
-		got.conn.(*serviceConn).received.Store(1)
+		got.conn.(*serviceConn).Answered()
 		got.conn.Close()
 	case <-time.After(time.Second):
 		t.Fatal("compatible pending warm stuck")
