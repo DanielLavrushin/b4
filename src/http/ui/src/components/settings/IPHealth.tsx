@@ -8,6 +8,7 @@ import {
   B4Switch,
 } from "@b4.elements";
 import { B4Config } from "@models/config";
+import { setAddsBans } from "@utils";
 
 interface IPHealthSettingsProps {
   config: B4Config;
@@ -53,12 +54,7 @@ export const IPHealthSettings = ({
     ipHealth.repeat_ban_ttl_sec,
     DEFAULTS.repeat_ban_ttl_sec,
   );
-  const someSetBans = (config.sets ?? []).some(
-    (set) =>
-      set.enabled &&
-      set.tcp?.ip_block_detect?.enabled &&
-      set.tcp.ip_block_detect.cache_blocked_ips !== false,
-  );
+  const someSetBans = (config.sets ?? []).some(setAddsBans);
 
   return (
     <B4Section

@@ -620,8 +620,8 @@
       "repeatBanTtlHelper": "How long a ban lasts when the address is caught again within 30 days.",
       "credit": "Ban list and re-test approach inspired by",
       "retestIntervalInfo": "Banned addresses are tested again at the same interval. Verdicts are shared by all sets. After a block is lifted, an unreachable address recovers within about one interval, a banned one after three successful tests in a row.",
-      "rememberBansInfo": "Applies to sets with IP block detection and Cache Blocked IPs on. For a banned address, new connections are reset at once, QUIC is refused, and DNS answers for names in any set leave it out. Bans survive restarts and set edits; the dashboard lists them.",
-      "rememberBansIdle": "No set has IP block detection and Cache Blocked IPs on, so no address is banned yet.",
+      "rememberBansInfo": "Applies to sets whose IP block detection is on with Block detected IPs and Cache Blocked IPs. For a banned address, new connections are reset at once, QUIC is refused, and DNS answers for names in any set leave it out. Bans survive restarts and set edits; the dashboard lists them.",
+      "rememberBansIdle": "No set adds bans at the moment. A set does when its IP block detection is on with Block detected IPs and Cache Blocked IPs, and the set is not routed through a proxy. Bans recorded earlier stay in force.",
       "repeatBanTtlInfo": "The 30 days count from the end of the previous ban."
     },
     "NewSetTemplate": {

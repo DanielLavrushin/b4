@@ -3,6 +3,21 @@ import { wssizeReuseIssues, type WSSizeReuseEnv } from "./wssizeReuse";
 
 const listed = (values?: string[] | null) => (values?.length ?? 0) > 0;
 
+const handsOffToProxy = (set: B4SetConfig): boolean =>
+  !!set.routing?.enabled &&
+  (set.routing.mode === "proxy" || set.routing.mode === "mtproto-ws");
+
+export const setAddsBans = (set: B4SetConfig): boolean => {
+  const detect = set.tcp?.ip_block_detect;
+  return (
+    !!set.enabled &&
+    !!detect?.enabled &&
+    detect.action !== "collect" &&
+    detect.cache_blocked_ips !== false &&
+    !handsOffToProxy(set)
+  );
+};
+
 export type CollectedTakes = "all" | "tcp" | "reuse";
 
 const routedTakes = (routing: B4SetConfig["routing"]): CollectedTakes | null => {

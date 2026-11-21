@@ -1,7 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { B4SetConfig } from "../models/config";
-import { collectedTakes, domainOnlyRoutesNothing } from "./setNotices";
+import type { B4SetConfig, IPBlockDetectConfig } from "../models/config";
+import {
+  collectedTakes,
+  domainOnlyRoutesNothing,
+  setAddsBans,
+} from "./setNotices";
 import type { WSSizeReuseEnv } from "./wssizeReuse";
 
 const nfqueue: WSSizeReuseEnv = { tunEngine: false, skipSetup: false, queueMark: 0 };
@@ -90,6 +94,70 @@ void test("no routing warning without domain-only, routing or domains", () => {
     ),
     false,
   );
+});
+
+const detecting = (
+  detect: Partial<IPBlockDetectConfig> = {},
+  change: (set: B4SetConfig) => void = () => {},
+): B4SetConfig =>
+  shaped((s) => {
+    s.tcp.ip_block_detect = {
+      action: "block",
+      enabled: true,
+      retransmit_threshold: 3,
+      timeout_ms: 3000,
+      cache_blocked_ips: true,
+      syn_detect: true,
+      syn_threshold: 3,
+      heal_dns: false,
+      heal_ttl_sec: 60,
+      ...detect,
+    };
+    change(s);
+  });
+
+void test("an enabled set with blocking detection and the cache on adds bans", () => {
+  assert.equal(setAddsBans(detecting()), true);
+  assert.equal(setAddsBans(detecting({ action: undefined })), true);
+  assert.equal(
+    setAddsBans(
+      detecting({}, (s) => {
+        s.routing.enabled = true;
+        s.routing.mode = "interface";
+        s.routing.egress_interface = "wg0";
+      }),
+    ),
+    true,
+  );
+});
+
+void test("a set that is off, does not detect or does not cache adds no bans", () => {
+  assert.equal(setAddsBans(baseSet()), false);
+  assert.equal(setAddsBans(detecting({ enabled: false })), false);
+  assert.equal(
+    setAddsBans(detecting({}, (s) => (s.enabled = false))),
+    false,
+  );
+  assert.equal(setAddsBans(detecting({ cache_blocked_ips: false })), false);
+});
+
+void test("a detector that only collects adds no bans", () => {
+  assert.equal(setAddsBans(detecting({ action: "collect" })), false);
+});
+
+void test("a set routed through a proxy hands its connections off before detection", () => {
+  for (const mode of ["proxy", "mtproto-ws"] as const) {
+    assert.equal(
+      setAddsBans(
+        detecting({}, (s) => {
+          s.routing.enabled = true;
+          s.routing.mode = mode;
+        }),
+      ),
+      false,
+      mode,
+    );
+  }
 });
 
 const collecting = (change: (set: B4SetConfig) => void): B4SetConfig =>
