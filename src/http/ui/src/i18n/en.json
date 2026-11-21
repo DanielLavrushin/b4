@@ -1608,10 +1608,12 @@
       "failedToToggleSets": "Failed to update sets",
       "failedToUpdate": "Failed to update",
       "failedToReorder": "Failed to reorder sets",
-      "orderHint": "When several sets could match the same traffic, b4 picks the most specific match, not the first set in this list: a set restricted to source devices, then the longest matching domain or IP range. Order decides only between matches that are equally specific, and for sets with IP priority on: connections to their addresses stay with them even when a set lower in the list matches the domain.",
+      "orderHint": "When several sets match the same traffic, b4 picks the most specific match, not the first set in this list.",
       "noSets": "No configuration sets",
       "noSetsHint": "Create your first set to start configuring bypass rules",
-      "importFromTool": "Import"
+      "importFromTool": "Import",
+      "orderInfo": "The most specific match is a set restricted to source devices, then the longest matching domain or IP range.\n\nOrder decides only between matches that are equally specific, and for sets with IP priority on: connections to their addresses stay with them even when a set lower in the list matches the domain.",
+      "orderTitle": "Order of sets"
     },
     "deleteDialog": {
       "title": "Delete Configuration Set",
