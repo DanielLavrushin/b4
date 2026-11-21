@@ -2276,7 +2276,7 @@
         "extSplit": {
           "header": "Extension Split",
           "structureViz": "СТРУКТУРА TLS CLIENTHELLO",
-          "splitNote": "Разделение происходит на жёлтой линии — перед началом расширения SNI"
+          "splitNote": "Разделение происходит на жёлтой линии, перед началом расширения SNI"
         },
         "firstByte": {
           "header": "First-Byte Desync",

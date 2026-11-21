@@ -2185,7 +2185,7 @@
         "extSplit": {
           "header": "Extension Split",
           "structureViz": "TLS CLIENTHELLO STRUCTURE",
-          "splitNote": "Split happens at the yellow line — before SNI extension starts"
+          "splitNote": "Split happens at the yellow line, before the SNI extension starts"
         },
         "firstByte": {
           "header": "First-Byte Desync",
