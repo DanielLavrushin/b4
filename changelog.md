@@ -42,7 +42,6 @@ All notable changes to b4 are recorded in this file.
 - A payload generated on the **Payloads** page or by **Generated from Domain** had three malformed fields that a strict parser rejects. Payloads generated before this version keep them until they are deleted and generated again. [#648](https://github.com/DanielLavrushin/b4/issues/648)
 - A zapret import reported `rndsni` as matched exactly although the fake kept its name, and left out the `rnd` and `dupsid` that zapret applies to its own fake when none is given. [#649](https://github.com/DanielLavrushin/b4/issues/649)
 - When a browser sent its ClientHello in two packets, as current Chrome and Firefox do, the second packet often left before the fake and the first one, so whether a set worked depended on timing and on the router's load. [#653](https://github.com/DanielLavrushin/b4/issues/653)
-- With **IP Block Detection** and **Cache Blocked IPs** on, a new connection from the same device port to the same server as an earlier unanswered one was timed from the earlier one's start, so it could count toward a ban too soon or not at all. ([#618](https://github.com/DanielLavrushin/b4/pull/618), thanks [@SoloIl](https://github.com/SoloIl))
 - The **TCP** tab's warning that the **Port Filter** leaves out port 443 read the filter differently from how b4 saves it, so it could appear when the saved filter covered 443 and stay hidden when it did not.
 
 ## [1.92.0] - 2026-11-17
