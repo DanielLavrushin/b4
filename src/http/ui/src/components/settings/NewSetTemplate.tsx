@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button, Stack } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { fonts } from "@design";
@@ -11,7 +11,8 @@ import { formatSetTemplate } from "@models/setTemplate";
 interface NewSetTemplateSettingsProps {
   config: B4Config;
   onChange: (field: string, value: SettingsPropHandlerType) => void;
-  onInvalidChange?: (field: string, invalid: boolean) => void;
+  onDraftChange?: (field: string, invalidText: string | null) => void;
+  invalidDrafts?: ReadonlyMap<string, string>;
 }
 
 const FIELD = "ui.new_set_template";
@@ -22,14 +23,18 @@ const isTemplate = (v: unknown): v is SetTemplate =>
 export const NewSetTemplateSettings = ({
   config,
   onChange,
-  onInvalidChange,
+  onDraftChange,
+  invalidDrafts,
 }: NewSetTemplateSettingsProps) => {
   const { t } = useTranslation();
   const template = config.ui?.new_set_template ?? null;
   const templateKey = JSON.stringify(template);
-  const [text, setText] = useState(() => formatSetTemplate(template));
+  const keptText = invalidDrafts?.get(FIELD);
+  const [text, setText] = useState(
+    () => keptText ?? formatSetTemplate(template),
+  );
   const [syncedKey, setSyncedKey] = useState(templateKey);
-  const [invalid, setInvalid] = useState(false);
+  const [invalid, setInvalid] = useState(keptText !== undefined);
 
   if (templateKey !== syncedKey) {
     setSyncedKey(templateKey);
@@ -37,14 +42,16 @@ export const NewSetTemplateSettings = ({
     setInvalid(false);
   }
 
-  useEffect(() => {
-    onInvalidChange?.(FIELD, invalid);
-  }, [invalid, onInvalidChange]);
-
   const apply = (next: SetTemplate | null) => {
     setInvalid(false);
     setSyncedKey(JSON.stringify(next));
+    onDraftChange?.(FIELD, null);
     onChange(FIELD, next);
+  };
+
+  const reject = (value: string) => {
+    setInvalid(true);
+    onDraftChange?.(FIELD, value);
   };
 
   const handleText = (value: string) => {
@@ -57,11 +64,11 @@ export const NewSetTemplateSettings = ({
     try {
       parsed = JSON.parse(value);
     } catch {
-      setInvalid(true);
+      reject(value);
       return;
     }
     if (!isTemplate(parsed)) {
-      setInvalid(true);
+      reject(value);
       return;
     }
     apply(parsed);

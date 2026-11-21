@@ -33,32 +33,43 @@ func TestOnlyCreateSetReadsTheNewSetTemplate(t *testing.T) {
 	}
 }
 
-func TestInvalidTemplateJSONBlocksTheSettingsSave(t *testing.T) {
+func TestInvalidTemplateJSONIsAnUnsavedChange(t *testing.T) {
 	block := readUI(t, "components/settings/NewSetTemplate.tsx")
-	if !strings.Contains(block, "onInvalidChange?.(FIELD, invalid)") {
-		t.Error("the New set defaults block no longer tells the settings page that its JSON is invalid, so Save would store the last valid draft while the box shows something else")
+	for want, why := range map[string]string{
+		"onDraftChange?.(FIELD, value)":           "the block no longer hands its invalid text to the settings page, so Save would store the last valid draft while the box shows something else",
+		"onDraftChange?.(FIELD, null)":            "the block no longer clears its invalid text on the settings page once the JSON is valid again",
+		"keptText ?? formatSetTemplate(template)": "the block no longer restores its invalid text after a switch to another sub-tab and back",
+	} {
+		if !strings.Contains(block, want) {
+			t.Errorf("NewSetTemplate.tsx lost %q: %s", want, why)
+		}
 	}
 
 	core := readUI(t, "components/settings/CoreSettings.tsx")
-	for _, want := range []string{"onInvalidChange={onFieldInvalid}", "key={resetToken}"} {
+	for _, want := range []string{"onDraftChange={onFieldDraft}", "invalidDrafts={invalidDrafts}", "key={resetToken}"} {
 		if !strings.Contains(core, want) {
 			t.Errorf("CoreSettings no longer passes %s to the New set defaults block", want)
 		}
 	}
 
 	page := readUI(t, "components/settings/Page.tsx")
-	for _, want := range []string{
-		"const saveBlocked = invalidFields.size > 0;",
-		"if (!config || saveBlocked) return;",
-		"disabled={!hasChanges || saving || saveBlocked}",
-		"onFieldInvalid={handleFieldInvalid}",
+	for want, why := range map[string]string{
+		"const saveBlocked = invalidDrafts.size > 0;":     "invalid text no longer blocks Save",
+		"const anyChanges = hasChanges || saveBlocked;":   "invalid text no longer counts as an unsaved change",
+		"if (!config || saveBlocked) return;":             "Save runs with invalid text",
+		"disabled={!hasChanges || saving || saveBlocked}": "the Save button ignores invalid text",
+		"disabled={!anyChanges || saving}":                "Discard stays disabled for an edit that is only invalid",
+		"{anyChanges && (":                                "the Modified chip ignores invalid text",
+		"...invalidDrafts.keys()":                         "the sub-tab dot ignores invalid text",
+		"total={changeItems.length + invalidDrafts.size}": "the unsaved-changes dialogs do not count invalid text",
+		"onFieldDraft={handleFieldDraft}":                 "the settings page no longer receives invalid text",
 	} {
 		if !strings.Contains(page, want) {
-			t.Errorf("the settings page lost %q: invalid JSON in a block would no longer block Save", want)
+			t.Errorf("the settings page lost %q: %s", want, why)
 		}
 	}
-	if n := strings.Count(page, "setInvalidFields(new Set());"); n < 2 {
-		t.Errorf("the invalid-field flags are cleared in %d places; loading the config and Discard must both clear them", n)
+	if n := strings.Count(page, "setInvalidDrafts(new Map());"); n < 2 {
+		t.Errorf("invalid text is cleared in %d places; loading the config and Discard must both clear it", n)
 	}
 }
 

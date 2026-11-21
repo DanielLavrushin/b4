@@ -157,19 +157,28 @@ export function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
-  const [invalidFields, setInvalidFields] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
+  const [invalidDrafts, setInvalidDrafts] = useState<
+    ReadonlyMap<string, string>
+  >(() => new Map());
   const [formResetToken, setFormResetToken] = useState(0);
-  const handleFieldInvalid = useCallback((field: string, invalid: boolean) => {
-    setInvalidFields((prev) => {
-      if (prev.has(field) === invalid) return prev;
-      const next = new Set(prev);
-      if (invalid) next.add(field);
-      else next.delete(field);
-      return next;
-    });
-  }, []);
+  const handleFieldDraft = useCallback(
+    (field: string, invalidText: string | null) => {
+      setInvalidDrafts((prev) => {
+        if (
+          invalidText === null
+            ? !prev.has(field)
+            : prev.get(field) === invalidText
+        ) {
+          return prev;
+        }
+        const next = new Map(prev);
+        if (invalidText === null) next.delete(field);
+        else next.set(field, invalidText);
+        return next;
+      });
+    },
+    [],
+  );
   const [showRestartDialog, setShowRestartDialog] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const lastSection = useRef<Partial<Record<TABS, string>>>({});
@@ -304,7 +313,9 @@ export function SettingsPage() {
     [draftSets, baselineSets],
   );
   const hasChanges = changedLeaves.length > 0 || setsChanged;
-  const hasUnsavedChanges = hasChanges || config !== deferredConfig;
+  const saveBlocked = invalidDrafts.size > 0;
+  const anyChanges = hasChanges || saveBlocked;
+  const hasUnsavedChanges = anyChanges || config !== deferredConfig;
   const shouldBlock = useCallback<BlockerFunction>(
     ({ nextLocation }) =>
       hasUnsavedChanges && !nextLocation.pathname.startsWith("/settings"),
@@ -344,13 +355,14 @@ export function SettingsPage() {
 
   const sectionState = useMemo(() => {
     const state: Partial<Record<TABS, SectionState[]>> = {};
+    const dirtyPaths = [...changedPaths, ...invalidDrafts.keys()];
     for (const [tab, sections] of TAB_SECTIONS) {
       state[tab] = sections.map((section) => {
-        if (!hasChanges || !deferredConfig || !originalConfig) {
+        if (!anyChanges || !deferredConfig || !originalConfig) {
           return { dirty: false, restart: false };
         }
         let dirty = false;
-        for (const p of changedPaths) {
+        for (const p of dirtyPaths) {
           if (
             section.exceptPrefixes?.some(
               (e) => p === e || p.startsWith(`${e}.`),
@@ -376,11 +388,11 @@ export function SettingsPage() {
       });
     }
     return state;
-  }, [deferredConfig, originalConfig, hasChanges, changedPaths]);
+  }, [deferredConfig, originalConfig, anyChanges, changedPaths, invalidDrafts]);
 
   // Check which categories have changes
   const categoryHasChanges = useMemo(() => {
-    if (!hasChanges) return {};
+    if (!anyChanges) return {};
 
     return {
       // Core
@@ -412,7 +424,7 @@ export function SettingsPage() {
       // System
       [TABS.SYSTEM]: !!sectionState[TABS.SYSTEM]?.some((s) => s.dirty),
     };
-  }, [changedPaths, hasChanges, sectionState]);
+  }, [changedPaths, anyChanges, sectionState]);
 
   const needsRestart = Object.values(sectionState).some((list) =>
     list.some((s) => s.restart),
@@ -427,7 +439,7 @@ export function SettingsPage() {
       const data = await configApi.get();
       setConfig(data);
       setOriginalConfig(structuredClone(data));
-      setInvalidFields(new Set());
+      setInvalidDrafts(new Map());
       setFormResetToken((n) => n + 1);
       setLanguage(data.system.web_server.language ?? "en");
       return data;
@@ -451,8 +463,6 @@ export function SettingsPage() {
   const invalidateHub = useHubInvalidate();
   const invalidateTelegramBridge = useTelegramBridgeInvalidate();
   const invalidateSystemAddresses = useSystemAddressesInvalidate();
-
-  const saveBlocked = invalidFields.size > 0;
 
   const saveConfig = async () => {
     if (!config || saveBlocked) return;
@@ -495,7 +505,7 @@ export function SettingsPage() {
   const resetChanges = () => {
     if (originalConfig) {
       setConfig(structuredClone(originalConfig));
-      setInvalidFields(new Set());
+      setInvalidDrafts(new Map());
       setFormResetToken((n) => n + 1);
       setLanguage(originalConfig.system.web_server.language ?? "en");
       setShowResetDialog(false);
@@ -567,7 +577,7 @@ export function SettingsPage() {
               >
                 {t("core.configuration")}
               </Typography>
-              {hasChanges && (
+              {anyChanges && (
                 <Chip
                   label={t("core.modified")}
                   size="small"
@@ -602,7 +612,7 @@ export function SettingsPage() {
                 size="small"
                 variant="text"
                 onClick={() => setShowResetDialog(true)}
-                disabled={!hasChanges || saving}
+                disabled={!anyChanges || saving}
               >
                 {t("core.discard")}
               </Button>
@@ -689,7 +699,8 @@ export function SettingsPage() {
             section={currentSectionId}
             config={config}
             onChange={handleChange}
-            onFieldInvalid={handleFieldInvalid}
+            onFieldDraft={handleFieldDraft}
+            invalidDrafts={invalidDrafts}
             resetToken={formResetToken}
           />
         </TabPanel>
@@ -746,7 +757,7 @@ export function SettingsPage() {
       <UnsavedChangesDialog
         open={showResetDialog}
         groups={changeGroups}
-        total={changeItems.length}
+        total={changeItems.length + invalidDrafts.size}
         onStay={() => setShowResetDialog(false)}
         onLeave={resetChanges}
         title={t("core.discardChanges")}
@@ -762,7 +773,7 @@ export function SettingsPage() {
       <UnsavedChangesDialog
         open={blocker.state === "blocked"}
         groups={changeGroups}
-        total={changeItems.length}
+        total={changeItems.length + invalidDrafts.size}
         onStay={() => blocker.reset?.()}
         onLeave={() => blocker.proceed?.()}
       />

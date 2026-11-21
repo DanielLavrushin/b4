@@ -24,7 +24,8 @@ interface CoreSettingsProps {
   section: string | undefined;
   config: B4Config;
   onChange: (field: string, value: SettingsPropHandlerType) => void;
-  onFieldInvalid?: (field: string, invalid: boolean) => void;
+  onFieldDraft?: (field: string, invalidText: string | null) => void;
+  invalidDrafts?: ReadonlyMap<string, string>;
   resetToken?: number;
 }
 
@@ -55,7 +56,8 @@ export const CoreSettings = ({
   section,
   config,
   onChange,
-  onFieldInvalid,
+  onFieldDraft,
+  invalidDrafts,
   resetToken,
 }: CoreSettingsProps) => {
   const props = { config, onChange };
@@ -90,7 +92,8 @@ export const CoreSettings = ({
           <NewSetTemplateSettings
             key={resetToken}
             {...props}
-            onInvalidChange={onFieldInvalid}
+            onDraftChange={onFieldDraft}
+            invalidDrafts={invalidDrafts}
           />
         ),
       }}
