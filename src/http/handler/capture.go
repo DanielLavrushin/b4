@@ -32,6 +32,8 @@ func (api *API) RegisterCaptureApi() {
 	api.mux.HandleFunc("/api/capture/download", api.handleDownloadCapture)
 	api.mux.HandleFunc("/api/capture/upload", api.handleUploadCapture)
 	api.mux.HandleFunc("/api/capture/inspect", api.handleInspectCapture)
+	api.mux.HandleFunc("/api/capture/builtin", api.handleListBuiltinPayloads)
+	api.mux.HandleFunc("/api/capture/builtin/download", api.handleDownloadBuiltinPayload)
 }
 
 // @Summary Generate capture payload
@@ -369,6 +371,47 @@ func (api *API) handleDownloadCapture(w http.ResponseWriter, r *http.Request) {
 
 	http.ServeFile(w, r, absPath)
 	log.Tracef("Served capture file: %s", filename)
+}
+
+// @Summary List the built-in payloads
+// @Description The payloads compiled into b4 (google, vk, stun, quic1, quic2), each with its protocol, size, facts and source.
+// @Tags Capture
+// @Produce json
+// @Success 200 {array} capture.Builtin
+// @Security BearerAuth
+// @Router /capture/builtin [get]
+func (api *API) handleListBuiltinPayloads(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	setJsonHeader(w)
+	json.NewEncoder(w).Encode(capture.Builtins())
+}
+
+// @Summary Download a built-in payload
+// @Tags Capture
+// @Produce application/octet-stream
+// @Param id query string true "Built-in payload id (google, vk, stun, quic1, quic2)"
+// @Success 200 {file} binary
+// @Failure 404 {string} string
+// @Security BearerAuth
+// @Router /capture/builtin/download [get]
+func (api *API) handleDownloadBuiltinPayload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	id := r.URL.Query().Get("id")
+	data, ok := capture.BuiltinBytes(id)
+	if !ok {
+		http.Error(w, fmt.Sprintf("No built-in payload %q", id), http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", "builtin_"+id+".bin"))
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+	w.Write(data)
 }
 
 const uploadFormOverhead = 16 << 10
