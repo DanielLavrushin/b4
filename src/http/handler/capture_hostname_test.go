@@ -71,3 +71,44 @@ func TestGenerateTakesOnlyAHostName(t *testing.T) {
 		}
 	}
 }
+
+func TestTheHostNameNormalizerKeepsOnlyWhatAnSNIMayCarry(t *testing.T) {
+	label := func(c string, n int) string { return strings.Repeat(c, n) }
+	longest := label("a", 63) + "." + label("b", 63) + "." + label("c", 63) + "." + label("d", 61)
+	for _, c := range []struct{ input, host string }{
+		{"example.com/a?u=http://x", "example.com"},
+		{"Example.COM?q=1", "example.com"},
+		{"example.com#top", "example.com"},
+		{"example.com.:443", "example.com"},
+		{"HTTPS://user@host.example:8443/p", "host.example"},
+		{"пример。рф", "xn--e1afmkfd.xn--p1ai"},
+		{"www.пример．рф", "www.xn--e1afmkfd.xn--p1ai"},
+		{"пример｡рф:443", "xn--e1afmkfd.xn--p1ai"},
+		{"https://пример。рф/путь", "xn--e1afmkfd.xn--p1ai"},
+		{label("a", 63) + ".example", label("a", 63) + ".example"},
+		{longest, longest},
+	} {
+		if host, ok := normalizeHostName(c.input); !ok || host != c.host {
+			t.Errorf("normalizeHostName(%q) = %q, %t; want %q", c.input, host, ok, c.host)
+		}
+	}
+	for _, input := range []string{
+		"example..com",
+		".com",
+		"example.com..",
+		label("a", 64) + ".example",
+		longest + "d",
+		label("я", 70) + ".com",
+		"1.2.3.4",
+		"1.2.3.4:443",
+		"1.2.3.4.",
+		"http://1.2.3.4/",
+		"[::1]",
+		"[2001:db8::1]:443",
+		"::1",
+	} {
+		if host, ok := normalizeHostName(input); ok {
+			t.Errorf("normalizeHostName(%q) = %q, want a refusal", input, host)
+		}
+	}
+}

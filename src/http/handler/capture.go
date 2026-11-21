@@ -114,25 +114,54 @@ func (api *API) handleGenerateCapture(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+const (
+	maxHostNameLength  = 253
+	maxHostLabelLength = 63
+)
+
+var fullStops = strings.NewReplacer("。", ".", "．", ".", "｡", ".")
+
 func normalizeHostName(raw string) (string, bool) {
-	host := strings.ToLower(strings.TrimSpace(raw))
-	if strings.Contains(host, "://") {
+	host := fullStops.Replace(strings.ToLower(strings.TrimSpace(raw)))
+	if scheme, _, found := strings.Cut(host, "://"); found && isURLScheme(scheme) {
 		u, err := url.Parse(host)
 		if err != nil {
 			return "", false
 		}
 		host = u.Host
-	} else if i := strings.IndexByte(host, '/'); i >= 0 {
+	} else if i := strings.IndexAny(host, "/?#"); i >= 0 {
 		host = host[:i]
 	}
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
-	host, err := sni.HostToASCII(strings.TrimSuffix(host, "."))
-	if err != nil || !sni.IsValidSNI([]byte(host)) {
+	host = strings.TrimSuffix(host, ".")
+	if net.ParseIP(strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")) != nil {
 		return "", false
 	}
+	host, err := sni.HostToASCII(host)
+	if err != nil || len(host) > maxHostNameLength || !sni.IsValidSNI([]byte(host)) {
+		return "", false
+	}
+	for _, label := range strings.Split(host, ".") {
+		if len(label) == 0 || len(label) > maxHostLabelLength {
+			return "", false
+		}
+	}
 	return host, true
+}
+
+func isURLScheme(s string) bool {
+	if s == "" || s[0] < 'a' || s[0] > 'z' {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
+		c := s[i]
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '+' && c != '-' && c != '.' {
+			return false
+		}
+	}
+	return true
 }
 
 type RegenerateRequest struct {
