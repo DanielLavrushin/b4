@@ -866,7 +866,7 @@
       "protocol": "Protocol",
       "protocolTls": "TLS (for TCP fakes)",
       "protocolQuic": "QUIC (for UDP fakes)",
-      "protocolHelp": "Detected from the file when b4 recognises it. TLS payloads serve TCP fakes, QUIC payloads UDP fakes.",
+      "protocolHelp": "Detected from the file when b4 recognizes it. TLS payloads serve TCP fakes, QUIC payloads UDP fakes.",
       "protocolDetected": "Detected from the file.",
       "nameFromSni": "Taken from the file's SNI.",
       "chooseFile": "Choose File...",
@@ -955,13 +955,13 @@
         "quic_initial_version": "QUIC v{{version}} Initial",
         "stun": "STUN message",
         "dtls_client_hello": "DTLS ClientHello",
-        "other": "Unrecognised data"
+        "other": "Unrecognized data"
       },
       "warnings": {
         "empty": "The file is empty.",
         "too_large_tls": "Larger than one packet carries on a 1500-byte link. A set that uses it with Match Fake Size off does not send this fake on such a link.",
         "too_large_quic": "Larger than one UDP fake carries. Only the start of the file goes out.",
-        "unrecognized": "b4 does not recognise this file as a TLS ClientHello, QUIC Initial, STUN or DTLS message. It is sent as is.",
+        "unrecognized": "b4 does not recognize this file as a TLS ClientHello, QUIC Initial, STUN or DTLS message. It is sent as is.",
         "malformed": "Malformed fields: {{fields}}.",
         "kind_mismatch_tls": "The file is a {{kind}}, but its protocol is TLS, for TCP fakes.",
         "kind_mismatch_quic": "The file is a TLS ClientHello, but its protocol is QUIC, for UDP fakes."
