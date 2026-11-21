@@ -24,9 +24,11 @@ interface CoreSettingsProps {
   section: string | undefined;
   config: B4Config;
   onChange: (field: string, value: SettingsPropHandlerType) => void;
+  onFieldInvalid?: (field: string, invalid: boolean) => void;
+  resetToken?: number;
 }
 
-type SectionProps = Omit<CoreSettingsProps, "section">;
+type SectionProps = Pick<CoreSettingsProps, "config" | "onChange">;
 
 const EngineSection = (props: SectionProps) => {
   const { ipv6BypassesSets, engineFailure } = useEngineStatus();
@@ -53,6 +55,8 @@ export const CoreSettings = ({
   section,
   config,
   onChange,
+  onFieldInvalid,
+  resetToken,
 }: CoreSettingsProps) => {
   const props = { config, onChange };
 
@@ -82,7 +86,13 @@ export const CoreSettings = ({
         ),
         dns: <DnsSettings {...props} />,
         socks5: <Socks5Settings {...props} />,
-        other: <NewSetTemplateSettings {...props} />,
+        other: (
+          <NewSetTemplateSettings
+            key={resetToken}
+            {...props}
+            onInvalidChange={onFieldInvalid}
+          />
+        ),
       }}
     />
   );

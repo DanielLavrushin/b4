@@ -9,6 +9,7 @@ import {
   Grid,
   Paper,
   Stack,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
@@ -156,6 +157,19 @@ export function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
+  const [invalidFields, setInvalidFields] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [formResetToken, setFormResetToken] = useState(0);
+  const handleFieldInvalid = useCallback((field: string, invalid: boolean) => {
+    setInvalidFields((prev) => {
+      if (prev.has(field) === invalid) return prev;
+      const next = new Set(prev);
+      if (invalid) next.add(field);
+      else next.delete(field);
+      return next;
+    });
+  }, []);
   const [showRestartDialog, setShowRestartDialog] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const lastSection = useRef<Partial<Record<TABS, string>>>({});
@@ -413,6 +427,8 @@ export function SettingsPage() {
       const data = await configApi.get();
       setConfig(data);
       setOriginalConfig(structuredClone(data));
+      setInvalidFields(new Set());
+      setFormResetToken((n) => n + 1);
       setLanguage(data.system.web_server.language ?? "en");
       return data;
     } catch (error) {
@@ -436,8 +452,10 @@ export function SettingsPage() {
   const invalidateTelegramBridge = useTelegramBridgeInvalidate();
   const invalidateSystemAddresses = useSystemAddressesInvalidate();
 
+  const saveBlocked = invalidFields.size > 0;
+
   const saveConfig = async () => {
-    if (!config) return;
+    if (!config || saveBlocked) return;
 
     let stale = false;
     try {
@@ -477,6 +495,8 @@ export function SettingsPage() {
   const resetChanges = () => {
     if (originalConfig) {
       setConfig(structuredClone(originalConfig));
+      setInvalidFields(new Set());
+      setFormResetToken((n) => n + 1);
       setLanguage(originalConfig.system.web_server.language ?? "en");
       setShowResetDialog(false);
       showSuccess(t("core.changesDiscarded"));
@@ -599,19 +619,23 @@ export function SettingsPage() {
                 {t("core.reload")}
               </Button>
 
-              <Button
-                size="small"
-                variant="contained"
-                startIcon={
-                  saving ? <CircularProgress size={16} /> : <SaveIcon />
-                }
-                onClick={() => {
-                  void saveConfig();
-                }}
-                disabled={!hasChanges || saving}
-              >
-                {saving ? t("core.saving") : t("core.save")}
-              </Button>
+              <Tooltip title={saveBlocked ? t("core.saveBlockedInvalid") : ""}>
+                <span>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    startIcon={
+                      saving ? <CircularProgress size={16} /> : <SaveIcon />
+                    }
+                    onClick={() => {
+                      void saveConfig();
+                    }}
+                    disabled={!hasChanges || saving || saveBlocked}
+                  >
+                    {saving ? t("core.saving") : t("core.save")}
+                  </Button>
+                </span>
+              </Tooltip>
             </Stack>
           </Stack>
 
@@ -665,6 +689,8 @@ export function SettingsPage() {
             section={currentSectionId}
             config={config}
             onChange={handleChange}
+            onFieldInvalid={handleFieldInvalid}
+            resetToken={formResetToken}
           />
         </TabPanel>
 

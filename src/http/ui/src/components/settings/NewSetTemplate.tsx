@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Stack } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { fonts } from "@design";
@@ -11,6 +11,7 @@ import { formatSetTemplate } from "@models/setTemplate";
 interface NewSetTemplateSettingsProps {
   config: B4Config;
   onChange: (field: string, value: SettingsPropHandlerType) => void;
+  onInvalidChange?: (field: string, invalid: boolean) => void;
 }
 
 const FIELD = "ui.new_set_template";
@@ -21,6 +22,7 @@ const isTemplate = (v: unknown): v is SetTemplate =>
 export const NewSetTemplateSettings = ({
   config,
   onChange,
+  onInvalidChange,
 }: NewSetTemplateSettingsProps) => {
   const { t } = useTranslation();
   const template = config.ui?.new_set_template ?? null;
@@ -34,6 +36,10 @@ export const NewSetTemplateSettings = ({
     setText(formatSetTemplate(template));
     setInvalid(false);
   }
+
+  useEffect(() => {
+    onInvalidChange?.(FIELD, invalid);
+  }, [invalid, onInvalidChange]);
 
   const apply = (next: SetTemplate | null) => {
     setInvalid(false);

@@ -33,8 +33,38 @@ func TestOnlyCreateSetReadsTheNewSetTemplate(t *testing.T) {
 	}
 }
 
+func TestInvalidTemplateJSONBlocksTheSettingsSave(t *testing.T) {
+	block := readUI(t, "components/settings/NewSetTemplate.tsx")
+	if !strings.Contains(block, "onInvalidChange?.(FIELD, invalid)") {
+		t.Error("the New set defaults block no longer tells the settings page that its JSON is invalid, so Save would store the last valid draft while the box shows something else")
+	}
+
+	core := readUI(t, "components/settings/CoreSettings.tsx")
+	for _, want := range []string{"onInvalidChange={onFieldInvalid}", "key={resetToken}"} {
+		if !strings.Contains(core, want) {
+			t.Errorf("CoreSettings no longer passes %s to the New set defaults block", want)
+		}
+	}
+
+	page := readUI(t, "components/settings/Page.tsx")
+	for _, want := range []string{
+		"const saveBlocked = invalidFields.size > 0;",
+		"if (!config || saveBlocked) return;",
+		"disabled={!hasChanges || saving || saveBlocked}",
+		"onFieldInvalid={handleFieldInvalid}",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the settings page lost %q: invalid JSON in a block would no longer block Save", want)
+		}
+	}
+	if n := strings.Count(page, "setInvalidFields(new Set());"); n < 2 {
+		t.Errorf("the invalid-field flags are cleared in %d places; loading the config and Discard must both clear them", n)
+	}
+}
+
 func TestNewSetTemplateStringsExistInBothLocales(t *testing.T) {
 	keys := []string{
+		"core.saveBlockedInvalid",
 		"settings.coreTabs.other",
 		"settings.NewSetTemplate.title",
 		"settings.NewSetTemplate.info",

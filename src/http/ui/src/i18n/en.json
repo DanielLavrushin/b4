@@ -11,6 +11,7 @@
   "core": {
     "save": "Save Changes",
     "saving": "Saving...",
+    "saveBlockedInvalid": "Fix the values marked in red before saving",
     "cancel": "Cancel",
     "close": "Close",
     "reload": "Reload",
