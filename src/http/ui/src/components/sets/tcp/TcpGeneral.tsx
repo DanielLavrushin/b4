@@ -417,6 +417,10 @@ export const TcpGeneral = ({
                 />
               </Grid>
             )}
+          </>
+        )}
+        {(ws.enabled || reuse.enabled) && (
+          <>
             <Grid size={{ xs: 12 }}>
               <B4Switch
                 label={t("sets.tcp.general.wssizeReuse")}
