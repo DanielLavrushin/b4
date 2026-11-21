@@ -365,6 +365,7 @@ export const TcpGeneral = ({
                 onChange={(e) => setWsScaleMode(String(e.target.value))}
                 helperText={t("sets.tcp.general.wssizeScaleModeHelper")}
                 changeLabel={t("sets.tcp.general.wssizeStripScale")}
+                learnMore="sets/tcp/general#wssize"
                 aiTopic="tcp.wssize.strip_scale"
                 aiContext={{
                   strip_scale: ws.strip_scale ?? false,

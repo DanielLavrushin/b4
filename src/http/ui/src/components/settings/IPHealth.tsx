@@ -122,6 +122,7 @@ export const IPHealthSettings = ({
           onChange("system.ip_health.ban_ttl_sec", toSeconds(value, HOUR_SEC))
         }
         helperText={t("settings.IPHealth.banTtlHelper")}
+        learnMore="settings/core#ip-block-detection"
         aiTopic="system.ip_health.ban_ttl_sec"
         aiContext={{ ban_ttl_sec: banTtl }}
       />
