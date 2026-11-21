@@ -2,10 +2,9 @@ import { Box, Grid, Link, Typography } from "@mui/material";
 import { Link as RouterLink } from "react-router";
 import { Trans, useTranslation } from "react-i18next";
 import {
-  B4Alert,
   B4Badge,
+  B4FieldMessage,
   B4FormHeader,
-  B4Hint,
   B4Slider,
   B4Switch,
   IfaceDetails,
@@ -76,6 +75,55 @@ export const SetDscp = ({
     }
   };
 
+  const offSeverity = dscp.enabled ? "warning" : "info";
+  const switchMessages = [
+    env.skipSetup && (
+      <B4FieldMessage key="skip" severity={offSeverity}>
+        {t("sets.routing.dscpOffSkip")}
+      </B4FieldMessage>
+    ),
+    refusal && (
+      <B4FieldMessage key="refusal" severity={offSeverity}>
+        {t(dscpRefusalKey(config, refusal))}
+      </B4FieldMessage>
+    ),
+    applies && learnsDomains && (
+      <B4FieldMessage key="first-connection" severity="info">
+        {t("sets.routing.dscpFirstConnection")}
+      </B4FieldMessage>
+    ),
+  ].filter(Boolean);
+
+  const valueMessages = [
+    applies && globalOn && global?.value === dscp.value && (
+      <B4FieldMessage key="same">
+        {t("sets.routing.dscpSameAsGlobal", { value: dscp.value })}
+      </B4FieldMessage>
+    ),
+    applies && globalOn && global?.value !== dscp.value && (
+      <B4FieldMessage key="replaces" severity="info">
+        {t("sets.routing.dscpReplacesGlobal", {
+          value: dscp.value,
+          global: global?.value,
+        })}
+      </B4FieldMessage>
+    ),
+    applies && !globalOn && (
+      <B4FieldMessage key="others" severity="info">
+        <Trans
+          i18nKey="sets.routing.dscpOthersKeep"
+          values={{ value: dscp.value }}
+          components={{ a: firewallLink }}
+        />
+      </B4FieldMessage>
+    ),
+    applies && encapsulated && (
+      <B4FieldMessage key="encapsulated">
+        {t("sets.routing.dscpEncapsulated", { iface: egress })}
+      </B4FieldMessage>
+    ),
+  ].filter(Boolean);
+
   return (
     <>
       <B4FormHeader label={t("sets.routing.dscpTitle")} />
@@ -83,6 +131,9 @@ export const SetDscp = ({
         <B4Switch
           label={t("sets.routing.dscpEnable")}
           description={t("sets.routing.dscpEnableDesc")}
+          message={switchMessages.length > 0 ? switchMessages : undefined}
+          info={t("sets.routing.dscpEnableInfo")}
+          learnMore="sets/routing#dscp"
           checked={dscp.enabled}
           path="dscp.enabled"
           onChange={handleToggle}
@@ -91,17 +142,6 @@ export const SetDscp = ({
           aiContext={{ value: dscp.value }}
         />
       </Grid>
-
-      {env.skipSetup && (
-        <B4Alert severity={dscp.enabled ? "warning" : "info"}>
-          {t("sets.routing.dscpOffSkip")}
-        </B4Alert>
-      )}
-      {refusal && (
-        <B4Alert severity={dscp.enabled ? "warning" : "info"}>
-          {t(dscpRefusalKey(config, refusal))}
-        </B4Alert>
-      )}
 
       {dscp.enabled && (
         <Grid size={{ xs: 12, md: 6 }}>
@@ -114,41 +154,14 @@ export const SetDscp = ({
             max={DSCP_MAX_VALUE}
             step={1}
             helperText={t("sets.routing.dscpValueHelp")}
+            info={t("sets.routing.dscpValueInfo")}
+            learnMore="sets/routing#dscp-values"
             aiTopic="dscp.value"
+            alert={valueMessages.length > 0 ? valueMessages : undefined}
           />
         </Grid>
       )}
 
-      {applies && globalOn && global?.value === dscp.value && (
-        <B4Alert severity="warning">
-          {t("sets.routing.dscpSameAsGlobal", { value: dscp.value })}
-        </B4Alert>
-      )}
-      {applies && globalOn && global?.value !== dscp.value && (
-        <B4Alert severity="info">
-          {t("sets.routing.dscpReplacesGlobal", {
-            value: dscp.value,
-            global: global?.value,
-          })}
-        </B4Alert>
-      )}
-      {applies && !globalOn && (
-        <B4Alert severity="info">
-          <Trans
-            i18nKey="sets.routing.dscpOthersKeep"
-            values={{ value: dscp.value }}
-            components={{ a: firewallLink }}
-          />
-        </B4Alert>
-      )}
-      {applies && encapsulated && (
-        <B4Alert severity="warning">
-          {t("sets.routing.dscpEncapsulated", { iface: egress })}
-        </B4Alert>
-      )}
-      {applies && learnsDomains && (
-        <B4Hint>{t("sets.routing.dscpFirstConnection")}</B4Hint>
-      )}
       {applies && scope.length > 0 && (
         <Grid size={{ xs: 12 }}>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>

@@ -17,10 +17,14 @@ const (
 )
 
 var (
-	learnMoreRe = regexp.MustCompile(`\blearnMore="([^"]+)"`)
-	aiTopicRe   = regexp.MustCompile(`\baiTopic="([^"]+)"`)
-	headingRe   = regexp.MustCompile(`(?m)^#{2,4}\s+(.*?)(?:\s*\{#([\w-]+)\})?\s*$`)
-	codeFenceRe = regexp.MustCompile("(?s)```.*?```")
+	learnMoreRe  = regexp.MustCompile(`\blearnMore="([^"]+)"`)
+	computedRe   = regexp.MustCompile(`\blearnMore=\{([^}]*)\}`)
+	docsTableRe  = regexp.MustCompile(`(?s)\bconst\s+([A-Z][A-Z_]*_DOCS)\b[^=]*=\s*\{(.*?)\n\}`)
+	tableValueRe = regexp.MustCompile(`:\s*"([^"]+)"`)
+	tableUseRe   = regexp.MustCompile(`^([A-Z][A-Z_]*_DOCS)\[[^\]]+\]$`)
+	aiTopicRe    = regexp.MustCompile(`\baiTopic="([^"]+)"`)
+	headingRe    = regexp.MustCompile(`(?m)^#{2,4}\s+(.*?)(?:\s*\{#([\w-]+)\})?\s*$`)
+	codeFenceRe  = regexp.MustCompile("(?s)```.*?```")
 )
 
 var topicsWithoutFacts = map[string]bool{
@@ -65,19 +69,47 @@ func docAnchors(t *testing.T, root, page string) map[string]bool {
 	return anchors
 }
 
+func docsLinks(src string) []string {
+	var links []string
+	for _, m := range learnMoreRe.FindAllStringSubmatch(src, -1) {
+		links = append(links, m[1])
+	}
+	for _, table := range docsTableRe.FindAllStringSubmatch(src, -1) {
+		for _, m := range tableValueRe.FindAllStringSubmatch(table[2], -1) {
+			links = append(links, m[1])
+		}
+	}
+	return links
+}
+
 func TestLearnMoreLinksLandInBothDocsLocales(t *testing.T) {
 	seen := 0
 	for _, rel := range tsxSourceFiles(t) {
-		for _, m := range learnMoreRe.FindAllStringSubmatch(readUI(t, rel), -1) {
+		src := readUI(t, rel)
+		tables := map[string]bool{}
+		for _, table := range docsTableRe.FindAllStringSubmatch(src, -1) {
+			tables[table[1]] = true
+		}
+		for _, m := range computedRe.FindAllStringSubmatch(src, -1) {
+			expr := strings.TrimSpace(m[1])
+			if expr == "learnMore" {
+				continue
+			}
+			use := tableUseRe.FindStringSubmatch(expr)
+			if use == nil || !tables[use[1]] {
+				t.Errorf("%s computes a learnMore link as %s: read it from a const table named *_DOCS in the same file, which this test checks", rel, m[1])
+			}
+		}
+		for _, link := range docsLinks(src) {
 			seen++
-			page, anchor, _ := strings.Cut(m[1], "#")
+			page, anchor, _ := strings.Cut(link, "#")
 			for _, root := range []string{docsEnglish, docsRussian} {
 				anchors := docAnchors(t, root, page)
 				if anchors == nil || anchor == "" {
 					continue
 				}
 				if !anchors[anchor] {
-					t.Errorf("%s links to %s, but %s has no heading with the id %s", rel, m[1], filepath.Join(root, page+".md"), anchor)
+					t.Errorf("%s links to %s, but %s has no heading with the id %s", rel, link, filepath.Join(root, page+".md"), anchor)
 				}
 			}
 		}

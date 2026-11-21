@@ -85,6 +85,7 @@ export const RoutingSettings = ({
       title={t("sets.routing.sectionTitle")}
       description={t("sets.routing.sectionDescription")}
       icon={<RoutingIcon />}
+      learnMore="sets/routing"
     >
       <B4Tabs
         value={activeTab}

@@ -1,16 +1,19 @@
-import { Box, Grid, Link, MenuItem, Typography } from "@mui/material";
+import { Box, FormHelperText, Grid, Link, Typography } from "@mui/material";
 import { Link as RouterLink } from "react-router";
 import {
-  B4Alert,
+  B4Advanced,
   B4Badge,
-  B4Hint,
+  B4FieldMessage,
+  B4FormGroup,
   B4NumberField,
+  B4Select,
   B4Switch,
   B4TextField,
   IfaceDetails,
   useIfaceLabel,
 } from "@b4.elements";
 import { B4SetConfig, RouterTraffic, RoutingMode } from "@models/config";
+import { createDefaultSet } from "@models/defaults";
 import { colors } from "@design";
 import { DscpEnvironment, declaresIpTargets } from "@utils";
 import { Trans, useTranslation } from "react-i18next";
@@ -34,6 +37,15 @@ function isGatewayAddress(value: string): boolean {
     ipaddr.IPv6.isValid(text.slice(0, zoneAt))
   );
 }
+
+const MODE_DOCS: Record<RoutingMode, string> = {
+  interface: "guides/vpn",
+  proxy: "guides/proxy",
+  "mtproto-ws": "telegram/websocket-bridge",
+  block: "sets/blocking",
+};
+
+const DEFAULT_IP_TTL = createDefaultSet(0).routing.ip_ttl_seconds;
 
 interface TrafficRoutingProps {
   config: B4SetConfig;
@@ -186,6 +198,118 @@ export const TrafficRouting = ({
           : routing.egress_interface;
   }
 
+  const noInterfaces = isInterface && availableIfaces.length === 0;
+
+  const enableMessages = [
+    noInterfaces && !routing.enabled && (
+      <B4FieldMessage key="no-interfaces">
+        {t("sets.routing.noInterfaces")}
+      </B4FieldMessage>
+    ),
+    showNoDestinationWarning && (
+      <B4FieldMessage key="no-destination">
+        {sourceDeviceCount > 0
+          ? t("sets.routing.noDestinationWithDevices")
+          : t("sets.routing.noDestination")}
+        {isProxy && ` ${t("sets.routing.noDestinationPortHint")}`}
+      </B4FieldMessage>
+    ),
+    routing.enabled && portRouting.active && (
+      <B4FieldMessage key="port-routed" severity="info">
+        {t("sets.routing.portRouted", { ports: portRouting.ports })}
+        {!ipv6 && ` ${t("sets.routing.portRoutedIpv6Off")}`}
+      </B4FieldMessage>
+    ),
+    routing.enabled && portRouting.wanted && !portRouting.scoped && (
+      <B4FieldMessage key="port-scope">
+        {t("sets.routing.portRoutingNeedsScope", {
+          ports: portRouting.ports,
+        })}
+      </B4FieldMessage>
+    ),
+    showDomainOnlyRoutingWarning && (
+      <B4FieldMessage key="domain-only">
+        {t("sets.routing.domainOnlyConflict")}
+      </B4FieldMessage>
+    ),
+  ].filter(Boolean);
+
+  const modeInfo: Record<RoutingMode, React.ReactNode> = {
+    interface: t("sets.routing.modeInterfaceInfo"),
+    proxy: t("sets.routing.modeProxyInfo"),
+    "mtproto-ws": (
+      <Trans
+        i18nKey="sets.routing.modeMTProtoWSInfo"
+        components={{
+          a: <Link component={RouterLink} to="/settings/mtproto" />,
+        }}
+      />
+    ),
+    block: t("sets.routing.modeBlockInfo"),
+  };
+  const ipTtl = routing.ip_ttl_seconds || DEFAULT_IP_TTL;
+
+  const egressMessages = [
+    noInterfaces && (
+      <B4FieldMessage key="no-interfaces">
+        {t("sets.routing.noInterfaces")}
+      </B4FieldMessage>
+    ),
+    egressUnusable && (
+      <B4FieldMessage key="unavailable">
+        {t("sets.routing.unavailableWarning", {
+          iface: routing.egress_interface,
+        })}
+      </B4FieldMessage>
+    ),
+    strategyHandedOff && (
+      <B4FieldMessage key="handed-off" severity="info">
+        {t("sets.routing.tunnelManipulationNote", {
+          iface: routing.egress_interface,
+        })}
+      </B4FieldMessage>
+    ),
+  ].filter(Boolean);
+
+  const routerTrafficMessages = [
+    sourceScoped && (
+      <B4FieldMessage key="scoped" severity="info">
+        {t("sets.routing.routerTrafficScoped")}
+      </B4FieldMessage>
+    ),
+    routerTrafficLoops && (
+      <B4FieldMessage key="loop">
+        {t("sets.routing.routerTrafficLoopWarning", {
+          iface: routing.egress_interface,
+        })}
+      </B4FieldMessage>
+    ),
+    routerTrafficHeldBack && (
+      <B4FieldMessage key="held-back" severity="info">
+        {t("sets.routing.routerTrafficHeldBack", {
+          iface: routing.egress_interface,
+        })}
+      </B4FieldMessage>
+    ),
+  ].filter(Boolean);
+
+  const egressOptions = [
+    ...(shouldShowUnavailableSelected
+      ? [
+          {
+            value: routing.egress_interface,
+            label: t("sets.routing.interfaceUnavailableOption", {
+              iface: routing.egress_interface,
+            }),
+          },
+        ]
+      : []),
+    ...availableIfaces.map((iface) => ({
+      value: iface,
+      label: ifaceLabel(iface),
+    })),
+  ];
+
   return (
     <Grid container spacing={3}>
       <Grid size={{ xs: 12 }}>
@@ -195,100 +319,84 @@ export const TrafficRouting = ({
           path="routing.enabled"
           onChange={(checked: boolean) => onChange("routing.enabled", checked)}
           description={t("sets.routing.enableDesc")}
-          disabled={
-            isInterface && availableIfaces.length === 0 && !routing.enabled
-          }
+          message={enableMessages.length > 0 ? enableMessages : undefined}
+          info={t("sets.routing.enableInfo")}
+          learnMore="sets/routing#traffic-routing"
+          aiTopic="routing.enabled"
+          disabled={noInterfaces && !routing.enabled}
         />
       </Grid>
 
       {routing.enabled && (
         <>
-          {showNoDestinationWarning && (
-            <Grid size={{ xs: 12 }}>
-              <B4Alert severity="warning">
-                {sourceDeviceCount > 0
-                  ? t("sets.routing.noDestinationWithDevices")
-                  : t("sets.routing.noDestination")}
-                {isProxy && ` ${t("sets.routing.noDestinationPortHint")}`}
-              </B4Alert>
-            </Grid>
-          )}
-          {portRouting.active && (
-            <Grid size={{ xs: 12 }}>
-              <B4Alert severity="info">
-                {t("sets.routing.portRouted", { ports: portRouting.ports })}
-                {!ipv6 && ` ${t("sets.routing.portRoutedIpv6Off")}`}
-              </B4Alert>
-            </Grid>
-          )}
-          {portRouting.wanted && !portRouting.scoped && (
-            <Grid size={{ xs: 12 }}>
-              <B4Alert severity="warning">
-                {t("sets.routing.portRoutingNeedsScope", {
-                  ports: portRouting.ports,
-                })}
-              </B4Alert>
-            </Grid>
-          )}
-          {showDomainOnlyRoutingWarning && (
-            <Grid size={{ xs: 12 }}>
-              <B4Alert severity="warning">
-                {t("sets.routing.domainOnlyConflict")}
-              </B4Alert>
-            </Grid>
-          )}
           <Grid size={{ xs: 12 }}>
-            <B4TextField
+            <B4Select
               label={t("sets.routing.modeLabel")}
-              select
               value={mode}
               path="routing.mode"
               onChange={(e) => onChange("routing.mode", e.target.value)}
-              helperText={t("sets.routing.modeHelper")}
-            >
-              <MenuItem value="interface">
-                {t("sets.routing.modeInterface")}
-              </MenuItem>
-              <MenuItem value="proxy">{t("sets.routing.modeProxy")}</MenuItem>
-              <MenuItem value="mtproto-ws">
-                {t("sets.routing.modeMTProtoWS")}
-              </MenuItem>
-              <MenuItem value="block">{t("sets.routing.modeBlock")}</MenuItem>
-            </B4TextField>
-            {isMTProtoWS && (
-              <>
-                <B4Alert severity="info" sx={{ mt: 2 }}>
-                  {t("sets.routing.mtprotoWsNote")}
-                </B4Alert>
-                <B4Hint sx={{ mt: 2 }}>
-                  <Trans
-                    i18nKey="sets.routing.mtprotoWsSwitchHint"
-                    components={{
-                      a: <Link component={RouterLink} to="/settings/mtproto" />,
-                    }}
-                  />
-                </B4Hint>
-              </>
-            )}
+              options={[
+                {
+                  value: "interface",
+                  label: t("sets.routing.modeInterface"),
+                  note: t("sets.routing.modeInterfaceNote"),
+                },
+                {
+                  value: "proxy",
+                  label: t("sets.routing.modeProxy"),
+                  note: t("sets.routing.modeProxyNote"),
+                },
+                {
+                  value: "mtproto-ws",
+                  label: t("sets.routing.modeMTProtoWS"),
+                  note: t("sets.routing.modeMTProtoWSNote"),
+                },
+                {
+                  value: "block",
+                  label: t("sets.routing.modeBlock"),
+                  note: t("sets.routing.modeBlockNote"),
+                },
+              ]}
+              helperText={t(
+                isProxy
+                  ? "sets.routing.modeProxyHelper"
+                  : isMTProtoWS
+                    ? "sets.routing.modeMTProtoWSHelper"
+                    : isBlock
+                      ? "sets.routing.modeBlockHelper"
+                      : "sets.routing.modeInterfaceHelper",
+              )}
+              info={modeInfo[mode]}
+              learnMore={MODE_DOCS[mode]}
+              aiTopic="routing.mode"
+            />
             {isBlock && (
-              <B4TextField
-                label={t("sets.routing.blockActionLabel")}
-                select
-                value={blockAction}
-                path="routing.block_action"
-                onChange={(e) =>
-                  onChange("routing.block_action", e.target.value)
-                }
-                helperText={t("sets.routing.blockActionHelper")}
-                sx={{ mt: 2 }}
-              >
-                <MenuItem value="reject">
-                  {t("sets.routing.blockActionReject")}
-                </MenuItem>
-                <MenuItem value="drop">
-                  {t("sets.routing.blockActionDrop")}
-                </MenuItem>
-              </B4TextField>
+              <Box sx={{ mt: 2 }}>
+                <B4Select
+                  label={t("sets.routing.blockActionLabel")}
+                  value={blockAction}
+                  path="routing.block_action"
+                  onChange={(e) =>
+                    onChange("routing.block_action", e.target.value)
+                  }
+                  options={[
+                    {
+                      value: "reject",
+                      label: t("sets.routing.blockActionReject"),
+                      note: t("sets.routing.blockActionRejectNote"),
+                    },
+                    {
+                      value: "drop",
+                      label: t("sets.routing.blockActionDrop"),
+                      note: t("sets.routing.blockActionDropNote"),
+                    },
+                  ]}
+                  helperText={t("sets.routing.blockActionHelper")}
+                  info={t("sets.routing.blockActionInfo")}
+                  learnMore="sets/blocking"
+                  aiTopic="routing.block_action"
+                />
+              </Box>
             )}
           </Grid>
 
@@ -381,253 +489,180 @@ export const TrafficRouting = ({
                   {t("sets.routing.flowInternet")}
                 </Box>
               </Box>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ mt: 1.5, display: "block", textAlign: "center" }}
-              >
-                {isProxy
-                  ? t("sets.routing.flowProxyCaption")
-                  : isMTProtoWS
-                    ? t("sets.routing.flowMTProtoWSCaption")
-                    : isBlock
-                      ? t("sets.routing.flowBlockCaption")
-                      : t("sets.routing.flowCaption")}
-              </Typography>
             </Box>
           </Grid>
-
-          <B4Hint>
-            {isProxy
-              ? t("sets.routing.howItWorksProxy")
-              : isMTProtoWS
-                ? t("sets.routing.howItWorksMTProtoWS")
-                : isBlock
-                  ? t("sets.routing.howItWorksBlock")
-                  : t("sets.routing.howItWorks")}
-          </B4Hint>
 
           <Grid size={{ xs: 12 }}>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-              {t("sets.routing.sourceInterfaces")}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              {t("sets.routing.sourceInterfacesDesc")}
-            </Typography>
-
-            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-              {(routing.source_interfaces || [])
-                .filter((iface) => !availableIfaces.includes(iface))
-                .map((iface) => (
-                  <B4Badge
-                    key={iface}
-                    label={`${iface} (${t("sets.routing.staleIface")})`}
-                    onClick={() => toggleSourceIface(iface)}
-                    variant="filled"
-                    color="error"
-                  />
-                ))}
-              {availableIfaces.map((iface) => {
-                const selected = (routing.source_interfaces || []).includes(
-                  iface,
-                );
-                return (
-                  <B4Badge
-                    key={iface}
-                    label={ifaceLabel(iface)}
-                    onClick={() => toggleSourceIface(iface)}
-                    variant={selected ? "filled" : "outlined"}
-                    color={selected ? "secondary" : "primary"}
-                    sx={
-                      ifaceDetails?.[iface]?.up === false
-                        ? { opacity: 0.6 }
-                        : undefined
-                    }
-                  />
-                );
-              })}
-            </Box>
-
-            {availableIfaces.length === 0 && isInterface && (
-              <B4Alert severity="warning" sx={{ mt: 2 }}>
-                {t("sets.routing.noInterfaces")}
-              </B4Alert>
-            )}
-
-            {egressUnusable && (
-              <B4Alert severity="warning" sx={{ mt: 2 }}>
-                {t("sets.routing.unavailableWarning", {
-                  iface: routing.egress_interface,
-                })}
-              </B4Alert>
-            )}
-
-            <B4Hint sx={{ mt: 2 }}>
-              {isProxy
-                ? t("sets.routing.infoProxy")
-                : isMTProtoWS
-                  ? t("sets.routing.infoMTProtoWS")
-                  : isBlock
-                    ? t("sets.routing.infoBlock")
-                    : t("sets.routing.info")}
-            </B4Hint>
+            <B4FormGroup
+              label={t("sets.routing.sourceInterfaces")}
+              learnMore="guides/interfaces"
+              aiTopic="routing.source_interfaces"
+              columns={1}
+            >
+              <Box>
+                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
+                  {(routing.source_interfaces || [])
+                    .filter((iface) => !availableIfaces.includes(iface))
+                    .map((iface) => (
+                      <B4Badge
+                        key={iface}
+                        label={`${iface} (${t("sets.routing.staleIface")})`}
+                        onClick={() => toggleSourceIface(iface)}
+                        variant="filled"
+                        color="error"
+                      />
+                    ))}
+                  {availableIfaces.map((iface) => {
+                    const selected = (routing.source_interfaces || []).includes(
+                      iface,
+                    );
+                    return (
+                      <B4Badge
+                        key={iface}
+                        label={ifaceLabel(iface)}
+                        onClick={() => toggleSourceIface(iface)}
+                        variant={selected ? "filled" : "outlined"}
+                        color={selected ? "secondary" : "primary"}
+                        sx={
+                          ifaceDetails?.[iface]?.up === false
+                            ? { opacity: 0.6 }
+                            : undefined
+                        }
+                      />
+                    );
+                  })}
+                </Box>
+                <FormHelperText sx={{ color: "text.secondary", m: 0, mt: 0.75 }}>
+                  {t("sets.routing.sourceInterfacesDesc")}
+                </FormHelperText>
+              </Box>
+            </B4FormGroup>
           </Grid>
 
           {isInterface && (
-            <Grid size={{ xs: 12, md: 6 }}>
-              <B4TextField
-                label={t("sets.routing.outputInterface")}
-                select
-                value={routing.egress_interface}
-                path="routing.egress_interface"
-                onChange={(e) =>
-                  onChange("routing.egress_interface", e.target.value)
-                }
-                helperText={
-                  egressUnusable
-                    ? t("sets.routing.interfaceUnavailable")
-                    : t("sets.routing.outputInterfaceHelper")
-                }
-              >
-                {shouldShowUnavailableSelected && (
-                  <MenuItem value={routing.egress_interface}>
-                    {t("sets.routing.interfaceUnavailableOption", {
-                      iface: routing.egress_interface,
-                    })}
-                  </MenuItem>
-                )}
-                {availableIfaces.map((iface) => (
-                  <MenuItem key={iface} value={iface}>
-                    {ifaceLabel(iface)}
-                  </MenuItem>
-                ))}
-              </B4TextField>
-            </Grid>
-          )}
+            <>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <B4Select
+                  label={t("sets.routing.outputInterface")}
+                  value={routing.egress_interface}
+                  path="routing.egress_interface"
+                  onChange={(e) =>
+                    onChange("routing.egress_interface", e.target.value)
+                  }
+                  options={egressOptions}
+                  helperText={t("sets.routing.outputInterfaceHelper")}
+                  message={
+                    egressMessages.length > 0 ? egressMessages : undefined
+                  }
+                  info={t("sets.routing.outputInterfaceInfo")}
+                  learnMore="internals/routing#tunnel-hand-off"
+                  aiTopic="routing.egress_interface"
+                />
+              </Grid>
 
-          {isInterface && (
-            <Grid size={{ xs: 12, md: 6 }}>
-              <B4TextField
-                value={routing.egress_ip ?? ""}
-                path="routing.egress_ip"
-                onChange={(e) => onChange("routing.egress_ip", e.target.value)}
-                disabled={!routing.egress_interface}
-                helperText={
-                  routing.egress_interface
-                    ? t("sets.routing.egressIpHelper")
-                    : t("sets.routing.egressIpNeedsInterface")
-                }
-                placeholder="192.168.1.51"
-                selectOnFocus
-              />
-            </Grid>
-          )}
+              <Grid size={{ xs: 12, md: 6 }}>
+                <B4Select
+                  value={routerTraffic}
+                  path="routing.router_traffic"
+                  onChange={(e) =>
+                    onChange("routing.router_traffic", e.target.value)
+                  }
+                  disabled={sourceScoped}
+                  options={[
+                    {
+                      value: "auto",
+                      label: t("sets.routing.routerTrafficAuto"),
+                      note: t("sets.routing.routerTrafficAutoNote"),
+                    },
+                    {
+                      value: "include",
+                      label: t("sets.routing.routerTrafficInclude"),
+                      note: t("sets.routing.routerTrafficIncludeNote"),
+                    },
+                    {
+                      value: "exclude",
+                      label: t("sets.routing.routerTrafficExclude"),
+                      note: t("sets.routing.routerTrafficExcludeNote"),
+                    },
+                  ]}
+                  helperText={t("sets.routing.routerTrafficHelper")}
+                  message={
+                    routerTrafficMessages.length > 0
+                      ? routerTrafficMessages
+                      : undefined
+                  }
+                  info={t("sets.routing.routerTrafficInfo")}
+                  learnMore="internals/routing#router-traffic"
+                  aiTopic="routing.router_traffic"
+                />
+              </Grid>
 
-          {isInterface && routing.egress_ip && (
-            <Grid size={{ xs: 12 }}>
-              <B4Alert severity="info">
-                {t("sets.routing.egressIpNote", {
-                  ip: routing.egress_ip,
-                  iface: routing.egress_interface,
-                })}
-              </B4Alert>
-            </Grid>
-          )}
+              <Grid size={{ xs: 12, md: 6 }}>
+                <B4TextField
+                  value={routing.egress_ip ?? ""}
+                  path="routing.egress_ip"
+                  onChange={(e) => onChange("routing.egress_ip", e.target.value)}
+                  disabled={!routing.egress_interface}
+                  helperText={
+                    routing.egress_interface
+                      ? t("sets.routing.egressIpHelper")
+                      : t("sets.routing.egressIpNeedsInterface")
+                  }
+                  message={
+                    routing.egress_ip && routing.egress_interface ? (
+                      <B4FieldMessage severity="info">
+                        {t("sets.routing.egressIpNote", {
+                          ip: routing.egress_ip,
+                          iface: routing.egress_interface,
+                        })}
+                      </B4FieldMessage>
+                    ) : undefined
+                  }
+                  learnMore="internals/routing#egress-ip"
+                  aiTopic="routing.egress_ip"
+                  placeholder="192.168.1.51"
+                  selectOnFocus
+                />
+              </Grid>
 
-          {isInterface && (
-            <Grid size={{ xs: 12, md: 6 }}>
-              <B4TextField
-                path="routing.egress_gateway"
-                value={routing.egress_gateway ?? ""}
-                onChange={(e) =>
-                  onChange("routing.egress_gateway", e.target.value)
-                }
-                disabled={!routing.egress_interface}
-                error={gatewayInvalid}
-                helperText={
-                  !routing.egress_interface
-                    ? t("sets.routing.egressGatewayNeedsInterface")
-                    : gatewayInvalid
-                      ? t("sets.routing.egressGatewayInvalid")
-                      : t("sets.routing.egressGatewayHelper")
-                }
-                placeholder="192.168.1.254"
-                selectOnFocus
-              />
-            </Grid>
-          )}
+              <Grid size={{ xs: 12, md: 6 }}>
+                <B4TextField
+                  path="routing.egress_gateway"
+                  value={routing.egress_gateway ?? ""}
+                  onChange={(e) =>
+                    onChange("routing.egress_gateway", e.target.value)
+                  }
+                  disabled={!routing.egress_interface}
+                  error={gatewayInvalid}
+                  helperText={
+                    !routing.egress_interface
+                      ? t("sets.routing.egressGatewayNeedsInterface")
+                      : gatewayInvalid
+                        ? t("sets.routing.egressGatewayInvalid")
+                        : t("sets.routing.egressGatewayHelper")
+                  }
+                  info={t("sets.routing.egressGatewayInfo")}
+                  learnMore="internals/routing#gateway"
+                  aiTopic="routing.egress_gateway"
+                  placeholder="192.168.1.254"
+                  selectOnFocus
+                />
+              </Grid>
 
-          {isInterface && (
-            <Grid size={{ xs: 12, md: 6 }}>
-              <B4TextField
-                select
-                value={routerTraffic}
-                path="routing.router_traffic"
-                onChange={(e) =>
-                  onChange("routing.router_traffic", e.target.value)
-                }
-                disabled={sourceScoped}
-                helperText={
-                  sourceScoped
-                    ? t("sets.routing.routerTrafficScoped")
-                    : t("sets.routing.routerTrafficHelper")
-                }
-              >
-                <MenuItem value="auto">
-                  {t("sets.routing.routerTrafficAuto")}
-                </MenuItem>
-                <MenuItem value="include">
-                  {t("sets.routing.routerTrafficInclude")}
-                </MenuItem>
-                <MenuItem value="exclude">
-                  {t("sets.routing.routerTrafficExclude")}
-                </MenuItem>
-              </B4TextField>
-            </Grid>
-          )}
-
-          {isInterface && (
-            <Grid size={{ xs: 12, md: 6 }}>
-              <B4Switch
-                checked={routing.kill_switch ?? false}
-                path="routing.kill_switch"
-                onChange={(checked: boolean) =>
-                  onChange("routing.kill_switch", checked)
-                }
-                description={t("sets.routing.killSwitchDesc")}
-                disabled={!routing.egress_interface}
-              />
-            </Grid>
-          )}
-
-          {routerTrafficLoops && (
-            <Grid size={{ xs: 12 }}>
-              <B4Alert severity="warning">
-                {t("sets.routing.routerTrafficLoopWarning", {
-                  iface: routing.egress_interface,
-                })}
-              </B4Alert>
-            </Grid>
-          )}
-
-          {routerTrafficHeldBack && (
-            <Grid size={{ xs: 12 }}>
-              <B4Alert severity="info">
-                {t("sets.routing.routerTrafficHeldBack", {
-                  iface: routing.egress_interface,
-                })}
-              </B4Alert>
-            </Grid>
-          )}
-
-          {strategyHandedOff && (
-            <Grid size={{ xs: 12 }}>
-              <B4Hint>
-                {t("sets.routing.tunnelManipulationNote", {
-                  iface: routing.egress_interface,
-                })}
-              </B4Hint>
-            </Grid>
+              <Grid size={{ xs: 12 }}>
+                <B4Switch
+                  checked={routing.kill_switch ?? false}
+                  path="routing.kill_switch"
+                  onChange={(checked: boolean) =>
+                    onChange("routing.kill_switch", checked)
+                  }
+                  description={t("sets.routing.killSwitchDesc")}
+                  learnMore="internals/routing#kill-switch"
+                  aiTopic="routing.kill_switch"
+                  disabled={!routing.egress_interface}
+                />
+              </Grid>
+            </>
           )}
 
           {isProxy && (
@@ -689,6 +724,9 @@ export const TrafficRouting = ({
                     onChange("routing.upstream.use_domain", checked)
                   }
                   description={t("sets.routing.useDomainDesc")}
+                  info={t("sets.routing.useDomainInfo")}
+                  learnMore="internals/routing#destination-names"
+                  aiTopic="routing.upstream.use_domain"
                 />
               </Grid>
               <Grid size={{ xs: 12 }}>
@@ -700,6 +738,16 @@ export const TrafficRouting = ({
                     onChange("routing.upstream.udp", checked)
                   }
                   description={t("sets.routing.udpDesc")}
+                  message={
+                    upstream.udp === true ? (
+                      <B4FieldMessage severity="info">
+                        {t("sets.routing.udpNeedsProxy")}
+                      </B4FieldMessage>
+                    ) : undefined
+                  }
+                  info={t("sets.routing.udpInfo")}
+                  learnMore="internals/routing#proxy-mode"
+                  aiTopic="routing.upstream.udp"
                 />
               </Grid>
               <Grid size={{ xs: 12 }}>
@@ -711,36 +759,44 @@ export const TrafficRouting = ({
                     onChange("routing.upstream.fail_open", checked)
                   }
                   description={t("sets.routing.failOpenDesc")}
+                  message={
+                    upstream.fail_open ? (
+                      <B4FieldMessage>
+                        {t("sets.routing.failOpenWarning")}
+                      </B4FieldMessage>
+                    ) : undefined
+                  }
+                  learnMore="guides/proxy"
+                  aiTopic="routing.upstream.fail_open"
                 />
-                {upstream.fail_open && (
-                  <B4Alert severity="warning" sx={{ mt: 1 }}>
-                    {t("sets.routing.failOpenWarning")}
-                  </B4Alert>
-                )}
-              </Grid>
-              <Grid size={{ xs: 12 }}>
-                <B4Hint>{t("sets.routing.proxyManipulationNote")}</B4Hint>
               </Grid>
             </>
           )}
 
-          <Grid size={{ xs: 12, md: 6 }}>
-            <B4NumberField
-              label={t("sets.routing.ipTtl")}
-              value={routing.ip_ttl_seconds}
-              path="routing.ip_ttl_seconds"
-              onChange={(n) => onChange("routing.ip_ttl_seconds", n)}
-              min={0}
-              helperText={t("sets.routing.ipTtlHelper")}
-              slotProps={{ inputLabel: { shrink: true } }}
-            />
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ mt: 1, display: "block" }}
+          <Grid size={{ xs: 12 }}>
+            <B4Advanced
+              title={t("sets.routing.advanced")}
+              paths={["routing.ip_ttl_seconds"]}
+              customized={ipTtl === DEFAULT_IP_TTL ? 0 : 1}
+              summary={t("sets.routing.advancedSummary", { ttl: ipTtl })}
             >
-              {t("sets.routing.ipTtlDesc")}
-            </Typography>
+              <Grid container spacing={3}>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <B4NumberField
+                    label={t("sets.routing.ipTtl")}
+                    value={routing.ip_ttl_seconds}
+                    path="routing.ip_ttl_seconds"
+                    onChange={(n) => onChange("routing.ip_ttl_seconds", n)}
+                    min={0}
+                    helperText={t("sets.routing.ipTtlHelper")}
+                    info={t("sets.routing.ipTtlInfo")}
+                    learnMore="internals/routing#collecting-addresses"
+                    aiTopic="routing.ip_ttl_seconds"
+                    slotProps={{ inputLabel: { shrink: true } }}
+                  />
+                </Grid>
+              </Grid>
+            </B4Advanced>
           </Grid>
         </>
       )}

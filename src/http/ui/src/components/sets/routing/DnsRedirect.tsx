@@ -13,10 +13,10 @@ import {
   Typography,
 } from "@mui/material";
 import {
-  B4Alert,
+  B4Advanced,
   B4Badge,
+  B4FieldMessage,
   B4FormHeader,
-  B4Hint,
   B4ResolverInput,
   B4Switch,
   B4TextField,
@@ -267,10 +267,80 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
     return <Icon sx={{ color: colors.text.secondary, fontSize: 20 }} />;
   };
 
+  const fragmentShown = asked.some(isResolverAddress);
+  const advancedCustomized =
+    (dnsConfig.strict ? 1 : 0) +
+    (fragmentShown && dnsConfig.fragment_query ? 1 : 0);
+
+  const resolverMessages = [
+    asked.length === 0 && (
+      <B4FieldMessage key="none">
+        {t("sets.dns.noResolverWarning")}
+      </B4FieldMessage>
+    ),
+    chosen.has("8.8.8.8") && (
+      <B4FieldMessage key="google">{t("sets.dns.googleWarning")}</B4FieldMessage>
+    ),
+  ].filter(Boolean);
+
+  const redirectInfo = (
+    <Stack spacing={1.5}>
+      <span>{t("sets.dns.enableInfo")}</span>
+      <Stack
+        direction="row"
+        alignItems="center"
+        spacing={1}
+        flexWrap="wrap"
+        useFlexGap
+      >
+        <B4Badge
+          label={t("sets.dns.vizApp")}
+          sx={{ bgcolor: colors.accent.primary }}
+        />
+        <Typography variant="caption">{t("sets.dns.vizQueryFor")}</Typography>
+        <B4Badge
+          label="instagram.com"
+          size="small"
+          sx={{
+            bgcolor: colors.accent.secondary,
+            color: colors.secondary,
+          }}
+        />
+        <Typography variant="caption">→</Typography>
+        <B4Badge
+          label={t("sets.dns.vizPoisoned")}
+          size="small"
+          sx={{
+            bgcolor: colors.quaternary,
+            textDecoration: "line-through",
+          }}
+        />
+        <Typography variant="caption">→</Typography>
+        <B4Badge
+          label={
+            shownResolver
+              ? resolverLabel(shownResolver)
+              : t("sets.dns.vizSelectDns")
+          }
+          size="small"
+          sx={{
+            bgcolor: shownResolver ? colors.tertiary : colors.accent.primary,
+          }}
+        />
+        {otherResolvers.length > 0 && (
+          <B4Badge
+            label={`+${otherResolvers.length}`}
+            size="small"
+            sx={{ bgcolor: colors.tertiary }}
+          />
+        )}
+        <Typography variant="caption">{t("sets.dns.vizRealIp")}</Typography>
+      </Stack>
+    </Stack>
+  );
+
   return (
     <Grid container spacing={3}>
-      <B4Hint>{t("sets.dns.alert")}</B4Hint>
-
       <Grid size={{ xs: 12 }}>
         <B4Switch
           label={t("sets.dns.enable")}
@@ -278,20 +348,14 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
           path="dns.enabled"
           onChange={(checked: boolean) => onChange("dns.enabled", checked)}
           description={t("sets.dns.enableDesc")}
+          info={redirectInfo}
+          learnMore="dns"
+          aiTopic="dns.enabled"
         />
       </Grid>
 
       {dnsConfig.enabled && (
         <>
-          <Grid size={{ xs: 12 }}>
-            <B4Switch
-              checked={dnsConfig.strict || false}
-              path="dns.strict"
-              onChange={(checked: boolean) => onChange("dns.strict", checked)}
-              description={t("sets.dns.strictDesc")}
-            />
-          </Grid>
-
           <Grid size={{ xs: 12 }}>
             <B4ResolverInput
               label={t("sets.dns.resolvers")}
@@ -305,23 +369,15 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
               lookup={recommendedServer}
               placeholder={t("sets.dns.resolversPlaceholder")}
               helperText={t("sets.dns.resolversHelper")}
+              message={
+                resolverMessages.length > 0 ? resolverMessages : undefined
+              }
               emptyMessage={t("sets.dns.resolversEmpty")}
+              info={t("sets.dns.resolversInfo")}
+              learnMore="dns#more-resolvers"
               aiTopic="dns.upstreams"
             />
           </Grid>
-
-          {asked.some(isResolverAddress) && (
-            <Grid size={{ xs: 12 }}>
-              <B4Switch
-                checked={dnsConfig.fragment_query || false}
-                path="dns.fragment_query"
-                onChange={(checked: boolean) =>
-                  onChange("dns.fragment_query", checked)
-                }
-                description={t("sets.dns.fragmentQueryDesc")}
-              />
-            </Grid>
-          )}
 
           <Grid size={{ xs: 12 }} onMouseDown={(e) => e.preventDefault()}>
             <Stack
@@ -443,94 +499,38 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
             </Box>
           </Grid>
 
-          {/* Visual explanation */}
           <Grid size={{ xs: 12 }}>
-            <Box
-              sx={{
-                p: 2,
-                bgcolor: colors.background.paper,
-                borderRadius: 1,
-                border: `1px solid ${colors.border.default}`,
-              }}
+            <B4Advanced
+              paths={["dns.strict", "dns.fragment_query"]}
+              customized={advancedCustomized}
             >
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                component="div"
-                sx={{ mb: 1 }}
-              >
-                {t("sets.dns.howItWorks")}
-              </Typography>
-              <Stack
-                direction="row"
-                alignItems="center"
-                spacing={1}
-                flexWrap="wrap"
-                useFlexGap
-              >
-                <B4Badge
-                  label={t("sets.dns.vizApp")}
-                  sx={{ bgcolor: colors.accent.primary }}
-                />
-                <Typography variant="caption">
-                  {t("sets.dns.vizQueryFor")}
-                </Typography>
-                <B4Badge
-                  label="instagram.com"
-                  size="small"
-                  sx={{
-                    bgcolor: colors.accent.secondary,
-                    color: colors.secondary,
-                  }}
-                />
-                <Typography variant="caption">→</Typography>
-                <B4Badge
-                  label={t("sets.dns.vizPoisoned")}
-                  size="small"
-                  sx={{
-                    bgcolor: colors.quaternary,
-                    textDecoration: "line-through",
-                  }}
-                />
-                <Typography variant="caption">→</Typography>
-                <B4Badge
-                  label={
-                    shownResolver
-                      ? resolverLabel(shownResolver)
-                      : t("sets.dns.vizSelectDns")
+              <Stack spacing={2}>
+                <B4Switch
+                  checked={dnsConfig.strict || false}
+                  path="dns.strict"
+                  onChange={(checked: boolean) =>
+                    onChange("dns.strict", checked)
                   }
-                  size="small"
-                  sx={{
-                    bgcolor: shownResolver
-                      ? colors.tertiary
-                      : colors.accent.primary,
-                  }}
+                  description={t("sets.dns.strictDesc")}
+                  info={t("sets.dns.strictInfo")}
+                  learnMore="dns"
+                  aiTopic="dns.strict"
                 />
-                {otherResolvers.length > 0 && (
-                  <B4Badge
-                    label={`+${otherResolvers.length}`}
-                    size="small"
-                    sx={{ bgcolor: colors.tertiary }}
+                {fragmentShown && (
+                  <B4Switch
+                    checked={dnsConfig.fragment_query || false}
+                    path="dns.fragment_query"
+                    onChange={(checked: boolean) =>
+                      onChange("dns.fragment_query", checked)
+                    }
+                    description={t("sets.dns.fragmentQueryDesc")}
+                    learnMore="dns"
+                    aiTopic="dns.fragment_query"
                   />
                 )}
-                <Typography variant="caption">
-                  {t("sets.dns.vizRealIp")}
-                </Typography>
               </Stack>
-            </Box>
+            </B4Advanced>
           </Grid>
-
-          {asked.length === 0 && (
-            <B4Alert severity="warning" sx={{ m: 0 }}>
-              {t("sets.dns.noResolverWarning")}
-            </B4Alert>
-          )}
-
-          {chosen.has("8.8.8.8") && (
-            <B4Alert severity="warning" sx={{ m: 0 }}>
-              {t("sets.dns.googleWarning")}
-            </B4Alert>
-          )}
         </>
       )}
 
@@ -542,6 +542,8 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
           checked={dnsConfig.strip_ech || false}
           onChange={(checked: boolean) => onChange("dns.strip_ech", checked)}
           description={t("sets.dns.stripEchDesc")}
+          info={t("sets.dns.stripEchInfo")}
+          learnMore="dns"
           aiTopic="dns.strip_ech"
         />
       </Grid>
@@ -549,7 +551,6 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
       <B4FormHeader label={t("sets.dns.pinsHeader")} />
 
       <Grid size={{ xs: 12 }}>
-        <B4Hint sx={{ mb: 2 }}>{t("sets.dns.pinsAlert")}</B4Hint>
         <B4TextField
           label={t("sets.dns.pins")}
           value={pinsText}
@@ -560,11 +561,12 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
           minRows={3}
           maxRows={10}
           helperText={t("sets.dns.pinsHelper")}
+          info={t("sets.dns.pinsInfo")}
+          learnMore="dns"
           aiTopic="dns.pins"
         />
-
         {uncovered.length > 0 && (
-          <B4Alert severity="warning" sx={{ mt: 2 }}>
+          <B4FieldMessage>
             <Stack spacing={1} alignItems="flex-start">
               <span>
                 {t("sets.dns.pinsNotTargeted", {
@@ -579,7 +581,7 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
                 {t("sets.dns.pinsAddToTargets")}
               </Button>
             </Stack>
-          </B4Alert>
+          </B4FieldMessage>
         )}
       </Grid>
     </Grid>

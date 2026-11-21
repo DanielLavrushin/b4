@@ -30,8 +30,9 @@ import { useTranslation } from "react-i18next";
 import { colors, fonts } from "@design";
 import { resolverKey, resolverLabel, resolverValue } from "@utils";
 import { useChangedFields } from "@context/ChangedFieldsContext";
-import { B4Help } from "./B4Help";
+import { B4Help, type B4HelpContent } from "./B4Help";
 import { chipSx } from "./B4ChipList";
+import { fieldMessage } from "./B4FieldMessage";
 import { B4PlusButton } from "./B4PlusButton";
 import { B4TextField } from "./B4TextField";
 
@@ -45,7 +46,7 @@ export interface B4ResolverPath {
   label: string;
 }
 
-interface B4ResolverInputProps {
+interface B4ResolverInputProps extends B4HelpContent {
   label: string;
   value: string[];
   onChange: (next: string[]) => void;
@@ -57,9 +58,9 @@ interface B4ResolverInputProps {
   lookup?: (entry: string) => B4ResolverInfo | undefined;
   placeholder?: string;
   helperText?: string;
+  message?: React.ReactNode;
   emptyMessage?: string;
   disabled?: boolean;
-  aiTopic?: string;
 }
 
 interface ResolverChipProps {
@@ -189,9 +190,15 @@ export const B4ResolverInput = ({
   lookup,
   placeholder,
   helperText,
+  message,
   emptyMessage,
   disabled,
+  info,
+  learnMore,
+  credit,
   aiTopic,
+  aiContext,
+  aiQuestion,
 }: B4ResolverInputProps) => {
   const { t } = useTranslation();
   const [input, setInput] = useState("");
@@ -375,7 +382,12 @@ export const B4ResolverInput = ({
         />
         <B4Help
           label={label}
+          info={info}
+          learnMore={learnMore}
+          credit={credit}
           aiTopic={aiTopic}
+          aiContext={aiContext}
+          aiQuestion={aiQuestion}
           fieldDoc={helperText}
           value={value.join(", ")}
           mt="6px"
@@ -430,6 +442,7 @@ export const B4ResolverInput = ({
           )}
         </Box>
       )}
+      {fieldMessage(message)}
     </Box>
   );
 };

@@ -28,7 +28,7 @@ interface B4SelectProps
     B4HelpContent {
   label?: string;
   options: B4SelectOption[];
-  helperText?: string;
+  helperText?: React.ReactNode;
   message?: React.ReactNode;
   path?: string;
   changeLabel?: string;
@@ -173,7 +173,7 @@ export const B4Select = ({
           aiTopic={aiTopic}
           aiContext={aiContext}
           aiQuestion={aiQuestion}
-          fieldDoc={helperText}
+          fieldDoc={typeof helperText === "string" ? helperText : undefined}
           value={valStr}
         />
       </Box>
