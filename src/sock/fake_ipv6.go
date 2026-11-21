@@ -22,30 +22,15 @@ func BuildFakeSNIPacketV6(original []byte, cfg *config.SetConfig) []byte {
 		originalTLS = original[ipv6HdrLen+tcpHdrLen:]
 	}
 
-	var fakePayload []byte
-	if cfg.Faking.SNIType == config.FakePayloadInverted && len(originalTLS) > 0 {
-		fakePayload = make([]byte, len(originalTLS))
-		for i, b := range originalTLS {
-			fakePayload[i] = ^b
-		}
-	} else {
-		fakePayload = GetPayload(&cfg.Faking)
+	fakePayload := fakeTCPPayload(&cfg.Faking, originalTLS)
+
+	payloadLen := tcpHdrLen + len(fakePayload)
+	if payloadLen > 0xFFFF {
+		return nil
 	}
-
-	if len(cfg.Faking.TLSMod) > 0 {
-		flags := ParseTLSMod(cfg.Faking.TLSMod)
-		fakePayload = ApplyTLSMod(fakePayload, originalTLS, flags)
-	}
-
-	fakePayload = MatchPayloadLength(fakePayload, originalTLS, cfg.Faking.FakeLenMode)
-
-	fakeLen := ipv6HdrLen + tcpHdrLen + len(fakePayload)
-	fake := make([]byte, fakeLen)
+	fake := make([]byte, ipv6HdrLen+payloadLen)
 	copy(fake[:ipv6HdrLen+tcpHdrLen], original[:ipv6HdrLen+tcpHdrLen])
 	copy(fake[ipv6HdrLen+tcpHdrLen:], fakePayload)
-
-	// Update IPv6 payload length field (bytes 4-5)
-	payloadLen := tcpHdrLen + len(fakePayload)
 	binary.BigEndian.PutUint16(fake[4:6], uint16(payloadLen))
 
 	badsum := cfg.Faking.Strategy == "tcp_check"
@@ -57,12 +42,12 @@ func BuildFakeSNIPacketV6(original []byte, cfg *config.SetConfig) []byte {
 	switch cfg.Faking.Strategy {
 	case "ttl":
 	case "pastseq":
-		off := uint32(cfg.Faking.SeqOffset)
-		if off == 0 {
-			off = 8192
+		back := int64(cfg.Faking.SeqOffset)
+		if back == 0 {
+			back = 8192
 		}
 		seq := binary.BigEndian.Uint32(fake[ipv6HdrLen+4 : ipv6HdrLen+8])
-		binary.BigEndian.PutUint32(fake[ipv6HdrLen+4:ipv6HdrLen+8], seq-off)
+		binary.BigEndian.PutUint32(fake[ipv6HdrLen+4:ipv6HdrLen+8], seq-behindRealData(back, len(fakePayload)))
 	case "randseq":
 		dlen := len(original) - ipv6HdrLen - tcpHdrLen
 		if cfg.Faking.SeqOffset == 0 {
@@ -71,8 +56,8 @@ func BuildFakeSNIPacketV6(original []byte, cfg *config.SetConfig) []byte {
 			binary.BigEndian.PutUint32(fake[ipv6HdrLen+4:ipv6HdrLen+8], binary.BigEndian.Uint32(r[:]))
 		} else {
 			seq := binary.BigEndian.Uint32(fake[ipv6HdrLen+4 : ipv6HdrLen+8])
-			off := uint32(cfg.Faking.SeqOffset) + uint32(dlen)
-			binary.BigEndian.PutUint32(fake[ipv6HdrLen+4:ipv6HdrLen+8], seq-off)
+			back := int64(cfg.Faking.SeqOffset) + int64(dlen)
+			binary.BigEndian.PutUint32(fake[ipv6HdrLen+4:ipv6HdrLen+8], seq-behindRealData(back, len(fakePayload)))
 		}
 	case "timestamp":
 		decrease := cfg.Faking.TimestampDecrease

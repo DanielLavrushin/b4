@@ -1589,7 +1589,9 @@ func TestMCPWriteRefusesNumbersOutsideTheUIRange(t *testing.T) {
 		{"sets[video].faking.sni_seq_length", "1000000000", "1 to 20"},
 		{"sets[video].faking.sni_seq_length", "0", "1 to 20"},
 		{"sets[video].udp.fake_seq_length", "1000000", "1 to 20"},
-		{"sets[video].udp.fake_len", "-100", "32 to 1500"},
+		{"sets[video].udp.fake_len", "-100", "32 to 1472"},
+		{"sets[video].udp.fake_len", "1473", "32 to 1472"},
+		{"sets[video].udp.fake_len", "1500", "32 to 1472"},
 		{"sets[video].tcp.seg2delay", "3600000", "0 to 1000"},
 		{"sets[video].tcp.seg2delay_max", "9223372036854775807", "0 to 1000"},
 		{"sets[video].tcp.desync.count", "-5", "1 to 20"},
@@ -1631,6 +1633,7 @@ func TestMCPWriteRefusesNumbersOutsideTheUIRange(t *testing.T) {
 		{"sets[video].fragmentation.combo.first_delay_ms_max", "0"},
 		{"sets[video].fragmentation.seq_overlap_length", "681"},
 		{"sets[video].fragmentation.disorder.split_position", "512"},
+		{"sets[video].udp.fake_len", "1472"},
 	} {
 		res := callSetValue(t, session, ctx, c.path, c.value)
 		if res.IsError {
@@ -1691,8 +1694,8 @@ func TestMCPWritablePathsListTheRangeOfEachRangedSetting(t *testing.T) {
 			t.Errorf("b4_list_writable_paths must give the accepted range of %s (%s) before a write is refused, got %v", path, r, p.Options)
 		}
 	}
-	if got := listed[mcpSetPathPrefix+".udp.fake_len"].Options; len(got) != 1 || got[0] != "32 to 1500" {
-		t.Errorf("udp.fake_len options = %v, want [32 to 1500]", got)
+	if got := listed[mcpSetPathPrefix+".udp.fake_len"].Options; len(got) != 1 || got[0] != "32 to 1472" {
+		t.Errorf("udp.fake_len options = %v, want [32 to 1472]", got)
 	}
 }
 

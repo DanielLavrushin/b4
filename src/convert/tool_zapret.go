@@ -359,6 +359,26 @@ func emitZapretTCPExtras(set *config.SetConfig, prof *Profile, ti tokenIndex, no
 		}
 	}
 	emitWSSize(set, prof, ti, notes)
+	emitZapretDefaultFakeMods(set, prof, ti, notes)
+}
+
+func emitZapretDefaultFakeMods(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet) {
+	if !set.Faking.SNI || (set.Faking.SNIType != config.FakePayloadDefault1 && set.Faking.SNIType != config.FakePayloadDefault2) {
+		return
+	}
+	if _, given := ti.first(prof.Index, "fake_tls", "fake_tls_mod"); given {
+		return
+	}
+	set.Faking.TLSMod = []string{"rnd", "dupsid"}
+	notes.extra = append(notes.extra, Note{
+		Token:     set.Name,
+		Profile:   prof.Index,
+		Status:    StatusApproximated,
+		Reason:    "fakeTLSModPartial",
+		Fields:    []string{"faking.tls_mod=rnd+dupsid"},
+		Params:    map[string]any{"dropped": "rndsni"},
+		Synthetic: true,
+	})
 }
 
 func emitWSSize(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet) {

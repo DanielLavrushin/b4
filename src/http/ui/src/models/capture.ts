@@ -13,6 +13,7 @@ export interface CaptureProbeResponse {
   message: string;
   already_captured?: boolean;
   errors?: string[];
+  size?: number;
 }
 
 export interface CaptureUploadResponse {

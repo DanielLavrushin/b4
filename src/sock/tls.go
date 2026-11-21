@@ -29,11 +29,6 @@ func ExtractSessionID(payload []byte) []byte {
 		return nil
 	}
 
-	recLen := int(binary.BigEndian.Uint16(payload[3:5]))
-	if len(payload) < 5+recLen {
-		return nil
-	}
-
 	hs := payload[5:]
 	if len(hs) < 4 || hs[0] != 0x01 {
 		return nil
@@ -46,7 +41,7 @@ func ExtractSessionID(payload []byte) []byte {
 
 	sidLen := int(hs[pos])
 	pos++
-	if sidLen == 0 || pos+sidLen > len(hs) {
+	if sidLen == 0 || pos+sidLen > len(hs) || int(binary.BigEndian.Uint16(payload[3:5])) < pos+sidLen {
 		return nil
 	}
 
@@ -71,8 +66,8 @@ func ApplyTLSMod(fakePayload, originalPayload []byte, flags TLSModFlags) []byte 
 		return fakePayload
 	}
 
-	if flags.Randomize && len(hs) >= 38 {
-		rand.Read(hs[6:38])
+	if flags.Randomize {
+		redrawHello(fakePayload, true)
 	}
 
 	if flags.DupSessID && originalPayload != nil {
@@ -83,6 +78,19 @@ func ApplyTLSMod(fakePayload, originalPayload []byte, flags TLSModFlags) []byte 
 	}
 
 	return fakePayload
+}
+
+func redrawHello(hello []byte, sessionID bool) {
+	if len(hello) < 43 || hello[0] != 0x16 || hello[5] != 0x01 {
+		return
+	}
+	rand.Read(hello[11:43])
+	if !sessionID || len(hello) < 44 {
+		return
+	}
+	if end := 44 + int(hello[43]); end <= len(hello) {
+		rand.Read(hello[44:end])
+	}
 }
 
 func injectSessionID(fakePayload, newSID []byte) []byte {

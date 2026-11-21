@@ -111,7 +111,7 @@ func TestBuildFakeSNIPacketV4_PastSeqStrategy(t *testing.T) {
 
 	cfg := &config.SetConfig{}
 	cfg.Faking.Strategy = "pastseq"
-	cfg.Faking.SeqOffset = 1000
+	cfg.Faking.SeqOffset = 5000
 
 	result := BuildFakeSNIPacketV4(pkt, cfg)
 	if result == nil {
@@ -119,8 +119,8 @@ func TestBuildFakeSNIPacketV4_PastSeqStrategy(t *testing.T) {
 	}
 
 	newSeq := binary.BigEndian.Uint32(result[24:28])
-	if newSeq != origSeq-1000 {
-		t.Errorf("seq not adjusted: expected %d, got %d", origSeq-1000, newSeq)
+	if newSeq != origSeq-5000 {
+		t.Errorf("seq not adjusted: expected %d, got %d", origSeq-5000, newSeq)
 	}
 }
 

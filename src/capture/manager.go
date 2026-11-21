@@ -316,8 +316,7 @@ func (m *Manager) GenerateCapture(domain, protocol string) error {
 		log.Errorf("Failed to save metadata: %v", err)
 	}
 
-	log.Infof("✓ Generated %s payload for %s (%d bytes, SNI-first for DPI bypass)",
-		protocol, domain, len(payload))
+	log.Infof("✓ Generated a %d-byte TLS ClientHello for %s", len(payload), domain)
 
 	return nil
 }

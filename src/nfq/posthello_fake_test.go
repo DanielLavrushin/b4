@@ -525,7 +525,7 @@ func TestAClientHelloSplitIntoTwoRecordsKeepsAFakeOnTheSecond(t *testing.T) {
 	}
 }
 
-func TestAFakeOnlySetLeavesSegmentTwoOfAHelloWithAnEarlySNIAlone(t *testing.T) {
+func TestAFakeOnlySetResendsSegmentTwoOfAHelloWithAnEarlySNIWithoutAFake(t *testing.T) {
 	set := newFakingSet(false)
 	cfg := config.NewConfig()
 	cfg.Sets = []*config.SetConfig{&set}
@@ -543,10 +543,14 @@ func TestAFakeOnlySetLeavesSegmentTwoOfAHelloWithAnEarlySNIAlone(t *testing.T) {
 		t.Fatalf("segment 1 with the SNI: fake hellos at %v, want one at %d", got, base)
 	}
 
-	if v := w.ProcessPacket(makeV4TCPPacket(hello[cut:], base+cut)); v != engine.VerdictAccept {
-		t.Errorf("segment 2 without the SNI: got %v, want it accepted untouched", v)
+	if v := w.ProcessPacket(makeV4TCPPacket(hello[cut:], base+cut)); v != engine.VerdictDrop {
+		t.Errorf("segment 2 without the SNI: got %v, want it to leave after segment 1 from the same injector", v)
 	}
-	if pkts := sent(); len(pkts) != 0 {
-		t.Errorf("segment 2 without the SNI: %d packets injected, want none", len(pkts))
+	pkts := sent()
+	if got := fakeHelloSeqs(pkts, fake); len(got) != 0 {
+		t.Errorf("segment 2 without the SNI: fake hellos at %v, want none", got)
+	}
+	if segs := sentData(pkts); len(segs) != 1 || segs[0].seq != base+cut || !bytes.Equal(segs[0].payload, hello[cut:]) {
+		t.Errorf("segment 2 without the SNI: sent %d segments, want segment 2 alone and unchanged", len(segs))
 	}
 }

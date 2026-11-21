@@ -47,6 +47,7 @@ func newTestWorker(t *testing.T, cfg *config.Config) *Worker {
 	w.quicFlows = state.quicFlows
 	w.voiceFlows = state.voiceFlows
 	w.telegramFlows = state.telegram
+	w.injector = state.injector
 	return w
 }
 

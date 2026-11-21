@@ -126,6 +126,7 @@ var reasonEnglish = map[string]string{
 	"shadowedByEarlierSet":        "{{other}} already claims {{domain}}. b4 picks one set per destination and does not fall back to the next, so this set would never run. It is created disabled - give it its own domains to use it.",
 	"ipv6OnlyKnob":                "Sets the hop limit for IPv6 desync packets separately. b4 uses one TTL for both address families.",
 	"fakeTLSModPartial":           "Kept what b4 has an equivalent for. Dropped: {{dropped}}.",
+	"fakePayloadTooLarge":         "The fake payload is {{size}} bytes, more than the {{max}} bytes b4 takes from an import, so a built-in payload is used instead.",
 	"templatePlaceholder":         "A placeholder from the configuration template. It is substituted before the daemon runs, so there is nothing to convert.",
 	"udpOnlySetNotProtocolScoped": "This profile only filters UDP, but a b4 set is not limited to one protocol. Given domains, it will also claim them for TCP, taking them away from the TCP sets. Leave it without targets unless it is the only set for those domains.",
 	"profileNotUnderstood":        "{{count}} option(s) in this profile were not recognized, and nothing else in it produced a strategy. The set is created disabled so it cannot claim domains while doing nothing.",
