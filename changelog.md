@@ -24,6 +24,10 @@ All notable changes to b4 are recorded in this file.
 - With a splitting strategy such as **Combo**, the second packet of a ClientHello sent in two packets waits until the first has gone out in pieces, which adds one **First Segment Delay** (30 ms by default) to such connections. [#653](https://github.com/DanielLavrushin/b4/issues/653)
 - A set that worked only while the second packet of a ClientHello overtook the first, such as one with a **Preset: STUN** fake and no splitting, can stop working after the update; **Discovery** run again for its sites finds a new strategy. [#653](https://github.com/DanielLavrushin/b4/issues/653)
 - The Russian interface writes "payload" in English throughout, the **Payloads** tab included. [#650](https://github.com/DanielLavrushin/b4/issues/650)
+- Settings on **Settings, Core, Packet Engine** and in a set's **TCP, General** and **Targets, IP Addresses** tabs keep one short line of help; the rest opens from an info button beside the setting, with **Learn more** and, when the assistant is on, **Ask AI**. Warnings show only while they apply, and rarely changed settings sit under **Advanced**.
+- **Ask AI** opens from the info button beside a setting on every page, where it was a separate icon that showed only on hover.
+- In a set's **Targets** tab, **Bypass Domains** and **Bypass IPs** are renamed **Domains** and **IP Addresses**, and the panels inside drop the word Bypass.
+- Links in the web interface use the yellow accent colour everywhere.
 
 ### Removed
 
