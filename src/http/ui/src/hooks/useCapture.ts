@@ -66,15 +66,17 @@ export function useCaptures() {
 
   const deleteCapture = useCallback(
     async (protocol: string, domain: string) => {
-      await captureApi.delete(protocol, domain);
+      const result = await captureApi.delete(protocol, domain);
       await loadCaptures();
+      return result;
     },
     [loadCaptures],
   );
 
   const clearAll = useCallback(async () => {
-    await captureApi.clear();
+    const result = await captureApi.clear();
     await loadCaptures();
+    return result;
   }, [loadCaptures]);
 
   const inspect = useCallback(

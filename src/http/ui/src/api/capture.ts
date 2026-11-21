@@ -1,8 +1,9 @@
-import { ApiError, apiGet, apiUpload, apiPost, apiDelete } from "./apiClient";
+import { ApiError, apiFetch, apiGet, apiUpload, apiPost } from "./apiClient";
 import { readErrorBody } from "./errorBody";
 import {
   BuiltinPayload,
   Capture,
+  CaptureChangeResponse,
   CaptureGenerateResponse,
   CaptureRegenerateResponse,
   CaptureUploadResponse,
@@ -39,10 +40,11 @@ export const captureApi = {
   regenerate: (domain: string) =>
     apiPost<CaptureRegenerateResponse>("/api/capture/regenerate", { domain }),
   delete: (protocol: string, domain: string) =>
-    apiDelete(
+    apiFetch<CaptureChangeResponse>(
       `/api/capture/delete?${new URLSearchParams({ protocol, domain }).toString()}`,
+      { method: "DELETE" },
     ),
-  clear: () => apiPost<{ success: boolean }>("/api/capture/clear"),
+  clear: () => apiPost<CaptureChangeResponse>("/api/capture/clear"),
   inspect: (file: File) => {
     const formData = new FormData();
     formData.append("file", file);

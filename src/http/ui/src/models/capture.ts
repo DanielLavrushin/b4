@@ -73,6 +73,13 @@ export interface CaptureGenerateResponse {
   size?: number;
 }
 
+export interface CaptureChangeResponse {
+  success: boolean;
+  message: string;
+  reloaded?: string[] | null;
+  reload_error?: string;
+}
+
 export interface CaptureRegenerateResponse {
   success: boolean;
   message: string;
@@ -90,4 +97,6 @@ export interface CaptureUploadResponse {
   domain: string;
   protocol: string;
   facts?: PayloadFacts | null;
+  reloaded?: string[] | null;
+  reload_error?: string;
 }

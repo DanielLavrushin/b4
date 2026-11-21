@@ -19,6 +19,7 @@ import {
   RefreshIcon,
   SuccessIcon,
   UploadIcon,
+  WarningIcon,
 } from "@b4.icons";
 import { useSnackbar } from "@context/SnackbarProvider";
 import {
@@ -102,6 +103,13 @@ export const CaptureSettings = () => {
     sets: string[];
   } | null>(null);
   const [regenerateDialog, setRegenerateDialog] = useState<Capture | null>(
+    null,
+  );
+  const [deleteDialog, setDeleteDialog] = useState<{
+    capture: Capture;
+    sets: string[];
+  } | null>(null);
+  const [clearDialog, setClearDialog] = useState<{ sets: string[] } | null>(
     null,
   );
 
@@ -218,22 +226,28 @@ export const CaptureSettings = () => {
       (c) => c.protocol === capture.protocol && c.domain === capture.domain,
     );
     const sets = current?.used_by ?? [];
-    if (
-      sets.length > 0 &&
-      !confirm(
-        t("settings.Capture.deleteInUseConfirm", {
-          domain: capture.domain,
-          sets: sets.join(", "),
-        }),
-      )
-    ) {
+    if (sets.length > 0) {
+      setDeleteDialog({ capture, sets });
       return;
     }
+    await deletePayload(capture);
+  };
+
+  const reportReload = (result: { reload_error?: string }) => {
+    if (result.reload_error) {
+      showError(
+        t("settings.Capture.reloadFailed", { error: result.reload_error }),
+      );
+    }
+  };
+
+  const deletePayload = async (capture: Capture) => {
     try {
-      await deleteCapture(capture.protocol, capture.domain);
+      const result = await deleteCapture(capture.protocol, capture.domain);
       showSuccess(
         t("settings.Capture.deleteSuccess", { domain: capture.domain }),
       );
+      reportReload(result);
     } catch (error) {
       showError(
         t("settings.Capture.deleteFailed", { error: describeApiError(error) }),
@@ -241,15 +255,22 @@ export const CaptureSettings = () => {
     }
   };
 
+  const confirmDelete = () => {
+    const pending = deleteDialog;
+    setDeleteDialog(null);
+    if (pending) void deletePayload(pending.capture);
+  };
+
   const confirmRegenerate = async () => {
     const capture = regenerateDialog;
     if (!capture) return;
     try {
-      await regenerate(capture.domain);
+      const result = await regenerate(capture.domain);
       setRegenerateDialog(null);
       showSuccess(
         t("settings.Capture.regenerateSuccess", { domain: capture.domain }),
       );
+      reportReload(result);
     } catch (error) {
       setRegenerateDialog(null);
       showError(
@@ -271,15 +292,17 @@ export const CaptureSettings = () => {
       return;
     }
     if (latest.length === 0) return;
-    const sets = [...new Set(latest.flatMap((c) => c.used_by ?? []))];
-    const question =
-      sets.length > 0
-        ? t("settings.Capture.clearInUseConfirm", { sets: sets.join(", ") })
-        : t("settings.Capture.clearConfirm");
-    if (!confirm(question)) return;
+    setClearDialog({
+      sets: [...new Set(latest.flatMap((c) => c.used_by ?? []))],
+    });
+  };
+
+  const confirmClear = async () => {
+    setClearDialog(null);
     try {
-      await clearAll();
+      const result = await clearAll();
       showSuccess(t("settings.Capture.allCleared"));
+      reportReload(result);
     } catch (error) {
       showError(
         t("settings.Capture.clearFailed", { error: describeApiError(error) }),
@@ -322,10 +345,11 @@ export const CaptureSettings = () => {
     const file = uploadForm.file;
     if (!file) return;
     try {
-      await upload(file, domain, protocol, replace);
+      const result = await upload(file, domain, protocol, replace);
       showSuccess(t("settings.Capture.uploadedSuccess", { domain }));
       setUploadForm(emptyUploadForm);
       setInspection(null);
+      reportReload(result);
     } catch (error) {
       const sets = replace ? null : existsConflictSets(error);
       if (sets) {
@@ -724,6 +748,70 @@ export const CaptureSettings = () => {
           </Grid>
         )}
       </B4Section>
+
+      <B4Dialog
+        title={t("settings.Capture.deleteTitle", {
+          domain: deleteDialog?.capture.domain ?? "",
+        })}
+        icon={<WarningIcon />}
+        open={deleteDialog !== null}
+        onClose={() => setDeleteDialog(null)}
+        maxWidth="sm"
+        fullWidth
+        actions={
+          <>
+            <Button onClick={() => setDeleteDialog(null)}>
+              {t("core.cancel")}
+            </Button>
+            <Box sx={{ flex: 1 }} />
+            <Button variant="contained" color="error" onClick={confirmDelete}>
+              {t("core.delete")}
+            </Button>
+          </>
+        }
+      >
+        {deleteDialog && (
+          <Typography variant="body2">
+            {t("settings.Capture.deleteInUseConfirm", {
+              sets: deleteDialog.sets.join(", "),
+            })}
+          </Typography>
+        )}
+      </B4Dialog>
+
+      <B4Dialog
+        title={t("settings.Capture.clearTitle")}
+        icon={<WarningIcon />}
+        open={clearDialog !== null}
+        onClose={() => setClearDialog(null)}
+        maxWidth="sm"
+        fullWidth
+        actions={
+          <>
+            <Button onClick={() => setClearDialog(null)}>
+              {t("core.cancel")}
+            </Button>
+            <Box sx={{ flex: 1 }} />
+            <Button
+              variant="contained"
+              color="error"
+              onClick={() => void confirmClear()}
+            >
+              {t("settings.Capture.clearAll")}
+            </Button>
+          </>
+        }
+      >
+        {clearDialog && (
+          <Typography variant="body2">
+            {clearDialog.sets.length > 0
+              ? t("settings.Capture.clearInUseConfirm", {
+                  sets: clearDialog.sets.join(", "),
+                })
+              : t("settings.Capture.clearConfirm")}
+          </Typography>
+        )}
+      </B4Dialog>
 
       <B4Dialog
         title={t("settings.Capture.replaceTitle", {
