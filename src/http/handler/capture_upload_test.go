@@ -5,10 +5,12 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/daniellavrushin/b4/capture"
+	"github.com/daniellavrushin/b4/config"
 )
 
 func uploadCapturePayload(t *testing.T, mux *http.ServeMux, name, protocol string, data []byte) *httptest.ResponseRecorder {
@@ -75,6 +77,27 @@ func TestPayloadUploadNamesTheFormAcceptsGetTheirOwnFile(t *testing.T) {
 	}
 	if len(files) != 2 || files["пример.рф"] == files["тест.рф"] {
 		t.Errorf("the cards пример.рф and тест.рф must point at files of their own, got %v", files)
+	}
+}
+
+func TestPayloadUploadTakesAFileOfTheLargestPayloadSize(t *testing.T) {
+	mux, api := captureTestMux(t)
+	manager := capture.GetManager(api.getCfg())
+	const name = "largest.upload.example"
+	t.Cleanup(func() { manager.DeleteCapture("tls", name) })
+	limit := strconv.Itoa(config.MaxCapturePayloadBytes)
+
+	rec := uploadCapturePayload(t, mux, name, "tls", bytes.Repeat([]byte{0x16}, config.MaxCapturePayloadBytes))
+	if rec.Code != http.StatusOK {
+		t.Errorf("a %d-byte file, the largest a payload may have, was answered %d %q", config.MaxCapturePayloadBytes, rec.Code, strings.TrimSpace(rec.Body.String()))
+	}
+	rec = uploadCapturePayload(t, mux, name+".over", "tls", bytes.Repeat([]byte{0x16}, config.MaxCapturePayloadBytes+1))
+	if text := strings.TrimSpace(rec.Body.String()); rec.Code != http.StatusBadRequest || !strings.Contains(text, limit) {
+		t.Errorf("a %d-byte file was answered %d %q, want 400 naming the %s-byte limit", config.MaxCapturePayloadBytes+1, rec.Code, text, limit)
+	}
+	if _, saved := manager.GetCapture("tls", name+".over"); saved {
+		manager.DeleteCapture("tls", name+".over")
+		t.Errorf("a file over the limit was saved; loading refuses it")
 	}
 }
 

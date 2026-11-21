@@ -311,6 +311,12 @@ func (api *API) handleDownloadCapture(w http.ResponseWriter, r *http.Request) {
 	log.Tracef("Served capture file: %s", filename)
 }
 
+const uploadFormOverhead = 16 << 10
+
+func uploadTooLargeText() string {
+	return fmt.Sprintf("File too large: a payload may have at most %d bytes", config.MaxCapturePayloadBytes)
+}
+
 // @Summary Upload a capture file
 // @Tags Capture
 // @Accept multipart/form-data
@@ -327,12 +333,13 @@ func (api *API) handleUploadCapture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, config.MaxCapturePayloadBytes)
+	const bodyLimit = config.MaxCapturePayloadBytes + uploadFormOverhead
+	r.Body = http.MaxBytesReader(w, r.Body, bodyLimit)
 
-	if err := r.ParseMultipartForm(config.MaxCapturePayloadBytes); err != nil {
+	if err := r.ParseMultipartForm(bodyLimit); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			http.Error(w, "File too large (max 64KB)", http.StatusBadRequest)
+			http.Error(w, uploadTooLargeText(), http.StatusBadRequest)
 			return
 		}
 		http.Error(w, "Invalid upload form: "+err.Error(), http.StatusBadRequest)
@@ -361,9 +368,13 @@ func (api *API) handleUploadCapture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := io.ReadAll(file)
+	data, err := io.ReadAll(io.LimitReader(file, config.MaxCapturePayloadBytes+1))
 	if err != nil {
 		http.Error(w, "Failed to read file", http.StatusInternalServerError)
+		return
+	}
+	if len(data) > config.MaxCapturePayloadBytes {
+		http.Error(w, uploadTooLargeText(), http.StatusBadRequest)
 		return
 	}
 
