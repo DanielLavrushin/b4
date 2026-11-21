@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { Button, Grid } from "@mui/material";
+import { useEffect, useMemo } from "react";
+import { Button, Grid, SxProps, Theme } from "@mui/material";
 import { Link } from "react-router";
 import { DnsIcon, WarningIcon } from "@b4.icons";
 import {
@@ -20,7 +20,9 @@ import {
   UDP_FAKE_PAYLOAD_AUTO_STUN,
   UDP_FAKE_PAYLOAD_PRESET_1,
   UDP_FAKE_PAYLOAD_PRESET_2,
+  UDP_FAKE_LEN_MAX,
 } from "@models/config";
+import { useBuiltinPayloads } from "@b4.capture";
 import {
   chosenPayloadFile,
   samePayloadFile,
@@ -50,6 +52,21 @@ const UDP_BUILTIN_PAYLOADS = [
   UDP_FAKE_PAYLOAD_PRESET_2,
 ];
 
+const UDP_PRESET_BUILTINS: Record<string, string> = {
+  [UDP_FAKE_PAYLOAD_PRESET_1]: "quic1",
+  [UDP_FAKE_PAYLOAD_PRESET_2]: "quic2",
+};
+
+const actionAlertSx: SxProps<Theme> = {
+  flexWrap: { xs: "wrap", lg: "nowrap" },
+  "& .MuiAlert-message": { flex: { xs: "1 1 0", lg: "0 1 auto" } },
+  "& .MuiAlert-action": {
+    width: { xs: "100%", lg: "auto" },
+    justifyContent: "flex-end",
+    pl: { xs: 0, lg: 2 },
+  },
+};
+
 interface UdpSettingsProps {
   config: B4SetConfig;
   callsSession: CallsSession;
@@ -68,6 +85,11 @@ export const UdpSettings = ({
 }: UdpSettingsProps) => {
   const { t } = useTranslation();
   const { captures, listed: capturesListed } = useListedCaptures();
+  const { builtins, loadBuiltins } = useBuiltinPayloads();
+
+  useEffect(() => {
+    void loadBuiltins();
+  }, [loadBuiltins]);
 
   const UDP_MODES = [
     {
@@ -308,6 +330,19 @@ export const UdpSettings = ({
     chosenUdpFileLabel = chosenUdpFile.name;
   }
 
+  const presetBuiltin = UDP_PRESET_BUILTINS[udpPayloadFile];
+  const fakePayloadSize =
+    chosenUdpFile.state === "listed"
+      ? chosenUdpFile.capture.size
+      : presetBuiltin
+        ? builtins.find((b) => b.id === presetBuiltin)?.size
+        : undefined;
+  const fakeLen = config.udp.fake_len;
+  const truncatedPayloadSize =
+    fakePayloadSize !== undefined && fakeLen < fakePayloadSize
+      ? fakePayloadSize
+      : undefined;
+
   const showSniWarning =
     !onlyCalls &&
     !portRouted &&
@@ -429,15 +464,7 @@ export const UdpSettings = ({
           <B4Alert
             severity="warning"
             icon={<WarningIcon />}
-            sx={{
-              flexWrap: { xs: "wrap", lg: "nowrap" },
-              "& .MuiAlert-message": { flex: { xs: "1 1 0", lg: "0 1 auto" } },
-              "& .MuiAlert-action": {
-                width: { xs: "100%", lg: "auto" },
-                justifyContent: "flex-end",
-                pl: { xs: 0, lg: 2 },
-              },
-            }}
+            sx={actionAlertSx}
             action={
               <Button
                 color="inherit"
@@ -535,7 +562,7 @@ export const UdpSettings = ({
                     path="udp.fake_len"
                     onChange={(value) => onChange("udp.fake_len", value)}
                     min={32}
-                    max={1472}
+                    max={UDP_FAKE_LEN_MAX}
                     step={8}
                     valueSuffix={t("core.units.bytes")}
                     helperText={t("sets.udp.fakeSizeHelper")}
@@ -588,6 +615,40 @@ export const UdpSettings = ({
                     </Link>
                   </B4Hint>
                 </Grid>
+
+                {truncatedPayloadSize !== undefined && (
+                  <B4Alert
+                    severity="warning"
+                    icon={<WarningIcon />}
+                    sx={actionAlertSx}
+                    action={
+                      fakeLen < UDP_FAKE_LEN_MAX ? (
+                        <Button
+                          color="inherit"
+                          size="small"
+                          sx={{ whiteSpace: "nowrap" }}
+                          onClick={() =>
+                            onChange(
+                              "udp.fake_len",
+                              Math.min(truncatedPayloadSize, UDP_FAKE_LEN_MAX),
+                            )
+                          }
+                        >
+                          {t("sets.udp.fakePayloadUseSize")}
+                        </Button>
+                      ) : undefined
+                    }
+                  >
+                    {t("sets.udp.fakePayloadTruncated", {
+                      len: fakeLen,
+                      count: truncatedPayloadSize,
+                    })}
+                    {truncatedPayloadSize > UDP_FAKE_LEN_MAX &&
+                      ` ${t("sets.udp.fakePayloadOverOneFake", {
+                        max: UDP_FAKE_LEN_MAX,
+                      })}`}
+                  </B4Alert>
+                )}
 
                 <B4FormHeader label={t("sets.udp.evasionHeader")} />
 
