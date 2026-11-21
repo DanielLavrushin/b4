@@ -39,6 +39,7 @@ import {
 import { ApiError } from "@api/apiClient";
 import { colors, radius } from "@design";
 import { copyText, describeApiError } from "@utils";
+import { useLastTarget } from "@hooks/useLastTarget";
 import { bytesToHex } from "./payloads/hex";
 import {
   asProtocol,
@@ -323,6 +324,12 @@ export const CaptureSettings = () => {
     error: string | null;
   } | null>(null);
   const hexRequest = useRef(0);
+
+  const shownDelete = useLastTarget(deleteDialog);
+  const shownClear = useLastTarget(clearDialog);
+  const shownReplace = useLastTarget(replaceDialog);
+  const shownRegenerate = useLastTarget(regenerateDialog);
+  const shownHex = useLastTarget(hexDialog);
 
   const openHex = async (target: HexTarget) => {
     const id = ++hexRequest.current;
@@ -776,7 +783,7 @@ export const CaptureSettings = () => {
 
       <B4Dialog
         title={t("settings.Capture.deleteTitle", {
-          domain: deleteDialog?.capture.domain ?? "",
+          domain: shownDelete?.capture.domain ?? "",
         })}
         icon={<WarningIcon />}
         open={deleteDialog !== null}
@@ -795,10 +802,10 @@ export const CaptureSettings = () => {
           </>
         }
       >
-        {deleteDialog && (
+        {shownDelete && (
           <Typography variant="body2">
             {t("settings.Capture.deleteInUseConfirm", {
-              sets: deleteDialog.sets.join(", "),
+              sets: shownDelete.sets.join(", "),
             })}
           </Typography>
         )}
@@ -827,11 +834,11 @@ export const CaptureSettings = () => {
           </>
         }
       >
-        {clearDialog && (
+        {shownClear && (
           <Typography variant="body2">
-            {clearDialog.sets.length > 0
+            {shownClear.sets.length > 0
               ? t("settings.Capture.clearInUseConfirm", {
-                  sets: clearDialog.sets.join(", "),
+                  sets: shownClear.sets.join(", "),
                 })
               : t("settings.Capture.clearConfirm")}
           </Typography>
@@ -840,7 +847,7 @@ export const CaptureSettings = () => {
 
       <B4Dialog
         title={t("settings.Capture.replaceTitle", {
-          domain: replaceDialog?.domain ?? "",
+          domain: shownReplace?.domain ?? "",
         })}
         icon={<UploadIcon />}
         open={replaceDialog !== null}
@@ -863,17 +870,17 @@ export const CaptureSettings = () => {
           </>
         }
       >
-        {replaceDialog && (
+        {shownReplace && (
           <Typography variant="body2">
-            {replaceDialog.sets.length > 0
+            {shownReplace.sets.length > 0
               ? t("settings.Capture.replaceInUse", {
-                  protocol: replaceDialog.protocol.toUpperCase(),
-                  domain: replaceDialog.domain,
-                  sets: replaceDialog.sets.join(", "),
+                  protocol: shownReplace.protocol.toUpperCase(),
+                  domain: shownReplace.domain,
+                  sets: shownReplace.sets.join(", "),
                 })
               : t("settings.Capture.replaceBody", {
-                  protocol: replaceDialog.protocol.toUpperCase(),
-                  domain: replaceDialog.domain,
+                  protocol: shownReplace.protocol.toUpperCase(),
+                  domain: shownReplace.domain,
                 })}
           </Typography>
         )}
@@ -881,7 +888,7 @@ export const CaptureSettings = () => {
 
       <B4Dialog
         title={t("settings.Capture.regenerateTitle", {
-          domain: regenerateDialog?.domain ?? "",
+          domain: shownRegenerate?.domain ?? "",
         })}
         icon={<RefreshIcon />}
         open={regenerateDialog !== null}
@@ -912,19 +919,19 @@ export const CaptureSettings = () => {
           </>
         }
       >
-        {regenerateDialog && (
+        {shownRegenerate && (
           <Stack spacing={1.5}>
             <Typography variant="body2">
               {t("settings.Capture.regenerateBody", {
-                domain: regenerateDialog.domain,
+                domain: shownRegenerate.domain,
               })}
-              {(regenerateDialog.warnings ?? []).includes("malformed") &&
+              {(shownRegenerate.warnings ?? []).includes("malformed") &&
                 ` ${t("settings.Capture.regenerateFixes")}`}
             </Typography>
-            {(regenerateDialog.used_by ?? []).length > 0 && (
+            {(shownRegenerate.used_by ?? []).length > 0 && (
               <Typography variant="body2">
                 {t("settings.Capture.regenerateInUse", {
-                  sets: (regenerateDialog.used_by ?? []).join(", "),
+                  sets: (shownRegenerate.used_by ?? []).join(", "),
                 })}
               </Typography>
             )}
@@ -957,26 +964,26 @@ export const CaptureSettings = () => {
           </>
         }
       >
-        {hexDialog && (
+        {shownHex && (
           <Stack spacing={2}>
             <B4Alert icon={<SuccessIcon />}>
               {t("settings.Capture.hexCaption", {
-                protocol: hexDialog.target.protocol.toUpperCase(),
-                name: hexDialog.target.name,
-                size: bytesLabel(t, hexDialog.target.size),
+                protocol: shownHex.target.protocol.toUpperCase(),
+                name: shownHex.target.name,
+                size: bytesLabel(t, shownHex.target.size),
               })}
             </B4Alert>
-            {hexDialog.error && (
+            {shownHex.error && (
               <B4Alert severity="error">
-                {t("settings.Capture.hexFailed", { error: hexDialog.error })}
+                {t("settings.Capture.hexFailed", { error: shownHex.error })}
               </B4Alert>
             )}
-            {!hexDialog.error && hexDialog.hex === null && (
+            {!shownHex.error && shownHex.hex === null && (
               <Box sx={{ display: "flex", justifyContent: "center", p: 2 }}>
                 <CircularProgress size={24} />
               </Box>
             )}
-            {hexDialog.hex !== null && (
+            {shownHex.hex !== null && (
               <Box
                 sx={{
                   p: 2,
@@ -990,7 +997,7 @@ export const CaptureSettings = () => {
                   userSelect: "all",
                 }}
               >
-                {hexDialog.hex}
+                {shownHex.hex}
               </Box>
             )}
           </Stack>
