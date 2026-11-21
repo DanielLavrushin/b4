@@ -299,6 +299,32 @@ func TestNamesThatSanitizeAlikeKeepTheirOwnFiles(t *testing.T) {
 	}
 }
 
+func TestReloadTakesTheListOnDiskAsItIs(t *testing.T) {
+	m := testManager(t)
+	if err := m.SaveUploadedCapture("tls", "before.reload.example", []byte{0x16}); err != nil {
+		t.Fatal(err)
+	}
+	restored := `{"restored.reload.example":{"quic":{"timestamp":"2026-11-01T00:00:00Z","size":2,"filepath":"quic_restored_reload_example.bin"}}}`
+	if err := os.WriteFile(m.metadataFile, []byte(restored), 0644); err != nil {
+		t.Fatal(err)
+	}
+	m.Reload()
+	var names []string
+	for _, c := range m.ListCaptures() {
+		names = append(names, c.Protocol+":"+c.Domain)
+	}
+	if len(names) != 1 || names[0] != "quic:restored.reload.example" {
+		t.Errorf("after a reload the list must be the one on disk, got %q", names)
+	}
+	if err := os.Remove(m.metadataFile); err != nil {
+		t.Fatal(err)
+	}
+	m.Reload()
+	if listed := m.ListCaptures(); len(listed) != 0 {
+		t.Errorf("after a reload with no payloads.json the list must be empty, got %d entries", len(listed))
+	}
+}
+
 func TestNullEntriesInPayloadsJSONDoNotPanic(t *testing.T) {
 	calls := []struct {
 		name string

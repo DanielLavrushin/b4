@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
@@ -23,6 +24,7 @@ const payloadFilenameFmt = "%s_%s.bin"
 var (
 	instance *Manager
 	once     sync.Once
+	started  atomic.Pointer[Manager]
 )
 
 func GetManager(cfg *config.Config) *Manager {
@@ -30,8 +32,15 @@ func GetManager(cfg *config.Config) *Manager {
 		instance = newManager(filepath.Join(filepath.Dir(cfg.ConfigPath), "captures"))
 		os.MkdirAll(instance.outputPath, 0755)
 		instance.loadMetadata()
+		started.Store(instance)
 	})
 	return instance
+}
+
+func Reload() {
+	if m := started.Load(); m != nil {
+		m.Reload()
+	}
 }
 
 func newManager(outputPath string) *Manager {
@@ -46,12 +55,20 @@ func (m *Manager) GetOutputPath() string {
 	return m.outputPath
 }
 
+func (m *Manager) Reload() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.loadMetadata()
+}
+
 func (m *Manager) loadMetadata() {
 	data, err := os.ReadFile(m.metadataFile)
+	if os.IsNotExist(err) {
+		m.metadata = make(map[string]map[string]*PayloadMetadata)
+		return
+	}
 	if err != nil {
-		if !os.IsNotExist(err) {
-			log.Errorf("Failed to read metadata: %v", err)
-		}
+		log.Errorf("Failed to read metadata: %v", err)
 		return
 	}
 
