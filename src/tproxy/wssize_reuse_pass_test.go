@@ -4,14 +4,18 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/netip"
+	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/daniellavrushin/b4/ai"
 	"github.com/daniellavrushin/b4/config"
 )
 
@@ -520,6 +524,29 @@ func TestWSReuseFailedFallbackDialAfterASilentPassWarns(t *testing.T) {
 	waitDone(t, done, 2*time.Second, "a failed dial with the set's strategy did not end the connection")
 	if n := logged.warnings("closed without a relay"); n != 1 || l.dialFailed.count.Load() != 1 {
 		t.Fatalf("a dial with the set's strategy that failed while the client waited was counted %d times as a connection closed without a relay, with %d warnings, want 1 and 1: %s", l.dialFailed.count.Load(), n, logged.buf.String())
+	}
+}
+
+func TestWSReuseStatedSilentPassWindowIsTheOneB4Waits(t *testing.T) {
+	seconds := int(passAnswerTimeout / time.Second)
+	if time.Duration(seconds)*time.Second != passAnswerTimeout {
+		t.Fatalf("the silent pass window %s is not a whole number of seconds, as the topic and the pages state it", passAnswerTimeout)
+	}
+	topic := "tcp.wssize_reuse.max_age_seconds"
+	if want := fmt.Sprintf("got no server data within %d seconds", seconds); !strings.Contains(ai.TopicFacts(topic), want) {
+		t.Errorf("%s does not say %q, the silent pass window b4 waits: %s", topic, want, ai.TopicFacts(topic))
+	}
+	for page, format := range map[string]string{
+		"../../docs/docs/sets/tcp/general.md":                                           "nor closes the connection within %d seconds",
+		"../../docs/i18n/ru/docusaurus-plugin-content-docs/current/sets/tcp/general.md": "а сервер за %d секунд",
+	} {
+		raw, err := os.ReadFile(page)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := fmt.Sprintf(format, seconds); !strings.Contains(string(raw), want) {
+			t.Errorf("%s does not say %q, the silent pass window b4 waits", page, want)
+		}
 	}
 }
 
