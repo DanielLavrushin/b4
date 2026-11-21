@@ -63,7 +63,11 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
     });
   const [newFakeSni, setNewFakeSni] = useState("");
   const [newWinValue, setNewWinValue] = useState("");
-  const { captures, listed: capturesListed } = useListedCaptures();
+  const {
+    captures,
+    listed: capturesListed,
+    listError,
+  } = useListedCaptures();
   const tlsCaptures = captures
     .filter((c) => c.protocol === "tls" && !c.missing && !isEmptyPayload(c))
     .sort(byPayloadName);
@@ -204,11 +208,13 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
     !(config.faking.payload_domain || "").trim();
 
   let chosenFileOption: { label: string; note?: string } | undefined;
-  let payloadFileHelper = t(
-    tlsCaptures.length === 0
-      ? "sets.faking.fakeSni.noPayloadsHelper"
-      : "sets.faking.fakeSni.selectPayloadHelper",
-  );
+  let payloadFileHelper = listError
+    ? t("settings.Capture.listFailed", { error: listError })
+    : t(
+        tlsCaptures.length === 0
+          ? "sets.faking.fakeSni.noPayloadsHelper"
+          : "sets.faking.fakeSni.selectPayloadHelper",
+      );
   if (chosenFile.state === "missing") {
     chosenFileOption = {
       label: t("sets.faking.fakeSni.payloadFileMissing", {
@@ -487,7 +493,8 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
                 <B4Alert>
-                  {tlsCaptures.length === 0 &&
+                  {!listError &&
+                    tlsCaptures.length === 0 &&
                     t("sets.faking.fakeSni.noPayloads")}
 
                   <Link to="/settings/payloads">

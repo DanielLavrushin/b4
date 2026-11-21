@@ -51,7 +51,7 @@ export function chosenPayloadFile(
 }
 
 export function useListedCaptures() {
-  const { captures, refreshCaptures } = useCaptures();
+  const { captures, listError, refreshCaptures } = useCaptures();
   const [listed, setListed] = useState(false);
 
   useEffect(() => {
@@ -61,5 +61,5 @@ export function useListedCaptures() {
     );
   }, [refreshCaptures]);
 
-  return { captures, listed };
+  return { captures, listed, listError };
 }

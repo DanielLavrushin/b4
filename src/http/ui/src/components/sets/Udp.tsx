@@ -84,7 +84,11 @@ export const UdpSettings = ({
   onChange,
 }: UdpSettingsProps) => {
   const { t } = useTranslation();
-  const { captures, listed: capturesListed } = useListedCaptures();
+  const {
+    captures,
+    listed: capturesListed,
+    listError,
+  } = useListedCaptures();
   const { builtins, loadBuiltins } = useBuiltinPayloads();
 
   useEffect(() => {
@@ -315,6 +319,8 @@ export const UdpSettings = ({
     payloadFileHelper = t("sets.udp.fakePayloadFileAutoQuic");
   } else if (isAutoStun) {
     payloadFileHelper = t("sets.udp.fakePayloadFileAutoStun");
+  } else if (listError) {
+    payloadFileHelper = t("settings.Capture.listFailed", { error: listError });
   } else if (sortedCaptures.length === 0) {
     payloadFileHelper = t("sets.udp.fakePayloadFileEmpty");
   } else {
