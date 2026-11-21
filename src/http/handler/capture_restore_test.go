@@ -10,10 +10,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/daniellavrushin/b4/capture"
+	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/sock"
 )
 
 func backupArchive(t *testing.T, files map[string][]byte) []byte {
@@ -88,5 +91,62 @@ func TestARestoredPayloadListSurvivesTheNextPayloadSave(t *testing.T) {
 	if !strings.Contains(string(onDisk), restored) {
 		t.Errorf("the next upload after the restore rewrote payloads.json from the list held before it: %s is gone (%d bytes left) though its file %s is on disk",
 			restored, len(onDisk), restoredFile)
+	}
+}
+
+func TestAPayloadChangeAfterARestoreLeavesTheRestoredConfigOnDisk(t *testing.T) {
+	mux, api := captureTestMux(t)
+	api.RegisterBackupApi()
+	manager := capture.GetManager(api.getCfg())
+	const name = "restored-config.restore.example"
+	file, err := manager.SaveImportedPayload("tls", name, payloadTestHello(0x31, 300))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { manager.DeleteCapture("tls", name) })
+	set := namedSet("before", "set before the restore", true, "a.example")
+	set.Faking.SNI = true
+	set.Faking.SNIType = config.FakePayloadCapture
+	set.Faking.PayloadFile = file
+	useSets(api, set)
+	configPath := api.getCfg().ConfigPath
+	if err := api.getCfg().SaveToFile(configPath); err != nil {
+		t.Fatal(err)
+	}
+
+	restoredCfg := config.NewConfig()
+	restoredCfg.Sets = []*config.SetConfig{namedSet("restored", "set of the backup", true, "restored.example")}
+	scratch := filepath.Join(t.TempDir(), "config.json")
+	if err := restoredCfg.SaveToFile(scratch); err != nil {
+		t.Fatal(err)
+	}
+	restoredJSON, err := os.ReadFile(scratch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	fw, _ := mw.CreateFormFile("file", "b4-backup.tar.gz")
+	fw.Write(backupArchive(t, map[string][]byte{filepath.Base(configPath): restoredJSON}))
+	mw.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/backup/restore", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if rec, panicked := serveRecovered(mux, req); panicked != "" || rec.Code != http.StatusOK {
+		t.Fatalf("restore: %d %s %s", rec.Code, rec.Body.String(), panicked)
+	}
+
+	rec, _ := serveRecovered(mux, httptest.NewRequest(http.MethodDelete, "/api/capture/delete?protocol=tls&domain="+name, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := reloadedBy(t, rec); !reflect.DeepEqual(got, []any{"set before the restore"}) {
+		t.Errorf("the delete answered reloaded=%v, want the running set that names the file", got)
+	}
+	if onDisk, _ := os.ReadFile(configPath); !bytes.Equal(onDisk, restoredJSON) {
+		t.Errorf("deleting a payload after a restore rewrote %s from the config held before the restore (restored set kept: %t, earlier set back: %t)",
+			filepath.Base(configPath), strings.Contains(string(onDisk), "set of the backup"), strings.Contains(string(onDisk), "set before the restore"))
+	}
+	if got := sock.GetPayload(&runningSet(api).Faking); !bytes.Equal(got, config.FakeSNI1) {
+		t.Errorf("after the delete the running set sends %d bytes, not the Google preset it falls back to", len(got))
 	}
 }

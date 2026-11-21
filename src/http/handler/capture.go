@@ -228,8 +228,7 @@ func setsNamingCapture(cfg *config.Config, file string) []string {
 	return names
 }
 
-func (api *API) reloadSetsNaming(files []string, response map[string]interface{}) {
-	cfg := api.getCfg()
+func setsNamingCaptures(cfg *config.Config, files []string) []string {
 	var names []string
 	seen := map[string]bool{}
 	for _, file := range files {
@@ -240,16 +239,24 @@ func (api *API) reloadSetsNaming(files []string, response map[string]interface{}
 			}
 		}
 	}
+	return names
+}
+
+func (api *API) reloadSetsNaming(files []string, response map[string]interface{}) {
 	response["reloaded"] = []string{}
-	if len(names) == 0 {
-		return
-	}
-	if _, _, err := api.editConfig(func(*config.Config) error { return nil }); err != nil {
-		log.Errorf("The payload change did not reach sets %s: %v", strings.Join(names, ", "), err)
+	var named []string
+	names, err := api.reloadRunningSets(func(running *config.Config) []string {
+		named = setsNamingCaptures(running, files)
+		return named
+	})
+	if err != nil {
+		log.Errorf("The payload change did not reach sets %s: %v", strings.Join(named, ", "), err)
 		response["reload_error"] = err.Error()
 		return
 	}
-	response["reloaded"] = names
+	if len(names) > 0 {
+		response["reloaded"] = names
+	}
 }
 
 // @Summary Delete a capture

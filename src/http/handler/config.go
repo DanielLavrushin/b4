@@ -565,6 +565,33 @@ func (a *API) editConfig(edit func(next *config.Config) error) (oldCfg, newCfg *
 	return oldCfg, newCfg, nil
 }
 
+func (a *API) reloadRunningSets(affected func(running *config.Config) []string) ([]string, error) {
+	unlock := config.LockWrites()
+	defer unlock()
+	running := a.getCfg()
+	names := affected(running)
+	if len(names) == 0 {
+		return nil, nil
+	}
+	next := running.Clone()
+	if err := next.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %v", err)
+	}
+	if globalPool != nil {
+		if err := globalPool.UpdateConfig(next); err != nil {
+			return nil, fmt.Errorf("failed to update global pool config: %v", err)
+		}
+	}
+	if globalTUNEngine != nil {
+		globalTUNEngine.UpdateConfig(next)
+	}
+	a.cfgPtr.Store(next)
+	if routingSyncFunc != nil {
+		routingSyncFunc(next)
+	}
+	return names, nil
+}
+
 func isRefusal(err error) bool {
 	var ae *APIError
 	return errors.As(err, &ae) && ae.Status < http.StatusInternalServerError

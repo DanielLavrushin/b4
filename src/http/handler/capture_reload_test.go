@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -209,10 +208,7 @@ func TestAPayloadChangeWhoseReloadFailsSaysSo(t *testing.T) {
 	set.Faking.SNIType = config.FakePayloadCapture
 	set.Faking.PayloadFile = file
 	useSets(api, set)
-	if err := os.Mkdir(api.getCfg().ConfigPath, 0755); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.Remove(api.getCfg().ConfigPath) })
+	api.getCfg().System.MemoryLimit = "not a size"
 
 	rec := replaceCapturePayload(t, mux, name, "tls", payloadTestHello(0x52, 110))
 	var out map[string]any
