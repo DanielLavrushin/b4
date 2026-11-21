@@ -21,8 +21,6 @@ var helperLineBaseline = map[string]int{
 	"sets.faking.synFake.md5Desc":                 144,
 	"sets.faking.synFake.ttlHelper":               156,
 	"sets.tcp.splitting.disorder.splitPosHelper":  141,
-	"sets.udp.portFilterHelper":                   166,
-	"sets.udp.portFilterRoutedHelper":             121,
 	"settings.Feature.dscpDesc":                   368,
 	"settings.Feature.dscpValueHelp":              264,
 	"settings.Feature.firewallMonitorSkipped":     132,
