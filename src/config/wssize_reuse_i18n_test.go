@@ -104,12 +104,12 @@ func TestReuseSwitchDescriptionNamesUseCollectedIPs(t *testing.T) {
 		t.Fatalf("a reuse set whose only target is Use collected IPs was refused: %v", err)
 	}
 	for locale, want := range useCollectedIPsLabel {
-		text, ok := uiStrings(t, locale)["sets.tcp.general.wssizeReuseDesc"]
+		text, ok := uiStrings(t, locale)["sets.tcp.general.wssizeReuseInfo"]
 		if !ok {
-			t.Fatalf("%s.json has no sets.tcp.general.wssizeReuseDesc", locale)
+			t.Fatalf("%s.json has no sets.tcp.general.wssizeReuseInfo", locale)
 		}
 		if !strings.Contains(text, want) {
-			t.Errorf("%s sets.tcp.general.wssizeReuseDesc lists the targets a reuse set may have, and b4 saves one whose only target is Use collected IPs, but it does not name %q: %q", locale, want, text)
+			t.Errorf("%s sets.tcp.general.wssizeReuseInfo lists the targets a reuse set may have, and b4 saves one whose only target is Use collected IPs, but it does not name %q: %q", locale, want, text)
 		}
 	}
 }

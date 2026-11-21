@@ -1,7 +1,7 @@
 import { Grid, Box, Typography } from "@mui/material";
 import { colors } from "@design";
-import { B4Alert, B4FormHeader, B4Hint } from "@b4.elements";
-import { useTranslation, Trans } from "react-i18next";
+import { B4FormHeader } from "@b4.elements";
+import { useTranslation } from "react-i18next";
 
 export const ExtSplitSettings = () => {
   const { t } = useTranslation();
@@ -9,7 +9,6 @@ export const ExtSplitSettings = () => {
   return (
     <>
       <B4FormHeader label={t("sets.tcp.splitting.extSplit.header")} />
-      <B4Hint>{t("sets.tcp.splitting.extSplit.alert")}</B4Hint>
 
       <Grid size={{ xs: 12 }}>
         <Box
@@ -121,12 +120,6 @@ export const ExtSplitSettings = () => {
             {t("sets.tcp.splitting.extSplit.splitNote")}
           </Typography>
         </Box>
-      </Grid>
-
-      <Grid size={{ xs: 12 }}>
-        <B4Alert severity="success" sx={{ m: 0 }}>
-          <Trans i18nKey="sets.tcp.splitting.extSplit.noConfigNeeded" />
-        </B4Alert>
       </Grid>
     </>
   );

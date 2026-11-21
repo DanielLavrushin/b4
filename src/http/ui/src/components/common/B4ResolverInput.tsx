@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type {
   ClipboardEvent,
   FocusEvent,
@@ -30,8 +30,9 @@ import { useTranslation } from "react-i18next";
 import { colors, fonts } from "@design";
 import { resolverKey, resolverLabel, resolverValue } from "@utils";
 import { useChangedFields } from "@context/ChangedFieldsContext";
-import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
+import { B4Help, type B4HelpContent } from "./B4Help";
 import { chipSx } from "./B4ChipList";
+import { fieldMessage } from "./B4FieldMessage";
 import { B4PlusButton } from "./B4PlusButton";
 import { B4TextField } from "./B4TextField";
 
@@ -45,7 +46,7 @@ export interface B4ResolverPath {
   label: string;
 }
 
-interface B4ResolverInputProps {
+interface B4ResolverInputProps extends B4HelpContent {
   label: string;
   value: string[];
   onChange: (next: string[]) => void;
@@ -57,9 +58,9 @@ interface B4ResolverInputProps {
   lookup?: (entry: string) => B4ResolverInfo | undefined;
   placeholder?: string;
   helperText?: string;
+  message?: React.ReactNode;
   emptyMessage?: string;
   disabled?: boolean;
-  aiTopic?: string;
 }
 
 interface ResolverChipProps {
@@ -189,9 +190,15 @@ export const B4ResolverInput = ({
   lookup,
   placeholder,
   helperText,
+  message,
   emptyMessage,
   disabled,
+  info,
+  learnMore,
+  credit,
   aiTopic,
+  aiContext,
+  aiQuestion,
 }: B4ResolverInputProps) => {
   const { t } = useTranslation();
   const [input, setInput] = useState("");
@@ -200,6 +207,8 @@ export const B4ResolverInput = ({
   const [focusTarget, setFocusTarget] = useState<FocusTarget | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const chipsRef = useRef<HTMLDivElement>(null);
+  const fieldId = useId();
+  const messageId = `${fieldId}-message`;
   const { changedPaths, registerLabel, scopeVersion } = useChangedFields();
   useEffect(() => {
     for (const item of paths) registerLabel(item.path, item.label);
@@ -340,6 +349,14 @@ export const B4ResolverInput = ({
     limitNote = t("core.resolverInput.notAdded", { count: unfit, max });
   }
   const notes = [reason, limitNote].filter(Boolean).join(" ");
+  const shownMessage = fieldMessage(message);
+  const describedBy =
+    [
+      notes || helperText ? `${fieldId}-helper-text` : null,
+      shownMessage !== null ? messageId : null,
+    ]
+      .filter(Boolean)
+      .join(" ") || undefined;
 
   return (
     <Box onBlur={handleBlur}>
@@ -349,13 +366,14 @@ export const B4ResolverInput = ({
           gap: 1,
           alignItems: "flex-start",
           "& > .MuiFormControl-root": { flex: 1, minWidth: 0 },
-          ...aiHoverRevealSx,
         }}
       >
         <B4TextField
+          id={fieldId}
           label={label}
           value={input}
           inputRef={inputRef}
+          slotProps={{ htmlInput: { "aria-describedby": describedBy } }}
           changed={changed}
           error={!!reason || unfit > 0}
           disabled={disabled || (full && !input && !focused)}
@@ -374,14 +392,18 @@ export const B4ResolverInput = ({
           onClick={() => addAndStay(input)}
           disabled={disabled || full || !input.trim()}
         />
-        {aiTopic && (
-          <B4AiExplain
-            topic={aiTopic}
-            fieldLabel={label}
-            fieldDoc={helperText}
-            value={value.join(", ")}
-          />
-        )}
+        <B4Help
+          label={label}
+          info={info}
+          learnMore={learnMore}
+          credit={credit}
+          aiTopic={aiTopic}
+          aiContext={aiContext}
+          aiQuestion={aiQuestion}
+          fieldDoc={helperText}
+          value={value.join(", ")}
+          mt="6px"
+        />
       </Box>
       {(value.length > 0 || emptyMessage) && (
         <Box
@@ -432,6 +454,7 @@ export const B4ResolverInput = ({
           )}
         </Box>
       )}
+      {shownMessage !== null && <Box id={messageId}>{shownMessage}</Box>}
     </Box>
   );
 };

@@ -9,11 +9,12 @@ import {
   B4Switch,
   B4Select,
   B4Alert,
+  B4FieldMessage,
   B4TextField,
   InterfaceChips,
   useIfaceLabel,
 } from "@b4.elements";
-import { Box, Typography } from "@mui/material";
+import { Box, FormHelperText } from "@mui/material";
 import { EngineFailure, SettingsPropHandlerType } from "@models/settings";
 import { useChangedFields } from "@context/ChangedFieldsContext";
 
@@ -118,6 +119,7 @@ export const PacketEngineSettings = ({
             })),
         ]}
         helperText={t("settings.Feature.tunOutInterfaceDesc")}
+        info={t("settings.Feature.tunOutInterfaceInfo")}
       />
       <B4TextField
         value={config.queue.tun?.out_gateway || ""}
@@ -150,11 +152,13 @@ export const PacketEngineSettings = ({
   );
 
   const captureInterfaces = (
-    <B4FormGroup label={t("settings.Feature.networkInterfaces")} columns={1}>
+    <B4FormGroup
+      label={t("settings.Feature.networkInterfaces")}
+      info={t("settings.Feature.networkInterfacesInfo")}
+      learnMore="settings/core#network-interfaces"
+      columns={1}
+    >
       <Box>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-          {t("settings.Feature.networkInterfacesDesc")}
-        </Typography>
         <InterfaceChips
           available={config.available_ifaces ?? []}
           selected={selectedIfaces}
@@ -164,28 +168,35 @@ export const PacketEngineSettings = ({
           showMissing={false}
           details={config.iface_details}
         />
-        {ifaceFilterSeesNothing && (
-          <B4Alert severity="warning" sx={{ mt: 2 }}>
+        {ifaceFilterSeesNothing ? (
+          <B4FieldMessage>
             {t("settings.Feature.interfaceFilterSeesNothing", {
               selected: selectedIfaces.join(", "),
               seen: uncovered.join(", "),
             })}
-          </B4Alert>
-        )}
-        {ifaceFilterSeesLittle && (
-          <B4Alert severity="info" sx={{ mt: 2 }}>
+          </B4FieldMessage>
+        ) : ifaceFilterSeesLittle ? (
+          <B4FieldMessage severity="info">
             {t("settings.Feature.interfaceFilterSeesLittle", {
               percent: Math.max(1, uncoveredShare),
               seen: uncovered.join(", "),
             })}
-          </B4Alert>
+          </B4FieldMessage>
+        ) : (
+          <FormHelperText sx={{ color: "text.secondary", m: 0, mt: 0.75 }}>
+            {t("settings.Feature.networkInterfacesDesc")}
+          </FormHelperText>
         )}
       </Box>
     </B4FormGroup>
   );
 
   return (
-    <B4Section title={t("settings.Feature.engineMode")} icon={<NetworkIcon />}>
+    <B4Section
+      title={t("settings.Feature.engineMode")}
+      icon={<NetworkIcon />}
+      learnMore="settings/core#packet-engine"
+    >
       <B4Select
         value={config.queue.mode || "nfqueue"}
         path="queue.mode"
@@ -203,6 +214,7 @@ export const PacketEngineSettings = ({
           { value: "tun", label: t("settings.Feature.engineModeTun") },
         ]}
         helperText={t("settings.Feature.engineModeHelp")}
+        info={t("settings.Feature.engineModeInfo")}
       />
       {engineFailure && (
         <B4Alert severity="error" noWrapper>
@@ -248,6 +260,7 @@ export const IpVersionSettings = ({
     <B4Section
       title={t("settings.Feature.protoFeatures")}
       icon={<ToggleOnIcon />}
+      learnMore="settings/core#protocols"
     >
       <B4Switch
         checked={config.queue.ipv4}
@@ -259,6 +272,7 @@ export const IpVersionSettings = ({
         path="queue.ipv6"
         onChange={(checked: boolean) => onChange("queue.ipv6", checked)}
         description={t("settings.Feature.enableIPv6Desc")}
+        info={t("settings.Feature.enableIPv6Info")}
       />
       <B4Switch
         checked={!keepIpv6Answers}
@@ -272,6 +286,7 @@ export const IpVersionSettings = ({
             ? "settings.Dns.ipv4FallbackIdle"
             : "settings.Dns.ipv4FallbackDesc",
         )}
+        info={t("settings.Dns.ipv4FallbackInfo")}
       />
       {showIpv6Bypass && (
         <B4Alert severity="warning" noWrapper onClose={dismissIpv6Bypass}>

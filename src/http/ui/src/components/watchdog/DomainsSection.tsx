@@ -28,6 +28,7 @@ import {
 import { colors } from "@design";
 import {
   B4Alert,
+  B4Help,
   B4Badge,
   B4PlusButton,
   B4Section,
@@ -306,9 +307,16 @@ export function DomainsSection({
       icon={<DomainIcon />}
     >
       <Stack spacing={2}>
-        <Typography variant="body2" color="text.secondary">
-          {t("watchdog.domains.explain")}
-        </Typography>
+        <Stack direction="row" alignItems="flex-start" spacing={0.5}>
+          <Typography variant="body2" color="text.secondary">
+            {t("watchdog.domains.explain")}
+          </Typography>
+          <B4Help
+            label={t("watchdog.domains.title")}
+            info={t("watchdog.domains.explainInfo")}
+            learnMore="watchdog"
+          />
+        </Stack>
 
         {enabled && domains.length > 0 && (
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>

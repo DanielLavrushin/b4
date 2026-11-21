@@ -112,6 +112,7 @@
     "targets.source_devices",
     "targets.source_devices_exclude",
     "targets.tls",
+    "targets.use_collected_ips",
     "tcp.conn_bytes_limit",
     "tcp.desync.count",
     "tcp.desync.mode",
@@ -128,6 +129,7 @@
     "tcp.incoming.min",
     "tcp.incoming.mode",
     "tcp.incoming.strategy",
+    "tcp.ip_block_detect.action",
     "tcp.ip_block_detect.cache_blocked_ips",
     "tcp.ip_block_detect.enabled",
     "tcp.ip_block_detect.heal_dns",
@@ -150,6 +152,8 @@
     "tcp.wssize.scale",
     "tcp.wssize.strip_scale",
     "tcp.wssize.window",
+    "tcp.wssize_reuse.enabled",
+    "tcp.wssize_reuse.max_age_seconds",
     "udp.conn_bytes_limit",
     "udp.dport_filter",
     "udp.fake_len",
@@ -293,7 +297,8 @@
       "sni_domains": [],
       "source_devices": [],
       "source_devices_exclude": false,
-      "tls": ""
+      "tls": "",
+      "use_collected_ips": false
     },
     "tcp": {
       "conn_bytes_limit": 19,
@@ -319,6 +324,7 @@
         "strategy": "badsum"
       },
       "ip_block_detect": {
+        "action": "block",
         "cache_blocked_ips": true,
         "enabled": false,
         "heal_dns": false,
@@ -352,6 +358,10 @@
         "scale": 0,
         "strip_scale": false,
         "window": 0
+      },
+      "wssize_reuse": {
+        "enabled": false,
+        "max_age_seconds": 300
       }
     },
     "udp": {

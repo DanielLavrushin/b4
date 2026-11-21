@@ -253,6 +253,7 @@ export const DiscoveryOptionsPanel = ({
           <B4Switch
             label={t("discovery.options.checkDns")}
             description={t("discovery.options.checkDnsHint")}
+            info={t("discovery.options.checkDnsInfo")}
             checked={options.checkDns}
             onChange={(checked) => onChange({ ...options, checkDns: checked })}
             disabled={disabled}
@@ -299,12 +300,14 @@ export const DiscoveryOptionsPanel = ({
                   })
                 : t("discovery.options.pinsHint")
             }
+            info={t("discovery.options.pinsInfo")}
           />
 
           {setPicked && (
             <B4Switch
               label={t("discovery.options.stopWhenCovered")}
               description={t("discovery.options.stopWhenCoveredHint")}
+              info={t("discovery.options.stopWhenCoveredInfo")}
               checked={options.stopWhenCovered}
               onChange={(checked) =>
                 onChange({ ...options, stopWhenCovered: checked })
@@ -317,6 +320,7 @@ export const DiscoveryOptionsPanel = ({
             <B4Switch
               label={t("discovery.options.useCommunity")}
               description={t("discovery.options.useCommunityHint")}
+              info={t("discovery.options.useCommunityInfo")}
               checked={options.useCommunity}
               onChange={(checked) =>
                 onChange({ ...options, useCommunity: checked })

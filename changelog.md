@@ -27,6 +27,11 @@ All notable changes to b4 are recorded in this file.
 - With a splitting strategy such as **Combo**, the second packet of a ClientHello sent in two packets waits until the first has gone out in pieces, which adds one **First Segment Delay** (30 ms by default) to such connections. [#653](https://github.com/DanielLavrushin/b4/issues/653)
 - A set that worked only while the second packet of a ClientHello overtook the first, such as one with a **Preset: STUN** fake and no splitting, can stop working after the update; **Discovery** run again for its sites finds a new strategy. [#653](https://github.com/DanielLavrushin/b4/issues/653)
 - The Russian interface writes "payload" in English throughout, the **Payloads** tab included. [#650](https://github.com/DanielLavrushin/b4/issues/650)
+- Settings in the web interface keep one short line of help; the rest opens from an info button beside the setting, with **Learn more** and, when the assistant is on, **Ask AI**. Warnings show only while they apply, and rarely changed settings sit under **Advanced**.
+- A set's **TCP, Faking** tab shows only the settings its chosen modes use: **Desync Packet Count**, **Corruption Strategy**, **Threshold Min** and **Threshold Max**, for example, appear with the modes that read them.
+- **Ask AI** opens from the info button beside a setting on every page, where it was a separate icon that showed only on hover.
+- In a set's **Targets** tab, **Bypass Domains** and **Bypass IPs** are renamed **Domains** and **IP Addresses**, and the panels inside drop the word Bypass.
+- Links in the web interface use the yellow accent colour everywhere.
 
 ### Removed
 
@@ -57,6 +62,8 @@ All notable changes to b4 are recorded in this file.
 - **Generate** wrote a port typed with the domain into the payload and put a Cyrillic domain into it as raw text instead of its punycode form. [#647](https://github.com/DanielLavrushin/b4/issues/647)
 - A payload file cut short by a full disk replaced the old one, an empty payload file was sent as **Preset: Google (classic)** with no error in the log, and after a backup restore the next payload change lost the restored payload list. [#647](https://github.com/DanielLavrushin/b4/issues/647)
 - The **TCP** tab's warning that the **Port Filter** leaves out port 443 read the filter differently from how b4 saves it, so it could appear when the saved filter covered 443 and stay hidden when it did not.
+- Descriptions on a set's **TCP, Splitting** tab did not match what b4 does: **TLS Record Splitting** was said to write several TLS records, **First-Byte Desync** to wait at least 100 ms, and **Combo** with every split point off to send the packet whole.
+- In the set editor, a set in **Block (blackhole)** mode with **Domain-only matching** on was warned that it routes nothing and the **First-Byte Desync** diagram showed the delay as typed, not the one b4 uses; screen readers announced select boxes without their label.
 
 ### Security
 

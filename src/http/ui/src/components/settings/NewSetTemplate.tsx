@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Button, Stack } from "@mui/material";
+import { Button, Stack, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { fonts } from "@design";
 import { ClearIcon, SetsIcon } from "@b4.icons";
-import { B4Hint, B4Section, B4TextField } from "@b4.elements";
+import { B4Section, B4TextField } from "@b4.elements";
 import { B4Config, SetTemplate } from "@models/config";
 import { SettingsPropHandlerType } from "@models/settings";
 import { formatSetTemplate } from "@models/setTemplate";
@@ -75,8 +75,14 @@ export const NewSetTemplateSettings = ({
   };
 
   return (
-    <B4Section title={t("settings.NewSetTemplate.title")} icon={<SetsIcon />}>
-      <B4Hint>{t("settings.NewSetTemplate.info")}</B4Hint>
+    <B4Section
+      title={t("settings.NewSetTemplate.title")}
+      icon={<SetsIcon />}
+      learnMore="settings/core#new-sets"
+    >
+      <Typography variant="body2" sx={{ color: "text.secondary" }}>
+        {t("settings.NewSetTemplate.intro")}
+      </Typography>
       <Stack spacing={1.5}>
         <B4TextField
           label={t("settings.NewSetTemplate.label")}
@@ -90,6 +96,7 @@ export const NewSetTemplateSettings = ({
               ? t("settings.NewSetTemplate.invalid")
               : t("settings.NewSetTemplate.help")
           }
+          info={t("settings.NewSetTemplate.info")}
           aiTopic={FIELD}
           multiline
           minRows={6}

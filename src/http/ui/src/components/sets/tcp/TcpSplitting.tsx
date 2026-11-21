@@ -4,11 +4,9 @@ import {
   B4Switch,
   B4Select,
   B4RangeSlider,
-  B4Alert,
+  B4FieldMessage,
   B4FormHeader,
-  B4Hint,
-  B4AiExplain,
-  aiHoverRevealSx,
+  B4Help,
 } from "@b4.elements";
 import { B4SetConfig, FragmentationStrategy } from "@models/config";
 import { colors } from "@design";
@@ -19,6 +17,19 @@ import { FirstByteSettings } from "../frags/FirstByte";
 import { TcpIpSettings } from "../frags/TcpIp";
 import { useTranslation } from "react-i18next";
 import { useChangedArrayItem, useChangedFields } from "@context/ChangedFieldsContext";
+
+const METHOD_DOCS: Record<FragmentationStrategy, string> = {
+  combo: "sets/tcp/splitting#combo",
+  hybrid: "sets/tcp/splitting",
+  disorder: "sets/tcp/splitting#disorder",
+  extsplit: "sets/tcp/splitting",
+  firstbyte: "sets/tcp/splitting",
+  tcp: "sets/tcp/splitting",
+  ip: "sets/tcp/splitting",
+  tls: "sets/tcp/splitting#tls-record-splitting",
+  oob: "sets/tcp/splitting#oob-out-of-band",
+  none: "sets/tcp/splitting",
+};
 
 function PoolChip({
   value,
@@ -69,7 +80,7 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
   const isTcpOrIp = strategy === "tcp" || strategy === "ip";
   const isOob = strategy === "oob";
   const isTls = strategy === "tls";
-  const isActive = strategy !== "none";
+  const middleSni = config.fragmentation.middle_sni;
 
   const pool = config.fragmentation.strategy_pool ?? [];
   const hasPool = pool.length > 0;
@@ -86,22 +97,75 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
   };
 
   const fragmentationOptions = useMemo<
-    { label: string; value: FragmentationStrategy }[]
+    { label: string; value: FragmentationStrategy; note: string }[]
   >(
     () => [
-      { label: t("sets.tcp.splitting.strategyCombo"), value: "combo" },
-      { label: t("sets.tcp.splitting.strategyHybrid"), value: "hybrid" },
-      { label: t("sets.tcp.splitting.strategyDisorder"), value: "disorder" },
-      { label: t("sets.tcp.splitting.strategyExtSplit"), value: "extsplit" },
-      { label: t("sets.tcp.splitting.strategyFirstByte"), value: "firstbyte" },
-      { label: t("sets.tcp.splitting.strategyTcp"), value: "tcp" },
-      { label: t("sets.tcp.splitting.strategyIp"), value: "ip" },
-      { label: t("sets.tcp.splitting.strategyTls"), value: "tls" },
-      { label: t("sets.tcp.splitting.strategyOob"), value: "oob" },
-      { label: t("sets.tcp.splitting.strategyNone"), value: "none" },
+      {
+        label: t("sets.tcp.splitting.strategyCombo"),
+        value: "combo",
+        note: t("sets.tcp.splitting.methodComboHelper"),
+      },
+      {
+        label: t("sets.tcp.splitting.strategyHybrid"),
+        value: "hybrid",
+        note: t("sets.tcp.splitting.methodHybridHelper"),
+      },
+      {
+        label: t("sets.tcp.splitting.strategyDisorder"),
+        value: "disorder",
+        note: t("sets.tcp.splitting.methodDisorderHelper"),
+      },
+      {
+        label: t("sets.tcp.splitting.strategyExtSplit"),
+        value: "extsplit",
+        note: t("sets.tcp.splitting.methodExtSplitHelper"),
+      },
+      {
+        label: t("sets.tcp.splitting.strategyFirstByte"),
+        value: "firstbyte",
+        note: t("sets.tcp.splitting.methodFirstByteHelper"),
+      },
+      {
+        label: t("sets.tcp.splitting.strategyTcp"),
+        value: "tcp",
+        note: t("sets.tcp.splitting.methodTcpHelper"),
+      },
+      {
+        label: t("sets.tcp.splitting.strategyIp"),
+        value: "ip",
+        note: t("sets.tcp.splitting.methodIpHelper"),
+      },
+      {
+        label: t("sets.tcp.splitting.strategyTls"),
+        value: "tls",
+        note: t("sets.tcp.splitting.methodTlsHelper"),
+      },
+      {
+        label: t("sets.tcp.splitting.strategyOob"),
+        value: "oob",
+        note: t("sets.tcp.splitting.methodOobHelper"),
+      },
+      {
+        label: t("sets.tcp.splitting.strategyNone"),
+        value: "none",
+        note: t("sets.tcp.splitting.methodNoneHelper"),
+      },
     ],
     [t],
   );
+
+  const methodInfo: Record<FragmentationStrategy, string | undefined> = {
+    combo: t("sets.tcp.splitting.methodComboInfo"),
+    hybrid: t("sets.tcp.splitting.methodHybridInfo"),
+    disorder: t("sets.tcp.splitting.methodDisorderInfo"),
+    extsplit: t("sets.tcp.splitting.methodExtSplitInfo"),
+    firstbyte: t("sets.tcp.splitting.methodFirstByteInfo"),
+    tcp: t("sets.tcp.splitting.methodTcpInfo"),
+    ip: t("sets.tcp.splitting.methodIpInfo"),
+    tls: t("sets.tcp.splitting.methodTlsInfo"),
+    oob: t("sets.tcp.splitting.methodOobInfo"),
+    none: undefined,
+  };
 
   const poolOptions = fragmentationOptions.filter((o) => o.value !== "none");
   useEffect(() => {
@@ -113,7 +177,6 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
 
   return (
     <Grid container spacing={3} sx={{ mt: 2 }}>
-      {/* Strategy Selection */}
       <Grid size={{ xs: 12, md: 6 }}>
         <B4Select
           label={t("sets.tcp.splitting.method")}
@@ -121,6 +184,22 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
           options={fragmentationOptions}
           path="fragmentation.strategy"
           onChange={(e) => onChange("fragmentation.strategy", e.target.value)}
+          helperText={t(
+            {
+              combo: "sets.tcp.splitting.methodComboHelper",
+              hybrid: "sets.tcp.splitting.methodHybridHelper",
+              disorder: "sets.tcp.splitting.methodDisorderHelper",
+              extsplit: "sets.tcp.splitting.methodExtSplitHelper",
+              firstbyte: "sets.tcp.splitting.methodFirstByteHelper",
+              tcp: "sets.tcp.splitting.methodTcpHelper",
+              ip: "sets.tcp.splitting.methodIpHelper",
+              tls: "sets.tcp.splitting.methodTlsHelper",
+              oob: "sets.tcp.splitting.methodOobHelper",
+              none: "sets.tcp.splitting.methodNoneHelper",
+            }[strategy],
+          )}
+          info={methodInfo[strategy]}
+          learnMore={METHOD_DOCS[strategy]}
           aiTopic="fragmentation.strategy"
           aiContext={{
             available: fragmentationOptions.map((o) => o.value),
@@ -137,42 +216,37 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
             onChange("fragmentation.reverse_order", checked)
           }
           description={t("sets.tcp.splitting.reverseOrderDesc")}
+          info={t("sets.tcp.splitting.reverseOrderInfo")}
+          learnMore="sets/tcp/splitting"
           aiTopic="fragmentation.reverse_order"
         />
       </Grid>
 
       <Grid size={{ xs: 12 }}>
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 1,
-            ...aiHoverRevealSx,
-          }}
-        >
-          <Box sx={{ flex: 1 }}>
-            <Typography variant="body2" sx={{ fontWeight: 500, mb: 1 }}>
-              {t("sets.tcp.splitting.strategyPool")}
-            </Typography>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ mb: 1, display: "block" }}
-            >
-              {t("sets.tcp.splitting.strategyPoolDesc")}
-            </Typography>
-          </Box>
-          <B4AiExplain
-            topic="fragmentation.strategy_pool"
-            fieldLabel={t("sets.tcp.splitting.strategyPool")}
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+            {t("sets.tcp.splitting.strategyPool")}
+          </Typography>
+          <B4Help
+            label={t("sets.tcp.splitting.strategyPool")}
+            info={t("sets.tcp.splitting.strategyPoolInfo")}
+            learnMore="sets/tcp/splitting"
+            aiTopic="fragmentation.strategy_pool"
             fieldDoc={t("sets.tcp.splitting.strategyPoolDesc")}
             value={pool.join(",")}
-            context={{
+            aiContext={{
               current_strategy: strategy,
               pool_size: pool.length,
             }}
           />
         </Box>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ mb: 1, display: "block" }}
+        >
+          {t("sets.tcp.splitting.strategyPoolDesc")}
+        </Typography>
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75 }}>
           {poolOptions.map((opt) => (
             <PoolChip
@@ -185,11 +259,13 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
           ))}
         </Box>
         {hasPool && (
-          <B4Hint sx={{ mt: 1 }}>
-            {t("sets.tcp.splitting.strategyPoolActive", {
-              count: pool.length,
-            })}
-          </B4Hint>
+          <Box sx={{ mt: 1 }}>
+            <B4FieldMessage severity="info">
+              {t("sets.tcp.splitting.strategyPoolActive", {
+                count: pool.length,
+              })}
+            </B4FieldMessage>
+          </Box>
         )}
       </Grid>
 
@@ -210,8 +286,6 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
         <>
           <B4FormHeader label={t("sets.tcp.splitting.oobHeader")} />
 
-          <B4Hint>{t("sets.tcp.splitting.oobAlert")}</B4Hint>
-
           <Grid size={{ xs: 12, md: 6 }}>
             <B4RangeSlider
               value={[
@@ -229,6 +303,15 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
               max={50}
               step={1}
               helperText={t("sets.tcp.splitting.oobPositionHelper")}
+              info={t("sets.tcp.splitting.oobPositionInfo")}
+              learnMore="sets/tcp/splitting#oob-out-of-band"
+              alert={
+                middleSni ? (
+                  <B4FieldMessage severity="info">
+                    {t("sets.tcp.splitting.oobPositionSniNote")}
+                  </B4FieldMessage>
+                ) : undefined
+              }
               aiTopic="fragmentation.oob_position"
             />
           </Grid>
@@ -251,12 +334,9 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
         </>
       )}
 
-      {/* TLS Record Settings */}
       {isTls && (
         <>
           <B4FormHeader label={t("sets.tcp.splitting.tlsRecHeader")} />
-
-          <B4Hint>{t("sets.tcp.splitting.tlsRecAlert")}</B4Hint>
 
           <Grid size={{ xs: 12, md: 6 }}>
             <B4RangeSlider
@@ -276,16 +356,19 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
               max={100}
               step={1}
               helperText={t("sets.tcp.splitting.tlsRecPositionHelper")}
+              info={t("sets.tcp.splitting.tlsRecPositionInfo")}
+              learnMore="sets/tcp/splitting#tls-record-splitting"
+              alert={
+                middleSni ? (
+                  <B4FieldMessage severity="info">
+                    {t("sets.tcp.splitting.tlsRecPositionSniNote")}
+                  </B4FieldMessage>
+                ) : undefined
+              }
               aiTopic="fragmentation.tlsrec_pos"
             />
           </Grid>
         </>
-      )}
-
-      {!isActive && (
-        <B4Alert severity="warning">
-          {t("sets.tcp.splitting.disabledWarning")}
-        </B4Alert>
       )}
     </Grid>
   );

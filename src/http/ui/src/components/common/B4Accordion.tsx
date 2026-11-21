@@ -14,6 +14,7 @@ import { useMemo, useState } from "react";
 interface B4AccordionProps {
   title: string;
   status?: string;
+  summary?: string;
   enabled?: boolean;
   defaultExpanded?: boolean;
   expanded?: boolean;
@@ -25,6 +26,7 @@ interface B4AccordionProps {
 export const B4Accordion = ({
   title,
   status,
+  summary,
   enabled,
   defaultExpanded,
   expanded,
@@ -61,7 +63,7 @@ export const B4Accordion = ({
         "&.Mui-expanded": {
           borderColor: colors.border.medium,
         },
-        ...(hasChanges && settledCollapsed
+        ...(hasChanges && settledCollapsed && !(isControlled && expanded)
           ? { boxShadow: `inset 3px 0 0 ${colors.secondary}` }
           : {}),
       }}
@@ -107,6 +109,19 @@ export const B4Accordion = ({
               border: `1px solid ${enabled ? colors.primary : colors.border.light}`,
             }}
           />
+        )}
+        {summary && (
+          <Typography
+            variant="caption"
+            sx={{
+              color: colors.text.secondary,
+              ml: "auto",
+              textAlign: "right",
+              minWidth: 0,
+            }}
+          >
+            {summary}
+          </Typography>
         )}
       </AccordionSummary>
       <AccordionDetails sx={{ px: 2, pt: 0, pb: 2 }}>

@@ -1,15 +1,17 @@
-import { Grid, Link, Stack } from "@mui/material";
+import { useMemo } from "react";
+import { Grid, Link } from "@mui/material";
 import { B4SetConfig, MSSClampConfig, WSSizeConfig } from "@models/config";
+import { createDefaultSet } from "@models/defaults";
 import { OpenInNewIcon } from "@b4.icons";
 import {
+  B4Advanced,
+  B4FieldMessage,
   B4Slider,
   B4Select,
   B4RangeSlider,
   B4TextField,
   B4NumberField,
-  B4Alert,
   B4FormHeader,
-  B4Hint,
 } from "@b4.elements";
 import { B4Switch } from "@common/B4Switch";
 import {
@@ -22,7 +24,7 @@ import {
   wssizeReuseIssues,
 } from "@utils";
 import { useTunEngine } from "@hooks/useEngineMode";
-import { Trans, useTranslation } from "react-i18next";
+import { useTranslation } from "react-i18next";
 
 interface TcpGeneralProps {
   config: B4SetConfig;
@@ -35,50 +37,29 @@ interface TcpGeneralProps {
   ) => void;
 }
 
+const IBD_FALLBACK = {
+  action: "block",
+  enabled: false,
+  retransmit_threshold: 3,
+  timeout_ms: 3000,
+  cache_blocked_ips: true,
+  syn_detect: true,
+  syn_threshold: 3,
+  heal_dns: false,
+  heal_ttl_sec: 60,
+};
+
+const IBD_ADVANCED_PATHS = [
+  "tcp.ip_block_detect.syn_threshold",
+  "tcp.ip_block_detect.retransmit_threshold",
+  "tcp.ip_block_detect.timeout_ms",
+  "tcp.ip_block_detect.heal_ttl_sec",
+];
+
 function wssizeScaleMode(ws: WSSizeConfig): "keep" | "lower" | "strip" {
   if (ws.strip_scale) return "strip";
   return ws.scale > 0 ? "lower" : "keep";
 }
-
-interface WSSizeReuseIssuesProps {
-  config: B4SetConfig;
-  queueMode?: string;
-  skipSetup: boolean;
-  queueMark?: number;
-}
-
-const WSSizeReuseIssues = ({
-  config,
-  queueMode,
-  skipSetup,
-  queueMark,
-}: WSSizeReuseIssuesProps) => {
-  const { t } = useTranslation();
-  const tunRunning = useTunEngine();
-  const issues = wssizeReuseIssues(config, {
-    tunEngine: reuseTunEngine(queueMode, tunRunning),
-    skipSetup,
-    queueMark,
-  });
-  if (issues.length === 0) return null;
-  return (
-    <Grid size={{ xs: 12 }}>
-      <Stack spacing={1}>
-        {issues.map((issue) => (
-          <B4Alert
-            key={issue}
-            noWrapper
-            severity={isWSSizeReuseRefusal(issue) ? "error" : "warning"}
-          >
-            {t(`sets.tcp.general.wssizeReuseIssue.${issue}`, {
-              mark: `0x${effectiveQueueMark(queueMark).toString(16)}`,
-            })}
-          </B4Alert>
-        ))}
-      </Stack>
-    </Grid>
-  );
-};
 
 export const TcpGeneral = ({
   config,
@@ -89,6 +70,7 @@ export const TcpGeneral = ({
 }: TcpGeneralProps) => {
   const { t } = useTranslation();
   const tunEngine = queueMode === "tun";
+  const tunRunning = useTunEngine();
   const ws: WSSizeConfig = {
     enabled: false,
     window: 0,
@@ -97,7 +79,15 @@ export const TcpGeneral = ({
     strip_scale: false,
     ...config.tcp.wssize,
   };
-  const reuse = config.tcp.wssize_reuse ?? { enabled: false, max_age_seconds: 300 };
+  const reuse = config.tcp.wssize_reuse ?? {
+    enabled: false,
+    max_age_seconds: 300,
+  };
+  const reuseIssues = wssizeReuseIssues(config, {
+    tunEngine: reuseTunEngine(queueMode, tunRunning),
+    skipSetup,
+    queueMark,
+  });
   const dup = config.tcp.duplicate ?? { enabled: false, count: 3 };
   const wsConflict = (config.routing?.enabled ?? false) || dup.enabled;
   const wsTun = ws.enabled && !wsConflict && tunEngine;
@@ -112,21 +102,26 @@ export const TcpGeneral = ({
     !tunEngine &&
     ws.window === 0 &&
     wsScaleMode === "keep";
-  const ibd = {
-    action: "block",
-    enabled: false,
-    retransmit_threshold: 3,
-    timeout_ms: 3000,
-    cache_blocked_ips: true,
-    syn_detect: true,
-    syn_threshold: 3,
-    heal_dns: false,
-    heal_ttl_sec: 60,
-    ...config.tcp.ip_block_detect,
-  };
+  const ibd = { ...IBD_FALLBACK, ...config.tcp.ip_block_detect };
+  const ibdDefaults = useMemo(
+    () => ({ ...IBD_FALLBACK, ...createDefaultSet(0).tcp.ip_block_detect }),
+    [],
+  );
+  const ibdCollects = ibd.action === "collect";
+  const ibdCustomized = [
+    !ibdCollects &&
+      ibd.syn_detect &&
+      ibd.syn_threshold !== ibdDefaults.syn_threshold,
+    !ibdCollects &&
+      ibd.retransmit_threshold !== ibdDefaults.retransmit_threshold,
+    ibd.timeout_ms !== ibdDefaults.timeout_ms,
+    !ibdCollects &&
+      ibd.heal_dns &&
+      ibd.heal_ttl_sec !== ibdDefaults.heal_ttl_sec,
+  ].filter(Boolean).length;
   const desync = config.tcp.desync;
   const collectFakesClose =
-    ibd.action === "collect" &&
+    ibdCollects &&
     (desync.post_desync || (desync.mode !== "off" && desync.mode !== "ack"));
   const rstProt = {
     enabled: false,
@@ -138,16 +133,23 @@ export const TcpGeneral = ({
   const hasIPScope = mssClampIpScope(config.targets);
   const hasMACScope = (config.targets?.source_devices?.length ?? 0) > 0;
   const mssScopeOk = hasIPScope || hasMACScope;
-  const hasDestinationTargets =
-    declaresIPs ||
+  const hasDomainTargets =
     (config.targets?.sni_domains?.length ?? 0) > 0 ||
     (config.targets?.geosite_categories?.length ?? 0) > 0;
+  const hasDestinationTargets = declaresIPs || hasDomainTargets;
   const wsDomainOnly =
     ws.enabled &&
     !wsConflict &&
     !wsTun &&
     (config.targets?.domain_only ?? false) &&
     hasDestinationTargets &&
+    !declaresIPs;
+  const wsFirstPacketOnly =
+    ws.enabled &&
+    !wsConflict &&
+    !wsTun &&
+    !wsDomainOnly &&
+    hasDomainTargets &&
     !declaresIPs;
   const hasPortFilter = (config.tcp.dport_filter ?? "").trim() !== "";
   const portFilterSkipsHttps =
@@ -156,6 +158,67 @@ export const TcpGeneral = ({
     !portFilterCovers(config.tcp.dport_filter, 443);
   const portFilterBlocksL7 =
     hasPortFilter && (config.udp.filter_l7 ?? []).length > 0;
+
+  const portFilterMessages = [
+    portFilterSkipsHttps && (
+      <B4FieldMessage key="https">
+        {t("sets.tcp.general.portFilterNoHttps")}
+      </B4FieldMessage>
+    ),
+    portFilterBlocksL7 && (
+      <B4FieldMessage key="calls">
+        {t("sets.tcp.general.portFilterL7")}
+      </B4FieldMessage>
+    ),
+  ].filter(Boolean);
+
+  const wsMessages = [
+    wsConflict && (
+      <B4FieldMessage key="conflict">
+        {t("sets.tcp.general.wssizeConflict")}
+      </B4FieldMessage>
+    ),
+    wsTun && (
+      <B4FieldMessage key="tun">{t("sets.tcp.general.wssizeTun")}</B4FieldMessage>
+    ),
+    wsDomainOnly && (
+      <B4FieldMessage key="domain-only">
+        {t("sets.tcp.general.wssizeDomainOnly")}
+      </B4FieldMessage>
+    ),
+    wsFirstPacketOnly && (
+      <B4FieldMessage key="first-packet" severity="info">
+        {t("sets.tcp.general.wssizeFirstPacket")}
+      </B4FieldMessage>
+    ),
+    wsIdle && (
+      <B4FieldMessage key="idle" severity="info">
+        {t("sets.tcp.general.wssizeIdle")}
+      </B4FieldMessage>
+    ),
+  ].filter(Boolean);
+
+  const reuseMessages = reuseIssues.map((issue) => (
+    <B4FieldMessage
+      key={issue}
+      severity={isWSSizeReuseRefusal(issue) ? "error" : "warning"}
+    >
+      {t(`sets.tcp.general.wssizeReuseIssue.${issue}`, {
+        mark: `0x${effectiveQueueMark(queueMark).toString(16)}`,
+      })}
+    </B4FieldMessage>
+  ));
+
+  const mssMessage = !mssScopeOk ? (
+    <B4FieldMessage>{t("sets.tcp.general.mssScopeRequired")}</B4FieldMessage>
+  ) : mss.enabled ? (
+    <B4FieldMessage severity="info">
+      {t("sets.tcp.general.mssAppliesTo", {
+        ips: hasIPScope ? "✓" : "-",
+        macs: hasMACScope ? "✓" : "-",
+      })}
+    </B4FieldMessage>
+  ) : undefined;
 
   return (
     <>
@@ -188,18 +251,12 @@ export const TcpGeneral = ({
             onChange={(e) => onChange("tcp.dport_filter", e.target.value)}
             placeholder={t("sets.tcp.general.portFilterPlaceholder")}
             helperText={t("sets.tcp.general.portFilterHelper")}
+            message={
+              portFilterMessages.length > 0 ? <>{portFilterMessages}</> : undefined
+            }
+            info={t("sets.tcp.general.portFilterInfo")}
             aiTopic="tcp.dport_filter"
           />
-          {portFilterSkipsHttps && (
-            <B4Alert severity="warning" sx={{ mt: 1 }}>
-              <Trans i18nKey="sets.tcp.general.portFilterNoHttps" />
-            </B4Alert>
-          )}
-          {portFilterBlocksL7 && (
-            <B4Alert severity="warning" sx={{ mt: 1 }}>
-              <Trans i18nKey="sets.tcp.general.portFilterL7" />
-            </B4Alert>
-          )}
         </Grid>
 
         <Grid size={{ xs: 12, md: 6 }}>
@@ -216,6 +273,7 @@ export const TcpGeneral = ({
           <B4Switch
             label={t("sets.tcp.general.httpMethodEol")}
             description={t("sets.tcp.general.httpMethodEolDesc")}
+            info={t("sets.tcp.general.httpMethodEolInfo")}
             checked={config.tcp.http_methodeol || false}
             path="tcp.http_methodeol"
             onChange={(checked) => onChange("tcp.http_methodeol", checked)}
@@ -226,10 +284,31 @@ export const TcpGeneral = ({
 
       <B4FormHeader label={t("sets.tcp.general.wssize")} />
       <Grid container spacing={3} mb={3} mt={2}>
-        <Grid size={{ xs: 12, md: 4 }}>
+        <Grid size={{ xs: 12 }}>
           <B4Switch
             label={t("sets.tcp.general.wssizeEnable")}
             description={t("sets.tcp.general.wssizeEnableDesc")}
+            message={wsMessages.length > 0 ? <>{wsMessages}</> : undefined}
+            info={t(
+              reuse.enabled
+                ? "sets.tcp.general.wssizeReuseAlert"
+                : "sets.tcp.general.wssizeInfo",
+            )}
+            learnMore="sets/tcp/general#wssize"
+            credit={
+              <>
+                {t("sets.tcp.general.wssizeCredit")}{" "}
+                <Link
+                  href="https://github.com/bol-van/zapret2"
+                  target="_blank"
+                  rel="noreferrer"
+                  sx={{ display: "inline-flex", alignItems: "center", gap: 0.25 }}
+                >
+                  zapret2
+                  <OpenInNewIcon sx={{ fontSize: 12 }} />
+                </Link>
+              </>
+            }
             checked={ws.enabled}
             path="tcp.wssize.enabled"
             onChange={(checked) => {
@@ -246,45 +325,6 @@ export const TcpGeneral = ({
             }}
           />
         </Grid>
-        <Grid size={{ xs: 12, md: 8 }}>
-          <B4Hint sx={{ my: 1 }}>
-            {t(reuse.enabled ? "sets.tcp.general.wssizeReuseAlert" : "sets.tcp.general.wssizeAlert")}{" "}
-            {t("sets.tcp.general.wssizeCredit")}{" "}
-            <Link
-              href="https://github.com/bol-van/zapret2"
-              target="_blank"
-              rel="noreferrer"
-              sx={{ display: "inline-flex", alignItems: "center", gap: 0.25 }}
-            >
-              zapret2
-              <OpenInNewIcon sx={{ fontSize: 12 }} />
-            </Link>
-          </B4Hint>
-          {(wsConflict || wsTun || wsDomainOnly || wsIdle) && (
-            <Stack spacing={1}>
-              {wsConflict && (
-                <B4Alert noWrapper severity="warning">
-                  {t("sets.tcp.general.wssizeConflict")}
-                </B4Alert>
-              )}
-              {wsTun && (
-                <B4Alert noWrapper severity="warning">
-                  {t("sets.tcp.general.wssizeTun")}
-                </B4Alert>
-              )}
-              {wsDomainOnly && (
-                <B4Alert noWrapper severity="warning">
-                  {t("sets.tcp.general.wssizeDomainOnly")}
-                </B4Alert>
-              )}
-              {wsIdle && (
-                <B4Alert noWrapper severity="info">
-                  {t("sets.tcp.general.wssizeIdle")}
-                </B4Alert>
-              )}
-            </Stack>
-          )}
-        </Grid>
         {ws.enabled && (
           <>
             <Grid size={{ xs: 12, md: 6 }}>
@@ -296,6 +336,7 @@ export const TcpGeneral = ({
                 min={0}
                 max={65535}
                 helperText={t("sets.tcp.general.wssizeWindowHelper")}
+                info={t("sets.tcp.general.wssizeWindowInfo")}
                 aiTopic="tcp.wssize.window"
               />
             </Grid>
@@ -324,6 +365,7 @@ export const TcpGeneral = ({
                 onChange={(e) => setWsScaleMode(String(e.target.value))}
                 helperText={t("sets.tcp.general.wssizeScaleModeHelper")}
                 changeLabel={t("sets.tcp.general.wssizeStripScale")}
+                learnMore="sets/tcp/general#wssize"
                 aiTopic="tcp.wssize.strip_scale"
                 aiContext={{
                   strip_scale: ws.strip_scale ?? false,
@@ -370,18 +412,29 @@ export const TcpGeneral = ({
                   onChange={(e) =>
                     onChange("tcp.wssize.cutoff", e.target.value)
                   }
-                  helperText={t("sets.tcp.general.wssizeCutoffHelper")}
+                  info={t("sets.tcp.general.wssizeCutoffInfo")}
                   aiTopic="tcp.wssize.cutoff"
                 />
               </Grid>
             )}
-            <Grid size={{ xs: 12, md: 6 }}>
+          </>
+        )}
+        {(ws.enabled || reuse.enabled) && (
+          <>
+            <Grid size={{ xs: 12 }}>
               <B4Switch
                 label={t("sets.tcp.general.wssizeReuse")}
                 description={t("sets.tcp.general.wssizeReuseDesc")}
+                message={
+                  reuseMessages.length > 0 ? <>{reuseMessages}</> : undefined
+                }
+                info={t("sets.tcp.general.wssizeReuseInfo")}
+                learnMore="sets/tcp/general#wssize"
                 checked={reuse.enabled}
                 path="tcp.wssize_reuse.enabled"
-                onChange={(checked) => onChange("tcp.wssize_reuse.enabled", checked)}
+                onChange={(checked) =>
+                  onChange("tcp.wssize_reuse.enabled", checked)
+                }
                 aiTopic="tcp.wssize_reuse.enabled"
               />
             </Grid>
@@ -390,43 +443,43 @@ export const TcpGeneral = ({
                 <B4NumberField
                   label={t("sets.tcp.general.wssizeReuseAge")}
                   helperText={t("sets.tcp.general.wssizeReuseAgeDesc")}
+                  info={t("sets.tcp.general.wssizeReuseAgeInfo")}
                   value={reuse.max_age_seconds}
                   min={1}
                   max={300}
                   path="tcp.wssize_reuse.max_age_seconds"
-                  onChange={(value) => onChange("tcp.wssize_reuse.max_age_seconds", value)}
+                  onChange={(value) =>
+                    onChange("tcp.wssize_reuse.max_age_seconds", value)
+                  }
                   aiTopic="tcp.wssize_reuse.max_age_seconds"
                 />
               </Grid>
             )}
           </>
         )}
-        {config.enabled && reuse.enabled && (
-          <WSSizeReuseIssues
-            config={config}
-            queueMode={queueMode}
-            skipSetup={skipSetup}
-            queueMark={queueMark}
-          />
-        )}
       </Grid>
 
-      {/* Packet Duplication */}
       <B4FormHeader label={t("sets.tcp.general.packetDuplication")} />
       <Grid container spacing={3} mb={3} mt={2}>
-        <Grid size={{ xs: 12, md: 4 }}>
+        <Grid size={{ xs: 12 }}>
           <B4Switch
             label={t("sets.tcp.general.dupEnable")}
             description={t("sets.tcp.general.dupEnableDesc")}
+            message={
+              dup.enabled ? (
+                <B4FieldMessage>
+                  {t("sets.tcp.general.dupExclusive")}
+                </B4FieldMessage>
+              ) : undefined
+            }
+            info={t("sets.tcp.general.dupInfo")}
+            learnMore="sets/tcp/general"
             checked={dup.enabled}
             path="tcp.duplicate.enabled"
             onChange={(checked) => onChange("tcp.duplicate.enabled", checked)}
             aiTopic="tcp.duplicate"
             aiContext={{ count: dup.count }}
           />
-        </Grid>
-        <Grid size={{ xs: 12, md: 8 }}>
-          <B4Hint sx={{ my: 1 }}>{t("sets.tcp.general.dupAlert")}</B4Hint>
         </Grid>
         {dup.enabled && (
           <Grid size={{ xs: 12, md: 6 }}>
@@ -446,13 +499,18 @@ export const TcpGeneral = ({
         )}
       </Grid>
 
-      {/* IP Block Detection */}
       <B4FormHeader label={t("sets.tcp.general.ipBlockDetect")} />
       <Grid container spacing={3} mb={3} mt={2}>
-        <Grid size={{ xs: 12, md: 4 }}>
+        <Grid size={{ xs: 12 }}>
           <B4Switch
             label={t("sets.tcp.general.ibdEnable")}
             description={t("sets.tcp.general.ibdEnableDesc")}
+            info={t(
+              ibdCollects
+                ? "sets.tcp.general.ibdCollectInfo"
+                : "sets.tcp.general.ibdInfo",
+            )}
+            learnMore="sets/tcp/general"
             checked={ibd.enabled}
             path="tcp.ip_block_detect.enabled"
             onChange={(checked) =>
@@ -466,43 +524,58 @@ export const TcpGeneral = ({
             }}
           />
         </Grid>
-        <Grid size={{ xs: 12, md: 8 }}>
-          <B4Hint sx={{ my: 1 }}>{t(ibd.action === "collect" ? "sets.tcp.general.ibdCollectNote" : "sets.tcp.general.ibdAlert")}</B4Hint>
-        </Grid>
         {ibd.enabled && (
           <>
-            <Grid size={{ xs: 12, md: 6 }}>
+            <Grid size={{ xs: 12 }}>
               <B4Select
                 label={t("sets.tcp.general.ibdAction")}
                 value={ibd.action}
                 path="tcp.ip_block_detect.action"
-                onChange={(event) => onChange("tcp.ip_block_detect.action", event.target.value)}
+                onChange={(event) =>
+                  onChange("tcp.ip_block_detect.action", event.target.value)
+                }
                 options={[
-                  { value: "block", label: t("sets.tcp.general.ibdBlock"), note: t("sets.tcp.general.ibdBlockNote") },
-                  { value: "collect", label: t("sets.tcp.general.ibdCollect"), note: t("sets.tcp.general.ibdCollectNote") },
+                  {
+                    value: "block",
+                    label: t("sets.tcp.general.ibdBlock"),
+                    note: t("sets.tcp.general.ibdBlockNote"),
+                  },
+                  {
+                    value: "collect",
+                    label: t("sets.tcp.general.ibdCollect"),
+                    note: t("sets.tcp.general.ibdCollectNote"),
+                  },
                 ]}
+                helperText={t(
+                  ibdCollects
+                    ? "sets.tcp.general.ibdCollectNote"
+                    : "sets.tcp.general.ibdBlockNote",
+                )}
+                message={
+                  collectFakesClose ? (
+                    <B4FieldMessage>
+                      {t("sets.tcp.general.ibdCollectClosingFakes", {
+                        tab: t("sets.tcp.tabs.faking"),
+                        mode: t("sets.faking.desync.mode"),
+                        off: t("sets.faking.desync.modeOff"),
+                        ack: t("sets.faking.desync.modeAck"),
+                        post: t("sets.faking.desync.postDesync"),
+                      })}
+                    </B4FieldMessage>
+                  ) : undefined
+                }
+                learnMore="sets/tcp/general"
                 aiTopic="tcp.ip_block_detect.action"
               />
             </Grid>
-            {collectFakesClose && (
-              <Grid size={{ xs: 12 }}>
-                <B4Alert severity="warning">
-                  {t("sets.tcp.general.ibdCollectClosingFakes", {
-                    tab: t("sets.tcp.tabs.faking"),
-                    mode: t("sets.faking.desync.mode"),
-                    off: t("sets.faking.desync.modeOff"),
-                    ack: t("sets.faking.desync.modeAck"),
-                    post: t("sets.faking.desync.postDesync"),
-                  })}
-                </B4Alert>
-              </Grid>
-            )}
-            {ibd.action !== "collect" && (
+
+            {!ibdCollects && (
               <>
             <Grid size={{ xs: 12, md: 6 }}>
               <B4Switch
                 label={t("sets.tcp.general.ibdHealDns")}
                 description={t("sets.tcp.general.ibdHealDnsDesc")}
+                info={t("sets.tcp.general.ibdHealDnsInfo")}
                 checked={ibd.heal_dns}
                 path="tcp.ip_block_detect.heal_dns"
                 onChange={(checked) =>
@@ -525,64 +598,6 @@ export const TcpGeneral = ({
               />
             </Grid>
 
-            {ibd.syn_detect && (
-              <Grid size={{ xs: 12, md: 6 }}>
-                <B4Slider
-                  label={t("sets.tcp.general.ibdSynThreshold")}
-                  value={ibd.syn_threshold}
-                  path="tcp.ip_block_detect.syn_threshold"
-                  onChange={(value: number) =>
-                    onChange("tcp.ip_block_detect.syn_threshold", value)
-                  }
-                  min={2}
-                  max={8}
-                  step={1}
-                  helperText={t("sets.tcp.general.ibdSynThresholdHelper")}
-                  aiTopic="tcp.ip_block_detect.syn_threshold"
-                />
-              </Grid>
-            )}
-
-            <Grid size={{ xs: 12, md: 6 }}>
-              <B4Slider
-                label={t("sets.tcp.general.ibdThreshold")}
-              value={ibd.retransmit_threshold}
-              path="tcp.ip_block_detect.retransmit_threshold"
-              onChange={(value: number) =>
-                  onChange("tcp.ip_block_detect.retransmit_threshold", value)
-                }
-                min={1}
-                max={10}
-                step={1}
-                helperText={t("sets.tcp.general.ibdThresholdHelper")}
-                aiTopic="tcp.ip_block_detect.retransmit_threshold"
-              />
-              {ibd.retransmit_threshold <= 1 && (
-                <B4Alert severity="warning">
-                  {t("sets.tcp.general.ibdThresholdWarn")}
-                </B4Alert>
-              )}
-            </Grid>
-
-            {ibd.heal_dns && (
-              <Grid size={{ xs: 12, md: 6 }}>
-                <B4Slider
-                  label={t("sets.tcp.general.ibdHealTtl")}
-                  value={ibd.heal_ttl_sec}
-                  path="tcp.ip_block_detect.heal_ttl_sec"
-                  onChange={(value: number) =>
-                    onChange("tcp.ip_block_detect.heal_ttl_sec", value)
-                  }
-                  min={10}
-                  max={600}
-                  step={10}
-                  valueSuffix={t("core.units.s")}
-                  helperText={t("sets.tcp.general.ibdHealTtlHelper")}
-                  aiTopic="tcp.ip_block_detect.heal_ttl_sec"
-                />
-              </Grid>
-            )}
-
             <Grid size={{ xs: 12, md: 6 }}>
               <B4Switch
                 label={t("sets.tcp.general.ibdCache")}
@@ -596,32 +611,121 @@ export const TcpGeneral = ({
             </Grid>
               </>
             )}
-            <Grid size={{ xs: 12, md: 6 }}>
-              <B4Slider
-                label={t("sets.tcp.general.ibdTimeout")}
-                value={ibd.timeout_ms}
-                path="tcp.ip_block_detect.timeout_ms"
-                onChange={(value: number) =>
-                  onChange("tcp.ip_block_detect.timeout_ms", value)
-                }
-                min={1000}
-                max={10000}
-                step={500}
-                valueSuffix={t("core.units.ms")}
-                helperText={t(ibd.action === "collect" ? "sets.tcp.general.ibdCollectTimeoutHelper" : "sets.tcp.general.ibdTimeoutHelper")}
-              />
+
+            <Grid size={{ xs: 12 }}>
+              <B4Advanced
+                title={t("sets.tcp.general.ibdAdvanced")}
+                paths={IBD_ADVANCED_PATHS}
+                customized={ibdCustomized}
+              >
+                <Grid container spacing={3}>
+                  {!ibdCollects && ibd.syn_detect && (
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <B4Slider
+                        label={t("sets.tcp.general.ibdSynThreshold")}
+                        value={ibd.syn_threshold}
+                        path="tcp.ip_block_detect.syn_threshold"
+                        onChange={(value: number) =>
+                          onChange("tcp.ip_block_detect.syn_threshold", value)
+                        }
+                        min={2}
+                        max={8}
+                        step={1}
+                        helperText={t("sets.tcp.general.ibdSynThresholdHelper")}
+                        info={t("sets.tcp.general.ibdSynThresholdInfo")}
+                        aiTopic="tcp.ip_block_detect.syn_threshold"
+                      />
+                    </Grid>
+                  )}
+
+                  {!ibdCollects && (
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <B4Slider
+                      label={t("sets.tcp.general.ibdThreshold")}
+                      value={ibd.retransmit_threshold}
+                      path="tcp.ip_block_detect.retransmit_threshold"
+                      onChange={(value: number) =>
+                        onChange(
+                          "tcp.ip_block_detect.retransmit_threshold",
+                          value,
+                        )
+                      }
+                      min={1}
+                      max={10}
+                      step={1}
+                      helperText={t("sets.tcp.general.ibdThresholdHelper")}
+                      info={t("sets.tcp.general.ibdThresholdInfo")}
+                      alert={
+                        ibd.retransmit_threshold <= 1 ? (
+                          <B4FieldMessage>
+                            {t("sets.tcp.general.ibdThresholdWarn")}
+                          </B4FieldMessage>
+                        ) : undefined
+                      }
+                      aiTopic="tcp.ip_block_detect.retransmit_threshold"
+                    />
+                  </Grid>
+                  )}
+
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <B4Slider
+                      label={t("sets.tcp.general.ibdTimeout")}
+                      value={ibd.timeout_ms}
+                      path="tcp.ip_block_detect.timeout_ms"
+                      onChange={(value: number) =>
+                        onChange("tcp.ip_block_detect.timeout_ms", value)
+                      }
+                      min={1000}
+                      max={10000}
+                      step={500}
+                      valueSuffix={t("core.units.ms")}
+                      helperText={t(
+                        ibdCollects
+                          ? "sets.tcp.general.ibdCollectTimeoutHelper"
+                          : "sets.tcp.general.ibdTimeoutHelper",
+                      )}
+                      info={t(
+                        ibdCollects
+                          ? "sets.tcp.general.ibdCollectTimeoutInfo"
+                          : "sets.tcp.general.ibdTimeoutInfo",
+                      )}
+                    />
+                  </Grid>
+
+                  {!ibdCollects && ibd.heal_dns && (
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <B4Slider
+                        label={t("sets.tcp.general.ibdHealTtl")}
+                        value={ibd.heal_ttl_sec}
+                        path="tcp.ip_block_detect.heal_ttl_sec"
+                        onChange={(value: number) =>
+                          onChange("tcp.ip_block_detect.heal_ttl_sec", value)
+                        }
+                        min={10}
+                        max={600}
+                        step={10}
+                        valueSuffix={t("core.units.s")}
+                        helperText={t("sets.tcp.general.ibdHealTtlHelper")}
+                        info={t("sets.tcp.general.ibdHealTtlInfo")}
+                        aiTopic="tcp.ip_block_detect.heal_ttl_sec"
+                      />
+                    </Grid>
+                  )}
+                </Grid>
+              </B4Advanced>
             </Grid>
           </>
         )}
       </Grid>
 
-      {/* RST Protection */}
       <B4FormHeader label={t("sets.tcp.general.rstProtection")} />
-      <Grid container spacing={3} mt={2}>
-        <Grid size={{ xs: 12, md: 4 }}>
+      <Grid container spacing={3} mb={3} mt={2}>
+        <Grid size={{ xs: 12 }}>
           <B4Switch
             label={t("sets.tcp.general.rstEnable")}
             description={t("sets.tcp.general.rstEnableDesc")}
+            info={t("sets.tcp.general.rstInfo")}
+            learnMore="sets/tcp/general"
             checked={rstProt.enabled}
             path="tcp.rst_protection.enabled"
             onChange={(checked) =>
@@ -630,9 +734,6 @@ export const TcpGeneral = ({
             aiTopic="tcp.rst_protection"
             aiContext={{ ttl_tolerance: rstProt.ttl_tolerance }}
           />
-        </Grid>
-        <Grid size={{ xs: 12, md: 8 }}>
-          <B4Hint sx={{ mt: 1 }}>{t("sets.tcp.general.rstAlert")}</B4Hint>
         </Grid>
 
         {rstProt.enabled && (
@@ -656,10 +757,13 @@ export const TcpGeneral = ({
 
       <B4FormHeader label={t("sets.tcp.general.mssClamp")} />
       <Grid container spacing={3} mt={2}>
-        <Grid size={{ xs: 12, md: 4 }}>
+        <Grid size={{ xs: 12 }}>
           <B4Switch
             label={t("sets.tcp.general.mssEnable")}
             description={t("sets.tcp.general.mssEnableDesc")}
+            message={mssMessage}
+            info={t("sets.tcp.general.mssInfo")}
+            learnMore="sets/tcp/general#mss-clamping"
             checked={mss.enabled}
             path="mss_clamp.enabled"
             onChange={(checked) => {
@@ -672,22 +776,6 @@ export const TcpGeneral = ({
             aiTopic="mss_clamp"
             aiContext={{ size: mss.size }}
           />
-        </Grid>
-        <Grid size={{ xs: 12, md: 8 }}>
-          <B4Hint sx={{ mt: 1 }}>{t("sets.tcp.general.mssScopeHint")}</B4Hint>
-          {!mssScopeOk && (
-            <B4Alert severity="warning">
-              {t("sets.tcp.general.mssScopeRequired")}
-            </B4Alert>
-          )}
-          {mss.enabled && mssScopeOk && (
-            <B4Alert severity="info">
-              {t("sets.tcp.general.mssAppliesTo", {
-                ips: hasIPScope ? "✓" : "—",
-                macs: hasMACScope ? "✓" : "—",
-              })}
-            </B4Alert>
-          )}
         </Grid>
         {mss.enabled && mssScopeOk && (
           <Grid size={{ xs: 12, md: 6 }}>

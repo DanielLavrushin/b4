@@ -10,12 +10,12 @@ import {
   Stack,
   Tooltip,
 } from "@mui/material";
-import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import NetworkPingIcon from "@mui/icons-material/NetworkPing";
 import { RoutingIcon } from "@b4.icons";
 import {
   B4Accordion,
+  B4Advanced,
   B4Alert,
   B4IntegrationCard,
   B4NumberField,
@@ -48,11 +48,10 @@ type RefreshResult =
 
 const PROBE_DC = 2;
 
-const upstreamDescSuffix = (mode: string) => {
-  if (mode === "tcp") return "Tcp";
-  if (mode === "ws") return "Ws";
-  return "Auto";
-};
+const EDGE_PATHS = [
+  "system.mtproto.ws_endpoint_host",
+  "system.mtproto.ws_front_sni",
+];
 
 const normalizeHost = (raw: string) =>
   raw
@@ -100,14 +99,19 @@ export const MTProtoUpstreamCard = ({
   const mtproto = config.system.mtproto;
   const mode = mtproto?.upstream_mode || "auto";
   const dcRelay = mtproto?.dc_relay || "";
+  const autoDesc = dcRelay
+    ? t("settings.MTProto.upstreamAutoRelayDesc")
+    : t("settings.MTProto.upstreamAutoDesc");
   const bridgeInUse =
     (mtproto?.bridge?.enabled ?? false) ||
     config.sets.some(
       (s) =>
         s.enabled && s.routing?.enabled && s.routing.mode === "mtproto-ws",
     );
-  const hasEdgeOverride =
-    !!mtproto?.ws_endpoint_host || !!mtproto?.ws_front_sni;
+  const edgeCustomized = [
+    mtproto?.ws_endpoint_host,
+    mtproto?.ws_front_sni,
+  ].filter(Boolean).length;
   const showDcRelay =
     !!dcRelay || mode === "tcp" || mode === "auto" || bridgeInUse;
 
@@ -232,6 +236,8 @@ export const MTProtoUpstreamCard = ({
       icon={<RoutingIcon />}
       title={t("settings.MTProto.upstreamTitle")}
       description={t("settings.MTProto.upstreamDesc")}
+      info={t("settings.MTProto.upstreamInfo")}
+      learnMore="telegram/upstream"
     >
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, md: showDcRelay ? 6 : 12 }}>
@@ -242,15 +248,33 @@ export const MTProtoUpstreamCard = ({
               onChange("system.mtproto.upstream_mode", String(e.target.value))
             }
             options={[
-              { value: "tcp", label: t("settings.MTProto.upstreamTcp") },
-              { value: "auto", label: t("settings.MTProto.upstreamAuto") },
-              { value: "ws", label: t("settings.MTProto.upstreamWs") },
+              {
+                value: "tcp",
+                label: t("settings.MTProto.upstreamTcp"),
+                note: t("settings.MTProto.upstreamTcpDesc"),
+              },
+              {
+                value: "auto",
+                label: t("settings.MTProto.upstreamAuto"),
+                note: autoDesc,
+              },
+              {
+                value: "ws",
+                label: t("settings.MTProto.upstreamWs"),
+                note: t("settings.MTProto.upstreamWsDesc"),
+              },
             ]}
-            helperText={
-              mode === "auto" && dcRelay
-                ? t("settings.MTProto.upstreamAutoRelayDesc")
-                : t(`settings.MTProto.upstream${upstreamDescSuffix(mode)}Desc`)
-            }
+            helperText={t(
+              mode === "tcp"
+                ? "settings.MTProto.upstreamTcpDesc"
+                : mode === "ws"
+                  ? "settings.MTProto.upstreamWsDesc"
+                  : dcRelay
+                    ? "settings.MTProto.upstreamAutoRelayDesc"
+                    : "settings.MTProto.upstreamAutoDesc",
+            )}
+            info={t("settings.MTProto.upstreamModeInfo")}
+            learnMore="telegram/upstream"
           />
         </Grid>
         {showDcRelay && (
@@ -263,6 +287,8 @@ export const MTProtoUpstreamCard = ({
               }
               placeholder="vps-ip:7007"
               helperText={t("settings.MTProto.dcRelayHelp")}
+              info={t("settings.MTProto.dcRelayInfo")}
+              learnMore="telegram/dc-relay"
               selectOnFocus
               slotProps={{
                 input: {
@@ -304,29 +330,9 @@ export const MTProtoUpstreamCard = ({
             }}
             placeholder="your-worker.workers.dev"
             helperText={t("settings.MTProto.cfWorkerDomainHelp")}
+            info={t("settings.MTProto.cfWorkerDomainInfo")}
+            learnMore="telegram/cloudflare-worker"
             selectOnFocus
-            slotProps={{
-              input: {
-                endAdornment: (
-                  <InputAdornment position="end" sx={{ mr: -0.5 }}>
-                    <Tooltip title={t("settings.MTProto.cfWorkerDomainGuide")}>
-                      <span style={{ display: "inline-flex" }}>
-                        <IconButton
-                          size="small"
-                          component="a"
-                          href={t("settings.MTProto.cfWorkerDomainGuideUrl")}
-                          target="_blank"
-                          rel="noreferrer"
-                          sx={{ px: 0 }}
-                        >
-                          <OpenInNewIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                  </InputAdornment>
-                ),
-              },
-            }}
           />
         </Grid>
         <Grid size={{ xs: 12 }}>
@@ -344,6 +350,8 @@ export const MTProtoUpstreamCard = ({
             }}
             placeholder="your-domain.com"
             helperText={t("settings.MTProto.wsCustomDomainHelp")}
+            info={t("settings.MTProto.wsCustomDomainInfo")}
+            learnMore="telegram/upstream"
             selectOnFocus
           />
         </Grid>
@@ -359,6 +367,8 @@ export const MTProtoUpstreamCard = ({
                 onChange("system.mtproto.cfproxy_enabled", checked)
               }
               description={t("settings.MTProto.cfProxyEnabledHelp")}
+              info={t("settings.MTProto.cfProxyEnabledInfo")}
+              learnMore="telegram/upstream"
             />
             {mtproto?.cfproxy_enabled !== false && (
               <B4TextField
@@ -381,6 +391,8 @@ export const MTProtoUpstreamCard = ({
                 onChange("system.mtproto.dc_fallback_enabled", checked)
               }
               description={t("settings.MTProto.dcFallbackEnabledHelp")}
+              info={t("settings.MTProto.dcFallbackEnabledInfo")}
+              learnMore="telegram/upstream"
             />
             {mtproto?.dc_fallback_enabled !== false && (
               <B4TextField
@@ -402,14 +414,13 @@ export const MTProtoUpstreamCard = ({
             min={-1}
             max={86400}
             helperText={t("settings.MTProto.bridgeWaitHelp")}
+            info={t("settings.MTProto.bridgeWaitInfo")}
+            learnMore="settings/mtproto"
           />
         </Stack>
       </B4Accordion>
 
-      <B4Accordion
-        title={t("settings.MTProto.advanced")}
-        defaultExpanded={hasEdgeOverride}
-      >
+      <B4Advanced paths={EDGE_PATHS} customized={edgeCustomized}>
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, md: 6 }}>
             <B4TextField
@@ -426,6 +437,8 @@ export const MTProtoUpstreamCard = ({
               }}
               placeholder="149.154.167.220"
               helperText={t("settings.MTProto.wsEndpointHostHelp")}
+              info={t("settings.MTProto.wsEndpointHostInfo")}
+              learnMore="telegram/upstream"
               selectOnFocus
             />
           </Grid>
@@ -444,11 +457,13 @@ export const MTProtoUpstreamCard = ({
               }}
               placeholder="sprinthost.ru"
               helperText={t("settings.MTProto.wsFrontSniHelp")}
+              info={t("settings.MTProto.wsFrontSniInfo")}
+              learnMore="telegram/upstream"
               selectOnFocus
             />
           </Grid>
         </Grid>
-      </B4Accordion>
+      </B4Advanced>
 
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
         <Stack direction="row" spacing={1}>

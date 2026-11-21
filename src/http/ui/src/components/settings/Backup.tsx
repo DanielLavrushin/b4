@@ -10,13 +10,12 @@ import {
   Box,
 } from "@mui/material";
 import {
-  BackupIcon,
   DescriptionIcon,
   DownloadIcon,
   RestoreIcon,
   UploadIcon,
 } from "@b4.icons";
-import { B4Section, B4Alert, B4Dialog } from "@b4.elements";
+import { B4Section, B4Dialog, B4Help } from "@b4.elements";
 import { configApi } from "@api/settings";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { RestartDialog } from "./RestartDialog";
@@ -169,14 +168,13 @@ export const BackupSettings = () => {
 
   return (
     <Stack spacing={3}>
-      <B4Alert icon={<BackupIcon />}>{t("settings.Backup.alert")}</B4Alert>
-
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, md: 6 }}>
           <B4Section
             title={t("settings.Backup.downloadTitle")}
             description={t("settings.Backup.downloadDescription")}
             icon={<DownloadIcon />}
+            learnMore="settings/system#download-backup"
           >
             <Stack spacing={2}>
               <Typography variant="body2" sx={{ color: colors.text.secondary }}>
@@ -205,6 +203,7 @@ export const BackupSettings = () => {
             title={t("settings.Backup.restoreTitle")}
             description={t("settings.Backup.restoreDescription")}
             icon={<UploadIcon />}
+            learnMore="settings/system#restore-backup"
           >
             <Stack spacing={2}>
               <Typography variant="body2" sx={{ color: colors.text.secondary }}>
@@ -238,11 +237,22 @@ export const BackupSettings = () => {
             title={t("settings.Backup.configTitle")}
             description={t("settings.Backup.configDescription")}
             icon={<DescriptionIcon />}
+            learnMore="settings/system#download-configuration"
           >
             <Stack spacing={2}>
-              <Typography variant="body2" sx={{ color: colors.text.secondary }}>
-                {t("settings.Backup.configInfo")}
-              </Typography>
+              <Box sx={{ display: "flex", alignItems: "flex-start", gap: 0.5 }}>
+                <Typography
+                  variant="body2"
+                  sx={{ color: colors.text.secondary }}
+                >
+                  {t("settings.Backup.configInfo")}
+                </Typography>
+                <B4Help
+                  label={t("settings.Backup.configDownloadSafe")}
+                  info={t("settings.Backup.configSafeInfo")}
+                  learnMore="settings/system#safe-copy"
+                />
+              </Box>
               <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
                 <Button
                   variant="contained"
@@ -277,10 +287,11 @@ export const BackupSettings = () => {
           <B4Section
             title={t("settings.Service.resetConfig")}
             icon={<RestoreIcon />}
+            learnMore="settings/system#reset"
           >
             <Stack spacing={2}>
               <Typography variant="body2" sx={{ color: colors.text.secondary }}>
-                {t("settings.Service.resetConfirm")}
+                {t("settings.Service.resetInfo")}
               </Typography>
               <Box>
                 <Button

@@ -62,9 +62,8 @@ const DeviceRow = memo(function DeviceRow(props: DeviceRowProps) {
         sx={{
           ...ellipsisSx,
           fontSize: 13,
-          color: colors.text.primary,
           textUnderlineOffset: "3px",
-          "&:hover": { color: colors.text.primary, textDecoration: "underline" },
+          "&:hover": { textDecoration: "underline" },
           "&:focus-visible": {
             outline: `2px solid ${colors.border.strong}`,
             outlineOffset: "2px",

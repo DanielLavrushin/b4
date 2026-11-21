@@ -52,7 +52,6 @@ export function KeyRef({ hmac, label, name: givenName, tag: givenTag, banned: gi
             alignItems: "center",
             gap: 0.75,
             minWidth: 0,
-            color: banned ? colors.state.error : colors.text.primary,
           }}
         >
           {dot && <Box component="span" sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: `hsl(${String(hue(hmac))}, 55%, 55%)`, flexShrink: 0 }} />}

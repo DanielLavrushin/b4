@@ -1,9 +1,8 @@
 import {
   B4Accordion,
-  B4Alert,
   B4ChipList,
+  B4FieldMessage,
   B4FormHeader,
-  B4Hint,
   B4NumberField,
   B4PlusButton,
   B4Select,
@@ -16,13 +15,14 @@ import {
   DesyncMode,
   FakingPayloadType,
   IncomingMode,
+  IncomingStrategy,
   MutationMode,
   WindowMode,
 } from "@models/config";
-import { Box, Grid, Stack, Typography } from "@mui/material";
+import { Box, Grid, Link, Stack, Typography } from "@mui/material";
 import { useState } from "react";
-import { Link } from "react-router";
-import { useTranslation } from "react-i18next";
+import { Link as RouterLink } from "react-router";
+import { Trans, useTranslation } from "react-i18next";
 import { useChangedFields } from "@context/ChangedFieldsContext";
 import {
   byPayloadName,
@@ -87,114 +87,256 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
     resolvedFile,
   );
   const FAKE_STRATEGIES = [
-    { value: "ttl", label: t("sets.faking.fakeSni.strategyTtl") },
-    { value: "randseq", label: t("sets.faking.fakeSni.strategyRandseq") },
-    { value: "pastseq", label: t("sets.faking.fakeSni.strategyPastseq") },
-    { value: "tcp_check", label: t("sets.faking.fakeSni.strategyTcpCheck") },
-    { value: "md5sum", label: t("sets.faking.fakeSni.strategyMd5sum") },
-    { value: "timestamp", label: t("sets.faking.fakeSni.strategyTimestamp") },
+    {
+      value: "ttl",
+      label: t("sets.faking.fakeSni.strategyTtl"),
+      note: t("sets.faking.fakeSni.strategyTtlNote"),
+    },
+    {
+      value: "randseq",
+      label: t("sets.faking.fakeSni.strategyRandseq"),
+      note: t("sets.faking.fakeSni.strategyRandseqNote"),
+    },
+    {
+      value: "pastseq",
+      label: t("sets.faking.fakeSni.strategyPastseq"),
+      note: t("sets.faking.fakeSni.strategyPastseqNote"),
+    },
+    {
+      value: "tcp_check",
+      label: t("sets.faking.fakeSni.strategyTcpCheck"),
+      note: t("sets.faking.fakeSni.strategyTcpCheckNote"),
+    },
+    {
+      value: "md5sum",
+      label: t("sets.faking.fakeSni.strategyMd5sum"),
+      note: t("sets.faking.fakeSni.strategyMd5sumNote"),
+    },
+    {
+      value: "timestamp",
+      label: t("sets.faking.fakeSni.strategyTimestamp"),
+      note: t("sets.faking.fakeSni.strategyTimestampNote"),
+    },
   ];
 
   const FAKE_PAYLOAD_TYPES = [
-    { value: 0, label: t("sets.faking.fakeSni.payloadRandom") },
-    { value: 2, label: t("sets.faking.fakeSni.payloadGoogle") },
-    { value: 3, label: t("sets.faking.fakeSni.payloadVk") },
-    { value: 8, label: t("sets.faking.fakeSni.payloadStun") },
-    { value: 4, label: t("sets.faking.fakeSni.payloadFile") },
-    { value: 5, label: t("sets.faking.fakeSni.payloadZeros") },
-    { value: 6, label: t("sets.faking.fakeSni.payloadInverted") },
-    { value: 7, label: t("sets.faking.fakeSni.payloadDomainOption") },
+    {
+      value: 0,
+      label: t("sets.faking.fakeSni.payloadRandom"),
+      note: t("sets.faking.fakeSni.payloadRandomNote"),
+    },
+    {
+      value: 2,
+      label: t("sets.faking.fakeSni.payloadGoogle"),
+      note: t("sets.faking.fakeSni.payloadPresetNote"),
+    },
+    {
+      value: 3,
+      label: t("sets.faking.fakeSni.payloadVk"),
+      note: t("sets.faking.fakeSni.payloadPresetNote"),
+    },
+    {
+      value: 8,
+      label: t("sets.faking.fakeSni.payloadStun"),
+      note: t("sets.faking.fakeSni.payloadStunNote"),
+    },
+    {
+      value: 4,
+      label: t("sets.faking.fakeSni.payloadFile"),
+      note: t("sets.faking.fakeSni.payloadFileNote"),
+    },
+    {
+      value: 5,
+      label: t("sets.faking.fakeSni.payloadZeros"),
+      note: t("sets.faking.fakeSni.payloadZerosNote"),
+    },
+    {
+      value: 6,
+      label: t("sets.faking.fakeSni.payloadInverted"),
+      note: t("sets.faking.fakeSni.payloadInvertedNote"),
+    },
+    {
+      value: 7,
+      label: t("sets.faking.fakeSni.payloadDomainOption"),
+      note: t("sets.faking.fakeSni.payloadDomainNote"),
+    },
     ...(config.faking.sni_type === FakingPayloadType.CUSTOM ||
     config.faking.custom_payload !== ""
-      ? [{ value: 1, label: t("sets.faking.fakeSni.payloadCustom") }]
+      ? [
+          {
+            value: 1,
+            label: t("sets.faking.fakeSni.payloadCustom"),
+            note: t("sets.faking.fakeSni.payloadCustomNote"),
+          },
+        ]
       : []),
   ];
 
-  const MUTATION_MODES: { value: MutationMode; label: string }[] = [
-    { value: "off", label: t("sets.faking.mutation.modeOff") },
-    { value: "random", label: t("sets.faking.mutation.modeRandom") },
-    { value: "grease", label: t("sets.faking.mutation.modeGrease") },
-    { value: "padding", label: t("sets.faking.mutation.modePadding") },
-    { value: "fakeext", label: t("sets.faking.mutation.modeFakeext") },
-    { value: "fakesni", label: t("sets.faking.mutation.modeFakesni") },
-    { value: "advanced", label: t("sets.faking.mutation.modeAdvanced") },
+  const MUTATION_MODES: { value: MutationMode; label: string; note: string }[] =
+    [
+      {
+        value: "off",
+        label: t("sets.faking.mutation.modeOff"),
+        note: t("sets.faking.mutation.descOff"),
+      },
+      {
+        value: "random",
+        label: t("sets.faking.mutation.modeRandom"),
+        note: t("sets.faking.mutation.descRandom"),
+      },
+      {
+        value: "grease",
+        label: t("sets.faking.mutation.modeGrease"),
+        note: t("sets.faking.mutation.descGrease"),
+      },
+      {
+        value: "padding",
+        label: t("sets.faking.mutation.modePadding"),
+        note: t("sets.faking.mutation.descPadding"),
+      },
+      {
+        value: "fakeext",
+        label: t("sets.faking.mutation.modeFakeext"),
+        note: t("sets.faking.mutation.descFakeext"),
+      },
+      {
+        value: "fakesni",
+        label: t("sets.faking.mutation.modeFakesni"),
+        note: t("sets.faking.mutation.descFakesni"),
+      },
+      {
+        value: "advanced",
+        label: t("sets.faking.mutation.modeAdvanced"),
+        note: t("sets.faking.mutation.descAdvanced"),
+      },
+    ];
+
+  const desyncModeOptions: { label: string; value: DesyncMode; note: string }[] =
+    [
+      {
+        label: t("sets.faking.desync.modeOff"),
+        value: "off",
+        note: t("sets.faking.desync.descOff"),
+      },
+      {
+        label: t("sets.faking.desync.modeRst"),
+        value: "rst",
+        note: t("sets.faking.desync.descRst"),
+      },
+      {
+        label: t("sets.faking.desync.modeFin"),
+        value: "fin",
+        note: t("sets.faking.desync.descFin"),
+      },
+      {
+        label: t("sets.faking.desync.modeAck"),
+        value: "ack",
+        note: t("sets.faking.desync.descAck"),
+      },
+      {
+        label: t("sets.faking.desync.modeCombo"),
+        value: "combo",
+        note: t("sets.faking.desync.descCombo"),
+      },
+      {
+        label: t("sets.faking.desync.modeFull"),
+        value: "full",
+        note: t("sets.faking.desync.descFull"),
+      },
+    ];
+
+  const windowModeOptions: { label: string; value: WindowMode; note: string }[] =
+    [
+      {
+        label: t("sets.faking.window.modeOff"),
+        value: "off",
+        note: t("sets.faking.window.descOff"),
+      },
+      {
+        label: t("sets.faking.window.modeZero"),
+        value: "zero",
+        note: t("sets.faking.window.descZero"),
+      },
+      {
+        label: t("sets.faking.window.modeRandom"),
+        value: "random",
+        note: t("sets.faking.window.descRandom"),
+      },
+      {
+        label: t("sets.faking.window.modeOscillate"),
+        value: "oscillate",
+        note: t("sets.faking.window.descOscillate"),
+      },
+      {
+        label: t("sets.faking.window.modeEscalate"),
+        value: "escalate",
+        note: t("sets.faking.window.descEscalate"),
+      },
+    ];
+
+  const incomingModeOptions: {
+    label: string;
+    value: IncomingMode;
+    note: string;
+  }[] = [
+    {
+      label: t("sets.faking.incoming.modeOff"),
+      value: "off",
+      note: t("sets.faking.incoming.descOff"),
+    },
+    {
+      label: t("sets.faking.incoming.modeFake"),
+      value: "fake",
+      note: t("sets.faking.incoming.descFake"),
+    },
+    {
+      label: t("sets.faking.incoming.modeReset"),
+      value: "reset",
+      note: t("sets.faking.incoming.descReset"),
+    },
+    {
+      label: t("sets.faking.incoming.modeFin"),
+      value: "fin",
+      note: t("sets.faking.incoming.descFin"),
+    },
+    {
+      label: t("sets.faking.incoming.modeDesync"),
+      value: "desync",
+      note: t("sets.faking.incoming.descDesync"),
+    },
   ];
 
-  const mutationModeDescriptions: Record<MutationMode, string> = {
-    off: t("sets.faking.mutation.descOff"),
-    random: t("sets.faking.mutation.descRandom"),
-    grease: t("sets.faking.mutation.descGrease"),
-    padding: t("sets.faking.mutation.descPadding"),
-    fakeext: t("sets.faking.mutation.descFakeext"),
-    fakesni: t("sets.faking.mutation.descFakesni"),
-    advanced: t("sets.faking.mutation.descAdvanced"),
-  };
-
-  const desyncModeOptions: { label: string; value: DesyncMode }[] = [
-    { label: t("sets.faking.desync.modeOff"), value: "off" },
-    { label: t("sets.faking.desync.modeRst"), value: "rst" },
-    { label: t("sets.faking.desync.modeFin"), value: "fin" },
-    { label: t("sets.faking.desync.modeAck"), value: "ack" },
-    { label: t("sets.faking.desync.modeCombo"), value: "combo" },
-    { label: t("sets.faking.desync.modeFull"), value: "full" },
+  const incomingStrategyOptions: {
+    label: string;
+    value: IncomingStrategy;
+    note: string;
+  }[] = [
+    {
+      label: t("sets.faking.incoming.strategyBadsum"),
+      value: "badsum",
+      note: t("sets.faking.incoming.stratDescBadsum"),
+    },
+    {
+      label: t("sets.faking.incoming.strategyBadseq"),
+      value: "badseq",
+      note: t("sets.faking.incoming.stratDescBadseq"),
+    },
+    {
+      label: t("sets.faking.incoming.strategyBadack"),
+      value: "badack",
+      note: t("sets.faking.incoming.stratDescBadack"),
+    },
+    {
+      label: t("sets.faking.incoming.strategyRand"),
+      value: "rand",
+      note: t("sets.faking.incoming.stratDescRand"),
+    },
+    {
+      label: t("sets.faking.incoming.strategyAll"),
+      value: "all",
+      note: t("sets.faking.incoming.stratDescAll"),
+    },
   ];
-
-  const desyncModeDescriptions: Record<DesyncMode, string> = {
-    off: t("sets.faking.desync.descOff"),
-    rst: t("sets.faking.desync.descRst"),
-    fin: t("sets.faking.desync.descFin"),
-    ack: t("sets.faking.desync.descAck"),
-    combo: t("sets.faking.desync.descCombo"),
-    full: t("sets.faking.desync.descFull"),
-  };
-
-  const windowModeOptions: { label: string; value: WindowMode }[] = [
-    { label: t("sets.faking.window.modeOff"), value: "off" },
-    { label: t("sets.faking.window.modeZero"), value: "zero" },
-    { label: t("sets.faking.window.modeRandom"), value: "random" },
-    { label: t("sets.faking.window.modeOscillate"), value: "oscillate" },
-    { label: t("sets.faking.window.modeEscalate"), value: "escalate" },
-  ];
-
-  const windowModeDescriptions: Record<WindowMode, string> = {
-    off: t("sets.faking.window.descOff"),
-    zero: t("sets.faking.window.descZero"),
-    random: t("sets.faking.window.descRandom"),
-    oscillate: t("sets.faking.window.descOscillate"),
-    escalate: t("sets.faking.window.descEscalate"),
-  };
-
-  const incomingModeOptions: { label: string; value: IncomingMode }[] = [
-    { label: t("sets.faking.incoming.modeOff"), value: "off" },
-    { label: t("sets.faking.incoming.modeFake"), value: "fake" },
-    { label: t("sets.faking.incoming.modeReset"), value: "reset" },
-    { label: t("sets.faking.incoming.modeFin"), value: "fin" },
-    { label: t("sets.faking.incoming.modeDesync"), value: "desync" },
-  ];
-
-  const incomingModeDescriptions: Record<IncomingMode, string> = {
-    off: t("sets.faking.incoming.descOff"),
-    fake: t("sets.faking.incoming.descFake"),
-    reset: t("sets.faking.incoming.descReset"),
-    fin: t("sets.faking.incoming.descFin"),
-    desync: t("sets.faking.incoming.descDesync"),
-  };
-
-  const incomingStrategyOptions: { label: string; value: string }[] = [
-    { label: t("sets.faking.incoming.strategyBadsum"), value: "badsum" },
-    { label: t("sets.faking.incoming.strategyBadseq"), value: "badseq" },
-    { label: t("sets.faking.incoming.strategyBadack"), value: "badack" },
-    { label: t("sets.faking.incoming.strategyRand"), value: "rand" },
-    { label: t("sets.faking.incoming.strategyAll"), value: "all" },
-  ];
-
-  const incomingStrategyDescriptions: Record<string, string> = {
-    badsum: t("sets.faking.incoming.stratDescBadsum"),
-    badseq: t("sets.faking.incoming.stratDescBadseq"),
-    badack: t("sets.faking.incoming.stratDescBadack"),
-    rand: t("sets.faking.incoming.stratDescRand"),
-    all: t("sets.faking.incoming.stratDescAll"),
-  };
 
   const mutation = config.faking.sni_mutation || {
     mode: "off",
@@ -217,13 +359,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
     !(config.faking.payload_domain || "").trim();
 
   let chosenFileOption: { label: string; note?: string } | undefined;
-  let payloadFileHelper = listError
-    ? t("settings.Capture.listFailed", { error: listError })
-    : t(
-        tlsCaptures.length === 0
-          ? "sets.faking.fakeSni.noPayloadsHelper"
-          : "sets.faking.fakeSni.selectPayloadHelper",
-      );
+  let payloadFileIssue: string | undefined;
   if (chosenFile.state === "missing") {
     chosenFileOption = {
       label: t("sets.faking.fakeSni.payloadFileMissing", {
@@ -231,7 +367,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
       }),
       note: t("sets.faking.fakeSni.payloadFileMissingNote"),
     };
-    payloadFileHelper = t("sets.faking.fakeSni.payloadFileMissingHelper", {
+    payloadFileIssue = t("sets.faking.fakeSni.payloadFileMissingHelper", {
       file: payloadFile,
     });
   } else if (chosenFile.state === "empty") {
@@ -241,7 +377,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
       }),
       note: t("sets.faking.fakeSni.payloadFileMissingNote"),
     };
-    payloadFileHelper = t("sets.faking.fakeSni.payloadFileEmptyHelper", {
+    payloadFileIssue = t("sets.faking.fakeSni.payloadFileEmptyHelper", {
       file: payloadFile,
     });
   } else if (chosenFile.state === "unlisted" && chosenFile.tooLarge) {
@@ -251,7 +387,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
       }),
       note: t("sets.faking.fakeSni.payloadFileMissingNote"),
     };
-    payloadFileHelper = t("sets.faking.fakeSni.payloadFileTooLargeHelper", {
+    payloadFileIssue = t("sets.faking.fakeSni.payloadFileTooLargeHelper", {
       file: payloadFile,
     });
   } else if (chosenFile.state === "unlisted") {
@@ -261,7 +397,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
       }),
       note: payloadNote(t, chosenFile),
     };
-    payloadFileHelper = t("sets.faking.fakeSni.payloadFileUnlistedHelper", {
+    payloadFileIssue = t("sets.faking.fakeSni.payloadFileUnlistedHelper", {
       file: payloadFile,
     });
   } else if (chosenFile.state === "unknown") {
@@ -276,8 +412,10 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
       }),
       note: payloadNote(t, chosenFile.capture),
     };
-    payloadFileHelper = t("sets.faking.fakeSni.payloadFileQuicHelper");
+    payloadFileIssue = t("sets.faking.fakeSni.payloadFileQuicHelper");
   }
+  const payloadFileSentAsIs =
+    chosenFile.state === "unlisted" && !chosenFile.tooLarge;
 
   const payloadFileOptions = [
     { value: "", label: t("sets.faking.fakeSni.selectPayload") },
@@ -304,6 +442,58 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
       ? chosenSize
       : undefined;
 
+  const payloadsLink = <Link component={RouterLink} to="/settings/payloads" />;
+  const payloadFileInfo = (
+    <Stack spacing={1.5}>
+      <span>{t("sets.faking.fakeSni.generatedPayloadInfo")}</span>
+      <span>
+        {!listError && tlsCaptures.length === 0 && (
+          <>{t("sets.faking.fakeSni.noPayloads")} </>
+        )}
+        <Trans
+          i18nKey="sets.faking.fakeSni.navigateSettings"
+          components={{ a: payloadsLink }}
+        />
+      </span>
+    </Stack>
+  );
+  const payloadFileMessages = [
+    listError && (
+      <B4FieldMessage key="list" severity="error">
+        {t("settings.Capture.listFailed", { error: listError })}
+      </B4FieldMessage>
+    ),
+    payloadFileIssue && (
+      <B4FieldMessage
+        key="file"
+        severity={payloadFileSentAsIs ? "info" : "warning"}
+      >
+        {payloadFileIssue}
+      </B4FieldMessage>
+    ),
+    payloadFileNotChosen && (
+      <B4FieldMessage key="unchosen">
+        {t("sets.faking.fakeSni.payloadFileNotChosen")}
+      </B4FieldMessage>
+    ),
+    !listError && capturesListed && tlsCaptures.length === 0 && (
+      <B4FieldMessage key="none" severity="info">
+        <Trans
+          i18nKey="sets.faking.fakeSni.noPayloadsHelper"
+          components={{ a: payloadsLink }}
+        />
+      </B4FieldMessage>
+    ),
+    oversizedSize !== undefined && (
+      <B4FieldMessage key="oversized">
+        {t("sets.faking.fakeSni.payloadOverOnePacket", {
+          count: oversizedSize,
+          max: ONE_PACKET_TCP_PAYLOAD,
+        })}
+      </B4FieldMessage>
+    ),
+  ].filter(Boolean);
+
   const isMutationEnabled = mutation.mode !== "off";
   const showGreaseSettings = ["grease", "advanced"].includes(mutation.mode);
   const showPaddingSettings = ["padding", "advanced"].includes(mutation.mode);
@@ -311,20 +501,25 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
   const showFakeSniSettings = ["fakesni", "advanced"].includes(mutation.mode);
 
   const isDesyncEnabled = config.tcp.desync.mode !== "off";
+  const desyncCountUsed = ["rst", "fin", "ack"].includes(
+    config.tcp.desync.mode,
+  );
 
   const winValues = config.tcp.win.values || [0, 1460, 8192, 65535];
   const showWinValues = ["oscillate", "random"].includes(config.tcp.win.mode);
 
   // Status summaries for accordion headers
+  const enabledStatus = t("core.enabled");
+  const disabledStatus = t("core.disabled");
   const fakeSniStatus = config.faking.sni
     ? FAKE_STRATEGIES.find((s) => s.value === config.faking.strategy)?.label ||
-      "Enabled"
-    : "Disabled";
+      enabledStatus
+    : disabledStatus;
 
   const synFakeStatus =
     [config.tcp.syn_fake && "SYN", config.faking.tcp_md5 && "MD5"]
       .filter(Boolean)
-      .join(" + ") || "Disabled";
+      .join(" + ") || disabledStatus;
 
   const isFakeTtlActive =
     (config.faking.sni &&
@@ -339,27 +534,29 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
     config.udp.mode === "fake";
 
   const incomingMode = config.tcp.incoming?.mode || "off";
+  const incomingStrategy = config.tcp.incoming?.strategy || "badsum";
 
   const desyncStatus = isDesyncEnabled
     ? desyncModeOptions.find((o) => o.value === config.tcp.desync.mode)
-        ?.label || "Enabled"
-    : "Disabled";
+        ?.label || enabledStatus
+    : disabledStatus;
 
   const windowStatus =
     config.tcp.win.mode === "off"
-      ? "Disabled"
+      ? disabledStatus
       : windowModeOptions.find((o) => o.value === config.tcp.win.mode)?.label ||
-        "Enabled";
+        enabledStatus;
 
   const incomingStatus =
-    (config.tcp.incoming?.mode || "off") === "off"
-      ? "Disabled"
-      : incomingModeOptions.find((o) => o.value === config.tcp.incoming?.mode)
-          ?.label || "Enabled";
+    incomingMode === "off"
+      ? disabledStatus
+      : incomingModeOptions.find((o) => o.value === incomingMode)?.label ||
+        enabledStatus;
 
   const mutationStatus = isMutationEnabled
-    ? MUTATION_MODES.find((m) => m.value === mutation.mode)?.label || "Enabled"
-    : "Disabled";
+    ? MUTATION_MODES.find((m) => m.value === mutation.mode)?.label ||
+      enabledStatus
+    : disabledStatus;
 
   const handleAddFakeSni = () => {
     if (newFakeSni.trim()) {
@@ -423,6 +620,8 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               path="faking.sni"
               onChange={(checked: boolean) => onChange("faking.sni", checked)}
               description={t("sets.faking.fakeSni.enableDesc")}
+              info={t("sets.faking.fakeSni.enableInfo")}
+              learnMore="sets/tcp/faking"
               aiTopic="faking.sni"
             />
           </Grid>
@@ -445,7 +644,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
           <B4FormHeader label={t("sets.faking.fakeSni.payloadSection")} />
 
           <Grid size={{ xs: 12, md: 6 }}>
-            <Stack>
+            <Stack spacing={2}>
               <B4Select
                 label={t("sets.faking.fakeSni.payloadType")}
                 value={config.faking.sni_type}
@@ -454,7 +653,29 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                 onChange={(e) =>
                   onChange("faking.sni_type", Number(e.target.value))
                 }
-                helperText={t("sets.faking.fakeSni.payloadHelper")}
+                helperText={t(
+                  {
+                    [FakingPayloadType.RANDOM]:
+                      "sets.faking.fakeSni.payloadRandomNote",
+                    [FakingPayloadType.CUSTOM]:
+                      "sets.faking.fakeSni.payloadCustomNote",
+                    [FakingPayloadType.DEFAULT]:
+                      "sets.faking.fakeSni.payloadPresetNote",
+                    [FakingPayloadType.DEFAULT2]:
+                      "sets.faking.fakeSni.payloadPresetNote",
+                    [FakingPayloadType.CAPTURE]:
+                      "sets.faking.fakeSni.payloadFileNote",
+                    [FakingPayloadType.ZERO]:
+                      "sets.faking.fakeSni.payloadZerosNote",
+                    [FakingPayloadType.INVERTED]:
+                      "sets.faking.fakeSni.payloadInvertedNote",
+                    [FakingPayloadType.DOMAIN]:
+                      "sets.faking.fakeSni.payloadDomainNote",
+                    [FakingPayloadType.STUN]:
+                      "sets.faking.fakeSni.payloadStunNote",
+                  }[config.faking.sni_type],
+                )}
+                learnMore="sets/tcp/faking#fake-payload"
                 disabled={!config.faking.sni}
                 aiTopic="faking.sni_type"
                 aiContext={{
@@ -463,34 +684,57 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               />
 
               {config.faking.sni_type === FakingPayloadType.CUSTOM && (
-                <Box sx={{ mt: 2 }}>
-                  <B4TextField
-                    value={config.faking.custom_payload}
-                    path="faking.custom_payload"
-                    onChange={(e) =>
-                      onChange("faking.custom_payload", e.target.value)
-                    }
-                    helperText={t("sets.faking.fakeSni.customPayloadHelper")}
-                    disabled={!config.faking.sni}
-                    multiline
-                    rows={2}
-                  />
-                </Box>
+                <B4TextField
+                  value={config.faking.custom_payload}
+                  path="faking.custom_payload"
+                  onChange={(e) =>
+                    onChange("faking.custom_payload", e.target.value)
+                  }
+                  helperText={t("sets.faking.fakeSni.customPayloadHelper")}
+                  disabled={!config.faking.sni}
+                  multiline
+                  rows={2}
+                />
               )}
               {config.faking.sni_type === FakingPayloadType.DOMAIN && (
-                <Box sx={{ mt: 2 }}>
-                  <B4TextField
-                    label={t("sets.faking.fakeSni.payloadDomainLabel")}
-                    value={config.faking.payload_domain}
-                    path="faking.payload_domain"
-                    onChange={(e) =>
-                      onChange("faking.payload_domain", e.target.value)
-                    }
-                    helperText={t("sets.faking.fakeSni.payloadDomainHelper")}
-                    disabled={!config.faking.sni}
-                    placeholder="example.com"
-                  />
-                </Box>
+                <B4TextField
+                  label={t("sets.faking.fakeSni.payloadDomainLabel")}
+                  value={config.faking.payload_domain}
+                  path="faking.payload_domain"
+                  onChange={(e) =>
+                    onChange("faking.payload_domain", e.target.value)
+                  }
+                  helperText={t("sets.faking.fakeSni.payloadDomainHelper")}
+                  message={
+                    payloadDomainNotGiven ? (
+                      <B4FieldMessage>
+                        {t("sets.faking.fakeSni.payloadDomainNotGiven")}
+                      </B4FieldMessage>
+                    ) : undefined
+                  }
+                  disabled={!config.faking.sni}
+                  placeholder="example.com"
+                />
+              )}
+              {config.faking.sni_type === FakingPayloadType.CAPTURE && (
+                <B4Select
+                  label={t("sets.faking.fakeSni.generatedPayload")}
+                  value={payloadFile}
+                  path="faking.payload_file"
+                  options={payloadFileOptions}
+                  onChange={(e) =>
+                    onChange("faking.payload_file", e.target.value)
+                  }
+                  helperText={t("sets.faking.fakeSni.selectPayloadHelper")}
+                  message={
+                    payloadFileMessages.length > 0 ? (
+                      <>{payloadFileMessages}</>
+                    ) : undefined
+                  }
+                  info={payloadFileInfo}
+                  learnMore="settings/payloads#using-in-sets"
+                  disabled={!config.faking.sni}
+                />
               )}
             </Stack>
           </Grid>
@@ -498,6 +742,8 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
             <B4Switch
               label={t("sets.faking.fakeSni.matchLength")}
               description={t("sets.faking.fakeSni.matchLengthDesc")}
+              info={t("sets.faking.fakeSni.matchLengthInfo")}
+              learnMore="sets/tcp/faking#fake-payload"
               checked={config.faking.fake_len_mode === "match"}
               path="faking.fake_len_mode"
               onChange={(checked) =>
@@ -507,101 +753,62 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               aiTopic="faking.fake_len_mode"
             />
           </Grid>
-          {payloadDomainNotGiven && (
-            <B4Alert severity="warning">
-              {t("sets.faking.fakeSni.payloadDomainNotGiven")}
-            </B4Alert>
-          )}
-          {config.faking.sni_type === FakingPayloadType.CAPTURE && (
-            <Grid container size={{ xs: 12 }} spacing={2}>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <B4Select
-                  label={t("sets.faking.fakeSni.generatedPayload")}
-                  value={payloadFile}
-                  path="faking.payload_file"
-                  options={payloadFileOptions}
-                  onChange={(e) =>
-                    onChange("faking.payload_file", e.target.value)
-                  }
-                  helperText={payloadFileHelper}
-                  disabled={!config.faking.sni}
-                />
-              </Grid>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <B4Alert>
-                  {!listError &&
-                    tlsCaptures.length === 0 &&
-                    t("sets.faking.fakeSni.noPayloads")}
-
-                  <Link to="/settings/payloads">
-                    {" "}
-                    {t("sets.faking.fakeSni.navigateSettings")}
-                  </Link>
-                </B4Alert>
-              </Grid>
-              {payloadFileNotChosen && (
-                <B4Alert severity="warning">
-                  {t("sets.faking.fakeSni.payloadFileNotChosen")}
-                </B4Alert>
-              )}
-              {oversizedSize !== undefined && (
-                <Grid size={{ xs: 12 }}>
-                  <B4Alert severity="warning">
-                    {t("sets.faking.fakeSni.payloadOverOnePacket", {
-                      count: oversizedSize,
-                      max: ONE_PACKET_TCP_PAYLOAD,
-                    })}
-                  </B4Alert>
-                </Grid>
-              )}
-            </Grid>
-          )}
           {tlsModChangesTheFake(config, chosenFile) && (
             <Grid size={{ xs: 12 }}>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+              <Typography variant="subtitle2">
                 {t("sets.faking.fakeSni.tlsModTitle")}
               </Typography>
               <Typography
                 variant="caption"
                 color="text.secondary"
-                sx={{ display: "block", mb: 1 }}
+                sx={{ display: "block", mb: 1.5 }}
               >
                 {t("sets.faking.fakeSni.tlsModDesc")}
               </Typography>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                <B4Switch
-                  label={t("sets.faking.fakeSni.randomizeTlsRandom")}
-                  checked={(config.faking.tls_mod || []).includes("rnd")}
-                  path="faking.tls_mod"
-                  arrayItem="rnd"
-                  onChange={(checked: boolean) => {
-                    const current = config.faking.tls_mod || [];
-                    const next = checked
-                      ? [...current.filter((m) => m !== "rnd"), "rnd"]
-                      : current.filter((m) => m !== "rnd");
-                    onChange("faking.tls_mod", next);
-                  }}
-                  description={t("sets.faking.fakeSni.randomizeTlsRandomDesc")}
-                  disabled={!config.faking.sni}
-                  aiTopic="faking.tls_mod"
-                />
-                <B4Switch
-                  label={t("sets.faking.fakeSni.dupSessionId")}
-                  checked={(config.faking.tls_mod || []).includes("dupsid")}
-                  path="faking.tls_mod"
-                  arrayItem="dupsid"
-                  onChange={(checked: boolean) => {
-                    const current = config.faking.tls_mod || [];
-                    const next = checked
-                      ? [...current.filter((m) => m !== "dupsid"), "dupsid"]
-                      : current.filter((m) => m !== "dupsid");
-                    onChange("faking.tls_mod", next);
-                  }}
-                  description={t("sets.faking.fakeSni.dupSessionIdDesc")}
-                  disabled={!config.faking.sni}
-                  aiTopic="faking.tls_mod"
-                />
-              </Stack>
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <B4Switch
+                    label={t("sets.faking.fakeSni.randomizeTlsRandom")}
+                    checked={(config.faking.tls_mod || []).includes("rnd")}
+                    path="faking.tls_mod"
+                    arrayItem="rnd"
+                    onChange={(checked: boolean) => {
+                      const current = config.faking.tls_mod || [];
+                      const next = checked
+                        ? [...current.filter((m) => m !== "rnd"), "rnd"]
+                        : current.filter((m) => m !== "rnd");
+                      onChange("faking.tls_mod", next);
+                    }}
+                    description={t(
+                      "sets.faking.fakeSni.randomizeTlsRandomDesc",
+                    )}
+                    info={t("sets.faking.fakeSni.randomizeTlsRandomInfo")}
+                    learnMore="sets/tcp/faking#fake-payload"
+                    disabled={!config.faking.sni}
+                    aiTopic="faking.tls_mod"
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <B4Switch
+                    label={t("sets.faking.fakeSni.dupSessionId")}
+                    checked={(config.faking.tls_mod || []).includes("dupsid")}
+                    path="faking.tls_mod"
+                    arrayItem="dupsid"
+                    onChange={(checked: boolean) => {
+                      const current = config.faking.tls_mod || [];
+                      const next = checked
+                        ? [...current.filter((m) => m !== "dupsid"), "dupsid"]
+                        : current.filter((m) => m !== "dupsid");
+                      onChange("faking.tls_mod", next);
+                    }}
+                    description={t("sets.faking.fakeSni.dupSessionIdDesc")}
+                    info={t("sets.faking.fakeSni.dupSessionIdInfo")}
+                    learnMore="sets/tcp/faking#fake-payload"
+                    disabled={!config.faking.sni}
+                    aiTopic="faking.tls_mod"
+                  />
+                </Grid>
+              </Grid>
             </Grid>
           )}
 
@@ -614,7 +821,18 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               options={FAKE_STRATEGIES}
               path="faking.strategy"
               onChange={(e) => onChange("faking.strategy", e.target.value)}
-              helperText={t("sets.faking.fakeSni.strategyHelper")}
+              helperText={t(
+                {
+                  ttl: "sets.faking.fakeSni.strategyTtlNote",
+                  randseq: "sets.faking.fakeSni.strategyRandseqNote",
+                  pastseq: "sets.faking.fakeSni.strategyPastseqNote",
+                  tcp_check: "sets.faking.fakeSni.strategyTcpCheckNote",
+                  md5sum: "sets.faking.fakeSni.strategyMd5sumNote",
+                  timestamp: "sets.faking.fakeSni.strategyTimestampNote",
+                }[config.faking.strategy],
+              )}
+              info={t("sets.faking.fakeSni.strategyInfo")}
+              learnMore="sets/tcp/faking"
               disabled={!config.faking.sni}
               aiTopic="faking.strategy"
               aiContext={{ available: FAKE_STRATEGIES.map((s) => s.value) }}
@@ -640,12 +858,14 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                 onChange={(n) => onChange("faking.timestamp_decrease", n)}
                 min={0}
                 helperText={t("sets.faking.fakeSni.timestampDecreaseHelper")}
+                info={t("sets.faking.fakeSni.timestampDecreaseInfo")}
                 disabled={!config.faking.sni}
               />
             </Grid>
           )}
-
-          <Grid size={{ xs: 12, md: 4 }}>
+        </Grid>
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <B4Slider
               value={config.faking.ttl}
               path="faking.ttl"
@@ -653,13 +873,21 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               min={1}
               max={64}
               step={1}
-              helperText={t("sets.faking.fakeSni.ttlHelper")}
+              helperText={t(
+                isFakeTtlActive
+                  ? "sets.faking.fakeSni.ttlHelper"
+                  : "sets.faking.fakeSni.ttlUnused",
+              )}
+              info={t("sets.faking.fakeSni.ttlInfo")}
+              learnMore="sets/tcp/faking"
               disabled={!isFakeTtlActive}
             />
           </Grid>
-          <Grid size={{ xs: 12, md: 4 }}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <B4Switch
               description={t("sets.faking.fakeSni.applyTtlDesc")}
+              info={t("sets.faking.fakeSni.applyTtlInfo")}
+              learnMore="sets/tcp/faking"
               checked={config.faking.apply_ttl || false}
               path="faking.apply_ttl"
               onChange={(checked) => onChange("faking.apply_ttl", checked)}
@@ -667,9 +895,11 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               aiTopic="faking.apply_ttl"
             />
           </Grid>
-          <Grid size={{ xs: 12, md: 4 }}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <B4Switch
               description={t("sets.faking.fakeSni.md5OnFakeDesc")}
+              info={t("sets.faking.fakeSni.md5OnFakeInfo")}
+              learnMore="sets/tcp/faking"
               checked={config.faking.md5_on_fake || false}
               path="faking.md5_on_fake"
               onChange={(checked) => onChange("faking.md5_on_fake", checked)}
@@ -687,62 +917,58 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
         enabled={config.tcp.syn_fake || config.faking.tcp_md5}
         hasChanges={hasSubChanges(FAKING_ACCORDIONS[1].prefixes)}
       >
-        <B4Hint>{t("sets.faking.synFake.alert")}</B4Hint>
-        <Grid container spacing={3}>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <B4Switch
-              label={t("sets.faking.synFake.enable")}
-              description={t("sets.faking.synFake.enableDesc")}
-              checked={config.tcp.syn_fake || false}
-              path="tcp.syn_fake"
-              onChange={(checked) => onChange("tcp.syn_fake", checked)}
-              aiTopic="tcp.syn_fake"
-            />
+        <B4Switch
+          label={t("sets.faking.synFake.enable")}
+          description={t("sets.faking.synFake.enableDesc")}
+          info={t("sets.faking.synFake.enableInfo")}
+          learnMore="sets/tcp/faking"
+          checked={config.tcp.syn_fake || false}
+          path="tcp.syn_fake"
+          onChange={(checked) => onChange("tcp.syn_fake", checked)}
+          aiTopic="tcp.syn_fake"
+        />
+        {config.tcp.syn_fake && (
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Slider
+                label={t("sets.faking.synFake.payloadLen")}
+                value={config.tcp.syn_fake_len || 0}
+                path="tcp.syn_fake_len"
+                onChange={(value: number) =>
+                  onChange("tcp.syn_fake_len", value)
+                }
+                min={0}
+                max={1200}
+                step={64}
+                valueSuffix={t("core.units.bytes")}
+                helperText={t("sets.faking.synFake.payloadLenHelper")}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Slider
+                label={t("sets.faking.synFake.ttl")}
+                value={config.tcp.syn_ttl || 0}
+                path="tcp.syn_ttl"
+                onChange={(value: number) => onChange("tcp.syn_ttl", value)}
+                min={1}
+                max={100}
+                step={1}
+                helperText={t("sets.faking.synFake.ttlHelper")}
+                info={t("sets.faking.synFake.ttlInfo")}
+              />
+            </Grid>
           </Grid>
-
-          <Grid size={{ xs: 12, md: 6 }}>
-            <B4Switch
-              label={t("sets.faking.synFake.md5Enable")}
-              description={t("sets.faking.synFake.md5Desc")}
-              checked={config.faking.tcp_md5 || false}
-              path="faking.tcp_md5"
-              onChange={(checked) => onChange("faking.tcp_md5", checked)}
-              aiTopic="faking.tcp_md5"
-            />
-          </Grid>
-
-          {config.tcp.syn_fake && (
-            <>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <B4Slider
-                  label={t("sets.faking.synFake.payloadLen")}
-                  value={config.tcp.syn_fake_len || 0}
-                  path="tcp.syn_fake_len"
-                  onChange={(value: number) =>
-                    onChange("tcp.syn_fake_len", value)
-                  }
-                  min={0}
-                  max={1200}
-                  step={64}
-                  valueSuffix={t("core.units.bytes")}
-                  helperText={t("sets.faking.synFake.payloadLenHelper")}
-                />
-              </Grid>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <B4Slider
-                  label={t("sets.faking.synFake.ttl")}
-                  value={config.tcp.syn_ttl || 0}
-                  path="tcp.syn_ttl"
-                  onChange={(value: number) => onChange("tcp.syn_ttl", value)}
-                  min={1}
-                  max={100}
-                  step={1}
-                  helperText={t("sets.faking.synFake.ttlHelper")}
-                />
-              </Grid>
-            </>
-          )}
-        </Grid>
+        )}
+        <B4Switch
+          label={t("sets.faking.synFake.md5Enable")}
+          description={t("sets.faking.synFake.md5Desc")}
+          info={t("sets.faking.synFake.md5Info")}
+          learnMore="sets/tcp/faking"
+          checked={config.faking.tcp_md5 || false}
+          path="faking.tcp_md5"
+          onChange={(checked) => onChange("faking.tcp_md5", checked)}
+          aiTopic="faking.tcp_md5"
+        />
       </B4Accordion>
 
       {/* TCP Desync Configuration */}
@@ -752,65 +978,69 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
         enabled={isDesyncEnabled}
         hasChanges={hasSubChanges(FAKING_ACCORDIONS[2].prefixes)}
       >
-        <B4Hint>{t("sets.faking.desync.alert")}</B4Hint>
-        <Grid container spacing={3}>
-          <Grid size={{ xs: 12, md: 4 }}>
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <B4Select
               value={config.tcp.desync.mode}
               options={desyncModeOptions}
               path="tcp.desync.mode"
               onChange={(e) => onChange("tcp.desync.mode", e.target.value)}
-              helperText={desyncModeDescriptions[config.tcp.desync.mode]}
+              helperText={t(
+                {
+                  off: "sets.faking.desync.descOff",
+                  rst: "sets.faking.desync.descRst",
+                  fin: "sets.faking.desync.descFin",
+                  ack: "sets.faking.desync.descAck",
+                  combo: "sets.faking.desync.descCombo",
+                  full: "sets.faking.desync.descFull",
+                }[config.tcp.desync.mode],
+              )}
+              info={t("sets.faking.desync.modeInfo")}
+              learnMore="sets/tcp/faking#tcp-desync-attack"
               aiTopic="tcp.desync.mode"
               aiContext={{ available: desyncModeOptions.map((o) => o.value) }}
             />
           </Grid>
-
-          <Grid size={{ xs: 12, md: 4 }}>
-            <B4Slider
-              value={config.tcp.desync.ttl}
-              path="tcp.desync.ttl"
-              onChange={(value: number) => onChange("tcp.desync.ttl", value)}
-              min={1}
-              max={50}
-              step={1}
-              disabled={!isDesyncEnabled}
-              helperText={
-                isDesyncEnabled
-                  ? t("sets.faking.desync.ttlHelperEnabled")
-                  : t("sets.faking.desync.ttlHelperDisabled")
-              }
-            />
-          </Grid>
-
-          <Grid size={{ xs: 12, md: 4 }}>
-            <B4Slider
-              value={config.tcp.desync.count}
-              path="tcp.desync.count"
-              onChange={(value: number) => onChange("tcp.desync.count", value)}
-              min={1}
-              max={20}
-              step={1}
-              disabled={!isDesyncEnabled}
-              helperText={
-                isDesyncEnabled
-                  ? t("sets.faking.desync.countHelperEnabled")
-                  : t("sets.faking.desync.countHelperDisabled")
-              }
-            />
-          </Grid>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <B4Switch
-              description={t("sets.faking.desync.postDesyncDesc")}
-              checked={config.tcp.desync.post_desync || false}
-              path="tcp.desync.post_desync"
-              onChange={(checked) =>
-                onChange("tcp.desync.post_desync", checked)
-              }
-              aiTopic="tcp.desync.post_desync"
-            />
-          </Grid>
         </Grid>
+        {isDesyncEnabled && (
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Slider
+                value={config.tcp.desync.ttl}
+                path="tcp.desync.ttl"
+                onChange={(value: number) => onChange("tcp.desync.ttl", value)}
+                min={1}
+                max={50}
+                step={1}
+                helperText={t("sets.faking.desync.ttlHelperEnabled")}
+              />
+            </Grid>
+            {desyncCountUsed && (
+              <Grid size={{ xs: 12, md: 6 }}>
+                <B4Slider
+                  value={config.tcp.desync.count}
+                  path="tcp.desync.count"
+                  onChange={(value: number) =>
+                    onChange("tcp.desync.count", value)
+                  }
+                  min={1}
+                  max={20}
+                  step={1}
+                  helperText={t("sets.faking.desync.countHelperEnabled")}
+                />
+              </Grid>
+            )}
+          </Grid>
+        )}
+        <B4Switch
+          description={t("sets.faking.desync.postDesyncDesc")}
+          info={t("sets.faking.desync.postDesyncInfo")}
+          learnMore="sets/tcp/faking#tcp-desync-attack"
+          checked={config.tcp.desync.post_desync || false}
+          path="tcp.desync.post_desync"
+          onChange={(checked) => onChange("tcp.desync.post_desync", checked)}
+          aiTopic="tcp.desync.post_desync"
+        />
       </B4Accordion>
 
       {/* TCP Window Manipulation */}
@@ -820,201 +1050,209 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
         enabled={config.tcp.win.mode !== "off"}
         hasChanges={hasSubChanges(FAKING_ACCORDIONS[3].prefixes)}
       >
-        <B4Hint>{t("sets.faking.window.alert")}</B4Hint>
-        <Grid container spacing={3}>
+        <Grid container spacing={2}>
           <Grid size={{ xs: 12, md: 6 }}>
             <B4Select
               value={config.tcp.win.mode}
               options={windowModeOptions}
               path="tcp.win.mode"
               onChange={(e) => onChange("tcp.win.mode", e.target.value)}
-              helperText={windowModeDescriptions[config.tcp.win.mode]}
+              helperText={t(
+                {
+                  off: "sets.faking.window.descOff",
+                  zero: "sets.faking.window.descZero",
+                  random: "sets.faking.window.descRandom",
+                  oscillate: "sets.faking.window.descOscillate",
+                  escalate: "sets.faking.window.descEscalate",
+                }[config.tcp.win.mode],
+              )}
+              info={t("sets.faking.window.modeInfo")}
+              learnMore="sets/tcp/faking"
               aiTopic="tcp.win.mode"
               aiContext={{ available: windowModeOptions.map((o) => o.value) }}
             />
           </Grid>
-
-          {showWinValues && (
-            <Grid size={{ xs: 12 }}>
-              <Typography variant="subtitle2" gutterBottom>
-                {t("sets.faking.window.customValues")}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" gutterBottom>
-                {config.tcp.win.mode === "oscillate"
-                  ? t("sets.faking.window.oscillateHint")
-                  : t("sets.faking.window.randomHint")}
-              </Typography>
-
-              <Grid container spacing={2} alignItems="center">
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <Box
-                    sx={{
-                      display: "flex",
-                      gap: 2,
-                      mt: 1,
-                      alignItems: "center",
-                    }}
-                  >
-                    <B4TextField
-                      label={t("sets.faking.window.addValue")}
-                      value={newWinValue}
-                      onChange={(e) => setNewWinValue(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          handleAddWinValue();
-                        }
-                      }}
-                      type="number"
-                    />
-
-                    <B4PlusButton
-                      onClick={handleAddWinValue}
-                      disabled={!newWinValue}
-                    />
-                  </Box>
-                </Grid>
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <B4ChipList
-                    items={winValues}
-                    getKey={(v) => v}
-                    getLabel={(v) => v.toLocaleString()}
-                    onDelete={handleRemoveWinValue}
-                    emptyMessage={t("sets.faking.window.emptyValues")}
-                    showEmpty
-                  />
-                </Grid>
-              </Grid>
-            </Grid>
-          )}
         </Grid>
+        {showWinValues && (
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
+                <B4TextField
+                  label={t("sets.faking.window.addValue")}
+                  value={newWinValue}
+                  onChange={(e) => setNewWinValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddWinValue();
+                    }
+                  }}
+                  type="number"
+                  helperText={t(
+                    config.tcp.win.mode === "oscillate"
+                      ? "sets.faking.window.oscillateHint"
+                      : "sets.faking.window.randomHint",
+                  )}
+                  message={
+                    winValues.length === 0 ? (
+                      <B4FieldMessage severity="info">
+                        {t("sets.faking.window.emptyValues")}
+                      </B4FieldMessage>
+                    ) : undefined
+                  }
+                />
+                <B4PlusButton
+                  onClick={handleAddWinValue}
+                  disabled={!newWinValue}
+                />
+              </Box>
+            </Grid>
+            <B4ChipList
+              items={winValues}
+              getKey={(v) => v}
+              getLabel={(v) => v.toLocaleString()}
+              onDelete={handleRemoveWinValue}
+              title={t("sets.faking.window.customValues")}
+              gridSize={{ xs: 12, md: 6 }}
+            />
+          </Grid>
+        )}
       </B4Accordion>
 
       {/* Incoming Response Bypass */}
       <B4Accordion
         title={t("sets.faking.incoming.title")}
         status={incomingStatus}
-        enabled={(config.tcp.incoming?.mode || "off") !== "off"}
+        enabled={incomingMode !== "off"}
         hasChanges={hasSubChanges(FAKING_ACCORDIONS[4].prefixes)}
       >
-        <B4Hint>{t("sets.faking.incoming.alert")}</B4Hint>
-        <Grid container spacing={3}>
-          <Grid size={{ xs: 12, md: 4 }}>
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <B4Select
-              value={config.tcp.incoming?.mode || "off"}
+              value={incomingMode}
               options={incomingModeOptions}
               path="tcp.incoming.mode"
               onChange={(e) => onChange("tcp.incoming.mode", e.target.value)}
-              helperText={
-                incomingModeDescriptions[config.tcp.incoming?.mode || "off"]
-              }
+              helperText={t(
+                {
+                  off: "sets.faking.incoming.descOff",
+                  fake: "sets.faking.incoming.descFake",
+                  reset: "sets.faking.incoming.descReset",
+                  fin: "sets.faking.incoming.descFin",
+                  desync: "sets.faking.incoming.descDesync",
+                }[incomingMode],
+              )}
+              info={t("sets.faking.incoming.modeInfo")}
+              learnMore="sets/tcp/faking"
               aiTopic="tcp.incoming.mode"
               aiContext={{ available: incomingModeOptions.map((o) => o.value) }}
             />
           </Grid>
-
-          <Grid size={{ xs: 12, md: 4 }}>
-            <B4Select
-              value={config.tcp.incoming?.strategy || "badsum"}
-              options={incomingStrategyOptions}
-              path="tcp.incoming.strategy"
-              onChange={(e) =>
-                onChange("tcp.incoming.strategy", e.target.value)
-              }
-              disabled={incomingMode !== "fake"}
-              helperText={
-                incomingMode === "off"
-                  ? t("sets.faking.incoming.enableFirst")
-                  : incomingMode === "fake"
-                    ? incomingStrategyDescriptions[
-                        config.tcp.incoming?.strategy || "badsum"
-                      ]
-                    : t("sets.faking.incoming.fakeModeOnly")
-              }
-              aiTopic="tcp.incoming.strategy"
-              aiContext={{
-                available: incomingStrategyOptions.map((o) => o.value),
-              }}
-            />
-          </Grid>
-
-          <Grid size={{ xs: 12, md: 4 }}>
-            <B4Slider
-              label={t("sets.faking.incoming.ttl")}
-              value={config.tcp.incoming?.fake_ttl || 3}
-              path="tcp.incoming.fake_ttl"
-              onChange={(value: number) =>
-                onChange("tcp.incoming.fake_ttl", value)
-              }
-              min={1}
-              max={20}
-              step={1}
-              disabled={config.tcp.incoming?.mode === "off"}
-              helperText={t("sets.faking.incoming.ttlHelper")}
-            />
-          </Grid>
-
-          <Grid size={{ xs: 12, md: 4 }}>
-            <B4Slider
-              value={config.tcp.incoming?.fake_count || 3}
-              path="tcp.incoming.fake_count"
-              onChange={(value: number) =>
-                onChange("tcp.incoming.fake_count", value)
-              }
-              min={1}
-              max={10}
-              step={1}
-              disabled={config.tcp.incoming?.mode === "off"}
-              helperText={t("sets.faking.incoming.fakeCountHelper")}
-            />
-          </Grid>
-
-          <Grid size={{ xs: 12, md: 4 }}>
-            <B4Slider
-              label={t("sets.faking.incoming.thresholdMin")}
-              value={config.tcp.incoming?.min || 14}
-              path="tcp.incoming.min"
-              onChange={(value: number) => onChange("tcp.incoming.min", value)}
-              min={5}
-              max={config.tcp.incoming?.max || 150}
-              step={1}
-              valueSuffix={t("core.units.kb")}
-              disabled={
-                config.tcp.incoming?.mode === "off" ||
-                config.tcp.incoming?.mode === "fake"
-              }
-              helperText={
-                config.tcp.incoming?.mode === "fake"
-                  ? t("sets.faking.incoming.thresholdMinFake")
-                  : t("sets.faking.incoming.thresholdMinHelper")
-              }
-            />
-          </Grid>
-
-          <Grid size={{ xs: 12, md: 4 }}>
-            <B4Slider
-              label={t("sets.faking.incoming.thresholdMax")}
-              value={config.tcp.incoming?.max || 14}
-              path="tcp.incoming.max"
-              onChange={(value: number) => onChange("tcp.incoming.max", value)}
-              min={config.tcp.incoming?.min || 5}
-              max={50}
-              step={1}
-              valueSuffix={t("core.units.kb")}
-              disabled={
-                config.tcp.incoming?.mode === "off" ||
-                config.tcp.incoming?.mode === "fake"
-              }
-              helperText={
-                config.tcp.incoming?.mode === "fake"
-                  ? t("sets.faking.incoming.thresholdMaxFake")
-                  : config.tcp.incoming?.min === config.tcp.incoming?.max
-                    ? t("sets.faking.incoming.thresholdMaxFixed")
-                    : t("sets.faking.incoming.thresholdMaxHelper")
-              }
-            />
-          </Grid>
+          {incomingMode === "fake" && (
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Select
+                value={incomingStrategy}
+                options={incomingStrategyOptions}
+                path="tcp.incoming.strategy"
+                onChange={(e) =>
+                  onChange("tcp.incoming.strategy", e.target.value)
+                }
+                helperText={t(
+                  {
+                    badsum: "sets.faking.incoming.stratDescBadsum",
+                    badseq: "sets.faking.incoming.stratDescBadseq",
+                    badack: "sets.faking.incoming.stratDescBadack",
+                    rand: "sets.faking.incoming.stratDescRand",
+                    all: "sets.faking.incoming.stratDescAll",
+                  }[incomingStrategy],
+                )}
+                info={t("sets.faking.incoming.strategyInfo")}
+                learnMore="sets/tcp/faking"
+                aiTopic="tcp.incoming.strategy"
+                aiContext={{
+                  available: incomingStrategyOptions.map((o) => o.value),
+                }}
+              />
+            </Grid>
+          )}
         </Grid>
+        {incomingMode !== "off" && (
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Slider
+                label={t("sets.faking.incoming.ttl")}
+                value={config.tcp.incoming?.fake_ttl || 3}
+                path="tcp.incoming.fake_ttl"
+                onChange={(value: number) =>
+                  onChange("tcp.incoming.fake_ttl", value)
+                }
+                min={1}
+                max={20}
+                step={1}
+                helperText={t(
+                  incomingMode === "fake"
+                    ? "sets.faking.incoming.ttlHelper"
+                    : "sets.faking.incoming.ttlHelperAlone",
+                )}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Slider
+                value={config.tcp.incoming?.fake_count || 3}
+                path="tcp.incoming.fake_count"
+                onChange={(value: number) =>
+                  onChange("tcp.incoming.fake_count", value)
+                }
+                min={1}
+                max={10}
+                step={1}
+                helperText={t("sets.faking.incoming.fakeCountHelper")}
+              />
+            </Grid>
+            {incomingMode !== "fake" && (
+              <>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <B4Slider
+                    label={t("sets.faking.incoming.thresholdMin")}
+                    value={config.tcp.incoming?.min || 14}
+                    path="tcp.incoming.min"
+                    onChange={(value: number) =>
+                      onChange("tcp.incoming.min", value)
+                    }
+                    min={5}
+                    max={config.tcp.incoming?.max || 150}
+                    step={1}
+                    valueSuffix={t("core.units.kb")}
+                    helperText={t("sets.faking.incoming.thresholdMinHelper")}
+                    info={t("sets.faking.incoming.thresholdInfo")}
+                    aiTopic="tcp.incoming.min"
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <B4Slider
+                    label={t("sets.faking.incoming.thresholdMax")}
+                    value={config.tcp.incoming?.max || 14}
+                    path="tcp.incoming.max"
+                    onChange={(value: number) =>
+                      onChange("tcp.incoming.max", value)
+                    }
+                    min={config.tcp.incoming?.min || 5}
+                    max={50}
+                    step={1}
+                    valueSuffix={t("core.units.kb")}
+                    helperText={t(
+                      config.tcp.incoming?.min === config.tcp.incoming?.max
+                        ? "sets.faking.incoming.thresholdMaxFixed"
+                        : "sets.faking.incoming.thresholdMaxHelper",
+                    )}
+                    info={t("sets.faking.incoming.thresholdInfo")}
+                    aiTopic="tcp.incoming.max"
+                  />
+                </Grid>
+              </>
+            )}
+          </Grid>
+        )}
       </B4Accordion>
 
       {/* ClientHello Mutation Section */}
@@ -1033,124 +1271,109 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               onChange={(e) =>
                 onChange("faking.sni_mutation.mode", e.target.value)
               }
-              helperText={mutationModeDescriptions[mutation.mode]}
+              helperText={t(
+                {
+                  off: "sets.faking.mutation.descOff",
+                  random: "sets.faking.mutation.descRandom",
+                  grease: "sets.faking.mutation.descGrease",
+                  padding: "sets.faking.mutation.descPadding",
+                  fakeext: "sets.faking.mutation.descFakeext",
+                  fakesni: "sets.faking.mutation.descFakesni",
+                  advanced: "sets.faking.mutation.descAdvanced",
+                }[mutation.mode],
+              )}
+              learnMore="sets/tcp/faking"
               aiTopic="faking.sni_mutation.mode"
               aiContext={{ available: MUTATION_MODES.map((m) => m.value) }}
             />
           </Grid>
-
-          {isMutationEnabled && (
-            <>
-              {showGreaseSettings && (
-                <>
-                  <B4FormHeader
-                    label={t("sets.faking.mutation.greaseHeader")}
-                  />
-                  <Grid size={{ xs: 12 }}>
-                    <B4Slider
-                      label={t("sets.faking.mutation.greaseCount")}
-                      value={mutation.grease_count}
-                      path="faking.sni_mutation.grease_count"
-                      onChange={(value: number) =>
-                        onChange("faking.sni_mutation.grease_count", value)
-                      }
-                      min={1}
-                      max={10}
-                      step={1}
-                      helperText={t("sets.faking.mutation.greaseCountHelper")}
-                    />
-                  </Grid>
-                </>
-              )}
-
-              {showPaddingSettings && (
-                <>
-                  <B4FormHeader
-                    label={t("sets.faking.mutation.paddingHeader")}
-                  />
-                  <Grid size={{ xs: 12 }}>
-                    <B4Slider
-                      label={t("sets.faking.mutation.paddingSize")}
-                      value={mutation.padding_size}
-                      path="faking.sni_mutation.padding_size"
-                      onChange={(value: number) =>
-                        onChange("faking.sni_mutation.padding_size", value)
-                      }
-                      min={256}
-                      max={16384}
-                      step={256}
-                      valueSuffix={t("core.units.bytes")}
-                      helperText={t("sets.faking.mutation.paddingSizeHelper")}
-                    />
-                  </Grid>
-                </>
-              )}
-
-              {showFakeExtSettings && (
-                <>
-                  <B4FormHeader
-                    label={t("sets.faking.mutation.fakeExtHeader")}
-                  />
-                  <Grid size={{ xs: 12 }}>
-                    <B4Slider
-                      label={t("sets.faking.mutation.fakeExtCount")}
-                      value={mutation.fake_ext_count}
-                      path="faking.sni_mutation.fake_ext_count"
-                      onChange={(value: number) =>
-                        onChange("faking.sni_mutation.fake_ext_count", value)
-                      }
-                      min={1}
-                      max={15}
-                      step={1}
-                      helperText={t("sets.faking.mutation.fakeExtCountHelper")}
-                    />
-                  </Grid>
-                </>
-              )}
-
-              {showFakeSniSettings && (
-                <>
-                  <B4FormHeader
-                    label={t("sets.faking.mutation.fakeSniHeader")}
-                  />
-                  <Grid size={{ xs: 12, md: 6 }}>
-                    <Box
-                      sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}
-                    >
-                      <B4TextField
-                        label={t("sets.faking.mutation.addFakeSni")}
-                        value={newFakeSni}
-                        onChange={(e) => setNewFakeSni(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleAddFakeSni();
-                          }
-                        }}
-                        placeholder={t(
-                          "sets.faking.mutation.fakeSniPlaceholder",
-                        )}
-                        helperText={t("sets.faking.mutation.fakeSniHelper")}
-                      />
-                      <B4PlusButton
-                        onClick={handleAddFakeSni}
-                        disabled={!newFakeSni.trim()}
-                      />
-                    </Box>
-                  </Grid>
-                  <B4ChipList
-                    items={mutation.fake_snis || []}
-                    getKey={(s) => s}
-                    getLabel={(s) => s}
-                    onDelete={handleRemoveFakeSni}
-                    title={t("sets.faking.mutation.activeFakeSnisTitle")}
-                    gridSize={{ xs: 12, md: 6 }}
-                  />
-                </>
-              )}
-            </>
-          )}
         </Grid>
+        {(showGreaseSettings || showPaddingSettings || showFakeExtSettings) && (
+          <Grid container spacing={2}>
+            {showGreaseSettings && (
+              <Grid size={{ xs: 12, md: 6 }}>
+                <B4Slider
+                  label={t("sets.faking.mutation.greaseCount")}
+                  value={mutation.grease_count}
+                  path="faking.sni_mutation.grease_count"
+                  onChange={(value: number) =>
+                    onChange("faking.sni_mutation.grease_count", value)
+                  }
+                  min={1}
+                  max={10}
+                  step={1}
+                  helperText={t("sets.faking.mutation.greaseCountHelper")}
+                />
+              </Grid>
+            )}
+            {showPaddingSettings && (
+              <Grid size={{ xs: 12, md: 6 }}>
+                <B4Slider
+                  label={t("sets.faking.mutation.paddingSize")}
+                  value={mutation.padding_size}
+                  path="faking.sni_mutation.padding_size"
+                  onChange={(value: number) =>
+                    onChange("faking.sni_mutation.padding_size", value)
+                  }
+                  min={256}
+                  max={16384}
+                  step={256}
+                  valueSuffix={t("core.units.bytes")}
+                  helperText={t("sets.faking.mutation.paddingSizeHelper")}
+                />
+              </Grid>
+            )}
+            {showFakeExtSettings && (
+              <Grid size={{ xs: 12, md: 6 }}>
+                <B4Slider
+                  label={t("sets.faking.mutation.fakeExtCount")}
+                  value={mutation.fake_ext_count}
+                  path="faking.sni_mutation.fake_ext_count"
+                  onChange={(value: number) =>
+                    onChange("faking.sni_mutation.fake_ext_count", value)
+                  }
+                  min={1}
+                  max={15}
+                  step={1}
+                  helperText={t("sets.faking.mutation.fakeExtCountHelper")}
+                />
+              </Grid>
+            )}
+          </Grid>
+        )}
+        {showFakeSniSettings && (
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
+                <B4TextField
+                  label={t("sets.faking.mutation.addFakeSni")}
+                  value={newFakeSni}
+                  onChange={(e) => setNewFakeSni(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddFakeSni();
+                    }
+                  }}
+                  placeholder={t("sets.faking.mutation.fakeSniPlaceholder")}
+                  helperText={t("sets.faking.mutation.fakeSniHelper")}
+                />
+                <B4PlusButton
+                  onClick={handleAddFakeSni}
+                  disabled={!newFakeSni.trim()}
+                />
+              </Box>
+            </Grid>
+            <B4ChipList
+              items={mutation.fake_snis || []}
+              getKey={(s) => s}
+              getLabel={(s) => s}
+              onDelete={handleRemoveFakeSni}
+              title={t("sets.faking.mutation.activeFakeSnisTitle")}
+              gridSize={{ xs: 12, md: 6 }}
+            />
+          </Grid>
+        )}
       </B4Accordion>
     </Stack>
   );

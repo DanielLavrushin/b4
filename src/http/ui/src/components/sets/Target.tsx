@@ -35,6 +35,9 @@ interface TargetSettingsProps {
   otherSetsTargets?: OtherSetsTargets;
   ipv4?: boolean;
   ipv6?: boolean;
+  queueMode?: string;
+  skipSetup?: boolean;
+  queueMark?: number;
   onChange: (field: string, value: string | string[] | boolean) => void;
 }
 
@@ -53,6 +56,9 @@ export const TargetSettings = ({
   otherSetsTargets,
   ipv4,
   ipv6,
+  queueMode,
+  skipSetup,
+  queueMark,
 }: TargetSettingsProps) => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TARGET_TABS>(
@@ -160,6 +166,9 @@ export const TargetSettings = ({
             geoipCategories={geoipCategories}
             geoipLoading={geoipLoading}
             ipv6={ipv6}
+            queueMode={queueMode}
+            skipSetup={skipSetup}
+            queueMark={queueMark}
             scrollToAsn={scrollToAsn}
             onChange={onChange}
           />

@@ -44,7 +44,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-import { B4Dialog, B4Hint, B4Section } from "@b4.elements";
+import { B4Dialog, B4Help, B4Section } from "@b4.elements";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { deviceFilterSelects, reportSaveError } from "@utils";
 
@@ -728,9 +728,16 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
         </Paper>
 
         {sets.length > 1 && (
-          <Grid container sx={{ mb: 2 }}>
-            <B4Hint>{t("sets.manager.orderHint")}</B4Hint>
-          </Grid>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mb: 2 }}>
+            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+              {t("sets.manager.orderHint")}
+            </Typography>
+            <B4Help
+              label={t("sets.manager.orderTitle")}
+              info={t("sets.manager.orderInfo")}
+              learnMore="concepts#set"
+            />
+          </Box>
         )}
 
         {filteredSets.length > 0 && (

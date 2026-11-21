@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { Box, Button, Tooltip, Typography } from "@mui/material";
-import { CategoryIcon, ClearIcon, InfoIcon } from "@b4.icons";
-import { B4ChipList } from "@b4.elements";
+import { CategoryIcon, ClearIcon } from "@b4.icons";
+import { B4ChipList, B4Help } from "@b4.elements";
 import SettingAutocomplete from "@common/B4Autocomplete";
 import { useTranslation } from "react-i18next";
 import { useChangedFields } from "@context/ChangedFieldsContext";
 
 interface GeoCategoryPanelProps {
   title: string;
-  tooltip: string;
+  description?: string;
+  info?: React.ReactNode;
   inputLabel: string;
   inputPlaceholder: string;
   helperText: string;
@@ -55,7 +56,8 @@ const CategoryLabel = ({
 
 export const GeoCategoryPanel = ({
   title,
-  tooltip,
+  description,
+  info,
   inputLabel,
   inputPlaceholder,
   helperText,
@@ -106,13 +108,24 @@ export const GeoCategoryPanel = ({
     <Box sx={{ mb: 2 }}>
       <Typography
         variant="h6"
-        sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          gap: 1,
+          mb: description ? 0.5 : 2,
+        }}
       >
         <CategoryIcon /> {title}
-        <Tooltip title={tooltip}>
-          <InfoIcon fontSize="small" color="action" />
-        </Tooltip>
+        <B4Help label={title} info={info} />
       </Typography>
+      {description && (
+        <Typography
+          variant="caption"
+          sx={{ display: "block", color: "text.secondary", mb: 2 }}
+        >
+          {description}
+        </Typography>
+      )}
 
       <SettingAutocomplete
         label={inputLabel}

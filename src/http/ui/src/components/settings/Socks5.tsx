@@ -4,8 +4,8 @@ import { Link as RouterLink } from "react-router";
 import { Trans, useTranslation } from "react-i18next";
 import { ConnectionIcon, DeviceIcon } from "@b4.icons";
 import {
-  B4Alert,
   B4ChipList,
+  B4FieldMessage,
   B4FormGroup,
   B4FormRow,
   B4PlusButton,
@@ -101,12 +101,6 @@ export const Socks5Settings = ({ config, onChange }: Socks5SettingsProps) => {
     if (!sources.includes(entry)) setSources([...sources, entry]);
   };
 
-  const draftHelper = () => {
-    if (draftIssue === "invalid") return t("settings.Socks5.sourceInvalid");
-    if (draftIssue === "all") return t("settings.Socks5.sourceAll");
-    return t("settings.Socks5.addSourceHelp");
-  };
-
   const deviceMenuItems = () => {
     if (devicesLoading) {
       return <MenuItem disabled>{t("core.loading")}</MenuItem>;
@@ -137,7 +131,11 @@ export const Socks5Settings = ({ config, onChange }: Socks5SettingsProps) => {
   }
 
   return (
-    <B4Section title={t("settings.Socks5.title")} icon={<ConnectionIcon />}>
+    <B4Section
+      title={t("settings.Socks5.title")}
+      icon={<ConnectionIcon />}
+      learnMore="settings/core#socks5-proxy"
+    >
       <B4FormGroup columns={2}>
         <B4FormRow>
           <B4Switch
@@ -182,6 +180,8 @@ export const Socks5Settings = ({ config, onChange }: Socks5SettingsProps) => {
       <B4FormGroup
         label={t("settings.Socks5.sources")}
         description={t("settings.Socks5.sourcesDesc")}
+        info={t("settings.Socks5.sourcesNote")}
+        learnMore="settings/core#allowed-sources"
         columns={1}
       >
         <Box
@@ -206,7 +206,14 @@ export const Socks5Settings = ({ config, onChange }: Socks5SettingsProps) => {
               placeholder={t("settings.Socks5.addSourcePlaceholder")}
               disabled={!enabled}
               error={!!draftIssue}
-              helperText={draftHelper()}
+              helperText={t(
+                draftIssue === "invalid"
+                  ? "settings.Socks5.sourceInvalid"
+                  : draftIssue === "all"
+                    ? "settings.Socks5.sourceAll"
+                    : "settings.Socks5.addSourceHelp",
+              )}
+              info={t("settings.Socks5.addSourceInfo")}
             />
           </Box>
           <B4PlusButton
@@ -239,27 +246,25 @@ export const Socks5Settings = ({ config, onChange }: Socks5SettingsProps) => {
           </Typography>
         )}
 
-        <B4Alert severity="info">{t("settings.Socks5.sourcesNote")}</B4Alert>
-
         {enabled && exposed && guarded && !webProtected && (
-          <B4Alert severity="error">
+          <B4FieldMessage severity="error">
             <Trans
               i18nKey="settings.Socks5.exposeWebAuthMissing"
               components={{
                 a: <Link component={RouterLink} to="/settings/system/web" />,
               }}
             />
-          </B4Alert>
+          </B4FieldMessage>
         )}
 
         {openRelay && (
-          <B4Alert severity={exposed ? "error" : "warning"}>
+          <B4FieldMessage severity={exposed ? "error" : "warning"}>
             {t(
               exposed
                 ? "settings.Socks5.exposeOpenRelay"
                 : "settings.Socks5.openRelayWarning",
             )}
-          </B4Alert>
+          </B4FieldMessage>
         )}
       </B4FormGroup>
 

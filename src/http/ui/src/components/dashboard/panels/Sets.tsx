@@ -344,9 +344,7 @@ const SetRow = memo(function SetRow({
             whiteSpace: "nowrap",
             fontSize: 14,
             fontWeight: 600,
-            color: colors.text.primary,
             textUnderlineOffset: "3px",
-            "&:hover": { color: colors.text.primary },
             "&:focus-visible": {
               outline: `2px solid ${colors.border.strong}`,
               outlineOffset: "2px",

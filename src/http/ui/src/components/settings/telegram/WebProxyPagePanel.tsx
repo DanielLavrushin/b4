@@ -1,9 +1,9 @@
 import { useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Box, Button, CircularProgress, Grid, Typography } from "@mui/material";
+import { Box, Button, CircularProgress, Typography } from "@mui/material";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { DeleteIcon, DownloadIcon, UploadIcon } from "@b4.icons";
-import { B4Hint } from "@b4.elements";
+import { B4Help } from "@b4.elements";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { describeApiError } from "@utils";
 import {
@@ -52,9 +52,16 @@ export const WebProxyPagePanel = ({
 
   return (
     <Box sx={{ mt: 2 }}>
-      <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-        {t("settings.MTProto.webProxyPageTitle")}
-      </Typography>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mb: 0.5 }}>
+        <Typography variant="subtitle2">
+          {t("settings.MTProto.webProxyPageTitle")}
+        </Typography>
+        <B4Help
+          label={t("settings.MTProto.webProxyPageTitle")}
+          info={t("settings.MTProto.webProxyPageInfo")}
+          learnMore="telegram/web-proxy"
+        />
+      </Box>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
         {t("settings.MTProto.webProxyPageDesc")}
       </Typography>
@@ -131,9 +138,6 @@ export const WebProxyPagePanel = ({
           }}
         />
       </Box>
-      <Grid container sx={{ mt: 1 }}>
-        <B4Hint>{t("settings.MTProto.webProxyPageHint")}</B4Hint>
-      </Grid>
     </Box>
   );
 };

@@ -10,9 +10,10 @@ import {
   Typography,
 } from "@mui/material";
 import { colors } from "@design";
-import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
+import { B4Help, useHelpVisible, type B4HelpContent } from "./B4Help";
+import { fieldMessage } from "./B4FieldMessage";
 import { useChangedField, useChangedFields } from "@context/ChangedFieldsContext";
-import { useEffect } from "react";
+import { useEffect, useId } from "react";
 import { useFieldLabel } from "./dialogLabels";
 
 interface B4SelectOption {
@@ -22,23 +23,27 @@ interface B4SelectOption {
   disabled?: boolean;
 }
 
-interface B4SelectProps extends Omit<SelectProps<string | number>, "variant"> {
+interface B4SelectProps
+  extends Omit<SelectProps<string | number>, "variant">,
+    B4HelpContent {
   label?: string;
   options: B4SelectOption[];
-  helperText?: string;
+  helperText?: React.ReactNode;
+  message?: React.ReactNode;
   path?: string;
   changeLabel?: string;
-  aiTopic?: string;
-  aiContext?: Record<string, unknown>;
-  aiQuestion?: string;
 }
 
 export const B4Select = ({
   label,
   options,
   helperText,
+  message,
   path,
   changeLabel,
+  info,
+  learnMore,
+  credit,
   aiTopic,
   aiContext,
   aiQuestion,
@@ -46,6 +51,13 @@ export const B4Select = ({
 }: B4SelectProps) => {
   const resolvedLabel = useFieldLabel(path, label);
   const changed = useChangedField(path, changeLabel ?? resolvedLabel);
+  const helpVisible = useHelpVisible({ info, learnMore, credit, aiTopic });
+  const baseId = useId();
+  const labelId = `${baseId}-label`;
+  const selectId = props.id ?? `${baseId}-select`;
+  const helperId = `${baseId}-helper`;
+  const shownMessage = fieldMessage(message);
+  const described = shownMessage !== null || Boolean(helperText);
   const { registerValueLabels, scopeVersion } = useChangedFields();
   const optionLabels = JSON.stringify(
     options.map((o) => [String(o.value), o.label]),
@@ -60,6 +72,7 @@ export const B4Select = ({
   const fc = (
     <FormControl fullWidth size="small">
       <InputLabel
+        id={labelId}
         shrink
         sx={{
           color: changed ? colors.secondary : colors.text.secondary,
@@ -73,6 +86,9 @@ export const B4Select = ({
       </InputLabel>
       <Select
         {...props}
+        id={selectId}
+        labelId={labelId}
+        aria-describedby={described ? helperId : undefined}
         label={resolvedLabel}
         displayEmpty
         renderValue={(selected) => {
@@ -133,15 +149,22 @@ export const B4Select = ({
           </MenuItem>
         ))}
       </Select>
-      {helperText && (
-        <FormHelperText sx={{ color: colors.text.secondary, ml: 0.1 }}>
-          {helperText}
-        </FormHelperText>
+      {shownMessage !== null ? (
+        <Box id={helperId}>{shownMessage}</Box>
+      ) : (
+        helperText && (
+          <FormHelperText
+            id={helperId}
+            sx={{ color: colors.text.secondary, ml: 0.1 }}
+          >
+            {helperText}
+          </FormHelperText>
+        )
       )}
     </FormControl>
   );
 
-  if (!aiTopic) return fc;
+  if (!helpVisible && !aiTopic) return fc;
 
   const valStr =
     typeof props.value === "string" || typeof props.value === "number"
@@ -153,19 +176,25 @@ export const B4Select = ({
       sx={{
         display: "flex",
         alignItems: "flex-start",
-        gap: 1,
-        ...aiHoverRevealSx,
+        gap: 0.5,
       }}
     >
-      <Box sx={{ flex: 1 }}>{fc}</Box>
-      <B4AiExplain
-        topic={aiTopic}
-        fieldLabel={resolvedLabel}
-        fieldDoc={helperText}
-        value={valStr}
-        context={aiContext}
-        question={aiQuestion}
-      />
+      <Box sx={{ flex: 1, minWidth: 0 }}>{fc}</Box>
+      {helpVisible && (
+        <Box sx={{ mt: "6px" }}>
+          <B4Help
+            label={resolvedLabel}
+            info={info}
+            learnMore={learnMore}
+            credit={credit}
+            aiTopic={aiTopic}
+            aiContext={aiContext}
+            aiQuestion={aiQuestion}
+            fieldDoc={typeof helperText === "string" ? helperText : undefined}
+            value={valStr}
+          />
+        </Box>
+      )}
     </Box>
   );
 };

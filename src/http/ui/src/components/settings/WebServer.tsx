@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { WebIcon } from "@b4.icons";
 import {
-  B4Alert,
+  B4FieldMessage,
   B4FormGroup,
   B4FormRow,
   B4Section,
@@ -31,7 +31,11 @@ export const WebServerSettings = ({
   const exposed = config.system.web_server.expose ?? false;
 
   return (
-    <B4Section title={t("settings.WebServer.title")} icon={<WebIcon />}>
+    <B4Section
+      title={t("settings.WebServer.title")}
+      icon={<WebIcon />}
+      learnMore="settings/system#web-server"
+    >
       <B4FormGroup columns={2}>
         <B4FormRow>
           <ListenerFields
@@ -94,24 +98,24 @@ export const WebServerSettings = ({
         />
       </B4FormGroup>
       {((hasUsername && !hasPassword) || (!hasUsername && hasPassword)) && (
-        <B4Alert severity="warning">
+        <B4FieldMessage>
           {t("settings.WebServer.authPartialWarning")}
-        </B4Alert>
+        </B4FieldMessage>
       )}
       {exposed && !authSet && (
-        <B4Alert severity="error">
+        <B4FieldMessage severity="error">
           {t("settings.WebServer.exposeAuthMissing")}
-        </B4Alert>
+        </B4FieldMessage>
       )}
       {exposed && !hasTls && (
-        <B4Alert severity="warning">
+        <B4FieldMessage>
           {t("settings.WebServer.exposeNoTls")}
-        </B4Alert>
+        </B4FieldMessage>
       )}
       {authSet && !hasTls && !exposed && (
-        <B4Alert severity="warning">
+        <B4FieldMessage>
           {t("settings.WebServer.authHttpWarning")}
-        </B4Alert>
+        </B4FieldMessage>
       )}
     </B4Section>
   );

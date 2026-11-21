@@ -6,10 +6,11 @@ import {
   B4TextField,
   B4PlusButton,
   B4ChipList,
-  B4Hint,
+  B4FieldMessage,
 } from "@b4.elements";
 import { colors } from "@design";
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 interface SeqOverlapPatternFieldsProps {
@@ -17,6 +18,7 @@ interface SeqOverlapPatternFieldsProps {
   onChange: (pattern: string[]) => void;
   length: number;
   onLengthChange: (length: number) => void;
+  lengthMessages?: ReactNode[];
 }
 
 const normalizeByte = (b: string): string => {
@@ -29,6 +31,7 @@ export const SeqOverlapPatternFields = ({
   onChange,
   length,
   onLengthChange,
+  lengthMessages = [],
 }: SeqOverlapPatternFieldsProps) => {
   const { t } = useTranslation();
   const [customMode, setCustomMode] = useState(false);
@@ -143,6 +146,15 @@ export const SeqOverlapPatternFields = ({
     onChange(normalizedPattern.filter((_, i) => i !== index));
   };
 
+  const lengthNotes = [
+    length > 0 && normalizedPattern.length === 0 && (
+      <B4FieldMessage key="needs-pattern">
+        {t("sets.tcp.splitting.disorder.seqOverlapNeedsPattern")}
+      </B4FieldMessage>
+    ),
+    ...lengthMessages,
+  ].filter(Boolean);
+
   return (
     <>
       <B4FormHeader label={t("sets.tcp.splitting.disorder.seqOverlapHeader")} />
@@ -158,15 +170,14 @@ export const SeqOverlapPatternFields = ({
           path="fragmentation.seq_overlap_pattern"
           onChange={(e) => handlePresetChange(e.target.value as string)}
           helperText={t("sets.tcp.splitting.disorder.overlapPatternHelper")}
+          info={t("sets.tcp.splitting.disorder.overlapPatternInfo")}
+          learnMore="sets/tcp/splitting#sequence-overlap"
           aiTopic="fragmentation.seq_overlap_pattern"
           aiContext={{
             available: SEQ_OVERLAP_PRESETS.map((p) => p.value),
             current_pattern: normalizedPattern,
           }}
         />
-      </Grid>
-      <Grid size={{ xs: 12, md: 6 }}>
-        <B4Hint>{t("sets.tcp.splitting.disorder.seqOverlapAlert")}</B4Hint>
       </Grid>
       <Grid size={{ xs: 12, md: 6 }}>
         <B4NumberField
@@ -177,6 +188,9 @@ export const SeqOverlapPatternFields = ({
           min={0}
           placeholder="0"
           helperText={t("sets.tcp.splitting.disorder.seqOverlapLengthHelper")}
+          message={lengthNotes.length > 0 ? <>{lengthNotes}</> : undefined}
+          info={t("sets.tcp.splitting.disorder.seqOverlapLengthInfo")}
+          learnMore="sets/tcp/splitting#sequence-overlap"
           aiTopic="fragmentation.seq_overlap_length"
           aiContext={{
             current_length: length,
@@ -185,7 +199,7 @@ export const SeqOverlapPatternFields = ({
         />
       </Grid>
       {normalizedPattern.length > 0 && (
-        <Grid size={{ xs: 6 }}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <Box
             sx={{
               p: 2,
@@ -205,6 +219,7 @@ export const SeqOverlapPatternFields = ({
             <Box
               sx={{
                 display: "flex",
+                flexWrap: "wrap",
                 gap: 0.5,
                 fontFamily: "monospace",
                 fontSize: "0.75rem",

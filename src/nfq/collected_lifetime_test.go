@@ -457,7 +457,7 @@ func TestCollectedPoolStringsStateTheExpiry(t *testing.T) {
 		if err := json.Unmarshal(raw, &doc); err != nil {
 			t.Fatal(err)
 		}
-		for _, path := range []string{"sets.targets.useCollectedIpsDesc", "dashboard.collected.subtitle", "dashboard.collected.confirmBody"} {
+		for _, path := range []string{"sets.targets.useCollectedIpsInfo", "dashboard.collected.subtitle", "dashboard.collected.confirmBody"} {
 			var node any = doc
 			for _, part := range strings.Split(path, ".") {
 				node, _ = node.(map[string]any)[part]
@@ -483,7 +483,7 @@ func TestCollectedPoolStringsSayWhichAnswersDropAnAddress(t *testing.T) {
 		if err := json.Unmarshal(raw, &doc); err != nil {
 			t.Fatal(err)
 		}
-		for _, path := range []string{"sets.targets.useCollectedIpsDesc", "dashboard.collected.subtitle"} {
+		for _, path := range []string{"sets.targets.useCollectedIpsInfo", "dashboard.collected.subtitle"} {
 			var node any = doc
 			for _, part := range strings.Split(path, ".") {
 				node, _ = node.(map[string]any)[part]
@@ -520,10 +520,10 @@ func TestCollectedTargetStringSaysRoutingAndReuseSetsTakeEveryConnection(t *test
 		"en": {"takes every connection to a collected address", "whatever the site name and the set order", "WSSIZE reuse takes TCP/443 only"},
 		"ru": {"забирает каждое соединение к собранному адресу", "независимо от имени сайта и порядка сетов", "забирает только TCP/443"},
 	} {
-		text := collectedUIString(t, locale, "sets.targets.useCollectedIpsDesc")
+		text := collectedUIString(t, locale, "sets.targets.useCollectedIpsInfo")
 		for _, phrase := range phrases {
 			if !strings.Contains(text, phrase) {
-				t.Errorf("%s sets.targets.useCollectedIpsDesc must say that a set routing through its proxy or interface, or reusing WSSIZE on TCP/443, takes every connection to a collected address whatever the site name and the set order; missing %q in %q", locale, phrase, text)
+				t.Errorf("%s sets.targets.useCollectedIpsInfo must say that a set routing through its proxy or interface, or reusing WSSIZE on TCP/443, takes every connection to a collected address whatever the site name and the set order; missing %q in %q", locale, phrase, text)
 			}
 		}
 	}

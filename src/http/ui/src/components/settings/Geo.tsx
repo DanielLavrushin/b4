@@ -22,7 +22,7 @@ import {
   B4Alert,
   B4Dialog,
   B4FormGroup,
-  B4Hint,
+  B4FieldMessage,
   B4Section,
   B4Switch,
   B4TextField,
@@ -661,19 +661,11 @@ export const GeoSettings = ({
 
   return (
     <Stack spacing={3}>
-      <B4Alert>
-        <Typography variant="subtitle2" gutterBottom>
-          {t("settings.Geo.alert")}
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          {t("settings.Geo.alertSub")}
-        </Typography>
-      </B4Alert>
-
       <B4Section
         title={t("settings.Geo.title")}
         description={t("settings.Geo.description")}
         icon={<DomainIcon />}
+        learnMore="settings/geodata"
       >
         <B4TextField
           label={t("settings.Geo.destDir")}
@@ -681,16 +673,18 @@ export const GeoSettings = ({
           onChange={(e) => setDestPath(e.target.value)}
           placeholder="/etc/b4"
           helperText={t("settings.Geo.destDirHelp")}
+          message={
+            relocationPending ? (
+              <B4FieldMessage severity="info">
+                {t("settings.Geo.destDirPending", {
+                  from: configuredDir,
+                  to: destPath,
+                })}
+              </B4FieldMessage>
+            ) : undefined
+          }
+          learnMore="settings/geodata#destination"
         />
-
-        {relocationPending && (
-          <B4Hint>
-            {t("settings.Geo.destDirPending", {
-              from: configuredDir,
-              to: destPath,
-            })}
-          </B4Hint>
-        )}
 
         <B4FormGroup label={t("settings.Geo.autoUpdate")} columns={2}>
           <B4Switch
@@ -701,6 +695,8 @@ export const GeoSettings = ({
               onChange("system.geo.auto_update.on_startup", checked)
             }
             description={t("settings.Geo.autoUpdateOnStartupDesc")}
+            info={t("settings.Geo.autoUpdateOnStartupInfo")}
+            learnMore="settings/geodata#auto-update"
           />
           <B4TextField
             select
@@ -724,10 +720,10 @@ export const GeoSettings = ({
           </B4TextField>
         </B4FormGroup>
         {config.system.geo.auto_update?.last_run && (
-          <B4Hint>
+          <Typography variant="caption" color="text.secondary">
             {t("settings.Geo.autoUpdateLastRun")}:{" "}
             {new Date(config.system.geo.auto_update.last_run).toLocaleString()}
-          </B4Hint>
+          </Typography>
         )}
 
         <Grid container spacing={2} sx={{ mt: 1 }}>

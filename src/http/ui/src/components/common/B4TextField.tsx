@@ -1,23 +1,28 @@
 import { Box, TextField, TextFieldProps } from "@mui/material";
 import { colors } from "@design";
 import { useChangedField } from "@context/ChangedFieldsContext";
-import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
+import { B4Help, useHelpVisible, type B4HelpContent } from "./B4Help";
+import { fieldMessage } from "./B4FieldMessage";
 import { useFieldLabel } from "./dialogLabels";
 
-export interface B4TextFieldProps extends Omit<TextFieldProps, "variant"> {
+export interface B4TextFieldProps
+  extends Omit<TextFieldProps, "variant">,
+    B4HelpContent {
   helperText?: React.ReactNode;
+  message?: React.ReactNode;
   path?: string;
   changed?: boolean;
-  aiTopic?: string;
-  aiContext?: Record<string, unknown>;
-  aiQuestion?: string;
   selectOnFocus?: boolean;
 }
 
 export const B4TextField = ({
   helperText,
+  message,
   path,
   changed: markedChanged,
+  info,
+  learnMore,
+  credit,
   aiTopic,
   aiContext,
   aiQuestion,
@@ -29,6 +34,9 @@ export const B4TextField = ({
   const label = props.label ?? resolvedLabel;
   const pathChanged = useChangedField(path, label);
   const changed = pathChanged || !!markedChanged;
+  const helpVisible = useHelpVisible({ info, learnMore, credit, aiTopic });
+  const shownMessage = fieldMessage(message);
+  const callerHelper = props.slotProps?.formHelperText;
   const tf = (
     <TextField
       {...props}
@@ -36,7 +44,16 @@ export const B4TextField = ({
       variant="outlined"
       size="small"
       fullWidth
-      helperText={helperText}
+      helperText={shownMessage ?? helperText}
+      slotProps={{
+        ...props.slotProps,
+        formHelperText: shownMessage
+          ? {
+              ...(typeof callerHelper === "object" ? callerHelper : undefined),
+              component: "div",
+            }
+          : callerHelper,
+      }}
       onFocus={(e) => {
         if (selectOnFocus) e.target.select();
         onFocus?.(e);
@@ -80,7 +97,7 @@ export const B4TextField = ({
     />
   );
 
-  if (!aiTopic) return tf;
+  if (!helpVisible && !aiTopic) return tf;
 
   const labelStr = typeof props.label === "string" ? props.label : resolvedLabel;
   const docStr = typeof helperText === "string" ? helperText : undefined;
@@ -94,19 +111,25 @@ export const B4TextField = ({
       sx={{
         display: "flex",
         alignItems: "flex-start",
-        gap: 1,
-        ...aiHoverRevealSx,
+        gap: 0.5,
       }}
     >
-      <Box sx={{ flex: 1 }}>{tf}</Box>
-      <B4AiExplain
-        topic={aiTopic}
-        fieldLabel={labelStr}
-        fieldDoc={docStr}
-        value={valStr}
-        context={aiContext}
-        question={aiQuestion}
-      />
+      <Box sx={{ flex: 1, minWidth: 0 }}>{tf}</Box>
+      {helpVisible && (
+        <Box sx={{ mt: "6px" }}>
+          <B4Help
+            label={labelStr}
+            info={info}
+            learnMore={learnMore}
+            credit={credit}
+            aiTopic={aiTopic}
+            aiContext={aiContext}
+            aiQuestion={aiQuestion}
+            fieldDoc={docStr}
+            value={valStr}
+          />
+        </Box>
+      )}
     </Box>
   );
 };

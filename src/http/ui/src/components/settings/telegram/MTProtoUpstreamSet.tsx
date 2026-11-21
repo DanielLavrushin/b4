@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Box, Button, Stack } from "@mui/material";
 import { AddIcon } from "@b4.icons";
-import { B4Alert, B4Select } from "@b4.elements";
+import { B4FieldMessage, B4Select } from "@b4.elements";
 import { B4Config } from "@models/config";
 import { createDefaultSet } from "@models/defaults";
 import { SettingsPropHandlerType } from "@models/settings";
@@ -52,6 +52,7 @@ export const MTProtoUpstreamSet = ({
   };
 
   const problemText = telegramSetProblemText(t, problem);
+  const chosenSet = config.sets.find((set) => set.id === chosen);
 
   return (
     <Stack spacing={1}>
@@ -72,7 +73,24 @@ export const MTProtoUpstreamSet = ({
               onChange("system.mtproto.upstream_set", String(e.target.value))
             }
             options={options}
-            helperText={t("settings.MTProto.upstreamSetHelp")}
+            helperText={t(
+              chosen === ""
+                ? "settings.MTProto.upstreamSetNoneHelp"
+                : "settings.MTProto.upstreamSetHelp",
+            )}
+            message={
+              problemText ? (
+                <B4FieldMessage>{problemText}</B4FieldMessage>
+              ) : chosenSet?.routing?.enabled ? (
+                <B4FieldMessage severity="info">
+                  {t("settings.MTProto.upstreamSetRouted", {
+                    name: chosenSet.name,
+                  })}
+                </B4FieldMessage>
+              ) : undefined
+            }
+            info={t("settings.MTProto.upstreamSetInfo")}
+            learnMore="telegram/upstream"
           />
         </Box>
         {chosen === "" && (
@@ -86,7 +104,6 @@ export const MTProtoUpstreamSet = ({
           </Button>
         )}
       </Box>
-      {problemText && <B4Alert severity="warning">{problemText}</B4Alert>}
     </Stack>
   );
 };

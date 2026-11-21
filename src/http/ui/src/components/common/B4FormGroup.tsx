@@ -1,8 +1,9 @@
 import { Children, isValidElement } from "react";
 import { Box, Grid, Typography } from "@mui/material";
 import { colors, spacing } from "@design";
+import { B4Help, type B4HelpContent } from "./B4Help";
 
-interface B4FormGroupProps {
+interface B4FormGroupProps extends B4HelpContent {
   label?: string;
   description?: string;
   icon?: React.ReactNode;
@@ -22,6 +23,12 @@ export const B4FormGroup = ({
   icon,
   children,
   columns = 2,
+  info,
+  learnMore,
+  credit,
+  aiTopic,
+  aiContext,
+  aiQuestion,
 }: B4FormGroupProps) => (
   <Box>
     {(label || description) && (
@@ -31,12 +38,24 @@ export const B4FormGroup = ({
         {icon}
         <Box>
           {label && (
-            <Typography
-              variant="subtitle1"
-              sx={{ color: colors.text.primary, fontWeight: 600 }}
-            >
-              {label}
-            </Typography>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <Typography
+                variant="subtitle1"
+                sx={{ color: colors.text.primary, fontWeight: 600 }}
+              >
+                {label}
+              </Typography>
+              <B4Help
+                label={label}
+                info={info}
+                learnMore={learnMore}
+                credit={credit}
+                aiTopic={aiTopic}
+                aiContext={aiContext}
+                aiQuestion={aiQuestion}
+                fieldDoc={description}
+              />
+            </Box>
           )}
           {description && (
             <Typography

@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { Box, Grid } from "@mui/material";
+import { Box, Grid, Typography } from "@mui/material";
 import { DomainIcon } from "@b4.icons";
-import { B4Alert, B4Hint, B4Select, B4Switch } from "@b4.elements";
+import { B4FieldMessage, B4Help, B4Select, B4Switch } from "@b4.elements";
 import { B4SetConfig, GeoConfig } from "@models/config";
 import { SetDomainMatch } from "@models/sets";
 import { useTranslation } from "react-i18next";
@@ -10,6 +10,7 @@ import { ManualEntryPanel } from "./ManualEntryPanel";
 import { GeoCategoryPanel } from "./GeoCategoryPanel";
 import { CategoryPreviewDialog } from "./CategoryPreviewDialog";
 import { useChangedFields } from "@context/ChangedFieldsContext";
+import { domainOnlyRoutesNothing } from "@utils";
 import {
   DOMAIN_CATCH_ALL,
   domainEntryNotice,
@@ -54,6 +55,7 @@ export const DomainsTab = ({
   const [previewCategory, setPreviewCategory] = useState<string | null>(null);
   const domains = config.targets.sni_domains ?? [];
   const catchAll = domains.some(isDomainCatchAll);
+  const domainOnlyRoutes = domainOnlyRoutesNothing(config);
   const domainsLeaf = changedValues.get("targets.sni_domains");
   const domainsLeafSets = useMemo(() => {
     if (
@@ -148,7 +150,15 @@ export const DomainsTab = ({
 
   return (
     <>
-      <B4Hint>{t("sets.targets.domainAlert")}</B4Hint>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+        <Typography variant="body2" sx={{ color: "text.secondary" }}>
+          {t("sets.targets.domainAlert")}
+        </Typography>
+        <B4Help
+          label={t("sets.targets.tabs.domains")}
+          learnMore="sets/targets#domains"
+        />
+      </Box>
 
       <Box sx={{ my: 3, display: "flex", gap: 2, flexWrap: "wrap" }}>
         <Box sx={{ maxWidth: 360, flex: "1 1 260px", minWidth: 0 }}>
@@ -157,6 +167,15 @@ export const DomainsTab = ({
             description={t("sets.targets.catchAllDomainsDesc", {
               value: DOMAIN_CATCH_ALL,
             })}
+            message={
+              catchAll ? (
+                <B4FieldMessage>
+                  {t("sets.targets.catchAllDomainsActive")}
+                </B4FieldMessage>
+              ) : undefined
+            }
+            info={t("sets.targets.catchAllDomainsInfo")}
+            learnMore="sets/targets#domains"
             checked={catchAll}
             path="targets.sni_domains"
             arrayItem={DOMAIN_CATCH_ALL}
@@ -171,6 +190,15 @@ export const DomainsTab = ({
         <Box sx={{ maxWidth: 360, flex: "1 1 260px", minWidth: 0 }}>
           <B4Switch
             description={t("sets.targets.domainOnlyDesc")}
+            message={
+              domainOnlyRoutes ? (
+                <B4FieldMessage>
+                  {t("sets.routing.domainOnlyConflict")}
+                </B4FieldMessage>
+              ) : undefined
+            }
+            info={t("sets.targets.domainOnlyInfo")}
+            learnMore="sets/targets#domains"
             checked={config.targets.domain_only ?? false}
             path="targets.domain_only"
             onChange={(checked: boolean) =>
@@ -189,7 +217,15 @@ export const DomainsTab = ({
               { value: "1.2", label: "TLS 1.2" },
               { value: "1.3", label: "TLS 1.3" },
             ]}
-            helperText={t("sets.targets.tlsHelperText")}
+            helperText={t(
+              config.targets.tls
+                ? "sets.targets.tlsHelperVersion"
+                : "sets.targets.tlsHelperText",
+              { version: `TLS ${config.targets.tls}` },
+            )}
+            info={t("sets.targets.tlsInfo")}
+            learnMore="sets/targets#domains"
+            aiTopic="targets.tls"
             onChange={(e) => onChange("targets.tls", e.target.value as string)}
           />
         </Box>
@@ -204,7 +240,15 @@ export const DomainsTab = ({
               { value: "4", label: "IPv4" },
               { value: "6", label: "IPv6" },
             ]}
-              helperText={t("sets.targets.ipVersionHelperText")}
+              helperText={t(
+                config.targets.ip_version
+                  ? "sets.targets.ipVersionHelperVersion"
+                  : "sets.targets.ipVersionHelperText",
+                { version: `IPv${config.targets.ip_version}` },
+              )}
+              info={t("sets.targets.ipVersionInfo")}
+              learnMore="sets/targets#domains"
+              aiTopic="targets.ip_version"
               onChange={(e) =>
                 onChange("targets.ip_version", e.target.value as string)
               }
@@ -213,20 +257,12 @@ export const DomainsTab = ({
         )}
       </Box>
 
-      {catchAll && (
-        <Grid container sx={{ mb: 2 }}>
-          <B4Alert severity="warning">
-            {t("sets.targets.catchAllDomainsActive")}
-          </B4Alert>
-        </Grid>
-      )}
-
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, md: 6 }}>
           <ManualEntryPanel
             icon={<DomainIcon />}
             title={t("sets.targets.manualDomains")}
-            tooltip={t("sets.targets.manualDomainsTooltip")}
+            description={t("sets.targets.manualDomainsDesc")}
             inputLabel={t("sets.targets.addDomainLabel")}
             inputHelper={t("sets.targets.addDomainHelper")}
             inputPlaceholder={t("sets.targets.addDomainPlaceholder")}
@@ -251,7 +287,7 @@ export const DomainsTab = ({
           <Grid size={{ xs: 12, md: 6 }}>
             <GeoCategoryPanel
               title={t("sets.targets.geositeCategories")}
-              tooltip={t("sets.targets.geositeCatTooltip")}
+              description={t("sets.targets.geositeCatDesc")}
               inputLabel={t("sets.targets.addGeositeLabel")}
               inputPlaceholder={t("sets.targets.addGeositePlaceholder")}
               helperText={t("sets.targets.geositeCatAvailable", {

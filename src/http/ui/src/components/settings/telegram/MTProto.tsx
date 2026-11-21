@@ -84,6 +84,8 @@ const AccessCard = ({
       icon={<SniIcon />}
       title={t("settings.MTProto.secretsTitle")}
       description={t("settings.MTProto.secretsDesc")}
+      info={t("settings.MTProto.secretsInfo")}
+      learnMore="telegram/mtproto-proxy"
     >
       <MTProtoSecrets config={config} onChange={onChange} onShare={onShare} />
     </B4IntegrationCard>

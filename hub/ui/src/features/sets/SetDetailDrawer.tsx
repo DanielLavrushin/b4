@@ -218,7 +218,7 @@ function History({ id }: Readonly<{ id: string }>) {
     <>
       <HistoryList entries={history.data.items} />
       {history.data.next ? (
-        <Link component="button" type="button" variant="body2" underline="hover" sx={{ alignSelf: "flex-start", color: colors.text.primary }} onClick={() => void navigate(`/audit?kind=set&q=${encodeURIComponent(id)}`)}>
+        <Link component="button" type="button" variant="body2" underline="hover" sx={{ alignSelf: "flex-start" }} onClick={() => void navigate(`/audit?kind=set&q=${encodeURIComponent(id)}`)}>
           {t("audit.fullLog")}
         </Link>
       ) : null}

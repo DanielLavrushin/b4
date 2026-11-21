@@ -12,7 +12,7 @@ func TestSetEditorFlagsAnEmptyFakePayloadChoice(t *testing.T) {
 	tcp := readUI(t, tcpFakingFile)
 	keys := []string{"sets.faking.fakeSni.payloadFileNotChosen", "sets.faking.fakeSni.payloadDomainNotGiven"}
 	for _, key := range keys {
-		re := regexp.MustCompile(`<B4Alert\s+severity="warning"[^>]*>\s*\{\s*t\(\s*"` + regexp.QuoteMeta(key) + `"`)
+		re := regexp.MustCompile(`<B4FieldMessage(?:\s+(?:key="[^"]*"|severity="warning"))*\s*>\s*\{\s*t\(\s*"` + regexp.QuoteMeta(key) + `"`)
 		if !re.MatchString(tcp) {
 			t.Errorf("the set editor never flags %s in a warning", key)
 		}

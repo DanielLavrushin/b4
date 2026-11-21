@@ -13,7 +13,7 @@ import {
   Typography,
 } from "@mui/material";
 import { CloudDownloadIcon, NetworkIcon, RefreshIcon } from "@b4.icons";
-import { B4Alert, B4Hint, B4IntegrationCard } from "@b4.elements";
+import { B4Alert, B4IntegrationCard } from "@b4.elements";
 import { colors, fonts, radiusPx, typography } from "@design";
 import { B4Config } from "@models/config";
 import { TelegramBridgeStatus } from "@models/mtproto";
@@ -317,7 +317,9 @@ export const MTProtoBridgeCard = ({
     <B4IntegrationCard
       icon={<NetworkIcon />}
       title={t(K("title"))}
-      description={t(K("description"))}
+      description={t("settings.TelegramBridge.description")}
+      info={t("settings.TelegramBridge.info")}
+      learnMore="telegram/websocket-bridge"
       status={headerStatus}
       enabled={enabled}
       onToggle={(checked) => onChange("system.mtproto.bridge.enabled", checked)}
@@ -409,10 +411,6 @@ export const MTProtoBridgeCard = ({
           {live && data && <BridgeStats data={data} />}
         </Stack>
       </Box>
-
-      <Grid container>
-        <B4Hint>{t(K("udpNote"))}</B4Hint>
-      </Grid>
     </B4IntegrationCard>
   );
 };

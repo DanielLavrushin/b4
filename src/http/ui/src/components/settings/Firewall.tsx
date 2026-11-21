@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Box, Typography } from "@mui/material";
+import { Box, FormHelperText, Typography } from "@mui/material";
 import { CategoryIcon, FilterIcon, SwapIcon } from "@b4.icons";
 import {
-  B4Alert,
   B4Badge,
+  B4FieldMessage,
   B4FormGroup,
   B4FormRow,
   B4Section,
@@ -42,6 +42,7 @@ export const FirewallRulesSettings = ({
     <B4Section
       title={t("settings.Feature.firewallFeatures")}
       icon={<FilterIcon />}
+      learnMore="settings/core#firewall-rules"
     >
       {config.queue.mode === "tun" ? (
         <>
@@ -71,6 +72,11 @@ export const FirewallRulesSettings = ({
                 ? "settings.Feature.firewallMonitorTunSkipped"
                 : "settings.Feature.firewallMonitorTunHelp",
             )}
+            info={
+              skipTables
+                ? undefined
+                : t("settings.Feature.firewallMonitorTunInfo")
+            }
           />
         </>
       ) : (
@@ -83,6 +89,14 @@ export const FirewallRulesSettings = ({
                 onChange("system.tables.skip_setup", checked)
               }
               description={t("settings.Feature.skipIptablesDesc")}
+              message={
+                skipTables ? (
+                  <B4FieldMessage>
+                    {t("settings.Feature.skipIptablesOn")}
+                  </B4FieldMessage>
+                ) : undefined
+              }
+              info={t("settings.Feature.skipIptablesInfo")}
             />
           </B4FormRow>
           <B4Select
@@ -120,9 +134,9 @@ export const FirewallRulesSettings = ({
             alert={
               !skipTables &&
               config.system.tables.monitor_interval <= 0 && (
-                <B4Alert severity="warning">
+                <B4FieldMessage>
                   {t("settings.Feature.firewallMonitorWarning")}
-                </B4Alert>
+                </B4FieldMessage>
               )
             }
           />
@@ -153,7 +167,11 @@ export const NatMasqueradeSettings = ({
   };
 
   return (
-    <B4Section title={t("settings.Feature.natMasquerade")} icon={<SwapIcon />}>
+    <B4Section
+      title={t("settings.Feature.natMasquerade")}
+      icon={<SwapIcon />}
+      learnMore="settings/core#nat-masquerade"
+    >
       <B4Switch
         checked={masquerade.enabled}
         path="system.tables.masquerade.enabled"
@@ -168,19 +186,25 @@ export const NatMasqueradeSettings = ({
         )}
       />
       {masquerade.enabled && (
-        <Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            {t("settings.Feature.masqueradeInterfaceDesc")}
-          </Typography>
-          <InterfaceChips
-            available={config.available_ifaces ?? []}
-            selected={masquerade.interfaces || []}
-            disabled={skipTables}
-            onToggle={handleMasqueradeToggle}
-            path="system.tables.masquerade.interfaces"
-            details={config.iface_details}
-          />
-        </Box>
+        <B4FormGroup
+          label={t("core.interfaces")}
+          info={t("settings.Feature.masqueradeInterfaceInfo")}
+          columns={1}
+        >
+          <Box>
+            <InterfaceChips
+              available={config.available_ifaces ?? []}
+              selected={masquerade.interfaces || []}
+              disabled={skipTables}
+              onToggle={handleMasqueradeToggle}
+              path="system.tables.masquerade.interfaces"
+              details={config.iface_details}
+            />
+            <FormHelperText sx={{ color: "text.secondary", m: 0, mt: 0.75 }}>
+              {t("settings.Feature.masqueradeInterfaceDesc")}
+            </FormHelperText>
+          </Box>
+        </B4FormGroup>
       )}
     </B4Section>
   );
@@ -212,6 +236,7 @@ export const DscpSettings = ({ config, onChange }: FirewallCardProps) => {
     <B4Section
       title={t("settings.Feature.dscpSettings")}
       icon={<CategoryIcon />}
+      learnMore="settings/core#dscp"
     >
       <B4Switch
         checked={dscp.enabled}
@@ -231,6 +256,7 @@ export const DscpSettings = ({ config, onChange }: FirewallCardProps) => {
             ? "settings.Feature.dscpSkipped"
             : "settings.Feature.dscpDesc",
         )}
+        info={t("settings.Feature.dscpInfo")}
         aiTopic="system.tables.dscp.enabled"
       />
       {dscp.enabled && (
@@ -245,6 +271,7 @@ export const DscpSettings = ({ config, onChange }: FirewallCardProps) => {
           step={1}
           disabled={skipTables}
           helperText={t("settings.Feature.dscpValueHelp")}
+          info={t("settings.Feature.dscpValueInfo")}
           aiTopic="system.tables.dscp.value"
         />
       )}
@@ -266,19 +293,26 @@ export const DscpSettings = ({ config, onChange }: FirewallCardProps) => {
         </Box>
       )}
       {(dscp.enabled || stampingSets.length > 0) && (
-        <Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            {t("settings.Feature.dscpInterfacesDesc")}
-          </Typography>
-          <InterfaceChips
-            available={config.available_ifaces ?? []}
-            selected={dscpInterfaces}
-            disabled={skipTables}
-            onToggle={handleDscpInterfaceToggle}
-            path="system.tables.dscp.interfaces"
-            details={config.iface_details}
-          />
-        </Box>
+        <B4FormGroup
+          label={t("core.interfaces")}
+          info={t("settings.Feature.dscpInterfacesInfo")}
+          aiTopic="system.tables.dscp.interfaces"
+          columns={1}
+        >
+          <Box>
+            <InterfaceChips
+              available={config.available_ifaces ?? []}
+              selected={dscpInterfaces}
+              disabled={skipTables}
+              onToggle={handleDscpInterfaceToggle}
+              path="system.tables.dscp.interfaces"
+              details={config.iface_details}
+            />
+            <FormHelperText sx={{ color: "text.secondary", m: 0, mt: 0.75 }}>
+              {t("settings.Feature.dscpInterfacesDesc")}
+            </FormHelperText>
+          </Box>
+        </B4FormGroup>
       )}
     </B4Section>
   );

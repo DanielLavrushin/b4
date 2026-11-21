@@ -93,7 +93,7 @@ func generateClaimBlock(t *testing.T, doc map[string]any, path ...string) map[st
 
 func TestPayloadGenerationStringsMakeNoBypassClaim(t *testing.T) {
 	checked := map[string][]string{
-		"settings.Capture":    {"alert", "alertSub", "generateDescription", "generateSuccess", "generatedDesc", "emptyDesc"},
+		"settings.Capture":    {"domainHelp", "domainInfo", "generateDescription", "generateSuccess", "generatedDesc", "emptyDesc"},
 		"sets.faking.fakeSni": {"noPayloads", "selectPayloadHelper"},
 	}
 	plurals := map[string][]string{

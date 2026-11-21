@@ -38,10 +38,10 @@ func TestIdleRetentionIsStatedWhereWarmValidityIs(t *testing.T) {
 		if err := json.Unmarshal(raw, &doc); err != nil {
 			t.Fatal(err)
 		}
-		help, _ := doc.Sets.TCP.General["wssizeReuseAgeDesc"].(string)
+		help, _ := doc.Sets.TCP.General["wssizeReuseAgeInfo"].(string)
 		want := fmt.Sprintf(format, minutes)
 		if !strings.Contains(help, want) {
-			t.Errorf("%s sets.tcp.general.wssizeReuseAgeDesc does not say %q, so it promises the full validity to a port b4 drops after %d idle minutes: %q", locale, want, minutes, help)
+			t.Errorf("%s sets.tcp.general.wssizeReuseAgeInfo does not say %q, so it promises the full validity to a port b4 drops after %d idle minutes: %q", locale, want, minutes, help)
 		}
 		page := "../../docs/docs/sets/tcp/general.md"
 		if locale == "ru" {

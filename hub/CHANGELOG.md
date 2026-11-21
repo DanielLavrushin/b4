@@ -8,6 +8,7 @@ All notable changes to the b4hub community hub service are recorded in this file
 
 - The console's **Check** treats `targets.use_collected_ips` and `tcp.wssize_reuse`, b4's new **Use collected IPs** and **Reuse WSSIZE connection** set options, as private fields that are never shared, and lists them under **Stripped fields** when the **Full set JSON** changes one from its default.
 - Set cards name the built-in fake payload 3 `vk`, after b4 replaced its DuckDuckGo ClientHello with one for `vk.com`. [b4#648](https://github.com/DanielLavrushin/b4/issues/648)
+- Links in the console are yellow everywhere, including the set, key and mirror names that open their details.
 
 ## [1.9.0] - 2026-11-15
 

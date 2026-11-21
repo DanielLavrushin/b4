@@ -4,6 +4,7 @@ import { Link as RouterLink } from "react-router";
 import { Box, Grid, IconButton, Link, Stack } from "@mui/material";
 import { AddIcon, DiscoveryIcon, WatchdogIcon } from "@b4.icons";
 import { B4Config } from "@models/config";
+import { anySetWatched } from "@models/watchdog";
 import { colors } from "@design";
 import { dnsEndpointError } from "@utils";
 import {
@@ -12,7 +13,8 @@ import {
   B4TextField,
   B4FormHeader,
   B4ChipList,
-  B4Hint,
+  B4FieldMessage,
+  B4Help,
   B4Switch,
 } from "@b4.elements";
 
@@ -29,6 +31,12 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
   const [newWatchdogDomain, setNewWatchdogDomain] = useState("");
   const dnsServer = config.system.checker.dns_server ?? "";
   const dnsServerError = dnsEndpointError(dnsServer);
+  const watchdog = config.system.checker.watchdog;
+  const setsLink = <Link component={RouterLink} to="/sets" />;
+  const nothingWatched =
+    (watchdog?.enabled ?? false) &&
+    (watchdog?.domains ?? []).length === 0 &&
+    !anySetWatched(config.sets);
 
   const handleAddWatchdogDomain = () => {
     if (newWatchdogDomain.trim()) {
@@ -57,6 +65,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
       title={t("settings.Checker.title")}
       description={t("settings.Checker.description")}
       icon={<DiscoveryIcon />}
+      learnMore="settings/discovery"
     >
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, lg: 6 }}>
@@ -85,6 +94,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
             step={100}
             valueSuffix={t("core.units.ms")}
             helperText={t("settings.Checker.configPropagationHelp")}
+            info={t("settings.Checker.configPropagationInfo")}
           />
         </Grid>
 
@@ -105,6 +115,8 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
                 ? t(`settings.Checker.trustedDnsError.${dnsServerError}`)
                 : t("settings.Checker.trustedDnsHelp")
             }
+            info={t("settings.Checker.trustedDnsInfo")}
+            learnMore="settings/discovery"
           />
         </Grid>
       </Grid>
@@ -114,6 +126,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
       title={t("settings.Watchdog.title")}
       description={t("settings.Watchdog.description")}
       icon={<WatchdogIcon />}
+      learnMore="watchdog"
     >
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, lg: 6 }}>
@@ -123,15 +136,25 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
             onChange={(checked) =>
               onChange("system.checker.watchdog.enabled", checked)
             }
+            description={t("settings.Watchdog.enableDesc")}
+            message={
+              nothingWatched ? (
+                <B4FieldMessage severity="info">
+                  <Trans
+                    i18nKey="settings.Watchdog.nothingWatched"
+                    components={{ a: setsLink }}
+                  />
+                </B4FieldMessage>
+              ) : undefined
+            }
+            info={
+              <Trans
+                i18nKey="settings.Watchdog.perSetHint"
+                components={{ a: setsLink }}
+              />
+            }
           />
         </Grid>
-
-        <B4Hint>
-          <Trans
-            i18nKey="settings.Watchdog.perSetHint"
-            components={{ a: <Link component={RouterLink} to="/sets" /> }}
-          />
-        </B4Hint>
 
         {(config.system.checker.watchdog?.enabled ?? false) && (
         <>
@@ -210,7 +233,6 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
         </Grid>
 
         <B4FormHeader label={t("settings.Watchdog.domainsConfig")} />
-        <B4Hint>{t("settings.Watchdog.domainsHint")}</B4Hint>
         <Grid size={{ xs: 12, md: 6 }}>
           <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
             <B4TextField
@@ -236,6 +258,11 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
             >
               <AddIcon />
             </IconButton>
+            <B4Help
+              label={t("settings.Watchdog.addDomain")}
+              info={t("settings.Watchdog.domainsHint")}
+              mt="6px"
+            />
           </Box>
         </Grid>
         <B4ChipList

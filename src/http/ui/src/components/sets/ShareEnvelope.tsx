@@ -4,11 +4,16 @@ import {
   Button,
   CircularProgress,
   Stack,
-  Tooltip,
   Typography,
 } from "@mui/material";
 import { Link } from "react-router";
-import { B4Alert, B4Section, B4TextField } from "@b4.elements";
+import {
+  B4Alert,
+  B4FieldMessage,
+  B4Help,
+  B4Section,
+  B4TextField,
+} from "@b4.elements";
 import {
   CopyIcon,
   DownloadIcon,
@@ -136,59 +141,92 @@ export const ShareEnvelope = ({
   const warnings = result?.report.warnings ?? [];
   const payloads = result?.envelope.payloads ?? [];
 
-  let publishBlocked = "";
-  if (isNew) publishBlocked = t("sets.share.publishSaveFirst");
-  else if (dirty) publishBlocked = t("sets.share.publishUnsaved");
+  const publishBlocked = isNew || dirty;
 
   const linkedId = config.hub?.id ?? "";
   const linkedUnmodified = Boolean(linkedId) && config.hub_state === "unmodified";
   const linkedModified = Boolean(linkedId) && config.hub_state === "modified";
 
   return (
-    <B4Section title={t("sets.share.sectionTitle")} icon={<ShareIcon />}>
-      <B4Alert severity="info" sx={{ mb: 2 }}>
-        {t("sets.share.info")}
-      </B4Alert>
+    <B4Section
+      title={t("sets.share.sectionTitle")}
+      icon={<ShareIcon />}
+      learnMore="sets/sharing"
+    >
+      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+        <Typography variant="body2" sx={{ color: "text.secondary" }}>
+          {t("sets.share.intro")}
+        </Typography>
+        <B4Help
+          label={t("sets.share.jsonLabel")}
+          info={t("sets.share.info")}
+          learnMore="sets/sharing"
+        />
+      </Box>
       <Stack spacing={2}>
         {hubReady && linkedUnmodified && !published && (
-          <B4Alert severity="info">
-            {t("sets.share.linkedUnmodified", {
-              id: linkedId,
-              version: config.hub?.version ?? 0,
-            })}{" "}
-            <Link to={hubLink(linkedId)}>{t("sets.share.openHub")}</Link>
-          </B4Alert>
+          <Box>
+            <B4FieldMessage severity="info">
+              {t("sets.share.linkedUnmodified", {
+                id: linkedId,
+                version: config.hub?.version ?? 0,
+              })}{" "}
+              <Link to={hubLink(linkedId)}>{t("sets.share.openHub")}</Link>
+            </B4FieldMessage>
+          </Box>
         )}
         {hubReady && (!linkedUnmodified || published) && (
           <Box>
             {!published && (
-              <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
-                <Tooltip title={publishBlocked}>
-                  <span>
-                    <Button
-                      variant="contained"
-                      startIcon={
-                        share.isPending ? (
-                          <CircularProgress size={16} color="inherit" />
-                        ) : (
-                          <PublishIcon />
-                        )
-                      }
-                      onClick={() => void publish()}
-                      disabled={share.isPending || Boolean(publishBlocked)}
+              <>
+                <Stack
+                  direction="row"
+                  spacing={2}
+                  alignItems="center"
+                  flexWrap="wrap"
+                  useFlexGap
+                >
+                  <Button
+                    variant="contained"
+                    startIcon={
+                      share.isPending ? (
+                        <CircularProgress size={16} color="inherit" />
+                      ) : (
+                        <PublishIcon />
+                      )
+                    }
+                    onClick={() => void publish()}
+                    disabled={share.isPending || publishBlocked}
+                  >
+                    {linkedModified
+                      ? t("sets.share.publishNewVersion")
+                      : t("sets.share.publish")}
+                  </Button>
+                  {!linkedModified && (
+                    <Typography
+                      variant="caption"
+                      sx={{ color: "text.secondary" }}
                     >
-                      {linkedModified
-                        ? t("sets.share.publishNewVersion")
-                        : t("sets.share.publish")}
-                    </Button>
-                  </span>
-                </Tooltip>
-                <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                  {linkedModified
-                    ? t("sets.share.publishNewVersionHint", { id: linkedId })
-                    : t("sets.share.publishHint")}
-                </Typography>
-              </Stack>
+                      {t("sets.share.publishHint")}
+                    </Typography>
+                  )}
+                </Stack>
+                {linkedModified && (
+                  <B4FieldMessage severity="info">
+                    {t("sets.share.publishNewVersionHint", { id: linkedId })}
+                  </B4FieldMessage>
+                )}
+                {isNew && (
+                  <B4FieldMessage severity="info">
+                    {t("sets.share.publishSaveFirst")}
+                  </B4FieldMessage>
+                )}
+                {!isNew && dirty && (
+                  <B4FieldMessage>
+                    {t("sets.share.publishUnsaved")}
+                  </B4FieldMessage>
+                )}
+              </>
             )}
             {published && (
               <B4Alert severity="success" sx={{ mt: 2 }}>

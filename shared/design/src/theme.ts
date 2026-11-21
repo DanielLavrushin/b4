@@ -106,9 +106,14 @@ export const theme = createTheme({
           textDecoration: "none",
           "&:hover": {
             textDecoration: "none",
-            color: colors.primary,
+            color: colors.secondary,
           },
         },
+      },
+    },
+    MuiLink: {
+      defaultProps: {
+        color: "secondary",
       },
     },
     MuiChip: {
@@ -419,8 +424,15 @@ export const theme = createTheme({
           height: 24,
           "& .MuiSwitch-switchBase": {
             padding: 3,
+            "& .MuiSwitch-input": {
+              left: 0,
+              width: 42,
+            },
             "&.Mui-checked": {
               transform: "translateX(18px)",
+              "& .MuiSwitch-input": {
+                left: -18,
+              },
             },
           },
           "& .MuiSwitch-thumb": {
@@ -436,8 +448,15 @@ export const theme = createTheme({
           height: 16,
           "& .MuiSwitch-switchBase": {
             padding: 2,
+            "& .MuiSwitch-input": {
+              left: 0,
+              width: 28,
+            },
             "&.Mui-checked": {
               transform: "translateX(12px)",
+              "& .MuiSwitch-input": {
+                left: -12,
+              },
             },
           },
           "& .MuiSwitch-thumb": {

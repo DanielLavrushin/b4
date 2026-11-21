@@ -25,7 +25,7 @@ func TestPayloadCopySaysGenerateOrUpload(t *testing.T) {
 		"settings.Capture.clearAll",
 		"settings.Capture.clearConfirm",
 		"settings.Capture.clearInUseConfirm",
-		"settings.Backup.alert",
+		"settings.Backup.downloadInfo",
 		"sets.udp.fakePayloadFileHelper",
 		"sets.udp.fakePayloadFileEmpty",
 	}
