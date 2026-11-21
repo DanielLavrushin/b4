@@ -157,6 +157,41 @@ func TestAnUploadReachesTheSetsThatNameItsFile(t *testing.T) {
 	}
 }
 
+func TestAGeneratedPayloadReachesTheSetsThatNameItsFile(t *testing.T) {
+	mux, api := captureTestMux(t)
+	manager := capture.GetManager(api.getCfg())
+	const name = "named-before.generate.example"
+	const file = "captures/tls_named-before_generate_example.bin"
+	manager.DeleteCapture("tls", name)
+	t.Cleanup(func() { manager.DeleteCapture("tls", name) })
+	set := namedSet("gen", "names the file before it exists", true, "a.example")
+	set.Faking.SNI = true
+	set.Faking.SNIType = config.FakePayloadCapture
+	set.Faking.PayloadFile = file
+	useSets(api, set)
+	if got := sock.GetPayload(&runningSet(api).Faking); !bytes.Equal(got, config.FakeSNI1) {
+		t.Fatalf("setup: the set must fall back to the Google preset, it sends %d bytes", len(got))
+	}
+
+	rec, _ := serveRecovered(mux, httptest.NewRequest(http.MethodPost, "/api/capture/generate", strings.NewReader(`{"domain":"`+name+`"}`)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("generate: %d %s", rec.Code, rec.Body.String())
+	}
+	saved, ok := manager.GetCapture("tls", name)
+	if !ok || saved.Filepath != file {
+		t.Fatalf("generate saved %v, want the file %s", saved, file)
+	}
+	data, err := manager.LoadCaptureData(saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := sock.GetPayload(&runningSet(api).Faking)
+	if reloaded := reloadedBy(t, rec); !reflect.DeepEqual(reloaded, []any{set.Name}) || !bytes.Equal(got, data) {
+		t.Errorf("generate wrote %s (%d bytes), which set %q names, but answered reloaded=%v and the running set sends %d bytes (the Google preset: %t)",
+			file, len(data), set.Name, reloaded, len(got), bytes.Equal(got, config.FakeSNI1))
+	}
+}
+
 func TestClearAllReachesTheSetsThatUsedItsFiles(t *testing.T) {
 	mux, api := captureTestMux(t)
 	manager := capture.GetManager(api.getCfg())

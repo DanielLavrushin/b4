@@ -37,6 +37,7 @@ func (api *API) RegisterCaptureApi() {
 }
 
 // @Summary Generate capture payload
+// @Description Generates a TLS ClientHello for a host name and reloads the sets that already name its file.
 // @Tags Capture
 // @Accept json
 // @Produce json
@@ -92,20 +93,24 @@ func (api *API) handleGenerateCapture(w http.ResponseWriter, r *http.Request) {
 
 	size := 0
 	var facts *capture.Facts
+	var files []string
 	if generated, ok := manager.GetCapture(req.Protocol, req.Domain); ok {
 		size = generated.Size
 		facts = generated.Facts
+		files = append(files, generated.Filepath)
 	}
 
-	setJsonHeader(w)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	response := map[string]interface{}{
 		"success": true,
 		"message": generatedPayloadMessage(req.Domain, size),
 		"method":  "generated",
 		"size":    size,
 		"domain":  req.Domain,
 		"facts":   facts,
-	})
+	}
+	api.reloadSetsNaming(files, response)
+	setJsonHeader(w)
+	json.NewEncoder(w).Encode(response)
 }
 
 func normalizeHostName(raw string) (string, bool) {

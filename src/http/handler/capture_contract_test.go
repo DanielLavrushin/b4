@@ -125,7 +125,7 @@ func TestPayloadAnswersKeepTheContractsNames(t *testing.T) {
 
 	rec, _ := serveRecovered(mux, httptest.NewRequest(http.MethodPost, "/api/capture/generate", strings.NewReader(`{"domain":"`+generated+`"}`)))
 	answer := answerObject(t, "generate", rec)
-	requireKeys(t, "the generate answer", answer, "success", "message", "size", "domain", "facts")
+	requireKeys(t, "the generate answer", answer, "success", "message", "size", "domain", "facts", "reloaded")
 	if facts := objectAt(t, "the generate answer", answer, "facts"); facts["sni"] != generated || facts["kind"] != "tls_client_hello" {
 		t.Errorf("the generate answer carries facts %v", facts)
 	}
