@@ -206,12 +206,12 @@ export const CaptureSettings = () => {
 
       if (result.already_captured) {
         showSuccess(
-          t("settings.Capture.alreadyCaptured", { domain: capturedDomain }),
+          t("settings.Capture.alreadyCaptured", { domain: result.domain }),
         );
       } else {
         showSuccess(
           t("settings.Capture.generateSuccess", {
-            domain: capturedDomain,
+            domain: result.domain,
             size: result.size,
           }),
         );
