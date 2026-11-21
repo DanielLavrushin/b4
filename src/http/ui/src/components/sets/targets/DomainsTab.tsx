@@ -10,6 +10,7 @@ import { ManualEntryPanel } from "./ManualEntryPanel";
 import { GeoCategoryPanel } from "./GeoCategoryPanel";
 import { CategoryPreviewDialog } from "./CategoryPreviewDialog";
 import { useChangedFields } from "@context/ChangedFieldsContext";
+import { domainOnlyRoutesNothing } from "@utils";
 import {
   DOMAIN_CATCH_ALL,
   domainEntryNotice,
@@ -54,11 +55,7 @@ export const DomainsTab = ({
   const [previewCategory, setPreviewCategory] = useState<string | null>(null);
   const domains = config.targets.sni_domains ?? [];
   const catchAll = domains.some(isDomainCatchAll);
-  const domainOnlyRoutes =
-    !!config.targets.domain_only &&
-    !!config.routing?.enabled &&
-    (domains.length > 0 ||
-      (config.targets.geosite_categories?.length ?? 0) > 0);
+  const domainOnlyRoutes = domainOnlyRoutesNothing(config);
   const domainsLeaf = changedValues.get("targets.sni_domains");
   const domainsLeafSets = useMemo(() => {
     if (
