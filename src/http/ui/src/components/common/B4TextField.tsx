@@ -97,7 +97,7 @@ export const B4TextField = ({
     />
   );
 
-  if (!helpVisible) return tf;
+  if (!helpVisible && !aiTopic) return tf;
 
   const labelStr = typeof props.label === "string" ? props.label : resolvedLabel;
   const docStr = typeof helperText === "string" ? helperText : undefined;
@@ -115,19 +115,21 @@ export const B4TextField = ({
       }}
     >
       <Box sx={{ flex: 1, minWidth: 0 }}>{tf}</Box>
-      <Box sx={{ mt: "6px" }}>
-        <B4Help
-          label={labelStr}
-          info={info}
-          learnMore={learnMore}
-          credit={credit}
-          aiTopic={aiTopic}
-          aiContext={aiContext}
-          aiQuestion={aiQuestion}
-          fieldDoc={docStr}
-          value={valStr}
-        />
-      </Box>
+      {helpVisible && (
+        <Box sx={{ mt: "6px" }}>
+          <B4Help
+            label={labelStr}
+            info={info}
+            learnMore={learnMore}
+            credit={credit}
+            aiTopic={aiTopic}
+            aiContext={aiContext}
+            aiQuestion={aiQuestion}
+            fieldDoc={docStr}
+            value={valStr}
+          />
+        </Box>
+      )}
     </Box>
   );
 };

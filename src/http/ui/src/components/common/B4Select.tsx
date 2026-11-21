@@ -164,7 +164,7 @@ export const B4Select = ({
     </FormControl>
   );
 
-  if (!helpVisible) return fc;
+  if (!helpVisible && !aiTopic) return fc;
 
   const valStr =
     typeof props.value === "string" || typeof props.value === "number"
@@ -180,19 +180,21 @@ export const B4Select = ({
       }}
     >
       <Box sx={{ flex: 1, minWidth: 0 }}>{fc}</Box>
-      <Box sx={{ mt: "6px" }}>
-        <B4Help
-          label={resolvedLabel}
-          info={info}
-          learnMore={learnMore}
-          credit={credit}
-          aiTopic={aiTopic}
-          aiContext={aiContext}
-          aiQuestion={aiQuestion}
-          fieldDoc={typeof helperText === "string" ? helperText : undefined}
-          value={valStr}
-        />
-      </Box>
+      {helpVisible && (
+        <Box sx={{ mt: "6px" }}>
+          <B4Help
+            label={resolvedLabel}
+            info={info}
+            learnMore={learnMore}
+            credit={credit}
+            aiTopic={aiTopic}
+            aiContext={aiContext}
+            aiQuestion={aiQuestion}
+            fieldDoc={typeof helperText === "string" ? helperText : undefined}
+            value={valStr}
+          />
+        </Box>
+      )}
     </Box>
   );
 };
