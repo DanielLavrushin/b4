@@ -27,6 +27,7 @@ import {
   useListedCaptures,
 } from "./payloadFile";
 import { udpPortRouting } from "./routing/portRouting";
+import { bytesLabel } from "@components/settings/payloads/facts";
 import { useTranslation, Trans } from "react-i18next";
 import {
   CallsSession,
@@ -573,7 +574,7 @@ export const UdpSettings = ({
                         value: samePayloadFile(c.filepath, udpPayloadFile)
                           ? udpPayloadFile
                           : c.filepath,
-                        label: `[${c.protocol}] ${c.domain} (${c.size} bytes)`,
+                        label: `[${c.protocol}] ${c.domain} (${bytesLabel(t, c.size)})`,
                       })),
                     ]}
                     onChange={(e) =>

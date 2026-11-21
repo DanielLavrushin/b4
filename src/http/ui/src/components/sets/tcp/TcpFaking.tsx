@@ -30,6 +30,7 @@ import {
   useListedCaptures,
 } from "../payloadFile";
 import { sendsFake, tlsModChangesTheFake } from "./fakePayload";
+import { bytesLabel } from "@components/settings/payloads/facts";
 
 interface TcpFakingProps {
   config: B4SetConfig;
@@ -230,7 +231,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
     ...(chosenFileLabel ? [{ value: payloadFile, label: chosenFileLabel }] : []),
     ...tlsCaptures.map((c) => ({
       value: samePayloadFile(c.filepath, payloadFile) ? payloadFile : c.filepath,
-      label: `${c.domain} (${c.size} bytes)`,
+      label: `${c.domain} (${bytesLabel(t, c.size)})`,
     })),
   ];
 
