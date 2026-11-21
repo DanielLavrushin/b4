@@ -482,7 +482,11 @@ queue releases unchanged a TCP packet to port 443 of the set, of an address fami
 connections that reach the queue get its own TCP strategy. Either way, a connection whose
 ClientHello the queue saw before a change to the collected addresses keeps the set it had
 then.
-b4's own connections with bit `0x40000` to the set's addresses always get that strategy.
+b4's own connections to the set's addresses get the set's TCP strategy when their mark is
+`0x40000`, and the strategy of the set chosen under **Telegram set** when it is
+`0x4040000`. Those marked `0x240000`, such as the connection that carries a device's TLS
+after a warm, or one through a Cloudflare-proxied domain while **Let sets process CF proxy
+connections** is off, get no strategy.
 
 | Connection | Source port | Mark | Packet processing |
 | --- | --- | --- | --- |
