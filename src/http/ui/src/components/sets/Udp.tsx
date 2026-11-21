@@ -64,6 +64,12 @@ const UDP_PRESET_BUILTINS: Record<string, string> = {
 
 const DEFAULT_UDP = createDefaultSet(0).udp;
 
+const PORT_FILTER_DOCS: Record<"calls" | "routed" | "any", string> = {
+  calls: "sets/udp#protocol-selection",
+  routed: "sets/routing#udp-by-port",
+  any: "sets/udp",
+};
+
 interface UdpSettingsProps {
   config: B4SetConfig;
   callsSession: CallsSession;
@@ -416,6 +422,8 @@ export const UdpSettings = ({
     ),
   ].filter(Boolean);
 
+  const portFilterUse = onlyCalls ? "calls" : portRouted ? "routed" : "any";
+
   const seg2delayMax = config.udp.seg2delay_max || config.udp.seg2delay;
   const evasionCustomized =
     (config.udp.faking_strategy !== DEFAULT_UDP.faking_strategy ? 1 : 0) +
@@ -501,8 +509,14 @@ export const UdpSettings = ({
                   ? "sets.udp.portFilterRoutedHelper"
                   : "sets.udp.portFilterHelper",
             )}
-            info={t("sets.udp.portFilterInfo")}
-            learnMore="sets/udp"
+            info={t(
+              onlyCalls
+                ? "sets.udp.portFilterCallsInfo"
+                : portRouted
+                  ? "sets.udp.portFilterRoutedInfo"
+                  : "sets.udp.portFilterInfo",
+            )}
+            learnMore={PORT_FILTER_DOCS[portFilterUse]}
             aiTopic="udp.dport_filter"
           />
           {onlyCalls && !hasUdpPortFilter && (
