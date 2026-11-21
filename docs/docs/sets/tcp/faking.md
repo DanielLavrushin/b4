@@ -10,12 +10,14 @@ The **Faking** sub-tab sends fake packets that DPI reads and the server discards
 
 Fake ClientHello packets sent before the real one. DPI reads the fake, and the real ClientHello passes unnoticed.
 
+![The Fake SNI Packets panel with My own Payload File and a payload whose file is missing](/img/faking/20261121100300.png)
+
 | Field | What it does | Default |
 | --- | --- | --- |
 | **Enable Fake SNI** | Sends fake packets before the real ClientHello. | On |
 | **Fake Packet Count** | How many fakes to send, 1 to 20. | `1` |
 
-### Fake payload
+### Fake payload {#fake-payload}
 
 | Field | What it does | Default |
 | --- | --- | --- |
@@ -24,18 +26,30 @@ Fake ClientHello packets sent before the real one. DPI reads the fake, and the r
 | **Randomize TLS Random** | Replaces the 32-byte Random field and the Session ID of each fake with random values. | Off |
 | **Duplicate Session ID** | Copies the Session ID of the real ClientHello into the fake. It takes precedence over the random Session ID of **Randomize TLS Random**. | Off |
 
-The last two are under **Fake Packet TLS Modification**, shown for every payload type except **Random**.
-
 | Payload type | The fake carries |
 | --- | --- |
 | **Random** | Random bytes. |
 | **Preset: Google (classic)**, **Preset: VK** | A ClientHello for that site. |
 | **Preset: STUN** | A STUN request. |
-| **My own Payload File** | A ClientHello generated or uploaded under **Settings > Payloads**, chosen in **Generated Payload**. |
+| **My own Payload File** | A TLS payload from [Settings > Payloads](../../settings/payloads.md), chosen in **Generated Payload**, see below. |
 | **All Zeros** | Zero bytes. |
 | **Inverted Original** | The real ClientHello with every bit inverted. |
 | **Generated from Domain** | A ClientHello generated for the domain entered in **Domain**. |
 | **Custom** | The text in **Custom Payload**, byte for byte. Listed only for a set that already has such text. |
+
+With **My own Payload File**, the **Generated Payload** list offers the TLS payloads from **Settings > Payloads** whose file is present and not empty, sorted by name. A line under each name gives its origin, kind and size, and the number of malformed fields when there are any. QUIC payloads belong to the [UDP](../udp.md) tab and are not listed.
+
+![The open Generated Payload list, with a missing file at the top](/img/faking/20261121100400.png)
+
+A file the set names that is gone from the router stays selected, with (file missing) after its name, and an empty file gets (file empty). The text under the list then says the set sends **Preset: Google (classic)** until another payload is picked. A QUIC payload the set already names stays selected as well, with a note to pick a TLS ClientHello. While the set sends fakes and no payload is chosen, or **Generated from Domain** has no domain, a warning says the set sends **Preset: Google (classic)**.
+
+**Randomize TLS Random** and **Duplicate Session ID** are under **Fake Packet TLS Modification**. It is shown only when the fake is a TLS ClientHello these switches can change:
+
+- with **Preset: Google (classic)**, **Preset: VK** and **Generated from Domain**;
+- with **My own Payload File**, when the chosen payload is a TLS ClientHello or the set sends **Preset: Google (classic)** in its place;
+- with **Inverted Original**, only while the set also sends **SYN Fake Packets** with a **SYN Fake Payload Length** above `0`, or the decoy of a **Combo** or **Hybrid** split with **Enable Decoy** on.
+
+It is hidden for **Random**, **Preset: STUN**, **All Zeros** and **Custom**.
 
 ### Fake strategy {#fake-strategy}
 

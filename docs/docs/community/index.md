@@ -76,7 +76,7 @@ The header shows the title, the author label, the version, the technique family,
 | --- | --- |
 | **Applied** | A local set was created from this one, and its strategy is unchanged. A click opens the local set. |
 | **Applied, edited** | The strategy of the local set was changed after it was applied. |
-| **needs payload** | The fake packets use a captured ClientHello. Applying fetches the file from the hub. |
+| **needs payload** | The fake packets use a payload file. Applying fetches the file from the hub. |
 | **block** | A [block set](../sets/blocking.md). |
 | **pins** | The set pins domains to fixed addresses, listed under **Details**. |
 | **blanket** | The set targets geosite categories only. |

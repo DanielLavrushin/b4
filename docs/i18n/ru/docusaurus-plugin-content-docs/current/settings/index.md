@@ -16,7 +16,7 @@ description: Вкладки страницы настроек, сохранен�
 | [Дискавери](./discovery.md) | Дискавери и мониторинг |
 | [Telegram](./mtproto.md) | Telegram через WebSocket, MTProto-прокси и WEB-прокси |
 | [Интеграции](./integrations.md) | Токен IPinfo, AI-помощник, MCP-сервер и хаб сообщества |
-| [Пэйлоады](./payloads.md) | Пэйлоады для faking |
+| [Payloads](./payloads.md) | Payload для фейковых пакетов |
 
 Вход по паролю, HTTPS и переключатели **Доступ из интернета** разобраны в разделе [Защита веб-интерфейса](./security.md).
 

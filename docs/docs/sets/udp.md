@@ -77,7 +77,7 @@ Whether the rest of a dropped QUIC connection is dropped too depends on the rout
 
 Everything on this tab applies to IPv6 only while **Enable IPv6 Support** is on under [Settings > Core](../settings/core.md#protocols). With it off, b4 sees no IPv6 packets, and a destination that answers over IPv6 keeps working over QUIC there.
 
-## Fake & Fragment settings
+## Fake & Fragment settings {#fake-settings}
 
 Shown in **Fake & Fragment** mode.
 
@@ -85,6 +85,12 @@ Shown in **Fake & Fragment** mode.
 | --- | --- | --- |
 | **Fake Packet Count** | How many fakes go before the real packet, 1 to 20. | `6` |
 | **Fake Packet Size** | The payload size of each fake, 32 to 1472 bytes. Over IPv6 a fake carries at most 1452 bytes. | `64` |
-| **Fake Packet Payload** | What the fakes carry: **(zero fill)**, **(auto: QUIC Initial)** for a fresh random QUIC Initial in each fake, **(auto: STUN request)** for a fresh STUN request in each fake, **QUIC preset 1**, **QUIC preset 2**, or a payload uploaded under [Settings > Payloads](../settings/payloads.md). Presets and uploaded payloads are cut or padded with zeros to **Fake Packet Size**, **(auto: STUN request)** is padded with random bytes, and 1200 bytes suits **(auto: QUIC Initial)**. | **(zero fill)** |
+| **Fake Packet Payload** | What the fakes carry: **(zero fill)**, **(auto: QUIC Initial)** for a fresh random QUIC Initial in each fake, **(auto: STUN request)** for a fresh STUN request in each fake, **QUIC preset 1**, **QUIC preset 2**, or a payload from [Settings > Payloads](../settings/payloads.md). Presets and payload files are cut or padded with zeros to **Fake Packet Size**, **(auto: STUN request)** is padded with random bytes, and 1200 bytes suits **(auto: QUIC Initial)**. | **(zero fill)** |
 | **Evasion Technique** | How the fakes are made unusable to the server. UDP fakes always use the set's **Fake TTL** from [TCP > Faking](./tcp/faking.md): **None** sends them without extra corruption, **TTL** is the same as **None**, **Checksum** also breaks the UDP checksum. | **None** |
 | **Segment 2 Delay** | Delay between the fakes and the real packet, 0 to 1000 ms. A range makes each connection pick a random value. | `0` |
+
+When **Fake Packet Payload** is **QUIC preset 1**, **QUIC preset 2** or a payload file, and **Fake Packet Size** is smaller than it, a note on the tab says how many of its bytes go out. **Use the file size** sets **Fake Packet Size** to the size of the payload. A payload over 1472 bytes does not fit one fake: the note says so, and its button sets the largest size, 1472 bytes. [Built In](../settings/payloads.md#built-in) lists the sizes of the presets.
+
+![The UDP tab in Fake & Fragment mode, with a note that only 64 of 1200 bytes go out](/img/udp/20261121100500.png)
+
+A payload file the set names that is gone from the router stays selected, with (file missing) after its name, and the fakes carry zeros until another payload is picked.
