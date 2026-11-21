@@ -737,19 +737,21 @@
       "title": "Testing Configuration",
       "description": "Configure testing behavior and output",
       "discoveryTimeout": "Discovery Timeout",
-      "discoveryTimeoutHelp": "Max time to wait for each connection attempt when testing presets during discovery. Increase if you have a slow or unstable connection.",
+      "discoveryTimeoutHelp": "The longest wait for each connection attempt during discovery. Raise it on a slow or unstable connection.",
       "configPropagation": "Config Propagation Delay",
-      "configPropagationHelp": "Wait time after applying each preset before testing it. Allows the new configuration to reach all workers. Increase on slow or resource-constrained devices where config updates take longer to settle.",
+      "configPropagationHelp": "The wait after applying each preset before testing it, so the configuration reaches all workers.",
       "dnsConfig": "DNS Configuration",
       "trustedDns": "Trusted DNS server",
       "trustedDnsPlaceholder": "Built-in public resolvers",
-      "trustedDnsHelp": "Discovery takes this server's answers as each site's correct address and compares them with the router's resolver. When they differ, the proposed set uses this server for DNS where a set can: a public IP address on port 53 that answers over UDP and is not one of this host's own, or an https:// URL. Forms: 9.9.9.9, 127.0.0.1:53053, tcp://9.9.9.9, tcp+udp://127.0.0.1:53053, https://dns.google/dns-query. Empty: the public resolvers built into b4.",
+      "trustedDnsHelp": "Discovery takes this server's answers as each site's correct address. Empty: the public resolvers built into b4.",
       "trustedDnsError": {
         "hostname": "Plain DNS needs an IP address; only an https:// URL takes a host name.",
         "http": "DNS over HTTPS needs an https:// URL.",
         "unsupported": "Not supported. Run a local DNS proxy for it and give the proxy's address.",
         "invalid": "Not a DNS server address. Examples: 9.9.9.9, 127.0.0.1:53053, tcp://9.9.9.9, https://dns.google/dns-query."
-      }
+      },
+      "configPropagationInfo": "Raise it on slow or resource-constrained devices, where configuration updates take longer to settle.",
+      "trustedDnsInfo": "Discovery compares the answers with the router's resolver. When they differ, the proposed set uses this server for DNS where a set can: a public IP address on port 53 that answers over UDP and is not one of this host's own, or an https:// URL.\n\nForms: 9.9.9.9, 127.0.0.1:53053, tcp://9.9.9.9, tcp+udp://127.0.0.1:53053, https://dns.google/dns-query."
     },
     "Watchdog": {
       "title": "Watchdog",
@@ -769,8 +771,10 @@
       "addDomain": "Add Domain",
       "addDomainHelp": "Domains to monitor for DPI blocking.",
       "activeDomains": "Domains being monitored:",
-      "perSetHint": "Per-set watching is turned on in the Discovery tab of a set in <a>Sets</a>. The switch here turns all watching on or off, and the timings apply to sets and domains alike.",
-      "domainsHint": "Domains checked one by one, each healed through whichever set handles it. This list keeps working beside per-set watching."
+      "perSetHint": "Per-set watching is turned on in the Discovery tab of a set in <a>Sets</a>. The timings here apply to sets and domains alike.",
+      "domainsHint": "Domains checked one by one, each healed through whichever set handles it. This list keeps working beside per-set watching.",
+      "enableDesc": "Turns all watching on or off. A set is watched once its Discovery tab turns it on.",
+      "nothingWatched": "Nothing is watched yet. Turn watching on in the Discovery tab of a set in <a>Sets</a>, or add domains below."
     },
     "Geo": {
       "alert": "GeoSite and GeoIP database files for domain and IP categorization.",
@@ -1750,15 +1754,15 @@
       "sectionDescription": "Configure domain matching for DPI bypass and blocking",
       "tlsVersionFilter": "TLS Version Filter",
       "tlsAny": "Any",
-      "tlsHelperText": "Prefer a specific TLS version (used as a fallback when no exact-version match exists)",
+      "tlsHelperText": "A preference among sets that list the same domain. A match by address needs the version to fit.",
       "ipVersionFilter": "IP Version Filter",
       "ipVersionAny": "Any",
-      "ipVersionHelperText": "Prefer IPv4 or IPv6 traffic (used as a fallback when no exact-version match exists)",
+      "ipVersionHelperText": "A preference: among the matching sets, one whose filter fits comes first.",
       "domainOnly": "Domain-only matching",
-      "domainOnlyDesc": "Match these domains only by the name in the handshake, never by their IP address. Use it on shared CDN addresses, where a neighbouring domain on the same IP would otherwise be pulled into this set and given its strategy. Routing selects traffic by IP address, so a set with this on routes only the addresses you list explicitly.",
+      "domainOnlyDesc": "Matches these domains only by the name in the handshake, never by their IP address.",
       "catchAllDomains": "Match any domain",
       "catchAllDomainsDesc": "Adds the {{value}} entry, which matches every domain.",
-      "catchAllDomainsActive": "This set matches every domain. A domain listed literally in any other set is handled there first, whatever position either set holds in the list, so this set picks up only what nothing else claims. That applies to DPI matching; for routing it steers only the addresses this set has actually resolved, so it is not a substitute for matching every IP address.",
+      "catchAllDomainsActive": "This set matches every domain. For routing it steers only the addresses it has actually resolved, so it is not a substitute for \"Match any IP address\".",
       "catchAllChipDomain": "Any domain",
       "catchAllDomainNotice": "Matches every domain. \"{{value}}\" will be added.",
       "wildcardStrippedNotice": "b4 already matches subdomains, so \"{{from}}\" will be added as \"{{to}}\".",
@@ -1775,7 +1779,7 @@
         "ips": "IP Addresses",
         "sourceDevices": "Source Devices"
       },
-      "domainAlert": "Domains in this list will use DPI bypass techniques (fragmentation, faking) when matched.",
+      "domainAlert": "Domains this set applies to: manual entries and GeoSite categories in one list.",
       "manualDomains": "Manual Domains",
       "addDomainLabel": "Add Domain",
       "addDomainHelper": "e.g., youtube.com, google.com",
@@ -1878,7 +1882,9 @@
       "ipPriorityCatchAll": "0.0.0.0/0 and ::/0 never count for IP priority, so it does not apply to this set's catch-all entries.",
       "geoipCatDesc": "Predefined address lists from the GeoIP database.",
       "geositeCatDesc": "Predefined domain lists from the GeoSite database.",
-      "ipOverlapTitle": "When sets overlap"
+      "ipOverlapTitle": "When sets overlap",
+      "catchAllDomainsInfo": "For DPI matching, a domain listed literally in any other set is handled there first, whatever position either set holds in the list, so this set picks up only what nothing else claims.",
+      "domainOnlyInfo": "Use it on shared CDN addresses, where a neighbouring domain on the same IP would otherwise be pulled into this set and given its strategy.\n\nRouting selects traffic by IP address, so a set with this on routes only the addresses you list explicitly."
     },
     "tcp": {
       "sectionTitle": "TCP Configuration",

@@ -155,7 +155,7 @@ export const IpsTab = ({
               ) : undefined
             }
             info={t("sets.targets.useCollectedIpsInfo")}
-            learnMore="sets/targets#ip-addresses"
+            learnMore="sets/targets#collected-ips"
             checked={usesCollected}
             path="targets.use_collected_ips"
             onChange={(checked: boolean) =>
