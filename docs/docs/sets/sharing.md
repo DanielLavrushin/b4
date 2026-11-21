@@ -56,9 +56,9 @@ Domains that look private to the sharing network are reported, not removed: a si
 
 ## Payload files {#payload-files}
 
-A set whose fake packets use a captured ClientHello carries that file inside the shared set, so the importing router sends the same fake packets. A file is carried only when it parses as a TLS ClientHello with a server name, or as a QUIC Initial with a readable ClientHello, and only up to 16 KB. When the file is missing on the sharing router, the set is shared without it, and both sides use the built-in payload.
+A set whose fake packets use a payload file from **Settings > Payloads** carries that file inside the shared set, so the importing router sends the same fake packets. A file is carried only when it parses as a TLS ClientHello with a server name, or as a QUIC Initial with a readable ClientHello, and only up to 16 KB. When the file is missing on the sharing router, the set is shared without it, and both sides use the built-in payload.
 
-On import, the file appears under **Settings > Payloads**, named after the protocol and the server name, such as `tls_www_google_com.bin`. An existing file with the same name and other contents is never overwritten: the new file gets a short hash suffix.
+On import, the payload appears in [Settings > Payloads](../settings/payloads.md), named after its server name and marked **Imported with a set**. An existing payload with the same name and other contents is never overwritten: the new one gets a short hash suffix after the name.
 
 ## What the import checks {#what-the-import-checks}
 

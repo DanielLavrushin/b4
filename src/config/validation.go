@@ -747,6 +747,7 @@ func (c *Config) Validate() error {
 	}
 
 	c.LoadCapturePayloads()
+	c.warnEmptyFakePayloadChoices()
 	c.warnFakesLargerThanOnePacket()
 	c.BuildTCPPortMap()
 	c.BuildSetPortRanges()
@@ -770,6 +771,20 @@ func warnFakePayloadOnce(format string, a ...any) {
 	fakePayloadWarnMu.Unlock()
 	if !seen {
 		log.Warnf("%s", text)
+	}
+}
+
+func (c *Config) warnEmptyFakePayloadChoices() {
+	for _, set := range c.Sets {
+		if !set.Enabled || !set.SendsFake() {
+			continue
+		}
+		switch {
+		case set.Faking.SNIType == FakePayloadCapture && set.Faking.PayloadFile == "":
+			warnFakePayloadOnce("Set '%s': the fake payload type is a payload file (faking.sni_type %d), but no file is chosen (faking.payload_file is empty), so the set's fakes carry the built-in google payload", set.Name, FakePayloadCapture)
+		case set.Faking.SNIType == FakePayloadDomain && set.Faking.PayloadDomain == "":
+			warnFakePayloadOnce("Set '%s': the fake payload type is generated from a domain (faking.sni_type %d), but no domain is given (faking.payload_domain is empty), so the set's fakes carry the built-in google payload", set.Name, FakePayloadDomain)
+		}
 	}
 }
 

@@ -6,35 +6,35 @@ import (
 )
 
 type Manager struct {
-	mu              sync.RWMutex
-	metadata        map[string]map[string]*PayloadMetadata
-	outputPath      string
-	metadataFile    string
-	activeProbes    map[string]time.Time
-	pendingCaptures map[string]*PendingCapture
-	connToDomain    map[string]string
-}
-
-type PendingCapture struct {
-	protocol  string
-	domain    string
-	data      []byte
-	firstSeen time.Time
+	mu           sync.RWMutex
+	metadata     map[string]map[string]*PayloadMetadata
+	outputPath   string
+	metadataFile string
 }
 
 type PayloadMetadata struct {
 	Timestamp time.Time `json:"timestamp"`
 	Size      int       `json:"size"`
 	Filepath  string    `json:"filepath"`
+	Origin    string    `json:"origin,omitempty"`
+	Facts     *Facts    `json:"facts,omitempty"`
 }
 
-// API response structure
+const (
+	OriginGenerated = "generated"
+	OriginUploaded  = "uploaded"
+	OriginImported  = "imported"
+)
+
 type Capture struct {
 	Protocol  string    `json:"protocol"`
 	Domain    string    `json:"domain"`
 	Timestamp time.Time `json:"timestamp"`
 	Size      int       `json:"size"`
 	Filepath  string    `json:"filepath"`
-	HexData   string    `json:"hex_data"`
+	Origin    string    `json:"origin"`
+	Facts     *Facts    `json:"facts,omitempty"`
+	Warnings  []string  `json:"warnings"`
+	Missing   bool      `json:"missing"`
 	UsedBy    []string  `json:"used_by,omitempty"`
 }

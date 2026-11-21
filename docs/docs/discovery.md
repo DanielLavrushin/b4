@@ -33,7 +33,7 @@ The defaults are the usual choice.
 | **Confirm each strategy** | Fetches in a row a strategy has to pass during the search, 1 to 5. | 1 |
 | **TLS version for the probes** | Limits the probes, and the created set, to TLS 1.2 or 1.3. | Auto |
 | **IP version for the probes** | The same for IPv4 and IPv6. Shown while the capture engine handles both. IPv6 is unavailable [under the TUN engine](#tun). | Auto |
-| **Captured ClientHello as the fake payload** | Fake packets carry a ClientHello captured under [Settings > Payloads](./settings/payloads.md). | None |
+| **Generated or uploaded ClientHello as the fake payload** | TLS payloads from [Settings > Payloads](./settings/payloads.md#using-in-discovery) that the fake packets carry. Discovery tries them before its built-in payloads. The list offers the payloads whose file is present. | None |
 
 ## A run
 
@@ -88,7 +88,7 @@ Every site gets one card, under **Results per address** in a run for a set.
 | **intercepted by the gateway** | The first hop in front of this host answers the connection itself. b4 has to run on that gateway, or this host has to be excluded from its redirect. When b4 is the router itself, only a proxy helps. |
 | **does not resolve** | The name has no address, as with a misspelled domain. |
 | **link answers 400** | The link answers HTTP 400 even without b4. A link to a page or a file the site serves is needed. |
-| **nothing found** | No strategy worked. A new run with **TLS 1.2** or a captured ClientHello sometimes helps. |
+| **nothing found** | No strategy worked. A new run with **TLS 1.2** or a generated ClientHello sometimes helps. |
 
 Sites that one strategy loaded share one card and one set. The card offers the strategy that loaded the most sites. Speed does not decide, see [Which strategy a card offers](./internals/discovery.md#which-strategy-a-card-offers). **N other strategies worked** lists up to twelve other strategies that loaded every site of the card, fastest first, each with **Use instead**.
 

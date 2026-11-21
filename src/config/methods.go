@@ -1414,6 +1414,26 @@ func safeCapturePath(configDir, name string) (string, error) {
 	return candidate, nil
 }
 
+func (c *Config) CapturePayloadPath(name string) (path, file string, err error) {
+	if c.ConfigPath == "" {
+		return "", "", fmt.Errorf("config path is not set")
+	}
+	configDir := filepath.Dir(c.ConfigPath)
+	path, err = safeCapturePath(configDir, name)
+	if err != nil {
+		return "", "", err
+	}
+	configAbs, err := filepath.Abs(configDir)
+	if err != nil {
+		return "", "", err
+	}
+	rel, err := filepath.Rel(configAbs, path)
+	if err != nil {
+		return "", "", err
+	}
+	return path, filepath.ToSlash(rel), nil
+}
+
 func (c *Config) ReadCapturePayload(name string) ([]byte, error) {
 	if c.ConfigPath == "" {
 		return nil, fmt.Errorf("config path is not set")
@@ -1512,6 +1532,11 @@ func (c *Config) LoadCapturePayloads() {
 				set.Faking.PayloadData = nil
 				break
 			}
+			if len(data) == 0 {
+				log.Errorf("Failed to load capture file %s: the file is empty", set.Faking.PayloadFile)
+				set.Faking.PayloadData = nil
+				break
+			}
 			set.Faking.PayloadData = data
 			log.Tracef("Loaded capture payload %s (%d bytes)", set.Faking.PayloadFile, len(data))
 		case FakePayloadDomain:
@@ -1548,6 +1573,8 @@ func (c *Config) LoadCapturePayloads() {
 				data, err := os.ReadFile(payloadPath)
 				if err != nil {
 					log.Errorf("Failed to load UDP fake payload %s: %v", set.UDP.FakePayloadFile, err)
+				} else if len(data) == 0 {
+					log.Errorf("Failed to load UDP fake payload %s: the file is empty", set.UDP.FakePayloadFile)
 				} else {
 					set.UDP.FakePayloadData = data
 					log.Tracef("Loaded UDP fake payload %s (%d bytes)", set.UDP.FakePayloadFile, len(data))

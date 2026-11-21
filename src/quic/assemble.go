@@ -130,10 +130,16 @@ func (b *cbuf) ensure(n int) {
 	if n <= len(b.data) {
 		return
 	}
-	nd := make([]byte, n)
+	if n <= cap(b.data) && n <= cap(b.mask) {
+		b.data = b.data[:n]
+		b.mask = b.mask[:n]
+		return
+	}
+	size := min(max(n, 2*cap(b.data)), maxBufSize)
+	nd := make([]byte, n, size)
 	copy(nd, b.data)
 	b.data = nd
-	nm := make([]byte, n)
+	nm := make([]byte, n, size)
 	copy(nm, b.mask)
 	b.mask = nm
 	if b.head > n {

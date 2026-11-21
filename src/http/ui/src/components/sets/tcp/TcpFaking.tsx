@@ -1,4 +1,3 @@
-import { useCaptures } from "@b4.capture";
 import {
   B4Accordion,
   B4Alert,
@@ -21,10 +20,20 @@ import {
   WindowMode,
 } from "@models/config";
 import { Box, Grid, Stack, Typography } from "@mui/material";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useChangedFields } from "@context/ChangedFieldsContext";
+import {
+  byPayloadName,
+  chosenPayloadFile,
+  isEmptyPayload,
+  payloadNote,
+  samePayloadFile,
+  useListedCaptures,
+  useResolvedPayloadFile,
+} from "../payloadFile";
+import { sendsFake, tlsModChangesTheFake } from "./fakePayload";
 
 interface TcpFakingProps {
   config: B4SetConfig;
@@ -34,9 +43,6 @@ interface TcpFakingProps {
   ) => void;
 }
 const ONE_PACKET_TCP_PAYLOAD = 1448;
-
-const samePayloadFile = (a: string, b: string) =>
-  a.replace(/^\.\//, "") === b.replace(/^\.\//, "");
 
 export const FAKING_ACCORDIONS: { labelKey: string; prefixes: string[] }[] = [
   { labelKey: "sets.faking.fakeSni.title", prefixes: ["faking.sni", "faking.sni_seq_length", "faking.sni_type", "faking.custom_payload", "faking.payload_domain", "faking.fake_len_mode", "faking.payload_file", "faking.strategy", "faking.seq_offset", "faking.timestamp_decrease", "faking.tls_mod", "faking.ttl", "faking.apply_ttl", "faking.md5_on_fake"] },
@@ -58,11 +64,28 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
     });
   const [newFakeSni, setNewFakeSni] = useState("");
   const [newWinValue, setNewWinValue] = useState("");
-  const { captures, loadCaptures } = useCaptures();
-
-  useEffect(() => {
-    loadCaptures().catch(() => {});
-  }, [loadCaptures]);
+  const {
+    captures,
+    listed: capturesListed,
+    listError,
+  } = useListedCaptures();
+  const tlsCaptures = captures
+    .filter((c) => c.protocol === "tls" && !c.missing && !isEmptyPayload(c))
+    .sort(byPayloadName);
+  const payloadFile = config.faking.payload_file;
+  const chosenPayloadPath =
+    config.faking.sni_type === FakingPayloadType.CAPTURE ? payloadFile : "";
+  const resolvedFile = useResolvedPayloadFile(
+    captures,
+    capturesListed,
+    chosenPayloadPath,
+  );
+  const chosenFile = chosenPayloadFile(
+    captures,
+    capturesListed,
+    chosenPayloadPath,
+    resolvedFile,
+  );
   const FAKE_STRATEGIES = [
     { value: "ttl", label: t("sets.faking.fakeSni.strategyTtl") },
     { value: "randseq", label: t("sets.faking.fakeSni.strategyRandseq") },
@@ -182,18 +205,103 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
   };
 
   const selectedCapture =
+    chosenFile.state === "listed" ? chosenFile.capture : undefined;
+  const fakeSent = sendsFake(config);
+  const payloadFileNotChosen =
+    fakeSent &&
     config.faking.sni_type === FakingPayloadType.CAPTURE &&
-    config.faking.payload_file
-      ? captures.find((c) =>
-          samePayloadFile(c.filepath, config.faking.payload_file),
-        )
-      : undefined;
-  const oversizedCapture =
+    !payloadFile;
+  const payloadDomainNotGiven =
+    fakeSent &&
+    config.faking.sni_type === FakingPayloadType.DOMAIN &&
+    !(config.faking.payload_domain || "").trim();
+
+  let chosenFileOption: { label: string; note?: string } | undefined;
+  let payloadFileHelper = listError
+    ? t("settings.Capture.listFailed", { error: listError })
+    : t(
+        tlsCaptures.length === 0
+          ? "sets.faking.fakeSni.noPayloadsHelper"
+          : "sets.faking.fakeSni.selectPayloadHelper",
+      );
+  if (chosenFile.state === "missing") {
+    chosenFileOption = {
+      label: t("sets.faking.fakeSni.payloadFileMissing", {
+        name: chosenFile.name,
+      }),
+      note: t("sets.faking.fakeSni.payloadFileMissingNote"),
+    };
+    payloadFileHelper = t("sets.faking.fakeSni.payloadFileMissingHelper", {
+      file: payloadFile,
+    });
+  } else if (chosenFile.state === "empty") {
+    chosenFileOption = {
+      label: t("sets.faking.fakeSni.payloadFileEmpty", {
+        name: chosenFile.name,
+      }),
+      note: t("sets.faking.fakeSni.payloadFileMissingNote"),
+    };
+    payloadFileHelper = t("sets.faking.fakeSni.payloadFileEmptyHelper", {
+      file: payloadFile,
+    });
+  } else if (chosenFile.state === "unlisted" && chosenFile.tooLarge) {
+    chosenFileOption = {
+      label: t("sets.faking.fakeSni.payloadFileTooLarge", {
+        name: chosenFile.name,
+      }),
+      note: t("sets.faking.fakeSni.payloadFileMissingNote"),
+    };
+    payloadFileHelper = t("sets.faking.fakeSni.payloadFileTooLargeHelper", {
+      file: payloadFile,
+    });
+  } else if (chosenFile.state === "unlisted") {
+    chosenFileOption = {
+      label: t("sets.faking.fakeSni.payloadFileUnlisted", {
+        name: chosenFile.name,
+      }),
+      note: payloadNote(t, chosenFile),
+    };
+    payloadFileHelper = t("sets.faking.fakeSni.payloadFileUnlistedHelper", {
+      file: payloadFile,
+    });
+  } else if (chosenFile.state === "unknown") {
+    chosenFileOption = { label: chosenFile.name };
+  } else if (
+    chosenFile.state === "listed" &&
+    chosenFile.capture.protocol !== "tls"
+  ) {
+    chosenFileOption = {
+      label: t("sets.faking.fakeSni.payloadFileQuic", {
+        name: chosenFile.capture.domain,
+      }),
+      note: payloadNote(t, chosenFile.capture),
+    };
+    payloadFileHelper = t("sets.faking.fakeSni.payloadFileQuicHelper");
+  }
+
+  const payloadFileOptions = [
+    { value: "", label: t("sets.faking.fakeSni.selectPayload") },
+    ...(chosenFileOption ? [{ value: payloadFile, ...chosenFileOption }] : []),
+    ...tlsCaptures.map((c) => ({
+      value:
+        c === selectedCapture || samePayloadFile(c.filepath, payloadFile)
+          ? payloadFile
+          : c.filepath,
+      label: c.domain,
+      note: payloadNote(t, c),
+    })),
+  ];
+
+  const chosenSize =
+    chosenFile.state === "unlisted" && !chosenFile.tooLarge
+      ? chosenFile.size
+      : selectedCapture?.size;
+  const oversizedSize =
     config.faking.sni &&
     config.faking.fake_len_mode !== "match" &&
-    selectedCapture &&
-    selectedCapture.size > ONE_PACKET_TCP_PAYLOAD
-      ? selectedCapture
+    chosenSize !== undefined &&
+    chosenSize > ONE_PACKET_TCP_PAYLOAD
+      ? chosenSize
       : undefined;
 
   const isMutationEnabled = mutation.mode !== "off";
@@ -399,39 +507,31 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               aiTopic="faking.fake_len_mode"
             />
           </Grid>
+          {payloadDomainNotGiven && (
+            <B4Alert severity="warning">
+              {t("sets.faking.fakeSni.payloadDomainNotGiven")}
+            </B4Alert>
+          )}
           {config.faking.sni_type === FakingPayloadType.CAPTURE && (
-            <Grid container size={{ xs: 12 }}>
-              {captures.length > 0 && (
-                <Grid size={{ xs: 6 }}>
-                  <B4Select
-                    label={t("sets.faking.fakeSni.generatedPayload")}
-                    value={config.faking.payload_file}
-                    path="faking.payload_file"
-                    options={[
-                      {
-                        value: "",
-                        label: t("sets.faking.fakeSni.selectPayload"),
-                      },
-                      ...captures.map((c) => ({
-                        value: c.filepath,
-                        label: `${c.domain} (${c.size} bytes)`,
-                      })),
-                    ]}
-                    onChange={(e) =>
-                      onChange("faking.payload_file", e.target.value)
-                    }
-                    helperText={
-                      captures.length === 0
-                        ? t("sets.faking.fakeSni.noPayloadsHelper")
-                        : t("sets.faking.fakeSni.selectPayloadHelper")
-                    }
-                    disabled={!config.faking.sni || captures.length === 0}
-                  />
-                </Grid>
-              )}
-              <Grid size={{ xs: captures.length > 0 ? 6 : 12 }}>
+            <Grid container size={{ xs: 12 }} spacing={2}>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <B4Select
+                  label={t("sets.faking.fakeSni.generatedPayload")}
+                  value={payloadFile}
+                  path="faking.payload_file"
+                  options={payloadFileOptions}
+                  onChange={(e) =>
+                    onChange("faking.payload_file", e.target.value)
+                  }
+                  helperText={payloadFileHelper}
+                  disabled={!config.faking.sni}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
                 <B4Alert>
-                  {captures.length === 0 && t("sets.faking.fakeSni.noPayloads")}
+                  {!listError &&
+                    tlsCaptures.length === 0 &&
+                    t("sets.faking.fakeSni.noPayloads")}
 
                   <Link to="/settings/payloads">
                     {" "}
@@ -439,11 +539,16 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                   </Link>
                 </B4Alert>
               </Grid>
-              {oversizedCapture && (
+              {payloadFileNotChosen && (
+                <B4Alert severity="warning">
+                  {t("sets.faking.fakeSni.payloadFileNotChosen")}
+                </B4Alert>
+              )}
+              {oversizedSize !== undefined && (
                 <Grid size={{ xs: 12 }}>
                   <B4Alert severity="warning">
                     {t("sets.faking.fakeSni.payloadOverOnePacket", {
-                      count: oversizedCapture.size,
+                      count: oversizedSize,
                       max: ONE_PACKET_TCP_PAYLOAD,
                     })}
                   </B4Alert>
@@ -451,8 +556,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               )}
             </Grid>
           )}
-          {/* TLS Mod Options - only show when payload has TLS structure */}
-          {config.faking.sni_type !== FakingPayloadType.RANDOM && (
+          {tlsModChangesTheFake(config, chosenFile) && (
             <Grid size={{ xs: 12 }}>
               <Typography variant="subtitle2" sx={{ mb: 1 }}>
                 {t("sets.faking.fakeSni.tlsModTitle")}
@@ -464,7 +568,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               >
                 {t("sets.faking.fakeSni.tlsModDesc")}
               </Typography>
-              <Stack direction="row" spacing={2}>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                 <B4Switch
                   label={t("sets.faking.fakeSni.randomizeTlsRandom")}
                   checked={(config.faking.tls_mod || []).includes("rnd")}

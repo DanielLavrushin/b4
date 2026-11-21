@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { Button, Grid } from "@mui/material";
+import { Button, Grid, SxProps, Theme } from "@mui/material";
 import { Link } from "react-router";
 import { DnsIcon, WarningIcon } from "@b4.icons";
 import {
@@ -20,10 +20,18 @@ import {
   UDP_FAKE_PAYLOAD_AUTO_STUN,
   UDP_FAKE_PAYLOAD_PRESET_1,
   UDP_FAKE_PAYLOAD_PRESET_2,
+  UDP_FAKE_LEN_MAX,
 } from "@models/config";
-import { useCaptures } from "@b4.capture";
+import { useBuiltinPayloads } from "@b4.capture";
 import { declaresIpTargets } from "@utils";
+import {
+  chosenPayloadFile,
+  samePayloadFile,
+  useListedCaptures,
+  useResolvedPayloadFile,
+} from "./payloadFile";
 import { udpPortRouting } from "./routing/portRouting";
+import { bytesLabel } from "@components/settings/payloads/facts";
 import { useTranslation, Trans } from "react-i18next";
 import {
   CallsSession,
@@ -37,6 +45,29 @@ import {
 } from "./udpL7";
 
 const UNKNOWN_WHICH = "unknown";
+
+const UDP_BUILTIN_PAYLOADS = [
+  "",
+  UDP_FAKE_PAYLOAD_AUTO_QUIC,
+  UDP_FAKE_PAYLOAD_AUTO_STUN,
+  UDP_FAKE_PAYLOAD_PRESET_1,
+  UDP_FAKE_PAYLOAD_PRESET_2,
+];
+
+const UDP_PRESET_BUILTINS: Record<string, string> = {
+  [UDP_FAKE_PAYLOAD_PRESET_1]: "quic1",
+  [UDP_FAKE_PAYLOAD_PRESET_2]: "quic2",
+};
+
+const actionAlertSx: SxProps<Theme> = {
+  flexWrap: { xs: "wrap", lg: "nowrap" },
+  "& .MuiAlert-message": { flex: { xs: "1 1 0", lg: "0 1 auto" } },
+  "& .MuiAlert-action": {
+    width: { xs: "100%", lg: "auto" },
+    justifyContent: "flex-end",
+    pl: { xs: 0, lg: 2 },
+  },
+};
 
 interface UdpSettingsProps {
   config: B4SetConfig;
@@ -55,11 +86,16 @@ export const UdpSettings = ({
   onChange,
 }: UdpSettingsProps) => {
   const { t } = useTranslation();
-  const { captures, loadCaptures } = useCaptures();
+  const {
+    captures,
+    listed: capturesListed,
+    listError,
+  } = useListedCaptures();
+  const { builtins, loadBuiltins } = useBuiltinPayloads();
 
   useEffect(() => {
-    loadCaptures().catch(() => {});
-  }, [loadCaptures]);
+    void loadBuiltins();
+  }, [loadBuiltins]);
 
   const UDP_MODES = [
     {
@@ -255,25 +291,96 @@ export const UdpSettings = ({
   const isAutoStun =
     config.udp.fake_payload_file === UDP_FAKE_PAYLOAD_AUTO_STUN;
 
-  let payloadFileHelperKey: string;
-  if (isAutoQuic) {
-    payloadFileHelperKey = "sets.udp.fakePayloadFileAutoQuic";
-  } else if (isAutoStun) {
-    payloadFileHelperKey = "sets.udp.fakePayloadFileAutoStun";
-  } else if (captures.length === 0) {
-    payloadFileHelperKey = "sets.udp.fakePayloadFileEmpty";
-  } else {
-    payloadFileHelperKey = "sets.udp.fakePayloadFileHelper";
-  }
+  const udpPayloadFile = config.udp.fake_payload_file ?? "";
+  const udpPayloadPath = UDP_BUILTIN_PAYLOADS.includes(udpPayloadFile)
+    ? ""
+    : udpPayloadFile;
+  const resolvedUdpFile = useResolvedPayloadFile(
+    captures,
+    capturesListed,
+    udpPayloadPath,
+  );
+  const chosenUdpFile = chosenPayloadFile(
+    captures,
+    capturesListed,
+    udpPayloadPath,
+    resolvedUdpFile,
+  );
+  const chosenUdpCapture =
+    chosenUdpFile.state === "listed" || chosenUdpFile.state === "empty"
+      ? chosenUdpFile.capture
+      : undefined;
 
   const sortedCaptures = useMemo(
     () =>
-      [...captures].sort(
-        (a, b) =>
-          (a.protocol === "quic" ? 0 : 1) - (b.protocol === "quic" ? 0 : 1),
-      ),
+      captures
+        .filter((c) => !c.missing)
+        .sort(
+          (a, b) =>
+            (a.protocol === "quic" ? 0 : 1) - (b.protocol === "quic" ? 0 : 1),
+        ),
     [captures],
   );
+
+  const unlistedEmptyUdpFile =
+    chosenUdpFile.state === "empty" && !chosenUdpFile.capture;
+
+  let payloadFileHelper: string;
+  if (chosenUdpFile.state === "missing") {
+    payloadFileHelper = t("sets.udp.fakePayloadFileMissingHelper", {
+      file: udpPayloadFile,
+    });
+  } else if (unlistedEmptyUdpFile) {
+    payloadFileHelper = t("sets.udp.fakePayloadFileIsEmptyHelper", {
+      file: udpPayloadFile,
+    });
+  } else if (chosenUdpFile.state === "unlisted") {
+    payloadFileHelper = t("sets.udp.fakePayloadFileUnlistedHelper", {
+      file: udpPayloadFile,
+    });
+  } else if (isAutoQuic) {
+    payloadFileHelper = t("sets.udp.fakePayloadFileAutoQuic");
+  } else if (isAutoStun) {
+    payloadFileHelper = t("sets.udp.fakePayloadFileAutoStun");
+  } else if (listError) {
+    payloadFileHelper = t("settings.Capture.listFailed", { error: listError });
+  } else if (sortedCaptures.length === 0) {
+    payloadFileHelper = t("sets.udp.fakePayloadFileEmpty");
+  } else {
+    payloadFileHelper = t("sets.udp.fakePayloadFileHelper");
+  }
+
+  let chosenUdpFileLabel: string | undefined;
+  if (chosenUdpFile.state === "missing") {
+    chosenUdpFileLabel = t("sets.udp.fakePayloadFileMissing", {
+      name: chosenUdpFile.name,
+    });
+  } else if (unlistedEmptyUdpFile) {
+    chosenUdpFileLabel = t("sets.udp.fakePayloadFileIsEmpty", {
+      name: chosenUdpFile.name,
+    });
+  } else if (chosenUdpFile.state === "unlisted") {
+    chosenUdpFileLabel = t("sets.udp.fakePayloadFileUnlisted", {
+      name: chosenUdpFile.name,
+    });
+  } else if (chosenUdpFile.state === "unknown") {
+    chosenUdpFileLabel = chosenUdpFile.name;
+  }
+
+  const presetBuiltin = UDP_PRESET_BUILTINS[udpPayloadFile];
+  const fakePayloadSize =
+    chosenUdpFile.state === "listed"
+      ? chosenUdpFile.capture.size
+      : chosenUdpFile.state === "unlisted"
+        ? chosenUdpFile.size
+        : presetBuiltin
+          ? builtins.find((b) => b.id === presetBuiltin)?.size
+          : undefined;
+  const fakeLen = config.udp.fake_len;
+  const truncatedPayloadSize =
+    fakePayloadSize !== undefined && fakeLen < fakePayloadSize
+      ? fakePayloadSize
+      : undefined;
 
   const showSniWarning =
     !onlyCalls &&
@@ -396,15 +503,7 @@ export const UdpSettings = ({
           <B4Alert
             severity="warning"
             icon={<WarningIcon />}
-            sx={{
-              flexWrap: { xs: "wrap", lg: "nowrap" },
-              "& .MuiAlert-message": { flex: { xs: "1 1 0", lg: "0 1 auto" } },
-              "& .MuiAlert-action": {
-                width: { xs: "100%", lg: "auto" },
-                justifyContent: "flex-end",
-                pl: { xs: 0, lg: 2 },
-              },
-            }}
+            sx={actionAlertSx}
             action={
               <Button
                 color="inherit"
@@ -502,7 +601,7 @@ export const UdpSettings = ({
                     path="udp.fake_len"
                     onChange={(value) => onChange("udp.fake_len", value)}
                     min={32}
-                    max={1472}
+                    max={UDP_FAKE_LEN_MAX}
                     step={8}
                     valueSuffix={t("core.units.bytes")}
                     helperText={t("sets.udp.fakeSizeHelper")}
@@ -511,7 +610,7 @@ export const UdpSettings = ({
 
                 <Grid size={{ xs: 12, md: 6 }}>
                   <B4Select
-                    value={config.udp.fake_payload_file ?? ""}
+                    value={udpPayloadFile}
                     path="udp.fake_payload_file"
                     options={[
                       {
@@ -534,15 +633,22 @@ export const UdpSettings = ({
                         value: UDP_FAKE_PAYLOAD_PRESET_2,
                         label: t("sets.udp.fakePayloadFilePreset2"),
                       },
+                      ...(chosenUdpFileLabel
+                        ? [{ value: udpPayloadFile, label: chosenUdpFileLabel }]
+                        : []),
                       ...sortedCaptures.map((c) => ({
-                        value: c.filepath,
-                        label: `[${c.protocol}] ${c.domain} (${c.size} bytes)`,
+                        value:
+                          c === chosenUdpCapture ||
+                          samePayloadFile(c.filepath, udpPayloadFile)
+                            ? udpPayloadFile
+                            : c.filepath,
+                        label: `[${c.protocol}] ${c.domain} (${bytesLabel(t, c.size)})`,
                       })),
                     ]}
                     onChange={(e) =>
                       onChange("udp.fake_payload_file", e.target.value)
                     }
-                    helperText={t(payloadFileHelperKey)}
+                    helperText={payloadFileHelper}
                   />
                   <B4Hint>
                     <Link to="/settings/payloads">
@@ -550,6 +656,44 @@ export const UdpSettings = ({
                     </Link>
                   </B4Hint>
                 </Grid>
+
+                {truncatedPayloadSize !== undefined && (
+                  <B4Alert
+                    severity="warning"
+                    icon={<WarningIcon />}
+                    sx={actionAlertSx}
+                    action={
+                      fakeLen < UDP_FAKE_LEN_MAX ? (
+                        <Button
+                          color="inherit"
+                          size="small"
+                          sx={{ whiteSpace: "nowrap" }}
+                          onClick={() =>
+                            onChange(
+                              "udp.fake_len",
+                              Math.min(truncatedPayloadSize, UDP_FAKE_LEN_MAX),
+                            )
+                          }
+                        >
+                          {truncatedPayloadSize > UDP_FAKE_LEN_MAX
+                            ? t("sets.udp.fakePayloadUseMax", {
+                                size: bytesLabel(t, UDP_FAKE_LEN_MAX),
+                              })
+                            : t("sets.udp.fakePayloadUseSize")}
+                        </Button>
+                      ) : undefined
+                    }
+                  >
+                    {t("sets.udp.fakePayloadTruncated", {
+                      len: fakeLen,
+                      count: truncatedPayloadSize,
+                    })}
+                    {truncatedPayloadSize > UDP_FAKE_LEN_MAX &&
+                      ` ${t("sets.udp.fakePayloadOverOneFake", {
+                        max: UDP_FAKE_LEN_MAX,
+                      })}`}
+                  </B4Alert>
+                )}
 
                 <B4FormHeader label={t("sets.udp.evasionHeader")} />
 

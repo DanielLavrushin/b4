@@ -16,7 +16,7 @@ The **Settings** page holds the configuration of b4 itself. Sets have their own 
 | [Discovery](./discovery.md) | Discovery and the watchdog |
 | [Telegram](./mtproto.md) | Telegram over WebSocket, the MTProto proxy and the WEB proxy |
 | [Integrations](./integrations.md) | The IPinfo token, the AI assistant, the MCP server and the Community Hub |
-| [Payloads](./payloads.md) | Payloads for faking |
+| [Payloads](./payloads.md) | Payloads for fake packets |
 
 The login, HTTPS and the **Expose to internet** switches are covered in [Securing the web interface](./security.md).
 
