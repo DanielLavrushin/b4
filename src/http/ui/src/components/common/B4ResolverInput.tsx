@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type {
   ClipboardEvent,
   FocusEvent,
@@ -207,6 +207,8 @@ export const B4ResolverInput = ({
   const [focusTarget, setFocusTarget] = useState<FocusTarget | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const chipsRef = useRef<HTMLDivElement>(null);
+  const fieldId = useId();
+  const messageId = `${fieldId}-message`;
   const { changedPaths, registerLabel, scopeVersion } = useChangedFields();
   useEffect(() => {
     for (const item of paths) registerLabel(item.path, item.label);
@@ -347,6 +349,14 @@ export const B4ResolverInput = ({
     limitNote = t("core.resolverInput.notAdded", { count: unfit, max });
   }
   const notes = [reason, limitNote].filter(Boolean).join(" ");
+  const shownMessage = fieldMessage(message);
+  const describedBy =
+    [
+      notes || helperText ? `${fieldId}-helper-text` : null,
+      shownMessage !== null ? messageId : null,
+    ]
+      .filter(Boolean)
+      .join(" ") || undefined;
 
   return (
     <Box onBlur={handleBlur}>
@@ -359,9 +369,11 @@ export const B4ResolverInput = ({
         }}
       >
         <B4TextField
+          id={fieldId}
           label={label}
           value={input}
           inputRef={inputRef}
+          slotProps={{ htmlInput: { "aria-describedby": describedBy } }}
           changed={changed}
           error={!!reason || unfit > 0}
           disabled={disabled || (full && !input && !focused)}
@@ -442,7 +454,7 @@ export const B4ResolverInput = ({
           )}
         </Box>
       )}
-      {fieldMessage(message)}
+      {shownMessage !== null && <Box id={messageId}>{shownMessage}</Box>}
     </Box>
   );
 };
