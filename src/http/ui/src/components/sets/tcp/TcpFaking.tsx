@@ -29,6 +29,7 @@ import {
   samePayloadFile,
   useListedCaptures,
 } from "../payloadFile";
+import { sendsFake } from "./fakePayload";
 
 interface TcpFakingProps {
   config: B4SetConfig;
@@ -189,6 +190,15 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
 
   const selectedCapture =
     chosenFile.state === "listed" ? chosenFile.capture : undefined;
+  const fakeSent = sendsFake(config);
+  const payloadFileNotChosen =
+    fakeSent &&
+    config.faking.sni_type === FakingPayloadType.CAPTURE &&
+    !payloadFile;
+  const payloadDomainNotGiven =
+    fakeSent &&
+    config.faking.sni_type === FakingPayloadType.DOMAIN &&
+    !(config.faking.payload_domain || "").trim();
 
   let chosenFileLabel: string | undefined;
   let payloadFileHelper = t(
@@ -435,6 +445,11 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               aiTopic="faking.fake_len_mode"
             />
           </Grid>
+          {payloadDomainNotGiven && (
+            <B4Alert severity="warning">
+              {t("sets.faking.fakeSni.payloadDomainNotGiven")}
+            </B4Alert>
+          )}
           {config.faking.sni_type === FakingPayloadType.CAPTURE && (
             <Grid container size={{ xs: 12 }} spacing={2}>
               <Grid size={{ xs: 12, md: 6 }}>
@@ -461,6 +476,11 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                   </Link>
                 </B4Alert>
               </Grid>
+              {payloadFileNotChosen && (
+                <B4Alert severity="warning">
+                  {t("sets.faking.fakeSni.payloadFileNotChosen")}
+                </B4Alert>
+              )}
               {oversizedCapture && (
                 <Grid size={{ xs: 12 }}>
                   <B4Alert severity="warning">

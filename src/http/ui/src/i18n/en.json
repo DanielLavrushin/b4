@@ -2148,6 +2148,8 @@
         "payloadFileMissingHelper": "This set names {{file}}, which does not exist. Until another payload is picked, the set sends Preset: Google (classic).",
         "payloadFileQuic": "{{name}} (QUIC payload)",
         "payloadFileQuicHelper": "A QUIC payload is made for UDP fakes. As a TCP fake it is sent as is. Pick a TLS ClientHello.",
+        "payloadFileNotChosen": "No payload file is chosen, so the set sends Preset: Google (classic).",
+        "payloadDomainNotGiven": "No domain is given, so the set sends Preset: Google (classic).",
         "payloadOverOnePacket_one": "This payload is {{count}} byte. A 1500-byte packet of a connection with TCP timestamps carries at most {{max}} bytes of payload, so on a link with that MTU the kernel refuses this fake and it is not sent. Turn on Match Fake Size to give the fake the length of the real packet.",
         "payloadOverOnePacket_other": "This payload is {{count}} bytes. A 1500-byte packet of a connection with TCP timestamps carries at most {{max}} bytes of payload, so on a link with that MTU the kernel refuses this fake and it is not sent. Turn on Match Fake Size to give the fake the length of the real packet.",
         "navigateSettings": "Navigate to Settings to generate or upload TLS ClientHello payloads.",
