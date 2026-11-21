@@ -5698,6 +5698,9 @@
                 },
                 "sni": {
                     "type": "string"
+                },
+                "tls_mod": {
+                    "type": "boolean"
                 }
             }
         },
