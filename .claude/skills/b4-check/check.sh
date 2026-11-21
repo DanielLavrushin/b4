@@ -243,6 +243,7 @@ if grep -Eq '^hub/.+\.go$|^hub/go\.(mod|sum)$|^src/hubwire/' "$tmp/changed"; the
 fi
 if has '^(src/http/ui|shared/design)/|^pnpm-lock\.yaml$|^src/config/'; then
   suite "make gen-defaults && pnpm -C src/http/ui exec tsc -p tsconfig.json"
+  suite "pnpm -C src/http/ui test"
   suite "pnpm -C src/http/ui exec oxlint --type-aware --report-unused-disable-directives-severity=warn"
   suite "pnpm -C src/http/ui build"
 fi

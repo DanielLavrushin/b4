@@ -31,6 +31,7 @@ type MetricsCollector struct {
 	ev         eventState
 	esc        escState
 	bans       banState
+	collected  collectedState
 	st         liveState
 	ts         tickState
 }

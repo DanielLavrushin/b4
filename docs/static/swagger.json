@@ -961,6 +961,93 @@
                 }
             }
         },
+        "/collected-ips": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the current shared collected pool, sorted by collection time, latest first. Addresses are runtime candidates, not bans. since and until are wall-clock milliseconds: until is when the address leaves the pool unless an answer removes it earlier.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "CollectedIPs"
+                ],
+                "summary": "List collected IP addresses",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.CollectedIPsResponse"
+                        }
+                    },
+                    "405": {
+                        "description": "Method not allowed",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/collected-ips/clear": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes one IP or clears the pool when ip is empty or the body is missing. Static targets remain. New detections can collect removed addresses again. A failed update retains the entry and returns an error.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "CollectedIPs"
+                ],
+                "summary": "Remove collected IP addresses",
+                "parameters": [
+                    {
+                        "description": "IP address to remove; empty clears all collected addresses",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.CollectedIPsClearRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.CollectedIPsClearResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_json or bad_request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    },
+                    "405": {
+                        "description": "Method not allowed",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "internal",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/config": {
             "get": {
                 "security": [
@@ -6052,6 +6139,9 @@
         "config.IPBlockDetectConfig": {
             "type": "object",
             "properties": {
+                "action": {
+                    "type": "string"
+                },
                 "cache_blocked_ips": {
                     "type": "boolean"
                 },
@@ -6677,6 +6767,9 @@
                 },
                 "wssize": {
                     "$ref": "#/definitions/config.WSSizeConfig"
+                },
+                "wssize_reuse": {
+                    "$ref": "#/definitions/config.WSSizeReuseConfig"
                 }
             }
         },
@@ -6778,6 +6871,9 @@
                 "tls": {
                     "description": "\"1.2\", \"1.3\", or \"\" (match any)",
                     "type": "string"
+                },
+                "use_collected_ips": {
+                    "type": "boolean"
                 }
             }
         },
@@ -6888,6 +6984,17 @@
                     "type": "boolean"
                 },
                 "window": {
+                    "type": "integer"
+                }
+            }
+        },
+        "config.WSSizeReuseConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "max_age_seconds": {
                     "type": "integer"
                 }
             }
@@ -7697,6 +7804,36 @@
                 "protocol": {
                     "description": "\"tls\", \"quic\", or \"both\"",
                     "type": "string"
+                }
+            }
+        },
+        "handler.CollectedIPsClearRequest": {
+            "type": "object",
+            "properties": {
+                "ip": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.CollectedIPsClearResponse": {
+            "type": "object",
+            "properties": {
+                "cleared": {
+                    "type": "integer"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "handler.CollectedIPsResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/metrics.CollectedEntry"
+                    }
                 }
             }
         },
@@ -9034,6 +9171,12 @@
                 },
                 "success": {
                     "type": "boolean"
+                },
+                "unmatched": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.GeodatUnmatched"
+                    }
                 }
             }
         },
@@ -9078,6 +9221,29 @@
                     "type": "string"
                 },
                 "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.GeodatUnmatched": {
+            "type": "object",
+            "properties": {
+                "geoip_categories": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "geosite_categories": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "set_id": {
+                    "type": "string"
+                },
+                "set_name": {
                     "type": "string"
                 }
             }
@@ -10584,6 +10750,43 @@
                 }
             }
         },
+        "metrics.CollectedEntry": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string"
+                },
+                "ip": {
+                    "type": "string"
+                },
+                "set": {
+                    "type": "string"
+                },
+                "since": {
+                    "type": "integer"
+                },
+                "until": {
+                    "type": "integer"
+                }
+            }
+        },
+        "metrics.CollectedList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/metrics.CollectedEntry"
+                    }
+                },
+                "refused": {
+                    "type": "integer"
+                },
+                "rev": {
+                    "type": "integer"
+                }
+            }
+        },
         "metrics.Conntrack": {
             "type": "object",
             "properties": {
@@ -10760,6 +10963,9 @@
                 },
                 "blocked": {
                     "$ref": "#/definitions/metrics.BlockedLists"
+                },
+                "collected": {
+                    "$ref": "#/definitions/metrics.CollectedList"
                 },
                 "devices": {
                     "$ref": "#/definitions/metrics.DeviceList"

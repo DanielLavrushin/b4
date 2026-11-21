@@ -170,7 +170,7 @@ func (w *Worker) applyPinnedAnswerAwait(cfg *config.Config, set *config.SetConfi
 }
 
 func synDetectEnabled(set *config.SetConfig) bool {
-	return set != nil && set.TCP.IPBlockDetect.Enabled && set.TCP.IPBlockDetect.SynDetect
+	return set != nil && set.TCP.IPBlockDetect.Enabled && !set.TCP.IPBlockDetect.Collects() && set.TCP.IPBlockDetect.SynDetect
 }
 
 func synTrackingEnabled(set *config.SetConfig) bool {
@@ -267,7 +267,7 @@ func (w *Worker) healingSet(cfg *config.Config, set *config.SetConfig) bool {
 		return false
 	}
 	ibd := &set.TCP.IPBlockDetect
-	return ibd.Enabled && ibd.HealDNS
+	return ibd.Enabled && !ibd.Collects() && ibd.HealDNS
 }
 
 func (w *Worker) filterDNSAnswer(cfg *config.Config, set *config.SetConfig, domain, clientMac string, resp []byte, overTCP bool, from ...*ingressScope) ([]byte, string, *config.SetConfig) {

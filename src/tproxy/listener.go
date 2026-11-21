@@ -78,6 +78,8 @@ const (
 )
 
 type Listener struct {
+	WSReuse   bool
+	Warm      WSReuseDialer
 	SetID     string
 	SetName   string
 	BindAddr  string
@@ -121,6 +123,12 @@ type Listener struct {
 	udpRefusedAt atomic.Int64
 
 	activeConns atomic.Int64
+
+	warmSlotsFull   warnLimiter
+	warmPortsLeased warnLimiter
+	fallbacksFull   warnLimiter
+	dialFailed      warnLimiter
+	silentPasses    warnLimiter
 
 	upstreamFails    atomic.Int64
 	upstreamLastWarn atomic.Int64
@@ -358,6 +366,10 @@ func (l *Listener) serve(client net.Conn, given *sniffResult) {
 	}
 	origIP := tcpAddr.IP
 	origPort := tcpAddr.Port
+	if l.WSReuse {
+		l.serveWSReuse(client, origIP, origPort, given)
+		return
+	}
 
 	if l.MTProtoWS {
 		src := ""

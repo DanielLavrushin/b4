@@ -133,7 +133,7 @@ func (b *ipBans) bannedKey(dstIPPort string) bool {
 }
 
 func banEnforced(set *config.SetConfig) bool {
-	return set != nil && set.TCP.IPBlockDetect.Enabled && set.TCP.IPBlockDetect.CacheBlockedIPs
+	return set != nil && set.TCP.IPBlockDetect.Enabled && !set.TCP.IPBlockDetect.Collects() && set.TCP.IPBlockDetect.CacheBlockedIPs
 }
 
 func (w *Worker) refusesBannedQUIC(cfg *config.Config, set *config.SetConfig, dst net.IP, dport uint16) bool {

@@ -144,7 +144,7 @@ func changedOwnership(built, sets []*config.SetConfig) cidranger.Ranger {
 		if set == nil {
 			return
 		}
-		for _, raw := range set.Targets.IpsToMatch {
+		for _, raw := range set.TargetIPs() {
 			network := parseTargetNetwork(raw)
 			if network == nil {
 				continue
@@ -210,7 +210,7 @@ func sameAddressTargets(a, b *config.SetConfig) bool {
 	return slices.Equal(a.Targets.IPs, b.Targets.IPs) &&
 		slices.Equal(a.Targets.ASNs, b.Targets.ASNs) &&
 		slices.Equal(a.Targets.GeoIpCategories, b.Targets.GeoIpCategories) &&
-		slices.Equal(a.Targets.IpsToMatch, b.Targets.IpsToMatch)
+		slices.Equal(a.TargetIPs(), b.TargetIPs())
 }
 
 const escalationChainHops = 8

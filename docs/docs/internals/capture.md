@@ -107,6 +107,49 @@ A settings change applies to the held connections too. b4 decides each of them a
 
 The drop set holds a connection by its addresses and ports. A new QUIC connection that a device opens from the same port to the same server address and port within those 2 minutes is dropped as well, whatever name it carries.
 
+## Collected IP targets {#collected-ips}
+
+[Collect detected IPs](../sets/tcp/general.md#collect-detected-ips) judges a connection by what the NFQUEUE engine sees of it and by its conntrack entry. It opens no connection of its own. [Collected IPs](../sets/targets.md#collected-ips) describes what the pool does for the sets that use it.
+
+### What counts as silent {#collected-silent}
+
+b4 starts to watch a connection of a Collect set at its ClientHello, when it knows where the ClientHello ends and conntrack holds an established entry with packet counters for the connection. At the **Detection Timeout** the connection counts as silent when it is still the same established entry, the server has acknowledged the whole ClientHello and the reply counters show no data from the server since then. Acknowledgements without data do not count as an answer, and neither does a SYN-ACK the server sends again. Server data, a closed or replaced entry or counters b4 cannot read end the watch without a count. b4 never watches the connections of **Reuse WSSIZE connection** that it opens itself.
+
+Until two connections are counted, a silent connection whose ClientHello came before the **Detection Timeout** of the last counted connection to the same address and port had run out is not counted: the two ran at the same time. b4 holds it as long as a counted one and resets it with the others when the address is collected. A server answer on it starts the count over.
+
+| Item | Value |
+| --- | --- |
+| How long b4 holds the first silent connection, to reset it with the second | Up to 2 minutes past its **Detection Timeout** |
+| Addresses in the pool | 1024, in memory only; the pool is empty after b4 restarts |
+| Lifetime of a collected address | 6 hours from its collection, never extended |
+| Addresses whose silent connections are being counted | 1024 |
+| Connections of Collect sets that b4 remembers | 4096 |
+
+When the pool, the counted addresses or the remembered connections reach their limit, b4 logs one warning until the number drops below it again.
+
+Collect reads the reply counters of conntrack. In NFQUEUE mode, b4 turns on `net.netfilter.nf_conntrack_acct` while some enabled set with **Collect detected IPs** does not itself use collected IPs, and puts the saved value back once no set reads the counters. When the value already reads `1` and b4 has saved none, for example because its own packet limits turned accounting on, b4 leaves it as it is. On nftables, the queue rules for replies count the reply packets of a connection while such a set is enabled, as on iptables, instead of the packets in the connection's original direction.
+
+### Which set takes the address {#collected-owner}
+
+A set with **Use collected IPs** that sends traffic through its proxy, its interface, the Telegram over WebSocket mode or WSSIZE reuse takes a connection when its firewall rules are in place for that address family and apply to the device, wherever the set sits in the list. WSSIZE reuse takes only TCP to port 443 of an address family its **IP Version Filter** allows, and only while reuse is in effect. The router's own connections count only where the set carries the router's traffic. b4's own connections are never taken this way. An answer from the server on a watched connection that no such set takes, and whose own set does not use collected IPs, starts the count over and removes the address from the pool. An answer on any other watched connection does neither.
+
+b4 collects an address only when a set with **Use collected IPs** would take the next connection to it from that device. That is a set that takes it as above, or else the set with **Use collected IPs** that wins the address match for the device and port. When that set has no rules yet, for example because it has no address so far, it takes the address if it sends traffic through its proxy, its interface or the Telegram over WebSocket mode, or if it has WSSIZE reuse in effect and the port is 443. Otherwise it must also win the address match among all sets and keep the connection against a set that names the server, as [IP priority](./matching.md#ip-priority) decides. When no set qualifies, b4 logs `not collected: no set with Use collected IPs takes its next connection` at the info level. Later silent connections from the same device and interface to that address and port then end without a count until a save or a change of the pool.
+
+### Installing the pool {#collected-install}
+
+Every change of the pool is installed before the packet engine matches it: the destination sets and [guard sets](../guides/marks.md#collected-addresses) of the routing sets that use collected IPs, the capture sets below, and a check that their transparent listeners run for each address family they hold collected addresses of. Only then does b4 reset the silent connections, so that the device's retries reach the set. A save during an install makes the install run again at the next pass.
+
+When the install fails, b4 logs a warning, puts back the pool it had installed before and does not collect the new address. After a save that changes the firewall rules, the install fails the same way until the firewall holds the new configuration, and b4 logs this once at the info level instead of a warning. An address that was leaving the pool stays in it, and b4 tries that removal again after 10 seconds, doubling the wait up to 5 minutes. A delete the kernel refuses counts as a failure as well.
+
+For the per-set MSS clamp and packet duplication, b4 keeps collected addresses in capture sets of their own, in NFQUEUE mode only:
+
+| Set | Present while | nftables, in `inet b4_mangle` | iptables |
+| --- | --- | --- | --- |
+| `b4_mss_<n>_v4c`, `b4_mss_<n>_v6c` | An enabled set with **MSS Clamping** uses collected IPs; `<n>` is its position in the set list, from 0. Only for an enabled address family its source devices cover | Type `ipv4_addr` or `ipv6_addr` | ipset `hash:ip` |
+| `b4_dup_v4c`, `b4_dup_v6c` | Any enabled set with packet duplication uses collected IPs, for each enabled address family | Type `ipv4_addr` or `ipv6_addr` | ipset `hash:ip` |
+
+The MSS rules for these sets are those of the set's other addresses, at its clamp size. Duplication adds one queue rule per address family to `b4_chain` or `B4`, next to the rule for the set's other duplication addresses. A change of the pool only adds and deletes members. Turning **Use collected IPs**, the clamp or duplication on or off in such a set, or removing the set, rebuilds the firewall, and a rebuild or a restore by the firewall monitor fills the sets from the pool installed last. The monitor checks their rules, not their members. On iptables without a usable `ipset`, b4 leaves them out and logs a warning.
+
 ## Kernel requirements {#kernel-requirements}
 
 | Feature | Needs |
@@ -116,6 +159,8 @@ The drop set holds a connection by its addresses and ports. A new QUIC connectio
 | TUN | `/dev/net/tun` and the `iptables` command or the iptables-nft shim. `xt_connbytes` for capture by port, `xt_conntrack` for selecting TCP packets by direction, `iptable_raw` and `xt_CT` for forwarded traffic |
 | Holding a dropped QUIC connection | `nf_conntrack_netlink`, with iptables and in TUN mode with `xt_connbytes`; with nftables for deleting the conntrack entry and for releasing held connections after a settings change, see [Dropped QUIC connections](#dropped-quic-connections) |
 | Testing a silent server for a ban before the device gives up | `nf_conntrack_netlink` and conntrack accounting. The packet limits of b4's capture rules turn accounting on: `xt_connbytes`, or `ct original packets` with nftables. Without them, accounting needs `net.netfilter.nf_conntrack_acct` set to `1`. When either is missing, a silent connection counts toward the test only if the device gives up on it within 2 minutes after the **Detection Timeout**, see [Banned addresses](../sets/tcp/general.md#banned-addresses) |
+| Collect detected IPs | `nf_conntrack_netlink` and conntrack accounting, which b4 turns on itself, see [What counts as silent](#collected-silent) |
+| Collected addresses of a routing set | With iptables, `xt_connmark`, `xt_CONNMARK` and `xt_conntrack`; without the first two, a set other than a block set works without its [collected rules](../guides/marks.md#collected-addresses) and b4 logs a warning. With nftables, `nft_ct` |
 | DSCP with iptables | The `xt_DSCP` module, on OpenWrt in `kmod-ipt-ipopt` and `iptables-mod-ipopt`. The values of sets also need the `ipset` command and the `xt_set` module |
 | DSCP with nftables | Nothing extra |
 | Interception of DNS over TCP | The `REDIRECT` target in the `nat` table |

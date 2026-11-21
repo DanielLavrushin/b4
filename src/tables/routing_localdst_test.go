@@ -98,6 +98,54 @@ func TestProxyPreChainLocalGuardSitsBetweenTheClaimedGuardAndTheDivert(t *testin
 	}
 }
 
+func TestProxyPreChainDivertSitsAboveTheCollectedGuard(t *testing.T) {
+	for _, backend := range []routeBackend{&routeIptBackend{}, &routeNftBackend{}} {
+		t.Run(backend.name(), func(t *testing.T) {
+			localGuardReset(t)
+			emitted := captureProxyRuleArgv(t)
+			run = refuseDeletes(run)
+			stubBinaries(t, backendIPTables, backendIP6Tables)
+
+			cfg := v4OnlyConfig()
+			cfg.Queue.IPv6Enabled = true
+			set := orderTestSet("guard", config.RoutingModeProxy, nil)
+			set.Targets.UseCollectedIPs = true
+			st := proxyGuardState(0x239c9)
+			st.collected = true
+			st.ipv6 = true
+
+			if err := routeEnsureProxyRule(backend, cfg, set, st, nil); err != nil {
+				t.Fatalf("routeEnsureProxyRule: %v", err)
+			}
+			pre := chainRuleLines(*emitted, st.chainPre)
+			for _, name := range []string{st.setV4, st.setV6} {
+				ref, guardRef := "--match-set "+name+" dst", "--match-set "+name+"c dst"
+				if backend.name() == backendNFTables {
+					ref, guardRef = "@"+name+" ", "@"+name+"c "
+				}
+				divert, guard, tproxy := -1, -1, -1
+				for i, line := range pre {
+					lower := strings.ToLower(line)
+					switch {
+					case divert < 0 && strings.Contains(line, ref) && strings.Contains(line, "socket") && strings.Contains(line, "transparent"):
+						divert = i
+					case guard < 0 && strings.Contains(line, guardRef) && strings.Contains(lower, "return"):
+						guard = i
+					case tproxy < 0 && strings.Contains(line, ref) && strings.Contains(lower, "tproxy"):
+						tproxy = i
+					}
+				}
+				if divert < 0 || guard < 0 || tproxy < 0 {
+					t.Fatalf("expected the divert, the collected guard's return and the tproxy rule for %s in %s (divert=%d guard=%d tproxy=%d):\n%s", name, st.chainPre, divert, guard, tproxy, strings.Join(pre, "\n"))
+				}
+				if !(divert < guard && guard < tproxy) {
+					t.Errorf("for %s the divert must sit above the collected guard's return and the return above the tproxy rule (divert=%d guard=%d tproxy=%d): a connection the transparent listener already holds is otherwise returned unmarked as soon as something rewrites its connection mark, and leaves by the uplink:\n%s", name, divert, guard, tproxy, strings.Join(pre, "\n"))
+				}
+			}
+		})
+	}
+}
+
 func TestProxyPreChainLocalGuardIPv6UsesSeparateRulesAndNeverBroadcast(t *testing.T) {
 	localGuardReset(t)
 	emitted := captureProxyRuleArgv(t)

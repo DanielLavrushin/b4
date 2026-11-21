@@ -2,13 +2,18 @@ package nfq
 
 import (
 	"context"
+	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/sni"
+	"net/netip"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/daniellavrushin/b4/ctnl"
 	"github.com/daniellavrushin/b4/dhcp"
 	"github.com/daniellavrushin/b4/iphealth"
 	"github.com/daniellavrushin/b4/sock"
+	"github.com/daniellavrushin/b4/warmtuple"
 	"github.com/florianl/go-nfqueue"
 )
 
@@ -18,17 +23,39 @@ type Segment struct {
 }
 
 type Pool struct {
-	Workers     []*Worker
-	configMu    sync.Mutex
-	Dhcp        *dhcp.Manager
-	stopCleanup chan struct{}
-	cleanupDone chan struct{}
-	state       *runtimeState
-	tunSrc      *tunSrcResolver
-	dnsTCP      *dnsTCPServer
-	dnsCopy     *dnsCopyListener
-	conntrack   *ctnl.Worker
-	dropSets    *dropSetWriter
+	warmFlows          *warmtuple.Flows
+	collectedBase      *config.Config
+	collected          map[netip.Addr]collectedCandidate
+	collectedMu        sync.RWMutex
+	collectedPublished []string
+	collectedInstall   func(context.Context, *config.Config, func() bool) error
+	collectedApplyMu   sync.Mutex
+	collectedEpoch     atomic.Uint64
+	collectedChanged   func(*sni.SuffixSet)
+	collectedPaused    func() bool
+	collectedCtx       context.Context
+	collectedCancel    context.CancelFunc
+	collectedDirty     bool
+	collectedEngineTUN bool
+	collectedRetryAt   time.Time
+	collectedRetryWait time.Duration
+	collectedRefused   uint64
+	collectedFullNoted bool
+	collectedPubGen    uint64
+	collectedViewBase  *config.Config
+	collectedViewGen   uint64
+	collectedView      *config.Config
+	Workers            []*Worker
+	configMu           sync.Mutex
+	Dhcp               *dhcp.Manager
+	stopCleanup        chan struct{}
+	cleanupDone        chan struct{}
+	state              *runtimeState
+	tunSrc             *tunSrcResolver
+	dnsTCP             *dnsTCPServer
+	dnsCopy            *dnsCopyListener
+	conntrack          *ctnl.Worker
+	dropSets           *dropSetWriter
 }
 
 type PacketInfo struct {
@@ -43,6 +70,8 @@ type PacketInfo struct {
 }
 
 type Worker struct {
+	pool             *Pool
+	warmFlows        *warmtuple.Flows
 	packetsProcessed uint64
 	lastOverflowLog  int64
 	lastFakeSendLog  int64

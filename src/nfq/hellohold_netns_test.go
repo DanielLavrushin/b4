@@ -70,6 +70,13 @@ func netnsHoldRun(t *testing.T, args ...string) {
 	}
 }
 
+func netnsHoldThreadNS() string {
+	if _, err := os.Lstat("/proc/thread-self"); err == nil {
+		return "/proc/thread-self/ns/net"
+	}
+	return fmt.Sprintf("/proc/self/task/%d/ns/net", unix.Gettid())
+}
+
 func netnsHoldStartPeer(t *testing.T) int {
 	t.Helper()
 	_ = exec.Command("ip", "link", "del", netnsHoldLink).Run()
@@ -87,7 +94,7 @@ func netnsHoldStartPeer(t *testing.T) int {
 		_, _ = cmd.Process.Wait()
 	})
 	pid := cmd.Process.Pid
-	self, _ := os.Readlink("/proc/thread-self/ns/net")
+	self, _ := os.Readlink(netnsHoldThreadNS())
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		other, err := os.Readlink(fmt.Sprintf("/proc/%d/ns/net", pid))
@@ -116,7 +123,7 @@ func netnsHoldInside(t *testing.T, pid int, fn func() error) {
 	done := make(chan error, 1)
 	go func() {
 		runtime.LockOSThread()
-		home, err := os.Open("/proc/thread-self/ns/net")
+		home, err := os.Open(netnsHoldThreadNS())
 		if err != nil {
 			done <- err
 			return

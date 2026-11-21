@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -19,6 +20,7 @@ import (
 	"github.com/daniellavrushin/b4/sni"
 	"github.com/daniellavrushin/b4/sock"
 	"github.com/daniellavrushin/b4/stun"
+	"github.com/daniellavrushin/b4/tables"
 	"github.com/daniellavrushin/b4/utils"
 	"github.com/florianl/go-nfqueue"
 )
@@ -128,6 +130,7 @@ func (w *Worker) handleQueued(vc *verdictCtx, a nfqueue.Attribute, mark uint) in
 	if a.Mark != nil && (config.IsTelegramBridgeMark(*a.Mark) || config.IsSelfDialSkipMark(*a.Mark)) {
 		return vc.accept()
 	}
+	vc.selfDialed = a.Mark != nil && *a.Mark&config.SelfDialMark != 0
 	if a.Mark != nil && telegramSetDial(*a.Mark) {
 		vc.telegramSet = w.getConfig().TelegramUpstreamSet()
 	}
@@ -177,6 +180,17 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 		return vc.accept()
 	}
 	vc.dir = w.packetDirection(cfg, vc, pkt)
+	if cfg.Queue.Mode != "tun" && pkt.proto == 6 && w.warmFlows.Active() > 0 && len(raw) >= pkt.ihl+TCPHeaderMinLen {
+		localIP, lok := netip.AddrFromSlice(pkt.src)
+		remoteIP, rok := netip.AddrFromSlice(pkt.dst)
+		if lok && rok {
+			local := netip.AddrPortFrom(localIP.Unmap(), binary.BigEndian.Uint16(raw[pkt.ihl:]))
+			remote := netip.AddrPortFrom(remoteIP.Unmap(), binary.BigEndian.Uint16(raw[pkt.ihl+2:]))
+			if profile := w.warmFlows.Lookup(local, remote); profile != nil {
+				cfg, matcher = profile.Config, profile.Matcher
+			}
+		}
+	}
 	if !cfg.Queue.IsDiscovery && cfg.Queue.Mode != "tun" && !cfg.IPFamilyEnabled(pkt.ver == IPv6) {
 		return w.handleECHOnlyPacket(vc, pkt, cfg)
 	}
@@ -190,6 +204,9 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 	switch pkt.proto {
 	case 6:
 		if len(pkt.raw) >= pkt.ihl+TCPHeaderMinLen {
+			if !vc.selfDialed && cfg.WSReuseActive(set) && set.MatchesIPVersion(pkt.ver) && binary.BigEndian.Uint16(pkt.raw[pkt.ihl+2:]) == 443 && wsReuseDiverts(set.Id) && !w.pinnedByCollected(vc, pkt, matcher) {
+				return vc.accept()
+			}
 			return w.handleTCPPacket(vc, pkt, cfg, matcher, matched, set, st, stPrefix)
 		}
 	case 17:
@@ -201,6 +218,8 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 	return vc.accept()
 }
 
+var wsReuseDiverts = tables.WSReuseDiverts
+
 const telegramSetPrefix = 128
 
 func (w *Worker) addressSet(vc *verdictCtx, pkt *pktInfo, matcher *sni.SuffixSet) (bool, *config.SetConfig, int) {
@@ -209,6 +228,27 @@ func (w *Worker) addressSet(vc *verdictCtx, pkt *pktInfo, matcher *sni.SuffixSet
 		return true, vc.telegramSet, telegramSetPrefix
 	}
 	return matcher.MatchIPWithSourceDetail(pkt.dst, pkt.srcMac, keep)
+}
+
+func (w *Worker) collectedPin(vc *verdictCtx, matcher *sni.SuffixSet, flags byte, connKey, srcMac string) (string, bool) {
+	if flags&0x02 != 0 || vc.telegramSet != nil || !w.tlsCache.HasPinned() {
+		return "", false
+	}
+	decision, ok := w.tlsCache.Decision(connKey)
+	if !ok || !decision.collectedPinned || !matcher.SameConnectionPolicy(decision.decidedBy) || decision.decidedMac != srcMac {
+		return "", false
+	}
+	if decision.set != nil {
+		return decision.set.Id, true
+	}
+	return decision.priorSet, true
+}
+
+func (w *Worker) pinnedByCollected(vc *verdictCtx, pkt *pktInfo, matcher *sni.SuffixSet) bool {
+	tcp := pkt.raw[pkt.ihl:]
+	connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, binary.BigEndian.Uint16(tcp[0:2]), pkt.dstStr, binary.BigEndian.Uint16(tcp[2:4]))
+	_, pinned := w.collectedPin(vc, matcher, tcp[13], connKey, pkt.srcMac)
+	return pinned
 }
 
 const maxInjectInflight = 512
@@ -389,13 +429,14 @@ func (h addressHold) yieldsTo(cfg *config.Config, matcher *sni.SuffixSet, escSet
 	return escalationReaches(cfg, h.set, escSet.Id) || !h.outranks(matcher, escSet, srcMac)
 }
 
-func (w *Worker) connectionSet(matcher *sni.SuffixSet, connKey, srcMac string, ipVersion uint8, dport uint16, payload []byte, seq uint32, keep sni.SetFilter, hold addressHold) (*config.SetConfig, string, bool) {
+func (w *Worker) connectionSet(matcher *sni.SuffixSet, connKey, srcMac string, ipVersion uint8, dport uint16, payload []byte, seq uint32, keep sni.SetFilter, hold addressHold) (*config.SetConfig, string, bool, uint64) {
 	decision, ok := w.tlsCache.Decision(connKey)
 	if !ok || (startsClientHello(payload) && decision.helloSeq-seq > maxPendingHelloRecord) {
-		return nil, "", false
+		return nil, "", false, 0
 	}
 	set, held := decision.set, decision.heldBy != ""
-	if decision.decidedBy != matcher || decision.decidedMac != srcMac {
+	var unnamed uint64
+	if !matcher.SameConnectionPolicy(decision.decidedBy) || decision.decidedMac != srcMac {
 		stillHeld := decision.heldBy != "" && hold.on() && decision.heldBy == hold.set.Id && hold.set.MatchesIPVersion(ipVersion)
 		set, held = nil, false
 		var named *config.SetConfig
@@ -411,12 +452,15 @@ func (w *Worker) connectionSet(matcher *sni.SuffixSet, connKey, srcMac string, i
 				set, held = hold.set, true
 			}
 		}
-		w.tlsCache.DecideHeld(connKey, decision.gen, matcher, srcMac, set, held)
+		w.tlsCache.DecideHeld(connKey, decision.gen, matcher, srcMac, set, held, hold.set)
+		if set == nil {
+			unnamed = decision.gen
+		}
 	}
 	if set == nil {
-		return nil, "", false
+		return nil, "", false, unnamed
 	}
-	return set, decision.host, held && hold.keeps(set)
+	return set, decision.host, held && hold.keeps(set), 0
 }
 
 func fragmentsOrDesyncs(set *config.SetConfig) bool {
@@ -464,6 +508,21 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	hold := addressHold{set: st, prefix: stPrefix, pinned: vc.telegramSet != nil}
 
 	connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
+	escalationKeep := keep
+	if pinnedID, pinned := w.collectedPin(vc, matcher, tcp[13], connKey, pkt.srcMac); pinned {
+		previousKeep := keep
+		keep = func(candidate *config.SetConfig) bool {
+			return pinnedID != "" && candidate.Id == pinnedID && previousKeep.Keeps(candidate)
+		}
+		matched, set, stPrefix = matcher.MatchIPWithSourceDetail(pkt.dst, pkt.srcMac, keep)
+		st = set
+		if matched && !set.MatchesTCPDPort(dport) {
+			matched, set, st = false, nil, nil
+		}
+		hold = addressHold{set: st, prefix: stPrefix}
+		addressMatched = st != nil
+	}
+
 	vc.hellos, vc.helloKey = w.pendingHello, connKey
 	w.noteClientProgress(connKey, tcp)
 	if tcp[13]&0x12 == 0x02 && w.recordsStreamStarts(cfg) {
@@ -480,8 +539,9 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	var connSet *config.SetConfig
 	connHost := ""
 	connHeld := false
+	var unnamedGen uint64
 	if cfg.IsTCPPort(dport) && tcp[13]&0x02 == 0 {
-		connSet, connHost, connHeld = w.connectionSet(matcher, connKey, pkt.srcMac, pkt.ver, dport, payload, binary.BigEndian.Uint32(tcp[4:8]), keep, hold)
+		connSet, connHost, connHeld, unnamedGen = w.connectionSet(matcher, connKey, pkt.srcMac, pkt.ver, dport, payload, binary.BigEndian.Uint32(tcp[4:8]), keep, hold)
 	}
 
 	matchedHint := false
@@ -545,6 +605,13 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		matchedLearned = false
 		learnedHost = ""
 	}
+	var stageSet *config.SetConfig
+	if matched {
+		stageSet = set
+	}
+	if unnamedGen != 0 {
+		w.tlsCache.RecordPrior(connKey, unnamedGen, matcher, stageSet)
+	}
 
 	earlyHost := hintHost
 	if earlyHost == "" {
@@ -554,7 +621,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		earlyHost = connHost
 	}
 	if matched && earlyHost != "" && cfg.IsTCPPort(dport) {
-		if escSet := w.escalatedSetFor(cfg, set, earlyHost, pkt.srcMac, keep); escSet != nil && escSet != set && (!connHeld || !hold.keeps(set) || hold.yieldsTo(cfg, matcher, escSet, pkt.srcMac)) {
+		if escSet := w.escalatedSetFor(cfg, set, earlyHost, pkt.srcMac, escalationKeep); escSet != nil && escSet != set && (!connHeld || !hold.keeps(set) || hold.yieldsTo(cfg, matcher, escSet, pkt.srcMac)) {
 			log.Tracef("escalation hit for %s before the ClientHello: %s -> %s", earlyHost, set.Name, escSet.Name)
 			set = escSet
 			if st != nil {
@@ -822,7 +889,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				matchedLearned = false
 				learnedHost = ""
 			}
-			w.tlsCache.DecideHeld(connKey, helloGen, matcher, pkt.srcMac, decided, heldHello)
+			w.tlsCache.DecideHeld(connKey, helloGen, matcher, pkt.srcMac, decided, heldHello, stageSet)
 		}
 
 		if matched && !matchedSNI && set != nil && !(hold.pinned && hold.keeps(set)) && !set.MatchesTLSVersion(tlsVersion) {
@@ -848,7 +915,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				matchedIP = true
 				matchedLearned = true
 				learnedHost = learnedDomain
-				if escSet := w.escalatedSetFor(cfg, set, learnedHost, pkt.srcMac, keep); escSet != nil && escSet != set {
+				if escSet := w.escalatedSetFor(cfg, set, learnedHost, pkt.srcMac, escalationKeep); escSet != nil && escSet != set {
 					log.Tracef("escalation hit for %s after the hint drop: %s -> %s", learnedHost, set.Name, escSet.Name)
 					set = escSet
 					st = escSet
@@ -886,7 +953,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	addressHolds := (heldHello || heldLearned || connHeld) && !matchedSNI
 
 	if matched && host != "" && cfg.IsTCPPort(dport) {
-		if escSet := w.escalatedSetFor(cfg, set, host, pkt.srcMac, keep); escSet != nil && (!addressHolds || hold.yieldsTo(cfg, matcher, escSet, pkt.srcMac)) {
+		if escSet := w.escalatedSetFor(cfg, set, host, pkt.srcMac, escalationKeep); escSet != nil && (!addressHolds || hold.yieldsTo(cfg, matcher, escSet, pkt.srcMac)) {
 			if escSet != set {
 				log.Tracef("escalation hit for %s: %s -> %s", host, set.Name, escSet.Name)
 				set = escSet
@@ -921,7 +988,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		dstIPPort := fmt.Sprintf("%s:%d", pkt.dstStr, dport)
 
 		cachedReason := ""
-		if ibd.CacheBlockedIPs {
+		if ibd.CacheBlockedIPs && !ibd.Collects() {
 			if w.bans.banned(pkt.dst, dport) {
 				cachedReason = "ipblock-ban"
 			} else if w.destState.IsBlocked(dstIPPort) {
@@ -1018,12 +1085,12 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				timeout = 3000 * time.Millisecond
 			}
 
-			if stallCount >= threshold || (stallCount > 1 && time.Since(stallFirstSeen) > timeout) {
+			if !ibd.Collects() && (stallCount >= threshold || (stallCount > 1 && time.Since(stallFirstSeen) > timeout)) {
 				if !w.destState.HasRSTSent(connKey) {
 					w.destState.MarkRSTSent(connKey)
 					w.destState.Unwatch(connKey)
 					w.resetClient(pkt)
-					if ibd.CacheBlockedIPs {
+					if ibd.CacheBlockedIPs && !ibd.Collects() {
 						w.destState.AddBlocked(dstIPPort)
 						w.bans.confirm(cfg, pkt.dst, dport, host, set.Name)
 					}
@@ -1035,7 +1102,11 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				return 0
 			}
 			if stallCount == 1 {
-				w.watchHelloSilence(cfg, set, pkt, vc.scope, connKey, host, sniTarget, ipTarget, sport, dport, tlsVersion, stallFirstSeen.Add(timeout))
+				scope := vc.scope
+				if scope == nil && (ibd.Collects() || cfg.CollectedIPsInUse()) {
+					scope = newIngressScope(matcher, pkt.src, pkt.srcMac, vc.inDev, vc.routerOriginated())
+				}
+				w.watchHelloSilence(cfg, set, pkt, scope, vc.selfDialed, connKey, host, sniTarget, ipTarget, sport, dport, tlsVersion, stallFirstSeen, timeout)
 			}
 		}
 

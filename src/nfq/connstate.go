@@ -27,20 +27,22 @@ type connInfo struct {
 }
 
 type tlsInfo struct {
-	host       string
-	tlsVersion uint16
-	helloSeq   uint32
-	gateSeq    uint32
-	helloLen   uint32
-	helloID    uint64
-	namedAt    time.Time
-	gen        uint64
-	lastSeen   time.Time
-	decidedBy  *sni.SuffixSet
-	decidedMac string
-	set        *config.SetConfig
-	heldBy     string
-	laned      bool
+	collectedPinned bool
+	host            string
+	tlsVersion      uint16
+	helloSeq        uint32
+	gateSeq         uint32
+	helloLen        uint32
+	helloID         uint64
+	namedAt         time.Time
+	gen             uint64
+	lastSeen        time.Time
+	decidedBy       *sni.SuffixSet
+	decidedMac      string
+	set             *config.SetConfig
+	priorSet        string
+	heldBy          string
+	laned           bool
 }
 
 type tlsInfoCache struct {
@@ -48,6 +50,7 @@ type tlsInfoCache struct {
 	conns   map[string]*tlsInfo
 	current *sni.SuffixSet
 	gen     uint64
+	pinned  atomic.Bool
 }
 
 const maxTLSCacheEntries = 20000
@@ -187,23 +190,39 @@ func (c *tlsInfoCache) Decision(connKey string) (tlsInfo, bool) {
 }
 
 func (c *tlsInfoCache) Decide(connKey string, gen uint64, matcher *sni.SuffixSet, srcMac string, set *config.SetConfig) {
-	c.DecideHeld(connKey, gen, matcher, srcMac, set, false)
+	c.DecideHeld(connKey, gen, matcher, srcMac, set, false, nil)
 }
 
-func (c *tlsInfoCache) DecideHeld(connKey string, gen uint64, matcher *sni.SuffixSet, srcMac string, set *config.SetConfig, held bool) {
+func (c *tlsInfoCache) DecideHeld(connKey string, gen uint64, matcher *sni.SuffixSet, srcMac string, set *config.SetConfig, held bool, prior *config.SetConfig) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.current != nil && c.current != matcher {
+	if c.current != nil && !c.current.SameConnectionPolicy(matcher) {
 		return
 	}
 	if info, exists := c.conns[connKey]; exists && info.gen == gen {
 		info.decidedBy = matcher
 		info.decidedMac = srcMac
 		info.set = set
+		info.priorSet = ""
+		if set == nil && prior != nil {
+			info.priorSet = prior.Id
+		}
 		info.heldBy = ""
 		if held && set != nil {
 			info.heldBy = set.Id
+		}
+	}
+}
+
+func (c *tlsInfoCache) RecordPrior(connKey string, gen uint64, matcher *sni.SuffixSet, prior *config.SetConfig) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if info, exists := c.conns[connKey]; exists && info.gen == gen && matcher.SameConnectionPolicy(info.decidedBy) && info.set == nil {
+		info.priorSet = ""
+		if prior != nil {
+			info.priorSet = prior.Id
 		}
 	}
 }
@@ -213,9 +232,12 @@ func (c *tlsInfoCache) ForgetDecisions(current *sni.SuffixSet) {
 	defer c.mu.Unlock()
 
 	c.current = current
+	c.pinned.Store(false)
 	for _, info := range c.conns {
 		info.decidedBy = nil
+		info.collectedPinned = false
 		info.set = nil
+		info.priorSet = ""
 	}
 }
 
@@ -284,16 +306,28 @@ type IPBlockCache interface {
 }
 
 type destStateTracker struct {
-	mu          sync.RWMutex
-	conns       map[string]*ipBlockEntry
-	blocked     map[string]time.Time
-	escalations map[string]*escalationEntry
-	rstKills    map[string]*failEntry
-	dnsFails    map[string]*failEntry
-	watchMu     sync.RWMutex
-	watches     map[string]*helloWatch
-	watchGen    uint64
-	watching    atomic.Int32
+	mu               sync.RWMutex
+	conns            map[string]*ipBlockEntry
+	blocked          map[string]time.Time
+	escalations      map[string]*escalationEntry
+	rstKills         map[string]*failEntry
+	dnsFails         map[string]*failEntry
+	watchMu          sync.RWMutex
+	watches          map[string]*helloWatch
+	replyWatches     map[string]*helloWatch
+	watchGen         uint64
+	collectHistory   collectedHistory
+	collectDeadlines collectedDeadlineHeap
+	collectRuns      map[string]collectRun
+	collectPooled    map[string]bool
+	collectAnswered  map[string]bool
+	historyFullNoted bool
+	runsFullNoted    bool
+	collectWake      chan struct{}
+	watching         atomic.Int32
+	collectWatching  atomic.Int32
+
+	closingFakesNoted map[string]string
 }
 
 type escalationEntry struct {
@@ -975,4 +1009,21 @@ func (t *connStateTracker) Cleanup() {
 		}
 	}
 	t.pruneEarlySynAcksLocked(now)
+}
+
+func (c *tlsInfoCache) PublishCollected(matcher *sni.SuffixSet) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.current = matcher
+	for _, info := range c.conns {
+		if info.decidedBy != nil && matcher.SameConnectionPolicy(info.decidedBy) {
+			info.decidedBy = matcher
+			info.collectedPinned = true
+			c.pinned.Store(true)
+		}
+	}
+}
+
+func (c *tlsInfoCache) HasPinned() bool {
+	return c != nil && c.pinned.Load()
 }

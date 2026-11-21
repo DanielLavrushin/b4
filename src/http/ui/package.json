@@ -8,6 +8,7 @@
     "watch": "pnpm dev",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "tsc --noEmit -p tsconfig.test.json && node scripts/test.mjs",
     "lint": "oxlint --type-aware --fix --report-unused-disable-directives-severity=warn"
   },
   "dependencies": {
@@ -37,6 +38,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.2.0",
     "dotenv": "^17.4.2",
+    "esbuild": "^0.28.2",
     "terser": "^5.51.2",
     "typescript": "~7.0.2",
     "vite": "^8.3.4"

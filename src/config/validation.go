@@ -337,6 +337,23 @@ func (c *Config) Validate() error {
 			}
 		}
 		ibd := &set.TCP.IPBlockDetect
+		if ibd.Action == "" {
+			ibd.Action = "block"
+		}
+		if ibd.Action != "block" && ibd.Action != "collect" {
+			v.addf(fmt.Sprintf("sets[%d].tcp.ip_block_detect.action", setIdx), "invalid_enum", map[string]any{"value": ibd.Action}, "IP Block Detection action must be block or collect")
+		}
+		if ibd.Action == "collect" {
+			if ibd.TimeoutMs == 0 {
+				ibd.TimeoutMs = 3000
+			}
+			if ibd.TimeoutMs < 1000 || ibd.TimeoutMs > 10000 {
+				v.addf(fmt.Sprintf("sets[%d].tcp.ip_block_detect.timeout_ms", setIdx), "out_of_range", map[string]any{"value": ibd.TimeoutMs, "min": 1000, "max": 10000}, "collection timeout must be between 1000 and 10000 milliseconds")
+			}
+			if set.Enabled && ibd.Collects() && set.TCP.Desync.ClosesConntrackEntry() {
+				warnEgressGatewayOnce("Set '%s': Collect detected IPs needs the connection's conntrack entry open at the Detection Timeout, and this set's desync fakes close it, so the set collects nothing", set.Name)
+			}
+		}
 		if ibd.SynThreshold <= 0 {
 			ibd.SynThreshold = DefaultIPBlockSynThreshold
 		}
@@ -479,7 +496,7 @@ func (c *Config) Validate() error {
 			if set.TCP.Duplicate.Count > 10 {
 				set.TCP.Duplicate.Count = 10
 			}
-			if len(set.Targets.IPs) == 0 && len(set.Targets.GeoIpCategories) == 0 && len(set.Targets.ASNs) == 0 {
+			if len(set.Targets.IPs) == 0 && len(set.Targets.GeoIpCategories) == 0 && len(set.Targets.ASNs) == 0 && !set.Targets.UseCollectedIPs {
 				log.Warnf("Set '%s' has duplication enabled but no IP targets configured", set.Name)
 			}
 		}
@@ -517,12 +534,12 @@ func (c *Config) Validate() error {
 			if set.MSSClamp.Size > 1460 {
 				set.MSSClamp.Size = 1460
 			}
-			hasIPScope := len(set.Targets.IPs) > 0 || len(set.Targets.GeoIpCategories) > 0 || len(set.Targets.ASNs) > 0
+			hasIPScope := len(set.Targets.IPs) > 0 || len(set.Targets.GeoIpCategories) > 0 || len(set.Targets.ASNs) > 0 || set.Targets.UseCollectedIPs
 			hasMACScope := len(set.Targets.SourceDevices) > 0 && !set.Targets.SourceDevicesExclude
 			if !hasIPScope && !hasMACScope {
 				v.addf(fmt.Sprintf("sets[%d].mss_clamp", setIdx), "mss_clamp_scope_required",
 					map[string]any{"set": set.Name},
-					"set %q: MSS clamp requires IP, GeoIP, ASN, or included source device targets (MSS is set on SYN, before SNI/GeoSite can match; excluded devices cannot scope it)", set.Name)
+					"set %q: MSS clamp requires IP, GeoIP, ASN, collected IP, or included source device targets (MSS is set on SYN, before SNI/GeoSite can match; excluded devices cannot scope it)", set.Name)
 				return v.result()
 			}
 		}
@@ -714,7 +731,7 @@ func (c *Config) Validate() error {
 				return v.result()
 			}
 			if set.DeclaresDestinationTargets() {
-				v.add(fmt.Sprintf("sets[%d].udp.filter_l7", setIdx), "conflict", "UDP protocol selection applies to sets without domain, IP, GeoSite, GeoIP or ASN targets", nil)
+				v.add(fmt.Sprintf("sets[%d].udp.filter_l7", setIdx), "conflict", "UDP protocol selection applies to sets without domain, IP, GeoSite, GeoIP, ASN or collected IP targets", nil)
 				return v.result()
 			}
 			if set.TCP.DPortFilter != "" {
@@ -733,6 +750,7 @@ func (c *Config) Validate() error {
 	c.warnFakesLargerThanOnePacket()
 	c.BuildTCPPortMap()
 	c.BuildSetPortRanges()
+	c.validateWSReuse(v)
 
 	return v.result()
 }

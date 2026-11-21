@@ -38,6 +38,7 @@ const (
 	RoutingModeProxy     = "proxy"
 	RoutingModeMTProtoWS = "mtproto-ws"
 	RoutingModeBlock     = "block"
+	RoutingModeWSReuse   = "wssize-reuse"
 )
 
 const (
@@ -92,7 +93,7 @@ const (
 const DNSQueryCopyPrefix = "b4dns"
 
 func RoutingUsesTProxy(mode string) bool {
-	return mode == RoutingModeProxy || mode == RoutingModeMTProtoWS
+	return mode == RoutingModeProxy || mode == RoutingModeMTProtoWS || mode == RoutingModeWSReuse
 }
 
 func RoutingIsBlock(mode string) bool {
@@ -292,6 +293,16 @@ const (
 
 const MaxDisorderSplitPosition = 1460
 
+const (
+	DefaultWSReuseMaxAgeSeconds = 300
+	MaxWSReuseMaxAgeSeconds     = 300
+)
+
+type WSSizeReuseConfig struct {
+	Enabled       bool `json:"enabled"`
+	MaxAgeSeconds int  `json:"max_age_seconds"`
+}
+
 type WSSizeConfig struct {
 	Cutoff     string `json:"cutoff"`
 	Enabled    bool   `json:"enabled"`
@@ -361,6 +372,7 @@ type TCPConfig struct {
 	HTTPMethodEOL  bool   `json:"http_methodeol"`
 	DPortFilter    string `json:"dport_filter"` // comma separated list of ports and port ranges, e.g. "80,443,5222"
 
+	WSSizeReuse   WSSizeReuseConfig   `json:"wssize_reuse" mcp:"deny"`
 	WSSize        WSSizeConfig        `json:"wssize"`
 	Incoming      IncomingConfig      `json:"incoming"`
 	Desync        DesyncConfig        `json:"desync"`
@@ -371,14 +383,15 @@ type TCPConfig struct {
 }
 
 type IPBlockDetectConfig struct {
-	Enabled             bool `json:"enabled"`
-	RetransmitThreshold int  `json:"retransmit_threshold"`
-	TimeoutMs           int  `json:"timeout_ms"`
-	CacheBlockedIPs     bool `json:"cache_blocked_ips"`
-	SynDetect           bool `json:"syn_detect"`
-	SynThreshold        int  `json:"syn_threshold"`
-	HealDNS             bool `json:"heal_dns"`
-	HealTTLSec          int  `json:"heal_ttl_sec"`
+	Action              string `json:"action"`
+	Enabled             bool   `json:"enabled"`
+	RetransmitThreshold int    `json:"retransmit_threshold"`
+	TimeoutMs           int    `json:"timeout_ms"`
+	CacheBlockedIPs     bool   `json:"cache_blocked_ips"`
+	SynDetect           bool   `json:"syn_detect"`
+	SynThreshold        int    `json:"syn_threshold"`
+	HealDNS             bool   `json:"heal_dns"`
+	HealTTLSec          int    `json:"heal_ttl_sec"`
 }
 
 type IPHealthConfig struct {
@@ -538,6 +551,8 @@ type SNIMutationConfig struct {
 }
 
 type TargetsConfig struct {
+	UseCollectedIPs      bool     `json:"use_collected_ips"`
+	CollectedIPs         []string `json:"-"`
 	SNIDomains           []string `json:"sni_domains"`
 	IPs                  []string `json:"ip"`
 	GeoSiteCategories    []string `json:"geosite_categories"`
@@ -959,10 +974,11 @@ type UpstreamProxyConfig struct {
 }
 
 type SetMSSClampEntry struct {
-	SetID   string
-	SetIdx  int
-	Size    int
-	IPv4    []string
-	IPv6    []string
-	Sources []DeviceMatch
+	SetID     string
+	SetIdx    int
+	Size      int
+	IPv4      []string
+	IPv6      []string
+	Sources   []DeviceMatch
+	Collected bool
 }

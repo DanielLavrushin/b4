@@ -2,6 +2,7 @@ package nfq
 
 import (
 	"encoding/binary"
+	"fmt"
 	"net"
 	"net/netip"
 	"time"
@@ -32,32 +33,48 @@ const (
 )
 
 type helloWatch struct {
-	key      string
-	gen      uint64
-	dst      net.IP
-	port     uint16
-	client   net.IP
-	cport    uint16
-	ownPort  uint16
-	wire     net.IP
-	tun      bool
-	ver      uint8
-	ihl      int
-	hdr      []byte
-	helloAck uint32
-	host     string
-	setID    string
-	set      string
-	sniSet   string
-	ipSet    string
-	mac      string
-	scope    *ingressScope
-	tls      uint16
-	deadline time.Time
-	probing  bool
-	parked   bool
-	closed   bool
-	counted  bool
+	clientHelloSeq       uint32
+	clientHelloLen       uint32
+	clientSentEnd        uint32
+	clientHelloAcked     bool
+	collect              bool
+	consumer             bool
+	takenAway            bool
+	collectIndex         int
+	observedReplyBytes   uint64
+	observedReplyPackets uint64
+	replyKey             string
+	flowID               uint32
+	replyBytes           uint64
+	replyPackets         uint64
+	replyChecked         bool
+	key                  string
+	gen                  uint64
+	dst                  net.IP
+	port                 uint16
+	client               net.IP
+	cport                uint16
+	ownPort              uint16
+	wire                 net.IP
+	tun                  bool
+	ver                  uint8
+	ihl                  int
+	hdr                  []byte
+	helloAck             uint32
+	host                 string
+	setID                string
+	set                  string
+	sniSet               string
+	ipSet                string
+	mac                  string
+	scope                *ingressScope
+	tls                  uint16
+	opened               time.Time
+	deadline             time.Time
+	probing              bool
+	parked               bool
+	closed               bool
+	counted              bool
 
 	fakesCloseEntry bool
 }
@@ -74,17 +91,36 @@ func (t *destStateTracker) Watching() bool {
 	return t != nil && t.watching.Load() > 0
 }
 
+func (t *destStateTracker) CollectWatching() bool {
+	return t != nil && t.collectWatching.Load() > 0
+}
+
 func (t *destStateTracker) WatchHello(h *helloWatch) {
 	if t == nil || h == nil {
 		return
 	}
 	t.watchMu.Lock()
 	defer t.watchMu.Unlock()
+	if len(t.watches) >= maxHelloWatches && t.watches[h.key] == nil {
+		return
+	}
+	if !t.rememberCollectedLocked(h) {
+		return
+	}
 	if prev, ok := t.watches[h.key]; ok {
-		if prev.setID == h.setID {
+		if prev.setID == h.setID && prev.helloAck == h.helloAck && (!h.collect || prev.flowID == h.flowID) {
 			return
 		}
-		h.counted = prev.counted
+		if prev.helloAck == h.helloAck && (prev.flowID == h.flowID || !prev.collect && !h.collect) {
+			h.counted = prev.counted
+		}
+		if prev.collect {
+			t.collectWatching.Add(-1)
+		}
+		t.removeCollectedDeadlineLocked(prev)
+		if t.replyWatches[prev.replyKey] == prev {
+			delete(t.replyWatches, prev.replyKey)
+		}
 	} else if len(t.watches) >= maxHelloWatches {
 		return
 	}
@@ -93,7 +129,18 @@ func (t *destStateTracker) WatchHello(h *helloWatch) {
 	}
 	t.watchGen++
 	h.gen = t.watchGen
+	h.collectIndex = -1
 	t.watches[h.key] = h
+	if h.collect {
+		t.collectWatching.Add(1)
+	}
+	if h.collect && h.replyKey != "" {
+		if t.replyWatches == nil {
+			t.replyWatches = make(map[string]*helloWatch)
+		}
+		t.replyWatches[h.replyKey] = h
+		t.addCollectedDeadlineLocked(h)
+	}
 	t.watching.Store(int32(len(t.watches)))
 }
 
@@ -117,10 +164,11 @@ func (t *destStateTracker) NoteClientPacket(key string, ack uint32, acked, closi
 		if answeredBy != nil {
 			answeredBy(h.dst, h.port)
 		}
+		t.forgetCollectRunLocked(h)
 		t.unwatchLocked(key)
 		return
 	}
-	if now.Before(h.deadline) {
+	if h.collect || now.Before(h.deadline) {
 		t.unwatchLocked(key)
 		return
 	}
@@ -194,7 +242,7 @@ func (t *destStateTracker) DueSilent(now time.Time) []helloWatch {
 	defer t.watchMu.Unlock()
 	var due []helloWatch
 	for key, h := range t.watches {
-		if now.Before(h.deadline) {
+		if h.collect || now.Before(h.deadline) {
 			continue
 		}
 		if now.Sub(h.deadline) > helloWatchTTL {
@@ -218,7 +266,7 @@ func (t *destStateTracker) TakeSilent(ip net.IP, port uint16) []helloWatch {
 	defer t.watchMu.Unlock()
 	var taken []helloWatch
 	for key, h := range t.watches {
-		if h.waitsOn(ip, port) {
+		if !h.collect && h.waitsOn(ip, port) {
 			taken = append(taken, *h)
 			t.unwatchLocked(key)
 		}
@@ -234,7 +282,7 @@ func (t *destStateTracker) WatchesTo(ip net.IP, port uint16) []helloWatch {
 	defer t.watchMu.RUnlock()
 	var watched []helloWatch
 	for _, h := range t.watches {
-		if h.isTo(ip, port) {
+		if !h.collect && h.isTo(ip, port) {
 			watched = append(watched, *h)
 		}
 	}
@@ -251,12 +299,21 @@ func (t *destStateTracker) escalatedAway(cfg *config.Config, h helloWatch) bool 
 }
 
 func (t *destStateTracker) unwatchLocked(key string) {
+	if h := t.watches[key]; h != nil {
+		t.removeCollectedDeadlineLocked(h)
+		if h.collect {
+			t.collectWatching.Add(-1)
+		}
+	}
+	if h := t.watches[key]; h != nil && t.replyWatches[h.replyKey] == h {
+		delete(t.replyWatches, h.replyKey)
+	}
 	delete(t.watches, key)
 	t.watching.Store(int32(len(t.watches)))
 }
 
-func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pkt *pktInfo, scope *ingressScope, connKey, host, sniSet, ipSet string, sport, dport, tlsVersion uint16, deadline time.Time) {
-	if w == nil || w.destState == nil || cfg == nil || cfg.Queue.IsDiscovery || !banEnforced(set) || !w.bans.on() {
+func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pkt *pktInfo, scope *ingressScope, selfDialed bool, connKey, host, sniSet, ipSet string, sport, dport, tlsVersion uint16, opened time.Time, timeout time.Duration) {
+	if w == nil || w.destState == nil || cfg == nil || cfg.Queue.IsDiscovery || (!set.TCP.IPBlockDetect.Collects() && (!banEnforced(set) || !w.bans.on())) {
 		return
 	}
 	hdrLen := pkt.ihl + TCPHeaderMinLen
@@ -270,7 +327,9 @@ func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pk
 	if pkt.ver == IPv6 {
 		wire = pkt.raw[8:24]
 	}
-	w.destState.WatchHello(&helloWatch{
+	h := &helloWatch{
+		collect:  set.TCP.IPBlockDetect.Collects(),
+		consumer: set.Targets.UseCollectedIPs,
 		key:      connKey,
 		dst:      append(net.IP(nil), pkt.dst...),
 		port:     dport,
@@ -291,15 +350,51 @@ func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pk
 		mac:      pkt.srcMac,
 		scope:    scope.settled(),
 		tls:      tlsVersion,
-		deadline: deadline,
+		opened:   opened,
+		deadline: opened.Add(timeout),
 
 		fakesCloseEntry: w.closingFakesMayHaveHit(cfg, set, host),
-	})
+	}
+	if _, ok := eligibleCollectedIP(h.dst); ok && !h.collect && !h.consumer && !selfDialed {
+		h.takenAway = collectedTakenAway(cfg, w.getMatcher(), *h)
+	}
+	if h.collect {
+		if set.Targets.UseCollectedIPs || h.tun || hostAddress(pkt.src) || h.scope != nil && h.scope.router {
+			return
+		}
+		if _, ok := eligibleCollectedIP(h.dst); !ok {
+			return
+		}
+		if collectedTakenAway(cfg, w.getMatcher(), *h) {
+			return
+		}
+		info, known := w.tlsCache.Decision(connKey)
+		if !known || info.helloLen == 0 || info.helloLen > maxPendingHelloRecord {
+			return
+		}
+		tcp := pkt.raw[pkt.ihl:]
+		headerLen := int(tcp[12]>>4) * 4
+		if headerLen < TCPHeaderMinLen || headerLen > len(tcp) {
+			return
+		}
+		h.clientHelloSeq, h.clientHelloLen = info.helloSeq, info.helloLen
+		h.clientSentEnd = binary.BigEndian.Uint32(tcp[4:8]) + uint32(len(tcp)-headerLen)
+		flow, ok := collectedFlow(*h)
+		if !ok {
+			return
+		}
+		h.replyKey = fmt.Sprintf(connKeyFormat, net.IP(h.wire).String(), h.cport, h.dst.String(), h.port)
+		if flow.ReplyDestination.IsValid() {
+			h.replyKey = fmt.Sprintf(connKeyFormat, flow.ReplyDestination.Addr().String(), flow.ReplyDestination.Port(), h.dst.String(), h.port)
+		}
+		h.flowID = flow.ID
+		h.observedReplyBytes, h.observedReplyPackets = flow.ReplyBytes, flow.ReplyPackets
+	}
+	w.destState.WatchHello(h)
 }
 
 func sendsClosingFakes(set *config.SetConfig) bool {
-	desync := &set.TCP.Desync
-	return desync.PostDesync || (desync.Mode != config.ConfigOff && desync.Mode != "ack")
+	return set.TCP.Desync.ClosesConntrackEntry()
 }
 
 func (w *Worker) closingFakesMayHaveHit(cfg *config.Config, set *config.SetConfig, host string) bool {
@@ -321,6 +416,9 @@ func (w *Worker) noteClientProgress(connKey string, tcp []byte) {
 	if w == nil || !w.destState.Watching() {
 		return
 	}
+	if w.destState.CollectWatching() {
+		w.destState.NoteCollectedClientPacket(connKey, tcp)
+	}
 	closing, acked := tcp[13]&0x05 != 0, tcp[13]&0x10 != 0
 	if !closing && !acked {
 		return
@@ -337,7 +435,7 @@ func silenceWatchedSet(cfg *config.Config, setID string) bool {
 	return false
 }
 
-func checkServerSilence(h helloWatch) (serverSilence, error) {
+func helloFlow(h helloWatch) (ctnl.Flow, bool, error) {
 	source := h.client
 	if h.tun {
 		source = h.wire
@@ -345,7 +443,7 @@ func checkServerSilence(h helloWatch) (serverSilence, error) {
 	client, ok1 := netip.AddrFromSlice(source)
 	server, ok2 := netip.AddrFromSlice(h.dst)
 	if !ok1 || !ok2 {
-		return silenceUnknown, nil
+		return ctnl.Flow{}, false, nil
 	}
 	from, to := netip.AddrPortFrom(client.Unmap(), h.cport), netip.AddrPortFrom(server.Unmap(), h.port)
 	dir := ctnl.Original
@@ -354,9 +452,13 @@ func checkServerSilence(h helloWatch) (serverSilence, error) {
 	}
 	tuple, err := ctnl.NewTuple(unix.IPPROTO_TCP, from, to)
 	if err != nil {
-		return silenceUnknown, nil
+		return ctnl.Flow{}, false, nil
 	}
-	flow, found, err := lookupFlow(tuple, dir)
+	return lookupFlow(tuple, dir)
+}
+
+func checkServerSilence(h helloWatch) (serverSilence, error) {
+	flow, found, err := helloFlow(h)
 	switch {
 	case err != nil:
 		return silenceUnknown, err
@@ -388,13 +490,13 @@ func (w *Worker) sweepSilentHellos(cfg *config.Config, now time.Time) {
 	if len(due) == 0 {
 		return
 	}
-	active := cfg != nil && !cfg.Queue.IsDiscovery && w.bans.on()
+	active := cfg != nil && !cfg.Queue.IsDiscovery
 	lookups, lookupsOff := 0, false
 	var answered map[string]bool
 	var silent []helloWatch
 	for _, h := range due {
 		switch {
-		case !active || !silenceWatchedSet(cfg, h.setID):
+		case !active || !w.bans.on() || !silenceWatchedSet(cfg, h.setID):
 			w.destState.EndWatch(h)
 			continue
 		case w.bans.banned(h.dst, h.port):
@@ -427,7 +529,7 @@ func (w *Worker) sweepSilentHellos(cfg *config.Config, now time.Time) {
 				}
 				answered[iphealth.BanKey(h.dst, int(h.port))] = true
 				w.bans.forgetSilentHellos(h.dst, h.port)
-				w.destState.EndWatch(h)
+				w.destState.EndAnsweredWatch(h)
 				continue
 			case silenceGone:
 				w.destState.EndWatch(h)
@@ -520,7 +622,7 @@ func (w *Worker) silentHelloGotAnswer(ip net.IP, port int) bool {
 			break
 		}
 		if state == silenceAnswered {
-			w.destState.EndWatch(h)
+			w.destState.EndAnsweredWatch(h)
 			return true
 		}
 	}

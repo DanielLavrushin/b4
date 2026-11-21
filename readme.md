@@ -355,7 +355,7 @@ Based on research from:
 - [youtubeUnblock](https://github.com/Waujito/youtubeUnblock) - C-based DPI bypass
 - [GoodbyeDPI](https://github.com/ValdikSS/GoodbyeDPI) - Windows DPI circumvention
 - [zapret](https://github.com/bol-van/zapret) - Advanced DPI bypass techniques
-- [zapret2](https://github.com/bol-van/zapret2) - the wssize technique behind a set's real TCP window option
+- [zapret2](https://github.com/bol-van/zapret2) - the wssize technique behind a set's Real TCP window (wssize) option and the warm-up of Reuse WSSIZE connection
 - [byedpi](https://github.com/hufrea/byedpi) - proxy-based DPI bypass
 - [dpi-detector](https://github.com/Runnin4ik/dpi-detector) - DPI/TSPU detection techniques and test target lists (the DPI Detector feature is based on this project)
 - [Ladon](https://github.com/belotserkovtsev/ladon) - reactive Anti-DPI detection engine; its failure-classification approach (telling server-side rejection apart from DPI interference) informed the Watchdog feature, and its saved block list with re-tests informed the banned addresses of IP Block Detection

@@ -238,8 +238,13 @@ func runB4(cmd *cobra.Command, args []string) error {
 		return out
 	})
 	var engineDown atomic.Bool
+	var collectedView atomic.Value
+	collectedView.Store((func(*config.Config) *config.Config)(func(c *config.Config) *config.Config { return c }))
+	runtimeConfig := func(c *config.Config) *config.Config {
+		return collectedView.Load().(func(*config.Config) *config.Config)(c)
+	}
 	refreshTables := func() error {
-		c := cfgPtr.Load()
+		c := runtimeConfig(cfgPtr.Load())
 		if c.System.Tables.SkipSetup {
 			return nil
 		}
@@ -247,26 +252,17 @@ func runB4(cmd *cobra.Command, args []string) error {
 			log.Infof("Firewall refresh skipped: the packet engine is not running, so the change applies when b4 restarts")
 			return nil
 		}
-		defer func() { tables.SyncDSCP(cfgPtr.Load()) }()
+		defer func() { tables.SyncDSCP(runtimeConfig(cfgPtr.Load())) }()
 		if tunEngineRef.Load() != nil {
 			firewallErr := tables.RefreshTUNFirewall(c)
 			tproxyMgr.SyncConfig(c)
 			tables.RoutingSyncConfig(c)
 			return firewallErr
 		}
-		if discoveryRT.IsActive() {
-			log.Warnf("Tables refresh requested while discovery is active, waiting for discovery to finish...")
-			deadline := time.After(5 * time.Minute)
-			ticker := time.NewTicker(1 * time.Second)
-			defer ticker.Stop()
-			for discoveryRT.IsActive() {
-				select {
-				case <-deadline:
-					return fmt.Errorf("tables refresh timed out: discovery did not finish within 5 minutes")
-				case <-ticker.C:
-				}
-			}
+		if err := waitDiscoveryBeforeRefresh(appCtx, discoveryRT.IsActive); err != nil {
+			return err
 		}
+
 		if err := tables.RefreshRules(c); err != nil {
 			return err
 		}
@@ -342,9 +338,24 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	isTUN := cfg.Queue.Mode == "tun"
 	discoveryRT.SetEngineTUN(isTUN)
+	config.SetRunningEngineTUN(isTUN)
 	engineAttempt = loadEngineAttempt()
 
 	pool := nfq.NewPool(&cfg)
+	collectedView.Store((func(*config.Config) *config.Config)(pool.CollectedConfig))
+	pool.SetCollectedPause(discoveryRT.IsActive)
+	pool.SetCollectedTargetsInstaller(collectedTargetsInstaller(tproxyMgr, collectedInstallSteps{
+		refused: func(c *config.Config) error {
+			return collectedInstallRefusal(c, engineDown.Load(), isTUN || tunEngineRef.Load() != nil)
+		},
+		discovery: discoveryRT.IsActive,
+		refresh:   tables.RefreshCollectedRules,
+		capture:   tables.SyncCollectedCaptureSets,
+		routing:   tables.RoutingSyncConfig,
+		dscp:      tables.SyncDSCP,
+		ready:     tables.CollectedTargetsReady,
+	}), tproxyResolver.Set)
+	tproxyMgr.SetWarmTupleFlows(pool.WarmTupleFlows())
 	tables.DNSQueryCopyOpenFunc = pool.OpenDNSQueryCopy
 	tables.DNSQueryCopyAliveFunc = pool.DNSQueryCopyAlive
 	tables.DNSQueryCopyPlacedFunc = pool.SetDNSQueryCopyFamilies
@@ -376,6 +387,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	engineName := engineLabel(engineMode(&cfg))
 	if engineErr != nil {
+		pool.StopCollected()
 		tproxyMgr.Stop()
 		tables.RoutingClearAll()
 		if cfg.System.WebServer.Port == 0 {
@@ -396,13 +408,13 @@ func runB4(cmd *cobra.Command, args []string) error {
 	}
 
 	if !engineDown.Load() && !cfg.System.Tables.SkipSetup && (isTUN || cfg.System.Tables.MonitorInterval > 0) {
-		tablesMonitor = tables.NewMonitor(&cfgPtr)
+		tablesMonitor = tables.NewMonitor(&cfgPtr, runtimeConfig)
 		tablesMonitor.Start()
 		tablesMonitorRef.Store(tablesMonitor)
 	}
 	if !engineDown.Load() {
 		tables.StartDSCPSync()
-		tables.SyncDSCP(cfgPtr.Load())
+		tables.SyncDSCP(runtimeConfig(cfgPtr.Load()))
 	}
 
 	stopExposureWatch := func() {}
@@ -411,6 +423,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		if shutdownHandled {
 			return
 		}
+		pool.StopCollected()
 		stopExposureWatch()
 		tables.ClearExposure()
 		tables.StopDSCPSync()
@@ -450,7 +463,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		if c.System.Tables.SkipSetup || engineDown.Load() || !c.TelegramBridgeEnabled() {
 			return
 		}
-		tables.RoutingSyncConfig(c)
+		tables.RoutingSyncConfig(runtimeConfig(c))
 	})
 
 	handler.SetRoutingSyncFunc(func(c *config.Config) {
@@ -460,9 +473,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 		if engineDown.Load() {
 			return
 		}
-		tproxyMgr.SyncConfig(c)
-		tables.RoutingSyncConfig(c)
-		tables.SyncDSCP(c)
+		tproxyMgr.SyncConfig(runtimeConfig(c))
+		tables.RoutingSyncConfig(runtimeConfig(c))
+		tables.SyncDSCP(runtimeConfig(c))
 	})
 
 	handler.SetTUNEngine(tunEngine)
@@ -511,9 +524,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 		tproxyResolver.Set(pool.GetMatcher())
 		tables.WarnSkipSetupStrictConntrack(c)
 		if !c.System.Tables.SkipSetup {
-			tproxyMgr.SyncConfig(c)
-			tables.RoutingSyncConfig(c)
-			tables.SyncDSCP(c)
+			tproxyMgr.SyncConfig(runtimeConfig(c))
+			tables.RoutingSyncConfig(runtimeConfig(c))
+			tables.SyncDSCP(runtimeConfig(c))
 		}
 		mtprotoServer.UpdateConfig(c)
 		aiManager.Update(c.System.AI)
@@ -626,9 +639,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 			socks5Server.UpdateConfig(c)
 			tproxyResolver.Set(pool.GetMatcher())
 			if !c.System.Tables.SkipSetup && !engineDown.Load() {
-				tproxyMgr.SyncConfig(c)
-				tables.RoutingSyncConfig(c)
-				tables.SyncDSCP(c)
+				tproxyMgr.SyncConfig(runtimeConfig(c))
+				tables.RoutingSyncConfig(runtimeConfig(c))
+				tables.SyncDSCP(runtimeConfig(c))
 			}
 			return nil
 		})
@@ -698,6 +711,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	stopExposureWatch()
 	cidrCancel()
 	asnCancel()
+	pool.StopCollected()
 	tproxyMgr.Stop()
 
 	// Perform graceful shutdown with timeout
@@ -1089,4 +1103,90 @@ func printConfigDefaults(cmd *cobra.Command) {
 		}
 	}
 	log.Infof("  %s", line)
+}
+
+var discoveryRefreshWait = 5 * time.Minute
+
+func waitDiscoveryIdle(ctx context.Context, active func() bool) error {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for active() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+	return ctx.Err()
+}
+
+func waitDiscoveryBeforeRefresh(parent context.Context, active func() bool) error {
+	if active() {
+		log.Warnf("Tables refresh requested while discovery is active, waiting for discovery to finish...")
+	}
+	ctx, cancel := context.WithTimeout(parent, discoveryRefreshWait)
+	defer cancel()
+	err := waitDiscoveryIdle(ctx, active)
+	if errors.Is(err, context.DeadlineExceeded) && parent.Err() == nil {
+		return fmt.Errorf("tables refresh timed out: discovery did not finish within 5 minutes")
+	}
+	return err
+}
+
+func collectedInstallRefusal(c *config.Config, engineDown, tun bool) error {
+	if engineDown || tun || c.System.Tables.SkipSetup {
+		return fmt.Errorf("packet interception unavailable")
+	}
+	return nil
+}
+
+var (
+	errCollectedDiscoveryRunning = errors.New("discovery is running")
+	errCollectedSuperseded       = errors.New("superseded by a save, a pool change or the shutdown")
+)
+
+type collectedInstallSteps struct {
+	refused   func(*config.Config) error
+	discovery func() bool
+	refresh   func(*config.Config) error
+	capture   func(*config.Config) error
+	routing   func(*config.Config)
+	dscp      func(*config.Config)
+	ready     func(*config.Config) error
+}
+
+func collectedTargetsInstaller(mgr *tproxy.Manager, steps collectedInstallSteps) func(context.Context, *config.Config, func() bool) error {
+	return func(ctx context.Context, c *config.Config, current func() bool) error {
+		if err := steps.refused(c); err != nil {
+			return err
+		}
+		if steps.discovery() {
+			return errCollectedDiscoveryRunning
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := steps.refresh(c); err != nil {
+			return err
+		}
+		changes := []func() error{
+			func() error { return steps.capture(c) },
+			func() error { mgr.SyncConfig(c); return nil },
+			func() error { steps.routing(c); return nil },
+			func() error { steps.dscp(c); return nil },
+			func() error { return steps.ready(c) },
+		}
+		for _, change := range changes {
+			if !current() {
+				return errCollectedSuperseded
+			}
+			if err := change(); err != nil {
+				return err
+			}
+		}
+		if err := mgr.CollectedConsumersReady(c); err != nil {
+			return err
+		}
+		return ctx.Err()
+	}
 }

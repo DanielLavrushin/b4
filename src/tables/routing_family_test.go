@@ -33,15 +33,25 @@ func familyForgetGatewayWarnings() {
 		routeGatewayWarned.Delete(k)
 		return true
 	})
+	routeWSReuseUndivertedWarned.Range(func(k, _ any) bool {
+		routeWSReuseUndivertedWarned.Delete(k)
+		return true
+	})
 }
 
 func familyResetGlobals(t *testing.T) {
 	t.Helper()
 	engine, cache, auto, refreshed := routeEngine, routeRuleCache, routeIfaceAuto, routeRefreshedAt
+	collected := routeCollectedApplied
+	routeCollectedConnmarkMu.Lock()
+	connmark := routeCollectedConnmarkProbed
+	routeCollectedConnmarkMu.Unlock()
 	logged, delRule := runLogged, routeDelRuleLoop
 	addCheck, delCheck := routeAddSourceCheckRule, routeDelSourceCheckRule
 	hostIfaces, linkType := routeHostIfaces, routeLinkType
 	marks := routeMarksByIface.Load()
+	diverted := routeWSReuseDiverted.Load()
+	collectedRoutes := routeCollectedRoutes.Load()
 	routeMu.Lock()
 	synced := routeSyncedCfg
 	routeSyncedCfg = nil
@@ -54,6 +64,11 @@ func familyResetGlobals(t *testing.T) {
 		routeRuleCache = cache
 		routeIfaceAuto = auto
 		routeRefreshedAt = refreshed
+		routeCollectedApplied = collected
+		routeForgetCollectedConnmark()
+		routeCollectedConnmarkMu.Lock()
+		routeCollectedConnmarkProbed = connmark
+		routeCollectedConnmarkMu.Unlock()
 		runLogged = logged
 		routeDelRuleLoop = delRule
 		routeAddSourceCheckRule = addCheck
@@ -66,12 +81,18 @@ func familyResetGlobals(t *testing.T) {
 		routeSyncedCfg = synced
 		routeMu.Unlock()
 		routeMarksByIface.Store(marks)
+		routeWSReuseDiverted.Store(diverted)
+		routeCollectedRoutes.Store(collectedRoutes)
 	})
 	routeEngine = nil
 	routeRuleCache = make(map[string]routeState)
 	routeMarksByIface.Store(&map[string][]uint32{})
+	routeWSReuseDiverted.Store(&map[string]struct{}{})
+	routeCollectedRoutes.Store(&map[string]CollectedRoute{})
 	routeIfaceAuto = make(map[string]routeState)
 	routeRefreshedAt = make(map[string]time.Time)
+	routeCollectedApplied = make(map[string]map[string][]string)
+	routeForgetCollectedConnmark()
 	runLogged = func(op string, args ...string) bool { return true }
 	routeDelRuleLoop = func(ipv6 bool, mark, table string) {}
 	routeAddSourceCheckRule = func(mark uint32) {}

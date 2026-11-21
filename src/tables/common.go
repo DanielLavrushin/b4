@@ -3,6 +3,7 @@ package tables
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -65,7 +66,9 @@ func ClearAppliedRules(fallback *config.Config) error {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
 	dscpSyncClosed.Store(true)
-	return clearRulesFn(appliedOr(fallback))
+	err := clearRulesFn(appliedOr(fallback))
+	rulesAppliedCfg = nil
+	return err
 }
 
 func appliedOr(cfg *config.Config) *config.Config {
@@ -76,6 +79,7 @@ func appliedOr(cfg *config.Config) *config.Config {
 }
 
 func addRules(cfg *config.Config) error {
+	captureCollectedForget()
 	if cfg.System.Tables.SkipSetup {
 		return nil
 	}
@@ -92,6 +96,7 @@ func addRules(cfg *config.Config) error {
 	if backend == backendNFTables {
 		nft := NewNFTablesManager(cfg)
 		err := nft.Apply()
+		applyCollectedAccounting(cfg)
 		applyDSCPLogged(cfg, backend)
 		reapplyDiscoverySteering()
 		return err
@@ -100,6 +105,7 @@ func addRules(cfg *config.Config) error {
 	ipt := NewIPTablesManager(cfg, backend == backendIPTablesLegacy)
 
 	err := ipt.Apply()
+	applyCollectedAccounting(cfg)
 	RoutingEnsureJumpPrecedence(cfg)
 	applyDSCPLogged(cfg, backend)
 	reapplyDiscoverySteering()
@@ -107,6 +113,9 @@ func addRules(cfg *config.Config) error {
 }
 
 func clearRules(cfg *config.Config) error {
+	defer revertCollectedAccounting()
+	captureCollectedForget()
+	captureCollectedForgetPool()
 	if cfg.System.Tables.SkipSetup {
 		return nil
 	}
@@ -615,4 +624,23 @@ func ReloadKernelModules() {
 		loadKernelModuleList(dnsCopyLogModule, dnsCopyModule)
 	}
 	ctnl.Retest()
+}
+
+var (
+	ErrFirewallRefreshPending     = errors.New("the firewall still holds the previous configuration")
+	collectedRefreshPendingLogged bool
+)
+
+func RefreshCollectedRules(cfg *config.Config) error {
+	rulesMu.Lock()
+	defer rulesMu.Unlock()
+	if rulesAppliedCfg == nil || !config.FirewallRefreshNeeded(rulesAppliedCfg, cfg) {
+		collectedRefreshPendingLogged = false
+		return nil
+	}
+	if !collectedRefreshPendingLogged {
+		collectedRefreshPendingLogged = true
+		log.Infof("Collected IPs: the firewall still holds the previous configuration, so new collected addresses wait for the refresh of the firewall")
+	}
+	return ErrFirewallRefreshPending
 }
