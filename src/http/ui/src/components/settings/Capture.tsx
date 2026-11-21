@@ -699,8 +699,11 @@ export const CaptureSettings = () => {
         {hexDialog && (
           <Stack spacing={2}>
             <B4Alert icon={<SuccessIcon />}>
-              TLS payload for {hexDialog.target.name} •{" "}
-              {hexDialog.target.size} bytes
+              {t("settings.Capture.hexCaption", {
+                protocol: hexDialog.target.protocol.toUpperCase(),
+                name: hexDialog.target.name,
+                size: bytesLabel(t, hexDialog.target.size),
+              })}
             </B4Alert>
             {hexDialog.error && (
               <B4Alert severity="error">
@@ -790,7 +793,7 @@ const CaptureCard = ({
             {capture.domain}
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            {capture.size.toLocaleString()} bytes
+            {bytesLabel(t, capture.size)}
           </Typography>
         </Box>
         <Chip

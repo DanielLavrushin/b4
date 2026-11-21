@@ -918,6 +918,7 @@
       "copyClose": "Копировать и закрыть",
       "hexCopied": "Hex данные скопированы в буфер обмена",
       "hexCopyFailed": "Не удалось скопировать hex данные",
+      "hexCaption": "{{protocol}}-payload {{name}}, {{size}}",
       "hexFailed": "Не удалось загрузить байты payload: {{error}}",
       "viewHex": "Просмотр/Копирование hex",
       "downloadBin": "Скачать .bin",
