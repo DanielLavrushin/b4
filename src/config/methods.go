@@ -1503,6 +1503,11 @@ func (c *Config) LoadCapturePayloads() {
 				set.Faking.PayloadData = nil
 				break
 			}
+			if len(data) == 0 {
+				log.Errorf("Failed to load capture file %s: the file is empty", set.Faking.PayloadFile)
+				set.Faking.PayloadData = nil
+				break
+			}
 			set.Faking.PayloadData = data
 			log.Tracef("Loaded capture payload %s (%d bytes)", set.Faking.PayloadFile, len(data))
 		case FakePayloadDomain:
@@ -1539,6 +1544,8 @@ func (c *Config) LoadCapturePayloads() {
 				data, err := os.ReadFile(payloadPath)
 				if err != nil {
 					log.Errorf("Failed to load UDP fake payload %s: %v", set.UDP.FakePayloadFile, err)
+				} else if len(data) == 0 {
+					log.Errorf("Failed to load UDP fake payload %s: the file is empty", set.UDP.FakePayloadFile)
 				} else {
 					set.UDP.FakePayloadData = data
 					log.Tracef("Loaded UDP fake payload %s (%d bytes)", set.UDP.FakePayloadFile, len(data))
