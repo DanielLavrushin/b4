@@ -13,6 +13,7 @@ const (
 	setTemplateValidateID  = "new-set-template"
 	setTemplateValidateFor = "new set template"
 	setTemplateInvalidCode = "invalid_set_template"
+	setTemplateScopeDevice = "02:00:00:00:00:00"
 )
 
 var SetTemplateOwnKeys = []string{"id", "name", "enabled", "targets", "hub", "discovery", "revision", "stats", "hub_state", "b4_version"}
@@ -40,6 +41,10 @@ func NormalizeSetTemplate(raw map[string]interface{}) (map[string]interface{}, e
 	set.Enabled = true
 	set.Routing.Upstream.Username = ""
 	set.Routing.Upstream.Password = ""
+	if set.MSSClamp.Enabled {
+		set.Targets.SourceDevices = []string{setTemplateScopeDevice}
+		set.Targets.SourceDevicesExclude = false
+	}
 
 	cfg := NewConfig()
 	cfg.System.Geo.GeoSitePath = "/dev/null"

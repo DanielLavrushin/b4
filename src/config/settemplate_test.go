@@ -129,6 +129,32 @@ func TestNormalizeSetTemplateReportsInvalidValuesUnderItsOwnPath(t *testing.T) {
 	}
 }
 
+func TestNormalizeSetTemplateKeepsMSSClamping(t *testing.T) {
+	ipSet := NewSetConfig()
+	ipSet.Id, ipSet.Name = "a", "A"
+	ipSet.Targets.IPs = []string{"203.0.113.0/24"}
+	ipSet.MSSClamp = MSSClampConfig{Enabled: true, Size: 1360}
+	fromSet, err := json.Marshal(&ipSet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"mss_clamp":{"enabled":true,"size":1360}}`
+	for name, input := range map[string]string{
+		"only the clamp":        want,
+		"copied from an IP set": string(fromSet),
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := NormalizeSetTemplate(decodeTemplate(t, input))
+			if err != nil {
+				t.Fatalf("a template with MSS clamping is refused: %v", err)
+			}
+			if templateJSON(t, got) != want {
+				t.Errorf("template = %s, want %s", templateJSON(t, got), want)
+			}
+		})
+	}
+}
+
 func TestNormalizeSetTemplateNeverKeepsAProxyLogin(t *testing.T) {
 	input := `{"routing":{"enabled":true,"mode":"proxy","upstream":{"host":"10.0.0.2","port":1080,"username":"alice","password":"s3cret"}}}`
 	got, err := NormalizeSetTemplate(decodeTemplate(t, input))
