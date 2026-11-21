@@ -105,6 +105,48 @@ func TestTheTUNEngineKnowsB4sOwnTelegramConnectionsByTheirPortBeforeTheNAT(t *te
 	}
 }
 
+func TestTheTUNEngineLeavesANewConnectionOnAFailedDialsTupleToTheSets(t *testing.T) {
+	for i, c := range []struct {
+		name     string
+		syns     []uint32
+		hello    uint32
+		set      string
+		diverted int
+		why      string
+	}{
+		{"b4's connection after its SYN", []uint32{999}, 1000, "Telegram", 2, "the SYN claims b4's registration and the connection that follows is b4's own"},
+		{"b4's connection after its SYN went out again", []uint32{999, 999}, 1000, "Telegram", 2, "a SYN sent again carries the same sequence number, so it is the same connection"},
+		{"another connection on the tuple of b4's failed dial", []uint32{999, 4999}, 5000, "YT images", 0, "b4's dial sent its SYN and failed, the kernel gave the port to a connection b4 did not dial, and its SYN with another sequence number shows a new connection, which the sets' targets match and which keeps the ordinary re-send mark"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			sport := uint16(47160 + i)
+			selfdial.Note(sport, netip.MustParseAddrPort("1.2.3.4:443"))
+			other := newPassiveSet()
+			telegram := newTelegramSet()
+			w := tunScopeWorker(t, nil, &other, &telegram)
+			w.getConfig().System.MTProto.UpstreamSet = telegram.Id
+			ordinary, viaDialMark := captureTelegramInjected(t, w)
+			for _, isn := range c.syns {
+				w.ProcessPacketDir(makeV4TCPPacketFromPort(nil, isn, sport, 0x02), engine.DirOriginal)
+			}
+			ch, _ := log.GetConnectionHub().Subscribe()
+			defer log.GetConnectionHub().Unsubscribe(ch)
+
+			hello := makeV4TCPPacketFromPort(buildClientHello("i.ytimg.com", 16, 0xAB), c.hello, sport, 0x18)
+			w.ProcessPacketDir(hello, engine.DirOriginal)
+			if got := loggedSet(t, ch); got != c.set {
+				t.Fatalf("connection logged for set %q, want %q: %s", got, c.set, c.why)
+			}
+			if plain, marked := ordinary(), viaDialMark(); len(marked) != c.diverted || len(plain) != 0 {
+				t.Fatalf("%d packets sent by the socket with the dial mark and %d by the ordinary one, want %d and 0: %s", len(marked), len(plain), c.diverted, c.why)
+			}
+			if got := w.telegramFlows.carries(hello); got != (c.diverted > 0) {
+				t.Fatalf("the engine's re-sends of the connection carry the dial mark: %v, want %v: %s", got, c.diverted > 0, c.why)
+			}
+		})
+	}
+}
+
 func TestDiscoveryInTUNModeDoesNotTakeB4sOwnConnectionsForTheTelegramSet(t *testing.T) {
 	sport := uint16(47150)
 	selfdial.Note(sport, netip.MustParseAddrPort("1.2.3.4:443"))

@@ -1,6 +1,7 @@
 package selfdial
 
 import (
+	"context"
 	"net"
 	"net/netip"
 	"testing"
@@ -10,18 +11,18 @@ import (
 func reset(t *testing.T) {
 	t.Helper()
 	mu.Lock()
-	flows = make(map[flow]time.Time)
+	flows = make(map[flow]entry)
 	live.Store(0)
 	mu.Unlock()
 	t.Cleanup(func() {
 		mu.Lock()
-		flows = make(map[flow]time.Time)
+		flows = make(map[flow]entry)
 		live.Store(0)
 		mu.Unlock()
 	})
 }
 
-func TestAConnectionDialledWithTheControlIsKnownBeforeTheServerAcceptsIt(t *testing.T) {
+func TestAConnectionDialledForTheTelegramSetIsKnownBeforeTheServerAcceptsIt(t *testing.T) {
 	for _, c := range []struct {
 		network, listen string
 	}{
@@ -51,8 +52,7 @@ func TestAConnectionDialledWithTheControlIsKnownBeforeTheServerAcceptsIt(t *test
 				peer <- from.Port()
 			}()
 
-			d := net.Dialer{Timeout: 3 * time.Second, Control: Control(0)}
-			conn, err := d.Dial(c.network, ln.Addr().String())
+			conn, err := Dial(context.Background(), c.network, ln.Addr().String(), 0, 3*time.Second)
 			if err != nil {
 				t.Fatalf("dial: %v", err)
 			}
@@ -91,7 +91,7 @@ func TestAPlainDialIsNotKnown(t *testing.T) {
 	defer conn.Close()
 	local := netip.MustParseAddrPort(conn.LocalAddr().String())
 	if Holds(local.Port(), netip.MustParseAddrPort(ln.Addr().String())) {
-		t.Fatal("a connection dialled without the control reads as b4's own")
+		t.Fatal("a connection dialled without selfdial reads as b4's own")
 	}
 }
 
@@ -133,5 +133,108 @@ func TestTheRegistryStaysBounded(t *testing.T) {
 	mu.Unlock()
 	if n > flowsMax {
 		t.Fatalf("%d entries, cap %d", n, flowsMax)
+	}
+}
+
+func registered() int {
+	mu.Lock()
+	defer mu.Unlock()
+	return len(flows)
+}
+
+func TestAFailedDialLeavesNoRegistrationBehind(t *testing.T) {
+	reset(t)
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	refused := ln.Addr().String()
+	ln.Close()
+
+	conn, err := Dial(context.Background(), "tcp4", refused, 0, 3*time.Second)
+	if err == nil {
+		conn.Close()
+		t.Fatalf("a dial to the closed port %s connected", refused)
+	}
+	if n := registered(); n != 0 {
+		t.Fatalf("%d registration(s) left after the dial failed: the kernel can hand the freed port to another connection to the same address, which would then read as b4's own", n)
+	}
+}
+
+func TestASuccessfulDialKeepsOnlyItsOwnRegistration(t *testing.T) {
+	reset(t)
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		if conn, err := ln.Accept(); err == nil {
+			defer conn.Close()
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
+	conn, err := Dial(context.Background(), "tcp4", ln.Addr().String(), 0, 3*time.Second)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+	local := netip.MustParseAddrPort(conn.LocalAddr().String())
+	if !Holds(local.Port(), netip.MustParseAddrPort(ln.Addr().String())) || registered() != 1 {
+		t.Fatalf("after a successful dial %d registration(s), want exactly the connection's own", registered())
+	}
+}
+
+func TestAnOlderDialsReleaseLeavesANewerRegistrationAlone(t *testing.T) {
+	reset(t)
+	remote := netip.MustParseAddrPort("149.154.167.51:443")
+	now := time.Now()
+	older := noteAt(40010, remote, now)
+	newer := noteAt(40010, remote, now)
+	release(keyOf(40010, remote), older)
+	if !holdsAt(40010, remote, now) {
+		t.Fatal("the release of a dial that failed removed the registration a later dial on the same port made")
+	}
+	release(keyOf(40010, remote), newer)
+	if holdsAt(40010, remote, now) {
+		t.Fatal("a dial's own release did not remove its registration")
+	}
+}
+
+func TestAnAttemptThatRegistersAfterTheDialEndedIsReleased(t *testing.T) {
+	reset(t)
+	remote := netip.MustParseAddrPort("149.154.167.51:443")
+	tr := &tracker{}
+	tr.finish(nil)
+	tr.record(keyOf(40011, remote), noteAt(40011, remote, time.Now()))
+	if registered() != 0 {
+		t.Fatal("an attempt that registered its port after the dial had already ended stayed registered")
+	}
+}
+
+func TestANewConnectionOnARegisteredTupleEndsTheRegistration(t *testing.T) {
+	reset(t)
+	remote := netip.MustParseAddrPort("149.154.167.51:443")
+	now := time.Now()
+	noteAt(40012, remote, now)
+	for _, c := range []struct {
+		name string
+		syn  bool
+		seq  uint32
+		want bool
+	}{
+		{"b4's SYN", true, 1000, true},
+		{"b4's SYN sent again", true, 1000, true},
+		{"a later segment of b4's connection", false, 1001, true},
+		{"the SYN of another connection on the same port and address", true, 5000, false},
+		{"a later segment of that connection", false, 5001, false},
+	} {
+		if got := segmentAt(40012, remote, c.syn, c.seq, now); got != c.want {
+			t.Fatalf("%s: known %v, want %v", c.name, got, c.want)
+		}
+	}
+	noteAt(40012, remote, now)
+	if !segmentAt(40012, remote, true, 9000, now) {
+		t.Fatal("a new dial from the same port is not known by its own SYN")
 	}
 }

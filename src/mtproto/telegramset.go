@@ -308,11 +308,10 @@ func dialTelegramTCP(ctx context.Context, network, addr string, mark uint, timeo
 	if mark&uint(config.TelegramSetBit) != 0 && currentTelegramPath().kind != telegramPathStrategy {
 		mark &^= uint(config.TelegramSetBit)
 	}
-	control := netprobe.MarkControl(int(mark))
 	if mark&uint(config.TelegramSetBit) != 0 {
-		control = selfdial.Control(int(mark))
+		return selfdial.Dial(ctx, network, addr, int(mark), timeout)
 	}
-	dialer := net.Dialer{Timeout: timeout, Control: control}
+	dialer := net.Dialer{Timeout: timeout, Control: netprobe.MarkControl(int(mark))}
 	return dialer.DialContext(ctx, network, addr)
 }
 

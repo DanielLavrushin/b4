@@ -181,6 +181,8 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 		if set := w.ownTelegramSet(pkt); set != nil {
 			vc.telegramSet, vc.selfDial = set, true
 			w.telegramFlows.note(pkt.raw, time.Now())
+		} else if openingSYN(pkt) {
+			w.telegramFlows.forget(pkt.raw)
 		}
 	}
 	vc.dir = w.packetDirection(cfg, vc, pkt)

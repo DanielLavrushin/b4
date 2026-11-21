@@ -68,7 +68,7 @@ func (w *Worker) divertTelegramFlows(telegram *sock.Sender) {
 
 func (w *Worker) ownTelegramSet(pkt *pktInfo) *config.SetConfig {
 	cfg := w.getConfig()
-	if cfg == nil || cfg.Queue.IsDiscovery || cfg.System.MTProto.UpstreamSet == "" || pkt.proto != ipProtoTCP || len(pkt.raw) < pkt.ihl+4 {
+	if cfg == nil || cfg.Queue.IsDiscovery || cfg.System.MTProto.UpstreamSet == "" || pkt.proto != ipProtoTCP || len(pkt.raw) < pkt.ihl+14 {
 		return nil
 	}
 	if w.srcResolver != nil && pkt.srcOrigin != tunSrcRouter && pkt.srcOrigin != tunSrcUnknown {
@@ -78,11 +78,16 @@ func (w *Worker) ownTelegramSet(pkt *pktInfo) *config.SetConfig {
 	if !ok {
 		return nil
 	}
-	dport := binary.BigEndian.Uint16(pkt.raw[pkt.ihl+2 : pkt.ihl+4])
-	if !selfdial.Holds(pkt.clientPort(), netip.AddrPortFrom(dst.Unmap(), dport)) {
+	tcp := pkt.raw[pkt.ihl:]
+	dport := binary.BigEndian.Uint16(tcp[2:4])
+	if !selfdial.HoldsSegment(pkt.clientPort(), netip.AddrPortFrom(dst.Unmap(), dport), openingSYN(pkt), binary.BigEndian.Uint32(tcp[4:8])) {
 		return nil
 	}
 	return cfg.TelegramUpstreamSet()
+}
+
+func openingSYN(pkt *pktInfo) bool {
+	return pkt.proto == ipProtoTCP && len(pkt.raw) >= pkt.ihl+14 && pkt.raw[pkt.ihl+13]&0x12 == 0x02
 }
 
 func (w *Worker) openTUNTelegramInjector(reinject int) {
@@ -169,6 +174,22 @@ func (f *telegramFlows) note(packet []byte, now time.Time) {
 		return
 	}
 	f.noteFlow(flow, now)
+}
+
+func (f *telegramFlows) forget(packet []byte) {
+	if f == nil || f.live.Load() == 0 {
+		return
+	}
+	flow, whole, ok := telegramFlowOf(packet)
+	if !ok || !whole {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, had := f.flows[flow]; had {
+		delete(f.flows, flow)
+		f.countLocked()
+	}
 }
 
 func (f *telegramFlows) noteReply(packet []byte, now time.Time) {
