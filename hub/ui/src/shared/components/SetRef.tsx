@@ -33,7 +33,7 @@ export function SetRef({ id, version, title, status, maxTitle = 48 }: Readonly<S
         type="button"
         underline="hover"
         onClick={() => overlay.open(setHref(id, version))}
-        sx={{ display: "inline-flex", alignItems: "baseline", gap: 0.75, textAlign: "left", maxWidth: "100%", minWidth: 0, color: colors.text.primary }}
+        sx={{ display: "inline-flex", alignItems: "baseline", gap: 0.75, textAlign: "left", maxWidth: "100%", minWidth: 0 }}
       >
         {status && <Box component="span" sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: statusColor[status] ?? colors.text.disabled, flexShrink: 0, alignSelf: "center" }} />}
         {shown ? (

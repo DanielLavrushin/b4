@@ -55,9 +55,8 @@ const BlockedRow = memo(function BlockedRow({ entry, name, meta, tip, to }: Bloc
           sx={{
             display: "block",
             minWidth: 0,
-            color: colors.text.primary,
             textUnderlineOffset: "3px",
-            "&:hover": { color: colors.text.primary, textDecoration: "underline" },
+            "&:hover": { textDecoration: "underline" },
             "&:focus-visible": {
               outline: `2px solid ${colors.border.strong}`,
               outlineOffset: "2px",

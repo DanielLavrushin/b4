@@ -97,7 +97,7 @@ export function EntryFacts({ entry, blobBase = "/b4/hub/blob/" }: { entry: Entry
           {entry.payloads.map((p) => (
             <li key={p.sha256}>
               {t("entry.payloadLine", { protocol: p.protocol, domain: p.domain ?? "", size: p.size })}{" "}
-              <Link href={blobBase + p.sha256} rel="noreferrer" underline="hover" color="inherit" sx={{ color: colors.text.primary, "&:hover": { color: colors.text.primary } }}>
+              <Link href={blobBase + p.sha256} rel="noreferrer" underline="hover">
                 <Mono>{p.sha256.slice(0, 16)}</Mono>
               </Link>
             </li>
