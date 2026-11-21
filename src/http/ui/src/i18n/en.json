@@ -4106,7 +4106,7 @@
     "clickToView": "Click to view update",
     "available": "Update available",
     "install": "Install",
-    "upToDate": "up to date",
+    "upToDate": "Up to date",
     "installFromFile": "Install from a file instead",
     "installFromFileHelp": "For a network where no download source can be reached. Download b4-linux-<arch>.tar.gz from the release page on another machine and upload it here. The archive is checked against this router's architecture before anything is replaced.",
     "chooseArchive": "Choose archive",
