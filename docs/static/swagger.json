@@ -1048,7 +1048,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Cleans the path the way the payload loader does and answers it in the form the payload list uses, whether a list entry names that file, whether the file exists, its size and its facts. Facts are judged for the protocol of the list entry, or the protocol the file suits when no entry names it, and are omitted when the file cannot be read, is empty or is larger than a payload may be. A path that leaves captures/ or does not end in .bin is refused.",
+                "description": "Cleans the path the way the payload loader does and answers it in the form the payload list uses, whether a list entry names that file, whether the file exists, its size, whether it is larger than a payload may be (too_large) and its facts. Facts are judged for the protocol of the list entry, or the protocol the file suits when no entry names it, and are omitted when the file cannot be read, is empty or is larger than a payload may be. A path that leaves captures/ or does not end in .bin is refused.",
                 "produces": [
                     "application/json"
                 ],
@@ -9946,6 +9946,9 @@
                 },
                 "size": {
                     "type": "integer"
+                },
+                "too_large": {
+                    "type": "boolean"
                 }
             }
         },
