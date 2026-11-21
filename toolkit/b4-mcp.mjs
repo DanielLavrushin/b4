@@ -115,6 +115,10 @@ function shownAddress(raw) {
   }
 }
 
+function targetOf(raw) {
+  return crypto.createHash("sha256").update(new URL(raw).href).digest("hex").slice(0, 16);
+}
+
 function resolveServer(name, opt) {
   if (/^https?:\/\//i.test(name)) {
     const token = process.env.B4_MCP_TOKEN;
@@ -274,6 +278,7 @@ async function fingerprint(session) {
   const listed = await callTool(session, "b4_list_sets", {});
   return {
     address: shownAddress(session.server.url),
+    target: targetOf(session.server.url),
     hash: crypto.createHash("sha256").update(stable(config)).digest("hex").slice(0, 16),
     sets: ((listed && listed.sets) || []).map((s) => `${s.name}:${s.enabled ? "on" : "off"}`),
   };
@@ -294,10 +299,13 @@ async function restore(session, file, opt) {
   } catch (e) {
     throw new UsageError(`cannot read the fingerprint in ${file}: ${e.code || e.message}`);
   }
-  if (!want || typeof want.hash !== "string") throw new UsageError(`${file} holds no fingerprint from snap`);
+  if (!want || typeof want.hash !== "string" || typeof want.target !== "string") {
+    throw new UsageError(`${file} holds no fingerprint from this snap; take a new one`);
+  }
   const address = shownAddress(session.server.url);
-  if (want.address !== address) {
-    throw new UsageError(`${file} was taken from ${want.address || "an unknown server"}, not ${address}; nothing was undone`);
+  if (want.target !== targetOf(session.server.url)) {
+    const other = want.address === address ? `${address} with another query string` : want.address || "an unknown server";
+    throw new UsageError(`${file} was taken from ${other}, not this address; nothing was undone`);
   }
   const undone = [];
   for (;;) {

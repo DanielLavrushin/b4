@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import fs from "node:fs";
 import http from "node:http";
+import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -61,4 +63,38 @@ test("--timeout bounds the whole wait, even while the server keeps sending event
   assert.equal(r.code, 1, `exit ${r.code} after ${r.ms} ms`);
   assert.ok(r.ms < 3000, `took ${r.ms} ms`);
   assert.match(r.err, /no answer within 1 s/);
+});
+
+function answerJSON(res, id, result) {
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ jsonrpc: "2.0", id, result }));
+}
+
+test("restore refuses a fingerprint from the same address with another query string", async (t) => {
+  const reverts = { a: 0, b: 0 };
+  const url = await standIn(t, (req, res, msg) => {
+    const router = new URL(req.url, "http://stand-in").searchParams.get("router");
+    const structured = {
+      b4_get_config: { config: { system: { router }, sets: [] } },
+      b4_list_sets: { sets: [] },
+      b4_revert_last_change: { reverted: false, note: "nothing to undo", remaining_changes: 0 },
+    }[msg.params.name];
+    if (msg.params.name === "b4_revert_last_change") reverts[router]++;
+    answerJSON(res, msg.id, { content: [], structuredContent: structured });
+  });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "b4-mcp-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const snap = path.join(dir, "a.json");
+
+  assert.equal((await run(["snap", `${url}?router=a`, snap])).code, 0);
+
+  const other = await run(["restore", `${url}?router=b`, snap]);
+  assert.equal(other.code, 2, other.err);
+  assert.match(other.err, /another query string, not this address; nothing was undone/);
+  assert.deepEqual(reverts, { a: 0, b: 0 });
+
+  const same = await run(["restore", `${url}?router=a`, snap]);
+  assert.equal(same.code, 0, same.err);
+  assert.equal(JSON.parse(same.out).restored, true);
+  assert.deepEqual(reverts, { a: 0, b: 0 });
 });
