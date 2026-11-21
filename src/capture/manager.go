@@ -272,19 +272,7 @@ func (m *Manager) ListCaptures() []*Capture {
 
 	for domain, protocols := range m.metadata {
 		for protocol, meta := range protocols {
-			var hexData string
-			if data, err := m.readPayloadFile(meta.Filepath); err == nil {
-				hexData = hex.EncodeToString(data)
-			}
-
-			captures = append(captures, &Capture{
-				Protocol:  protocol,
-				Domain:    domain,
-				Timestamp: meta.Timestamp,
-				Size:      meta.Size,
-				Filepath:  filepath.Join("captures", meta.Filepath),
-				HexData:   hexData,
-			})
+			captures = append(captures, captureOf(protocol, domain, meta))
 		}
 	}
 
@@ -305,20 +293,17 @@ func (m *Manager) GetCapture(protocol, domain string) (*Capture, bool) {
 		return nil, false
 	}
 
-	meta := m.metadata[domain][protocol]
-	var hexData string
-	if data, err := m.readPayloadFile(meta.Filepath); err == nil {
-		hexData = hex.EncodeToString(data)
-	}
+	return captureOf(protocol, domain, m.metadata[domain][protocol]), true
+}
 
+func captureOf(protocol, domain string, meta *PayloadMetadata) *Capture {
 	return &Capture{
 		Protocol:  protocol,
 		Domain:    domain,
 		Timestamp: meta.Timestamp,
 		Size:      meta.Size,
 		Filepath:  filepath.Join("captures", meta.Filepath),
-		HexData:   hexData,
-	}, true
+	}
 }
 
 func (m *Manager) DeleteCapture(protocol, domain string) error {

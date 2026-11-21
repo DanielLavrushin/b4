@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -20,6 +22,55 @@ func listedPayloads(t *testing.T, mux *http.ServeMux) []capture.Capture {
 	var listed []capture.Capture
 	decodeInto(t, rec, &listed)
 	return listed
+}
+
+func listedPayloadObjects(t *testing.T, mux *http.ServeMux) []map[string]any {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/capture/list", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list: %d %s", rec.Code, rec.Body.String())
+	}
+	var listed []map[string]any
+	decodeInto(t, rec, &listed)
+	return listed
+}
+
+func listedPayloadObject(t *testing.T, mux *http.ServeMux, protocol, name string) map[string]any {
+	t.Helper()
+	for _, entry := range listedPayloadObjects(t, mux) {
+		if entry["domain"] == name && entry["protocol"] == protocol {
+			return entry
+		}
+	}
+	t.Fatalf("the %s payload %q is not listed", protocol, name)
+	return nil
+}
+
+func TestThePayloadListCarriesNoFileBytes(t *testing.T) {
+	mux, api := captureTestMux(t)
+	manager := capture.GetManager(api.getCfg())
+	const name = "heavy.list.example"
+	data := bytes.Repeat([]byte{0x16, 0x03, 0x01, 0x42}, 512)
+	file, err := manager.SaveImportedPayload("tls", name, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { manager.DeleteCapture("tls", name) })
+
+	entry := listedPayloadObject(t, mux, "tls", name)
+	if hexData, carried := entry["hex_data"]; carried {
+		t.Errorf("the list entry carries hex_data (%d characters), so every picker mount downloads every payload's bytes", len(fmt.Sprint(hexData)))
+	}
+	if entry["filepath"] != file || entry["size"] != float64(len(data)) {
+		t.Errorf("the list entry must still name the file and its size, got %v", entry)
+	}
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/capture/download?file="+filepath.Base(file), nil))
+	if rec.Code != http.StatusOK || !bytes.Equal(rec.Body.Bytes(), data) {
+		t.Errorf("the per-payload request must return the file's %d bytes, got %d and %d bytes", len(data), rec.Code, rec.Body.Len())
+	}
 }
 
 func TestThePayloadListKeepsOneSortedOrder(t *testing.T) {
