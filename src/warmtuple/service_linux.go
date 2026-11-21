@@ -32,6 +32,7 @@ const fallbackWarnInterval = time.Minute
 const failureRetention = 10 * time.Minute
 const maxFailures = 4096
 const skipWarnInterval = 10 * time.Minute
+const heldPortMoves = 8
 const tcpTimestampsSysctl = "/proc/sys/net/ipv4/tcp_timestamps"
 
 var ErrFallbackCapacity = errors.New("every fallback relay slot is in use")
@@ -274,62 +275,72 @@ func (s *Service) Dial(ctx context.Context, set *config.SetConfig, owner, host s
 	if err != nil {
 		return s.fallBackAfter(ctx, set.Id, host, source, target, fmt.Errorf("warm egress: %w", err))
 	}
-	s.mu.Lock()
-	if s.closed || s.cfg == nil || s.flows == nil {
-		s.mu.Unlock()
-		return nil, ErrClosed
-	}
-	cfg := s.cfg
-	set = reuseSet(cfg, set.Id, target)
-	if set == nil {
-		s.mu.Unlock()
-		return nil, ErrTarget
-	}
-	failed := failureKey{target: target.Addr(), host: host}
-	if time.Now().Before(s.failures[failed]) {
-		s.mu.Unlock()
-		return s.fallBackAfter(ctx, set.Id, host, source, target, errRecentWarmFailure)
-	}
-	key := serviceKey{owner: owner, set: set.Id, host: host, target: target, source: source, route: egress}
-	l, err := s.reserveLocked(key, set, source, roots)
-	if err != nil {
-		s.mu.Unlock()
-		if errors.Is(err, ErrCapacity) {
-			return s.fallBackAfter(ctx, set.Id, host, source, target, err)
+	for moves := 0; ; moves++ {
+		s.mu.Lock()
+		if s.closed || s.cfg == nil || s.flows == nil {
+			s.mu.Unlock()
+			return nil, ErrClosed
 		}
-		return nil, err
-	}
-	warmCtx, cancel := context.WithCancel(ctx)
-	s.pending[l] = cancel
-	l.manager.capture = func() (func(), error) {
-		return s.flows.Register(netip.AddrPortFrom(source, l.port), target, cfg, set, host)
-	}
-	s.mu.Unlock()
-	defer cancel()
-	raw, err := l.manager.DialContext(warmCtx, net.JoinHostPort(host, strconv.Itoa(int(target.Port()))))
-	s.mu.Lock()
-	delete(s.pending, l)
-	live := warmCtx.Err() == nil && !s.closed
-	if err == nil && (s.closed || !s.keepsLease(l)) {
-		_ = raw.Close()
-		err = errors.New("warm configuration changed")
-		live = false
-	}
-	if err != nil {
-		now := time.Now()
-		s.discardLocked(l, now)
-		if live && errors.Is(err, ErrWarm) {
-			s.rememberFailureLocked(failed, now)
+		cfg := s.cfg
+		reuse := reuseSet(cfg, set.Id, target)
+		if reuse == nil {
+			s.mu.Unlock()
+			return nil, ErrTarget
+		}
+		set = reuse
+		failed := failureKey{target: target.Addr(), host: host}
+		if time.Now().Before(s.failures[failed]) {
+			s.mu.Unlock()
+			return s.fallBackAfter(ctx, set.Id, host, source, target, errRecentWarmFailure)
+		}
+		key := serviceKey{owner: owner, set: set.Id, host: host, target: target, source: source, route: egress}
+		l, err := s.reserveLocked(key, set, source, roots)
+		if err != nil {
+			s.mu.Unlock()
+			if errors.Is(err, ErrCapacity) {
+				return s.fallBackAfter(ctx, set.Id, host, source, target, err)
+			}
+			return nil, err
+		}
+		warmCtx, cancel := context.WithCancel(ctx)
+		s.pending[l] = cancel
+		l.manager.capture = func() (func(), error) {
+			return s.flows.Register(netip.AddrPortFrom(source, l.port), target, cfg, reuse, host)
 		}
 		s.mu.Unlock()
-		if live {
-			return s.fallBackAfter(ctx, set.Id, host, source, target, err)
+		raw, err := l.manager.DialContext(warmCtx, net.JoinHostPort(host, strconv.Itoa(int(target.Port()))))
+		s.mu.Lock()
+		delete(s.pending, l)
+		live := warmCtx.Err() == nil && !s.closed
+		cancel()
+		if err == nil && (s.closed || !s.keepsLease(l)) {
+			_ = raw.Close()
+			err = errors.New("warm configuration changed")
+			live = false
 		}
-		return nil, err
+		if err != nil {
+			now := time.Now()
+			s.discardLocked(l, now)
+			if live && errors.Is(err, ErrWarm) {
+				s.rememberFailureLocked(failed, now)
+			}
+			s.mu.Unlock()
+			if live && errors.Is(err, errPortHeld) {
+				if moves < heldPortMoves {
+					log.Tracef("WSSIZE reuse [%s]: %s: %v; warming from the next free port", set.Name, host, err)
+					continue
+				}
+				err = fmt.Errorf("%d source ports in a row were held, the last: %w", moves+1, err)
+			}
+			if live {
+				return s.fallBackAfter(ctx, set.Id, host, source, target, err)
+			}
+			return nil, err
+		}
+		s.mu.Unlock()
+		log.Tracef("WSSIZE reuse [%s]: %s -> %s host=%s warmed=%t warm=%s reconnect=%s", set.Name, raw.LocalAddr(), raw.RemoteAddr(), host, raw.(*Conn).Warmed, raw.(*Conn).WarmDuration, raw.(*Conn).ReuseDuration)
+		return &serviceConn{Conn: raw, service: s, lease: l}, nil
 	}
-	s.mu.Unlock()
-	log.Tracef("WSSIZE reuse [%s]: %s -> %s host=%s warmed=%t warm=%s reconnect=%s", set.Name, raw.LocalAddr(), raw.RemoteAddr(), host, raw.(*Conn).Warmed, raw.(*Conn).WarmDuration, raw.(*Conn).ReuseDuration)
-	return &serviceConn{Conn: raw, service: s, lease: l}, nil
 }
 
 func (s *Service) Fallback(ctx context.Context, set *config.SetConfig, _, host string, target netip.AddrPort) (net.Conn, error) {

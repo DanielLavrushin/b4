@@ -28,6 +28,8 @@ var (
 	ErrWarm     = errors.New("the server failed the warm")
 
 	ErrNoTimestamps = errors.New("the warm connection did not negotiate TCP timestamps, so the same-tuple reconnect over the warm's TIME_WAIT would fail with EADDRNOTAVAIL")
+
+	errPortHeld = errors.New("held by another socket")
 )
 
 const tcpiOptTimestamps = 1
@@ -257,7 +259,7 @@ func (m *Manager) DialContext(ctx context.Context, dest string) (net.Conn, error
 		case <-settle.C:
 		}
 	}
-	raw, err := m.connect(passCtx, l.port, config.SelfDialRelayMark)
+	raw, err := m.connect(passCtx, l.port, config.SelfDialRelayMark, true)
 	if err != nil {
 		return nil, fmt.Errorf("same-tuple reconnect: %w", err)
 	}
@@ -296,7 +298,7 @@ func (m *Manager) runWarm(ctx context.Context, l *lease) (time.Time, error) {
 	ctx, cancel := context.WithTimeout(ctx, m.cfg.WarmTimeout)
 	defer cancel()
 	started := time.Now()
-	c, err := m.connect(ctx, l.port, m.cfg.WarmMark)
+	c, err := m.connect(ctx, l.port, m.cfg.WarmMark, false)
 	if err != nil {
 		var refused connectError
 		if errors.As(err, &refused) {
@@ -319,7 +321,7 @@ func (m *Manager) runWarm(ctx context.Context, l *lease) (time.Time, error) {
 	return started, nil
 }
 
-func (m *Manager) connect(ctx context.Context, port uint16, mark uint32) (net.Conn, error) {
+func (m *Manager) connect(ctx context.Context, port uint16, mark uint32, waitForTuple bool) (net.Conn, error) {
 	var last error
 	for {
 		if ctx.Err() != nil {
@@ -337,6 +339,9 @@ func (m *Manager) connect(ctx context.Context, port uint16, mark uint32) (net.Co
 		}
 		if !errors.Is(err, unix.EADDRINUSE) && !errors.Is(err, unix.EADDRNOTAVAIL) {
 			return nil, connectError{err}
+		}
+		if !waitForTuple {
+			return nil, fmt.Errorf("source port %d to %s: %w: %w", port, m.cfg.Target, errPortHeld, err)
 		}
 		last = err
 		timer := time.NewTimer(m.cfg.RetryInterval)
