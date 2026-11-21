@@ -1041,6 +1041,46 @@
                 }
             }
         },
+        "/capture/resolve": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Cleans the path the way the payload loader does and answers it in the form the payload list uses, whether a list entry names that file, whether the file exists, its size and its facts. Facts are judged for the protocol of the list entry, or the protocol the file suits when no entry names it, and are omitted when the file cannot be read, is empty or is larger than a payload may be. A path that leaves captures/ or does not end in .bin is refused.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Capture"
+                ],
+                "summary": "Resolve a payload file as a set names it",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Payload file as the set names it, e.g. captures/tls_example_com.bin",
+                        "name": "file",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.PayloadFileResolution"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/capture/upload": {
             "post": {
                 "security": [
@@ -9885,6 +9925,26 @@
                     "type": "string"
                 },
                 "uptime_s": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.PayloadFileResolution": {
+            "type": "object",
+            "properties": {
+                "exists": {
+                    "type": "boolean"
+                },
+                "facts": {
+                    "$ref": "#/definitions/capture.Facts"
+                },
+                "file": {
+                    "type": "string"
+                },
+                "listed": {
+                    "type": "boolean"
+                },
+                "size": {
                     "type": "integer"
                 }
             }
