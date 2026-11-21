@@ -459,6 +459,70 @@ func TestWSReuseClientLeavingDuringTheWatchEndsThePass(t *testing.T) {
 	}
 }
 
+type failingFallbackDialer struct {
+	pass    net.Conn
+	dialing chan struct{}
+	fail    func(context.Context) error
+}
+
+func (d *failingFallbackDialer) Dial(context.Context, *config.SetConfig, string, string, netip.AddrPort) (net.Conn, error) {
+	return d.pass, nil
+}
+
+func (d *failingFallbackDialer) Fallback(ctx context.Context, _ *config.SetConfig, _, _ string, _ netip.AddrPort) (net.Conn, error) {
+	close(d.dialing)
+	return nil, d.fail(ctx)
+}
+
+func (d *failingFallbackDialer) AcquireClient() (func(), bool) { return func() {}, true }
+
+func silentPassToFailingFallback(t *testing.T, fail func(context.Context) error) (*Listener, *failingFallbackDialer, connPair, chan struct{}) {
+	t.Helper()
+	shortPassWindow(t, 200*time.Millisecond)
+	p := acceptedPair(t)
+	t.Cleanup(func() { p.client.Close(); p.accepted.Close() })
+	pass, passServer := newAnswerTestBackend()
+	t.Cleanup(func() { passServer.Close() })
+	d := &failingFallbackDialer{pass: pass, dialing: make(chan struct{}), fail: fail}
+	l := reuseListener(t, d)
+	hello := realClientHello(t, "video.example.org")
+	done := servePass(l, p.accepted, hello)
+	passServer.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := io.ReadFull(passServer, make([]byte, len(hello))); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-d.dialing:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the silent pass did not dial the set's strategy")
+	}
+	return l, d, p, done
+}
+
+func TestWSReuseClientLeavingDuringTheFallbackDialIsNoFailedDial(t *testing.T) {
+	logged := captureWarnings(t)
+	l, _, p, done := silentPassToFailingFallback(t, func(ctx context.Context) error {
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	p.client.Close()
+	waitDone(t, done, 2*time.Second, "the dial with the set's strategy went on after the client had left")
+	if n := logged.warnings("closed without a relay"); n != 0 || l.dialFailed.count.Load() != 0 {
+		t.Fatalf("a client that left while the set's strategy was dialed after a silent pass was counted %d times as a connection closed without a relay, with %d warnings: %s", l.dialFailed.count.Load(), n, logged.buf.String())
+	}
+}
+
+func TestWSReuseFailedFallbackDialAfterASilentPassWarns(t *testing.T) {
+	logged := captureWarnings(t)
+	l, _, _, done := silentPassToFailingFallback(t, func(context.Context) error {
+		return errors.New("connect: network is unreachable")
+	})
+	waitDone(t, done, 2*time.Second, "a failed dial with the set's strategy did not end the connection")
+	if n := logged.warnings("closed without a relay"); n != 1 || l.dialFailed.count.Load() != 1 {
+		t.Fatalf("a dial with the set's strategy that failed while the client waited was counted %d times as a connection closed without a relay, with %d warnings, want 1 and 1: %s", l.dialFailed.count.Load(), n, logged.buf.String())
+	}
+}
+
 func TestWSReuseFirstAnswerHoldsNoSniffSizedBuffer(t *testing.T) {
 	client, app := net.Pipe()
 	defer client.Close()

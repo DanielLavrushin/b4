@@ -112,9 +112,14 @@ func (l *Listener) relayWatchedPass(client, backend net.Conn, answered func(), s
 	_ = backend.Close()
 	ctx, stop := watchWarmClient(l.ctx, client)
 	fallback, err := l.Warm.Fallback(ctx, set, owner, sniffed.host, dest)
+	left := ctx.Err() != nil
 	stop()
 	if err != nil {
 		l.logReuseRelay(set, client, backend, sniffed)
+		if left {
+			log.Tracef("WSSIZE reuse [%s]: %s: the client left or the listener stopped while the set's strategy was dialed after a silent pass: %v", l.SetName, sniffed.host, err)
+			return
+		}
 		l.noteWarmFailure(sniffed.host, fmt.Errorf("no answer to the hello within %s on the reused tuple; relay with the set's strategy: %w", window, err))
 		return
 	}
