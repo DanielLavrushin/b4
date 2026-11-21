@@ -420,15 +420,16 @@ func (api *API) handleDownloadCapture(w http.ResponseWriter, r *http.Request) {
 }
 
 type PayloadFileResolution struct {
-	File   string         `json:"file"`
-	Listed bool           `json:"listed"`
-	Exists bool           `json:"exists"`
-	Size   int64          `json:"size"`
-	Facts  *capture.Facts `json:"facts,omitempty"`
+	File     string         `json:"file"`
+	Listed   bool           `json:"listed"`
+	Exists   bool           `json:"exists"`
+	Size     int64          `json:"size"`
+	TooLarge bool           `json:"too_large"`
+	Facts    *capture.Facts `json:"facts,omitempty"`
 }
 
 // @Summary Resolve a payload file as a set names it
-// @Description Cleans the path the way the payload loader does and answers it in the form the payload list uses, whether a list entry names that file, whether the file exists, its size and its facts. Facts are judged for the protocol of the list entry, or the protocol the file suits when no entry names it, and are omitted when the file cannot be read, is empty or is larger than a payload may be. A path that leaves captures/ or does not end in .bin is refused.
+// @Description Cleans the path the way the payload loader does and answers it in the form the payload list uses, whether a list entry names that file, whether the file exists, its size, whether it is larger than a payload may be (too_large) and its facts. Facts are judged for the protocol of the list entry, or the protocol the file suits when no entry names it, and are omitted when the file cannot be read, is empty or is larger than a payload may be. A path that leaves captures/ or does not end in .bin is refused.
 // @Tags Capture
 // @Produce json
 // @Param file query string true "Payload file as the set names it, e.g. captures/tls_example_com.bin"
@@ -463,6 +464,7 @@ func (api *API) handleResolveCapture(w http.ResponseWriter, r *http.Request) {
 		if real, info, ok := captureFileInside(capturesDir, path); ok {
 			answer.Exists = true
 			answer.Size = info.Size()
+			answer.TooLarge = info.Size() > config.MaxCapturePayloadBytes
 			if data, ok := readCaptureBytes(real, info.Size()); ok {
 				if protocol == "" {
 					answer.Facts = suggestedFacts(data)

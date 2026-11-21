@@ -31,7 +31,7 @@ func requireResolved(t *testing.T, mux *http.ServeMux, file string) map[string]a
 		t.Fatalf("GET /api/capture/resolve?file=%s answered %d %q, want 200", file, rec.Code, strings.TrimSpace(rec.Body.String()))
 	}
 	answer := answerObject(t, "resolve "+file, rec)
-	requireKeys(t, "the resolve answer for "+file, answer, "file", "listed", "exists", "size")
+	requireKeys(t, "the resolve answer for "+file, answer, "file", "listed", "exists", "size", "too_large")
 	return answer
 }
 
@@ -114,6 +114,30 @@ func TestResolveSaysWhenThereIsNothingToSend(t *testing.T) {
 		t.Errorf("a file over the payload limit resolves with exists %v, size %v; want true, %d", answer["exists"], answer["size"], config.MaxCapturePayloadBytes+1)
 	}
 	requireNoFacts(t, "the resolve answer for a file the loader refuses as too large", answer)
+}
+
+func TestResolveSaysWhenAFileIsLargerThanAPayloadMayBe(t *testing.T) {
+	mux, api := captureTestMux(t)
+	manager := capture.GetManager(api.getCfg())
+	large := unlistedCaptureFile(t, manager, "quic_big_unlisted_resolve_example.bin", bytes.Repeat([]byte{0x5c}, config.MaxCapturePayloadBytes+1))
+	normal := unlistedCaptureFile(t, manager, "tls_normal_unlisted_resolve_example.bin", config.FakeSNI2)
+
+	answer := requireResolved(t, mux, large)
+	if answer["listed"] != false || answer["exists"] != true || answer["size"] != float64(config.MaxCapturePayloadBytes+1) || answer["too_large"] != true {
+		t.Errorf("an unlisted file one byte over the payload limit resolves with listed %v, exists %v, size %v, too_large %v; want false, true, %d, true", answer["listed"], answer["exists"], answer["size"], answer["too_large"], config.MaxCapturePayloadBytes+1)
+	}
+	requireNoFacts(t, "the resolve answer for a file over the payload limit", answer)
+
+	answer = requireResolved(t, mux, normal)
+	if answer["exists"] != true || answer["too_large"] != false {
+		t.Errorf("an unlisted file within the payload limit resolves with exists %v, too_large %v; want true, false", answer["exists"], answer["too_large"])
+	}
+	objectAt(t, "the resolve answer for a file within the payload limit", answer, "facts")
+
+	answer = requireResolved(t, mux, "captures/never_saved_too_large_example.bin")
+	if answer["exists"] != false || answer["too_large"] != false {
+		t.Errorf("a missing file resolves with exists %v, too_large %v; want false, false", answer["exists"], answer["too_large"])
+	}
 }
 
 func TestResolveRefusesPathsOutsideCaptures(t *testing.T) {

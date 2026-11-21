@@ -139,7 +139,7 @@ func TestPayloadAnswersKeepTheContractsNames(t *testing.T) {
 
 	if listed, ok := manager.GetCapture("tls", uploaded); ok {
 		answer = answerObject(t, "resolve", resolvePayloadFile(t, mux, "./"+listed.Filepath))
-		requireKeys(t, "the resolve answer", answer, "file", "listed", "exists", "size", "facts")
+		requireKeys(t, "the resolve answer", answer, "file", "listed", "exists", "size", "too_large", "facts")
 	} else {
 		t.Errorf("the uploaded payload %s is not listed", uploaded)
 	}
