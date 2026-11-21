@@ -140,6 +140,20 @@ export interface EscalationList {
   items: EscalationEntry[];
 }
 
+export interface CollectedEntry {
+  ip: string;
+  host: string;
+  set: string;
+  since: number;
+  until: number;
+}
+
+export interface CollectedList {
+  rev: number;
+  items: CollectedEntry[];
+  refused: number;
+}
+
 export interface BanEntry {
   key: string;
   ip: string;
@@ -243,6 +257,7 @@ export interface MetricsFrame {
   devices?: DeviceList;
   escalations?: EscalationList;
   bans?: BanList;
+  collected?: CollectedList;
   events?: EventLog;
   attention: Attention;
   mtproto?: MTProtoStats;

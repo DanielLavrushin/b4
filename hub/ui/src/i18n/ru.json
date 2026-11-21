@@ -373,7 +373,10 @@
     "updatedAgo": "обновлён {{when}}",
     "supersededBy": "Заменён версией v{{version}}, {{when}}",
     "reasonLine": "Причина: {{reason}}",
-    "reportsTotal": "жалобы: {{count}}"
+    "reportsTotal": "жалобы: {{count}}",
+    "targets": {
+      "useCollectedIps": "Использовать собранные IP"
+    }
   },
   "entry": {
     "targets": "Цели",

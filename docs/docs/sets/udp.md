@@ -49,7 +49,7 @@ The rest of a call the set takes belongs to the set: its later packets pass unto
 
 A set for calls has three requirements. When it breaks one, b4 refuses to save it, and a warning on the tab names the cause.
 
-- No targets: no domains, IPs, GeoSite or GeoIP categories and no ASNs. Source devices are allowed.
+- No targets: no domains, IPs, GeoSite or GeoIP categories, no ASNs and [Use collected IPs](./targets.md#collected-ips) off. Source devices are allowed.
 - A **Port Filter** on this tab with the ports the calls arrive on. While it is empty, the warning offers **Use Discord ports**, which enters `19294-19344,50000-50100`.
 - An empty **Port Filter** on the [TCP](./tcp/general.md) tab. Without targets, a TCP port filter would make the set act on every TCP connection on those ports. The **TCP** tab shows a warning too.
 

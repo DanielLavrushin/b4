@@ -177,7 +177,7 @@ func TestStopWaitsForAReinstallInFlightAndSkipsItsRebuild(t *testing.T) {
 
 	var ptr atomic.Pointer[config.Config]
 	ptr.Store(cfg)
-	w := newLinkWatcher(&ptr)
+	w := newLinkWatcher(&ptr, nil)
 	w.scheduleReinstall("lo")
 	select {
 	case <-entered:
@@ -221,7 +221,7 @@ func TestStopBeforeTheDebounceDropsTheReinstall(t *testing.T) {
 
 	var ptr atomic.Pointer[config.Config]
 	ptr.Store(cfg)
-	w := newLinkWatcher(&ptr)
+	w := newLinkWatcher(&ptr, nil)
 	w.scheduleReinstall("lo")
 	stopped := make(chan struct{})
 	go func() {

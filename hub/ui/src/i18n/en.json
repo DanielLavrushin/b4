@@ -373,7 +373,10 @@
     "updatedAgo": "updated {{when}}",
     "supersededBy": "Superseded by v{{version}}, {{when}}",
     "reasonLine": "Reason: {{reason}}",
-    "reportsTotal": "reports: {{count}}"
+    "reportsTotal": "reports: {{count}}",
+    "targets": {
+      "useCollectedIps": "Use collected IPs"
+    }
   },
   "entry": {
     "targets": "Targets",

@@ -928,6 +928,9 @@ func flowOffloadSafe(mode string, guard int, cfg *config.Config) bool {
 	if dup4, dup6 := cfg.CollectDuplicateIPs(); len(dup4) > 0 || len(dup6) > 0 {
 		return false
 	}
+	if _, _, used := cfg.CollectedDuplicateIPs(); used {
+		return false
+	}
 
 	window := cfg.Queue.TCPConnBytesLimit
 	if cfg.Queue.UDPConnBytesLimit > window {

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"net"
 	"os"
 	"slices"
@@ -47,6 +48,7 @@ var routeNftBasePriorityStr = strconv.Itoa(routeNftBasePriority)
 const SelfDialMark = config.SelfDialMark
 
 type routeState struct {
+	collected   bool
 	setID       string
 	domainOnly  bool
 	mode        string
@@ -60,9 +62,14 @@ type routeState struct {
 	gwV6        string
 	gwPeersV4   []string
 	tproxyPort  int
+	diverts     bool
+	tproxied    bool
+	reuseV4     bool
+	reuseV6     bool
 	upstreamKey string
 	udpPorts    string
 	sourcesKey  string
+	sources     []string
 	deviceKey   string
 	blockAction string
 	quicReject  bool
@@ -87,7 +94,7 @@ type routeBackend interface {
 	ensureBase() error
 	ensureIPSet(name string, v6 bool) error
 	addElements(setName string, ips []string, ttlSec int) []string
-	delElements(setName string, ips []string)
+	delElements(setName string, ips []string) []string
 	ensureChain(chain string, isMangle bool) error
 	flushChain(chain string, isMangle bool)
 	deleteChain(chain string, isMangle bool)
@@ -180,6 +187,8 @@ func routePublishMarksLocked() {
 	}
 	routeMarksByIface.Store(&marks)
 	routeSetRoutes.Store(&routes)
+	routePublishWSReuseDivertsLocked()
+	routePublishCollectedRoutesLocked()
 }
 
 func RoutingSetRoute(setID string) (SetRoute, bool) {
@@ -303,6 +312,9 @@ func routeHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP, sta
 	if old, ok := routeRuleCache[set.Id]; ok {
 		if !routeStateEqual(old, cur) {
 			previous, hadPrevious = old, true
+			if routeRebuildRemovesOldAtOnce(old, cur) {
+				previous = previous.withoutReuseDiversion()
+			}
 			retireOld = routeCleanupForRebuild(be, old, cur)
 			delete(routeRuleCache, set.Id)
 			routeForgetSetLearnState(set.Id)
@@ -310,13 +322,16 @@ func routeHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP, sta
 	}
 
 	if _, ok := routeRuleCache[set.Id]; !ok {
-		var err error
-		if config.RoutingIsBlock(cur.mode) {
-			err = routeEnsureBlockRule(be, cfg, set, cur, sources)
-		} else if config.RoutingUsesTProxy(cur.mode) {
-			err = routeEnsureProxyRule(be, cfg, set, cur, sources)
-		} else {
-			err = routeEnsureRule(be, cfg, set, cur, sources)
+		routeProbeCollectedConnmark(be, map[string]*config.SetConfig{set.Id: set})
+		err := routePrepareCollected(be, cfg, set, cur)
+		if err == nil {
+			if config.RoutingIsBlock(cur.mode) {
+				err = routeEnsureBlockRule(be, cfg, set, cur, sources)
+			} else if config.RoutingUsesTProxy(cur.mode) {
+				err = routeEnsureProxyRule(be, cfg, set, cur, sources)
+			} else {
+				err = routeEnsureRule(be, cfg, set, cur, sources)
+			}
 		}
 		if err != nil {
 			if hadPrevious {
@@ -635,10 +650,12 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 	chainPre, chainOut, chainSNAT := routeBuildChainNames(set.Id)
 
 	st := routeState{
+		collected:  set.Targets.UseCollectedIPs,
 		setID:      set.Id,
 		domainOnly: set.Targets.DomainOnly,
 		mode:       mode,
 		sourcesKey: sourcesKey,
+		sources:    sources,
 		deviceKey:  routeSetDeviceGate(cfg, set).key(),
 		srcScoped:  routeSetIsSourceScoped(set),
 		ipv4:       cfg.Queue.IPv4Enabled,
@@ -659,6 +676,9 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		st.upstreamKey = fmt.Sprintf("%s:%d|%s|udp=%t", set.Routing.Upstream.Host, set.Routing.Upstream.Port, set.Routing.Upstream.Username, set.Routing.Upstream.UDP)
 		st.udpPorts = set.RoutedUDPPortSpec()
 		st.quicReject = mode == config.RoutingModeProxy && st.udpPorts == "" && (!set.Routing.Upstream.UDP || set.BlocksQUIC())
+		if mode == config.RoutingModeWSReuse {
+			st.reuseV4, st.reuseV6 = set.MatchesIPVersion(4), set.MatchesIPVersion(6)
+		}
 	} else {
 		mark, table := routeResolveIDs(cfg, set)
 		st.mark = mark
@@ -683,7 +703,7 @@ func routeStateEqual(a, b routeState) bool {
 }
 
 func routeStateSameConfig(a, b routeState) bool {
-	return a.mode == b.mode &&
+	return a.collected == b.collected && a.mode == b.mode &&
 		a.domainOnly == b.domainOnly &&
 		a.mark == b.mark &&
 		a.bypass == b.bypass &&
@@ -696,6 +716,8 @@ func routeStateSameConfig(a, b routeState) bool {
 		a.udpPorts == b.udpPorts &&
 		a.blockAction == b.blockAction &&
 		a.quicReject == b.quicReject &&
+		a.reuseV4 == b.reuseV4 &&
+		a.reuseV6 == b.reuseV6 &&
 		a.sourcesKey == b.sourcesKey &&
 		a.deviceKey == b.deviceKey &&
 		a.srcScoped == b.srcScoped &&
@@ -726,6 +748,11 @@ func routeDropSets(be routeBackend, st routeState, keepSets bool) {
 		return
 	}
 	delete(routeStaticApplied, st.setID)
+	guards := slices.Sorted(maps.Keys(routeCollectedApplied[st.setID]))
+	for _, name := range guards {
+		routeDropCollectedSet(be, name, true)
+	}
+	delete(routeCollectedApplied, st.setID)
 	if st.ipv4 || be.hasIPSet(st.setV4) {
 		be.flushIPSet(st.setV4)
 		be.destroyIPSet(st.setV4)
@@ -734,6 +761,16 @@ func routeDropSets(be routeBackend, st routeState, keepSets bool) {
 		be.flushIPSet(st.setV6)
 		be.destroyIPSet(st.setV6)
 	}
+}
+
+func routeRebuildRemovesOldAtOnce(old, cur routeState) bool {
+	sameShape := config.RoutingIsBlock(old.mode) == config.RoutingIsBlock(cur.mode) &&
+		config.RoutingUsesTProxy(old.mode) == config.RoutingUsesTProxy(cur.mode)
+	sameFamilies := old.ipv4 == cur.ipv4 && old.ipv6 == cur.ipv6
+	if config.RoutingUsesTProxy(old.mode) {
+		return !sameShape || !sameFamilies
+	}
+	return !sameShape || !sameFamilies || config.RoutingIsBlock(old.mode)
 }
 
 func routeCleanupForRebuild(be routeBackend, old, cur routeState) func() {
@@ -763,7 +800,7 @@ func routeCleanupForRebuild(be routeBackend, old, cur routeState) func() {
 		}
 	}
 
-	if !sameShape || !sameFamilies || config.RoutingIsBlock(old.mode) || config.RoutingUsesTProxy(old.mode) {
+	if routeRebuildRemovesOldAtOnce(old, cur) {
 		routeCleanupAnyKeeping(be, old, keepSets)
 		return func() {}
 	}
@@ -850,13 +887,13 @@ func routeAddIPsToSets(be routeBackend, st routeState, ttl int, ips []net.IP, ip
 }
 
 func routeCollectEntries(set *config.SetConfig) (v4, v6 []string) {
-	if set == nil || len(set.Targets.IpsToMatch) == 0 {
+	if set == nil || len(set.TargetIPs()) == 0 {
 		return nil, nil
 	}
 
-	seen := make(map[string]struct{}, len(set.Targets.IpsToMatch))
+	seen := make(map[string]struct{}, len(set.TargetIPs()))
 
-	for _, raw := range set.Targets.IpsToMatch {
+	for _, raw := range set.TargetIPs() {
 		raw = strings.TrimSpace(raw)
 		if raw == "" {
 			continue
@@ -947,6 +984,8 @@ func RoutingClearAll() {
 	routeHostResolvedAt = make(map[string]time.Time)
 	routeOwnedAddrs = make(map[string]bool)
 	routeStaticApplied = make(map[string]routeStaticEntries)
+	routeCollectedApplied = make(map[string]map[string][]string)
+	routeForgetCollectedConnmark()
 	routeEgressLoopWarned = sync.Map{}
 	routeGatewayWarned = sync.Map{}
 	routeLocalGuardForgetLists()
@@ -995,6 +1034,10 @@ func RoutingRulesPresent(cfg *config.Config) bool {
 	be := getRouteBackend(cfg)
 	if be == nil {
 		return true
+	}
+
+	if !routeCollectedGuardsPresent(be, cfg) {
+		return false
 	}
 
 	switch eng := be.(type) {
@@ -1469,7 +1512,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 			routeWarnIncomplete(set, "routing mode is 'proxy' but the upstream port is not set")
 			continue
 		}
-		if len(set.Targets.IpsToMatch) == 0 && len(set.Targets.DomainsToMatch) == 0 && !set.RoutesUDPByPort() && !cfg.IsTelegramUpstreamSet(set) {
+		if len(set.TargetIPs()) == 0 && len(set.Targets.DomainsToMatch) == 0 && !set.RoutesUDPByPort() && !cfg.IsTelegramUpstreamSet(set) {
 			routeWarnNoDestination(set)
 			continue
 		}
@@ -1485,6 +1528,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 			routeNoteInstalled(setID)
 			routeForgetSetLearnState(setID)
 			routeForgetEgressLoopWarning(setID)
+			routeForgetCollectedConnmarkWarning(setID)
 			routeForgetGatewayWarning(setID)
 			for host := range routeLearnedHosts[setID] {
 				delete(routeHostResolvedAt, setID+"|"+host)
@@ -1492,6 +1536,8 @@ func routingSyncConfigLocked(cfg *config.Config) {
 			delete(routeLearnedHosts, setID)
 		}
 	}
+	routeProbeCollectedConnmark(be, desired)
+	reuseDiverts := routeProbeWSReuseDiversion(be, desired)
 
 	var newRoutingSets []*config.SetConfig
 	var retargetedSets []*config.SetConfig
@@ -1506,6 +1552,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 
 		cur := buildRouteState(cfg, set)
 		cur.set = set
+		cur.diverts = cur.mode == config.RoutingModeWSReuse && reuseDiverts
 		if config.IsTelegramBridgeSet(set) {
 			v4, v6 := telegramBridgeListenerFamilies()
 			cur.ipv4 = cur.ipv4 && v4
@@ -1523,8 +1570,11 @@ func routingSyncConfigLocked(cfg *config.Config) {
 		previous := routeState{}
 		hadPrevious := false
 		if old, ok := routeRuleCache[set.Id]; ok {
-			if !routeStateEqual(old, cur) {
+			if !routeStateEqual(old, cur) || old.diverts != cur.diverts {
 				previous, hadPrevious = old, true
+				if routeRebuildRemovesOldAtOnce(old, cur) {
+					previous = previous.withoutReuseDiversion()
+				}
 				retireOld = routeCleanupForRebuild(be, old, cur)
 				delete(routeRuleCache, set.Id)
 				routeForgetSetLearnState(set.Id)
@@ -1538,13 +1588,15 @@ func routingSyncConfigLocked(cfg *config.Config) {
 		}
 
 		if _, ok := routeRuleCache[set.Id]; !ok {
-			var err error
-			if config.RoutingIsBlock(cur.mode) {
-				err = routeEnsureBlockRule(be, cfg, set, cur, sources)
-			} else if config.RoutingUsesTProxy(cur.mode) {
-				err = routeEnsureProxyRule(be, cfg, set, cur, sources)
-			} else {
-				err = routeEnsureRule(be, cfg, set, cur, sources)
+			err := routePrepareCollected(be, cfg, set, cur)
+			if err == nil {
+				if config.RoutingIsBlock(cur.mode) {
+					err = routeEnsureBlockRule(be, cfg, set, cur, sources)
+				} else if config.RoutingUsesTProxy(cur.mode) {
+					err = routeInstallProxyRule(be, cfg, set, cur, sources, &cur.tproxied)
+				} else {
+					err = routeEnsureRule(be, cfg, set, cur, sources)
+				}
 			}
 			if err != nil {
 				if hadPrevious {
@@ -1561,8 +1613,13 @@ func routingSyncConfigLocked(cfg *config.Config) {
 				continue
 			}
 			routeRuleCache[set.Id] = cur
+			routeWarnRefusedWSReuseTProxy(set, cur)
 			retireOld()
 			newRoutingSets = append(newRoutingSets, set)
+		} else if err := routePrepareCollected(be, cfg, set, cur); err != nil {
+			failed = true
+			setErrs[set.Id] = RoutingSetError{ID: set.Id, Set: set.Name, Error: err.Error()}
+			continue
 		}
 		routeNoteInstalled(set.Id)
 
@@ -1785,6 +1842,9 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 	}
 
 	routeAddMarkRestoreRules(be, st.chainPre, sources, st.mark, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	if err := routeCollectedGuard(be, cfg, set, st, st.chainPre); err != nil {
+		return err
+	}
 	if cfg.Queue.IPv4Enabled {
 		routeAddMarkRules(be, st.chainPre, false, st.setV4, st.mark, sources, true)
 		routeAddMarkFallbackRules(be, st.chainPre, false, st.setV4, st.mark, sources)
@@ -1794,6 +1854,9 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 		routeAddMarkFallbackRules(be, st.chainPre, true, st.setV6, st.mark, sources)
 	}
 
+	if err := routeCollectedGuard(be, cfg, set, st, st.chainOut); err != nil {
+		return err
+	}
 	routeAddOutChainRules(be, cfg, st, gate)
 	routeEnsureChainJumps(be, st, gate)
 

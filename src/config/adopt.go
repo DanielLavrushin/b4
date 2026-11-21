@@ -8,6 +8,10 @@ func (s *SetConfig) AdoptStrategy(from *SetConfig) {
 	}
 
 	tcp := from.TCP
+	tcp.WSSizeReuse = s.TCP.WSSizeReuse
+	if s.TCP.WSSizeReuse.Enabled {
+		tcp.WSSize = s.TCP.WSSize
+	}
 	tcp.Win.Values = slices.Clone(from.TCP.Win.Values)
 	tcp.DPortFilter = s.TCP.DPortFilter
 	tcp.RSTProtection = s.TCP.RSTProtection

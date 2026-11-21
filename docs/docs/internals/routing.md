@@ -25,6 +25,7 @@ Every rule b4 installs for a set matches the destination address. Source interfa
 | Source | How the address enters the set |
 | --- | --- |
 | IP, CIDR, GeoIP and ASN targets | Written on every configuration sync, removed when they leave the targets |
+| [Collected IPs](../sets/targets.md#collected-ips) | With **Use collected IPs** on, written when b4 installs a change of the pool, removed when they leave it. A connection that was open before its address was collected keeps its route; [Collected addresses](../guides/marks.md#collected-addresses) gives the rules and their exceptions |
 | DNS answers for the set's domains | Forwarded or pinned answers that b4 sees, and the answers of the set's DNS redirect. Kept for **Resolved IP TTL (seconds)** |
 | b4's own lookups | The set's domains, resolved when routing is turned on, through the set's resolver when it has one. See [Lookups b4 makes itself](../dns.md#lookups-b4-makes-itself) |
 | TLS and QUIC names | The destination of a connection whose ClientHello or QUIC Initial names a domain of the set, other than a [private address](./matching.md#the-order-of-checks) that no set's **Bypass IPs** list; over QUIC, no private address is learned at all. That connection has already left by the normal route; later ones follow the set. A subdomain matched this way is resolved in full. Not in **Block (blackhole)** mode, which blocks such a connection by its name instead |
@@ -118,6 +119,8 @@ A gateway that passes the check but does not forward the traffic, such as a mist
 
 The router's own connections reach the listener by a loop through `lo`, unless the set is limited to source devices or source interfaces. [Proxy sets and Telegram over WebSocket](../guides/marks.md#proxy-sets-and-telegram-over-websocket) lists the marks, rules and ports.
 
+A set with **Reuse WSSIZE connection** on gets a transparent listener and a diversion of its own, as a proxy set does, for its TCP to port 443, without an upstream and without UDP, while reuse is in effect; see [Reuse WSSIZE connection](../guides/marks.md#reuse-wssize-connection).
+
 With **Route UDP through upstream** off, b4 answers the set's UDP to port 443 with ICMP port unreachable, and browsers fall back to TCP. Otherwise a site that advertises HTTP/3 in `alt-svc` would be reached over QUIC directly, and the browser would keep that for the header's lifetime. With the option on, a set with **Block QUIC (force TCP)** on its [UDP](../sets/udp.md#blocking-quic) tab gets the same refusal: the diversion leaves UDP to port 443 out, and the rest of the set's UDP still goes to the listener. In both cases no later set that matches the same address diverts that UDP to port 443 either. The refusal is per address family, the IPv6 half only with **Enable IPv6 Support** on. It also applies to the router's own connections, unless the set is limited to source devices or source interfaces. With the option on and an upstream without UDP ASSOCIATE, the set's UDP is dropped, and b4 logs a warning.
 
 The UDP sessions open through the upstreams of all proxy sets together are limited to one eighth of b4's open-file limit, at least 64 and at most 1024. b4 drops a new flow above the limit, also with **Fall back to direct on upstream failure** on, and each set logs it at most once a minute. After the upstream fails a UDP session, b4 waits 5 seconds before it asks for another. New UDP flows are dropped meanwhile, or leave directly with the fallback on.
@@ -162,7 +165,7 @@ tproxy: set "TMDB" cannot reach its upstream 10.8.0.1:1080 (1 consecutive failur
 
 With `net.bridge.bridge-nf-call-iptables` at `1`, the kernel runs the IPv4 PREROUTING rules for traffic entering through a network bridge, such as `br-lan` or `docker0`, inside the bridge code, and not again at the IP layer. The TPROXY rule assigns the connection to b4's listener in that pass, and the IP layer drops the assignment. The packet is still delivered locally, but no socket takes it: connections from the devices behind the bridge hang, with no connection line in the log. The router's own connections are diverted as usual. `net.bridge.bridge-nf-call-ip6tables` does the same for IPv6. The per-bridge attributes `nf_call_iptables` and `nf_call_ip6tables` under `/sys/class/net/<bridge>/bridge/` turn the pass on as well: it runs when either the global setting or the attribute is `1`.
 
-This breaks the proxy mode, the Telegram over WebSocket mode and the Telegram over WebSocket switch. While one of them is active and bridge netfilter is on for a bridge with ports, b4 logs a warning naming the bridge, **System Info** shows it in the **Bridge netfilter** row, and the Telegram over WebSocket card warns.
+This breaks the proxy mode, the Telegram over WebSocket mode, the Telegram over WebSocket switch and **Reuse WSSIZE connection**. While one of them is active and bridge netfilter is on for a bridge with ports, b4 logs a warning naming the bridge, **System Info** shows it in the **Bridge netfilter** row, and the Telegram over WebSocket card warns.
 
 On OpenWrt the `dockerd` package turns both settings on at boot through `/etc/sysctl.d/12-br-netfilter-ip.conf`. They are turned off at runtime, and the same lines in `/etc/sysctl.conf`, applied after `/etc/sysctl.d`, keep them off after a reboot:
 
@@ -178,12 +181,12 @@ Two Docker configurations rely on bridge netfilter: a network created with `icc=
 
 | Backend | Needs | What b4 creates |
 | --- | --- | --- |
-| **nftables** | `nft` | The `b4_route` table with `prerouting`, `output` and `postrouting` chains, and address sets with `interval` and `timeout` |
-| **iptables + ipset** | `iptables`, `ipset` | Rules in the `mangle` and `nat` tables and an ipset of type `hash:net` per set; `iptables-legacy` is checked too |
+| **nftables** | `nft` | The `b4_route` table with `prerouting`, `output` and `postrouting` chains, and address sets with `interval` and `timeout`; a set with **Use collected IPs** also gets plain guard sets for its collected addresses |
+| **iptables + ipset** | `iptables`, `ipset` | Rules in the `mangle` and `nat` tables and an ipset of type `hash:net` per set, and guard ipsets of the same type for a set with **Use collected IPs**; `iptables-legacy` is checked too |
 
 Routing uses the backend of [Firewall Engine](../settings/core.md#firewall-rules), on **Auto-detect** the one b4 found for its other rules. Without `ipset` or `iptables`, routing falls back to nftables whenever `nft` is present. With neither backend, or without the `ip` command, b4 logs a warning at each start and save and installs nothing. b4 looks these commands up once per run, so a tool installed later takes effect after a restart. The b4 Docker image carries `nft`, `iptables` and `ipset`.
 
-Nothing is created for routing, not even the `b4_route` table, while no enabled set has routing on and the Telegram over WebSocket switch is off.
+Nothing is created for routing, not even the `b4_route` table, while no enabled set has routing on or **Reuse WSSIZE connection** in effect and the Telegram over WebSocket switch is off.
 
 ## When the rules cannot be installed {#install-failures}
 

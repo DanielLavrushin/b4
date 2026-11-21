@@ -50,6 +50,7 @@ var Fields = map[string]Field{
 	"tcp.desync.count":       {Class: Crosses},
 	"tcp.desync.post_desync": {Class: Crosses},
 
+	"tcp.wssize_reuse":       {Class: Never},
 	"tcp.wssize.cutoff":      {Class: Crosses, Since: "1.91.0"},
 	"tcp.wssize.enabled":     {Class: Crosses, Since: "1.91.0"},
 	"tcp.wssize.window":      {Class: Crosses, Since: "1.91.0"},
@@ -143,6 +144,7 @@ var Fields = map[string]Field{
 	"targets.source_devices":         {Class: Never},
 	"targets.source_devices_exclude": {Class: Never},
 	"targets.domain_only":            {Class: Crosses},
+	"targets.use_collected_ips":      {Class: Never},
 	"targets.ip_priority":            {Class: Never},
 	"targets.tls":                    {Class: Crosses},
 	"targets.ip_version":             {Class: Crosses},

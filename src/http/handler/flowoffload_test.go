@@ -109,4 +109,26 @@ func TestFlowOffloadSafe(t *testing.T) {
 			t.Error("expected duplication sets to make any guard unsafe")
 		}
 	})
+
+	t.Run("duplication through collected IPs is never safe", func(t *testing.T) {
+		cfg := newCfg()
+		set := &config.SetConfig{Enabled: true}
+		set.TCP.Duplicate.Enabled = true
+		set.Targets.UseCollectedIPs = true
+		cfg.Sets = []*config.SetConfig{set}
+		if flowOffloadSafe("software", 1000, cfg) {
+			t.Error("a duplication set that uses only collected IPs queues every connection to a collected address for its whole life, and its rules stand while the pool is empty, so no guard is safe")
+		}
+	})
+
+	t.Run("a disabled collected duplication set does not count", func(t *testing.T) {
+		cfg := newCfg()
+		set := &config.SetConfig{Enabled: false}
+		set.TCP.Duplicate.Enabled = true
+		set.Targets.UseCollectedIPs = true
+		cfg.Sets = []*config.SetConfig{set}
+		if !flowOffloadSafe("software", cfg.Queue.TCPConnBytesLimit+1, cfg) {
+			t.Error("a disabled set installs no duplication rules, so a guard above the queue window stays safe")
+		}
+	})
 }

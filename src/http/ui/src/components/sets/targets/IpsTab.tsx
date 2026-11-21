@@ -82,6 +82,16 @@ export const IpsTab = ({
   const partialCatchAll = presentCatchAll.length > 0 && !catchAll;
   const tlsFiltered = !!config.targets.tls;
   const hasGeoip = !!geo.ipdat_path && geoipCategories.length > 0;
+  const usesCollected = config.targets.use_collected_ips ?? false;
+  const routingMode = config.routing?.mode;
+  const collectedRoutes =
+    usesCollected &&
+    !!config.routing?.enabled &&
+    routingMode !== "block" &&
+    routingMode !== "mtproto-ws";
+  const collectedTakes =
+    collectedRoutes ||
+    (usesCollected && !!config.tcp.wssize_reuse?.enabled);
 
   const checkDuplicates = (input: string) => {
     const notice = ipEntryNotice(input, !!ipv6);
@@ -130,6 +140,31 @@ export const IpsTab = ({
 
       <Box sx={{ my: 3, display: "flex", gap: 2, flexWrap: "wrap" }}>
         <Box sx={{ maxWidth: 480, flex: "1 1 260px", minWidth: 0 }}>
+          <B4Switch
+            label={t("sets.targets.useCollectedIps")}
+            description={t("sets.targets.useCollectedIpsDesc")}
+            message={
+              collectedTakes ? (
+                <B4FieldMessage severity="info">
+                  {t(
+                    collectedRoutes
+                      ? "sets.targets.useCollectedIpsTakes"
+                      : "sets.targets.useCollectedIpsTakesReuse",
+                  )}
+                </B4FieldMessage>
+              ) : undefined
+            }
+            info={t("sets.targets.useCollectedIpsInfo")}
+            learnMore="sets/targets#ip-addresses"
+            checked={usesCollected}
+            path="targets.use_collected_ips"
+            onChange={(checked: boolean) =>
+              onChange("targets.use_collected_ips", checked)
+            }
+            aiTopic="targets.use_collected_ips"
+          />
+        </Box>
+        <Box sx={{ maxWidth: 360, flex: "1 1 260px", minWidth: 0 }}>
           <B4Switch
             label={t("sets.targets.catchAllIps")}
             description={t("sets.targets.catchAllIpsDesc", {

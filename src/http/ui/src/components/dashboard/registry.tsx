@@ -3,6 +3,7 @@ import {
   ActivityPanel,
   AddressesPanel,
   BansPanel,
+  CollectedPanel,
   BlockedPanel,
   DevicesPanel,
   DomainsPanel,
@@ -13,9 +14,7 @@ import {
   type PanelAvailability,
 } from "./panels";
 
-export const GRID_COLUMNS = 12;
-
-export const MIN_SPAN = 3;
+export { GRID_COLUMNS, MIN_SPAN } from "./layoutRows";
 
 export type PanelCondition = keyof PanelAvailability;
 
@@ -84,6 +83,13 @@ export const DASHBOARD_PANELS: readonly PanelDescriptor[] = [
     defaultSpan: 6,
     when: "bans",
     Component: BansPanel,
+  },
+  {
+    id: "collected",
+    titleKey: "dashboard.collected.title",
+    defaultSpan: 6,
+    when: "collected",
+    Component: CollectedPanel,
   },
   {
     id: "telegram",

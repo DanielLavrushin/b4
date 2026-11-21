@@ -59,6 +59,7 @@ export interface FacetSetConfig {
     tls_mod?: string[];
   };
   targets: {
+    use_collected_ips?: boolean;
     sni_domains: string[];
     ip: string[];
     geosite_categories: string[];
@@ -575,6 +576,7 @@ const escalateRows = (
 };
 
 export const hasTargets = (set: FacetSetConfig) =>
+  !!set.targets.use_collected_ips ||
   set.targets.geosite_categories.length > 0 ||
   set.targets.geoip_categories.length > 0 ||
   (set.targets.asns?.length ?? 0) > 0 ||
@@ -661,6 +663,7 @@ export const buildTargetSummary = (
 ): string => {
   const { targets } = set;
   const named = [
+    ...(targets.use_collected_ips ? [t("sets.targets.useCollectedIps")] : []),
     ...targets.geosite_categories,
     ...targets.geoip_categories,
     ...(targets.asns ?? []).map((id) => `AS${id}`),

@@ -63,7 +63,7 @@ func dscpPlanFor(cfg *config.Config) *dscpPlan {
 	targets := 0
 	for _, set := range cfg.Sets {
 		if set != nil && set.Enabled && set.DSCP.Enabled {
-			targets += len(set.Targets.IpsToMatch)
+			targets += len(set.TargetIPs())
 		}
 	}
 	claims := make([]dscpClaim, 0, targets)
@@ -99,7 +99,7 @@ func dscpPlanFor(cfg *config.Config) *dscpPlan {
 			member.domains = dscpLiteralDomains(set.Targets.SNIDomains)
 		}
 		plan.sets = append(plan.sets, member)
-		for _, raw := range set.Targets.IpsToMatch {
+		for _, raw := range set.TargetIPs() {
 			if prefix, ok := dscpParseTarget(raw); ok && member.matchesFamily(prefix.Addr()) {
 				claims = append(claims, dscpClaimOf(prefix, index, value))
 			}

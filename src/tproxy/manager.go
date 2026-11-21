@@ -2,7 +2,9 @@ package tproxy
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"net/netip"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -11,9 +13,11 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/socks5"
+	"github.com/daniellavrushin/b4/warmtuple"
 )
 
 type Manager struct {
+	warm          *warmtuple.Service
 	mu            sync.Mutex
 	listeners     map[string]*Listener
 	published     atomic.Pointer[[]*Listener]
@@ -150,6 +154,9 @@ func (m *Manager) scheduleRetryLocked() {
 
 func (m *Manager) syncLocked(cfg *config.Config, retried bool) {
 	m.lastCfg = cfg
+	if m.warm != nil {
+		m.warm.UpdateConfig(cfg)
+	}
 	bypassMark := proxyBypassMark(cfg)
 
 	routingSets := cfg.RoutingSets()
@@ -176,7 +183,7 @@ func (m *Manager) syncLocked(cfg *config.Config, retried bool) {
 			desiredHost = "127.0.0.1"
 		}
 		isMTWS := set.Routing.Mode == config.RoutingModeMTProtoWS
-		if l.Port != port ||
+		if l.Port != port || l.WSReuse != (set.Routing.Mode == config.RoutingModeWSReuse) ||
 			l.MTProtoWS != isMTWS ||
 			l.Upstream.Host != desiredHost ||
 			l.Upstream.Port != set.Routing.Upstream.Port ||
@@ -281,6 +288,8 @@ func (m *Manager) newListener(cfg *config.Config, set *config.SetConfig, bypassM
 		FailOpen:  set.Routing.Upstream.FailOpen,
 		Names:     m.resolver,
 		MTProtoWS: set.Routing.Mode == config.RoutingModeMTProtoWS,
+		WSReuse:   set.Routing.Mode == config.RoutingModeWSReuse,
+		Warm:      m.warm,
 		Bridge:    m.mtprotoBridge,
 		peers:     m.running,
 		guard:     newLoopGuard(host, set.Routing.Upstream.Port),
@@ -313,6 +322,9 @@ func (m *Manager) reportBridgeLocked(retried bool) {
 }
 
 func (m *Manager) Stop() {
+	if m.warm != nil {
+		_ = m.warm.Close()
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.retryTimer != nil {
@@ -358,7 +370,7 @@ func (m *Manager) UpstreamHealth() []UpstreamHealth {
 	ls := m.running()
 	out := make([]UpstreamHealth, 0, len(ls))
 	for _, l := range ls {
-		if l.MTProtoWS {
+		if l.MTProtoWS || l.WSReuse {
 			continue
 		}
 		out = append(out, l.Health())
@@ -395,4 +407,51 @@ func proxyBypassMark(cfg *config.Config) uint32 {
 		return config.SelfDialMark
 	}
 	return cfg.SelfDialMark()
+}
+
+func (m *Manager) SetWarmTupleFlows(flows *warmtuple.Flows) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.warm = warmtuple.NewService(flows)
+	if m.lastCfg != nil {
+		m.warm.UpdateConfig(m.lastCfg)
+	}
+	for _, l := range m.listeners {
+		l.Warm = m.warm
+	}
+}
+
+func (m *Manager) CollectedConsumersReady(c *config.Config) error {
+	if c == nil {
+		return nil
+	}
+	for _, set := range c.RoutingSets() {
+		if set == nil || !set.Enabled || !set.Targets.UseCollectedIPs || !config.RoutingUsesTProxy(set.Routing.Mode) || !(set.RoutingDivertsPackets() || set.RoutesUDPByPort()) {
+			continue
+		}
+		v4, v6 := collectedFamilies(set.Targets.CollectedIPs)
+		if !v4 && !v6 {
+			continue
+		}
+		status := m.ListenerStatus(set.Id, 0)
+		if v4 && !status.V4 || v6 && !status.V6 {
+			return fmt.Errorf("consumer listener %q unavailable", set.Name)
+		}
+	}
+	return nil
+}
+
+func collectedFamilies(ips []string) (v4, v6 bool) {
+	for _, raw := range ips {
+		addr, err := netip.ParseAddr(raw)
+		if err != nil {
+			continue
+		}
+		if addr.Unmap().Is4() {
+			v4 = true
+		} else {
+			v6 = true
+		}
+	}
+	return v4, v6
 }

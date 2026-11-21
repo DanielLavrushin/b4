@@ -210,6 +210,23 @@ func TestNftDelElementsRemovesInOneScript(t *testing.T) {
 	}
 }
 
+func TestNftDelElementsReportsOnlyTheElementsTheKernelKept(t *testing.T) {
+	recordNftScripts(t, errors.New("Error: Could not process rule: No such file or directory"), nil)
+	refused := refuseDeletes(run)
+	run = func(args ...string) (string, error) {
+		out, err := refused(args...)
+		if err != nil && strings.Contains(strings.Join(args, " "), "203.0.113.10") {
+			out = "Error: Could not process rule: Device or resource busy"
+		}
+		return out, err
+	}
+
+	got := (&routeNftBackend{}).delElements("b4r_x_v4c", []string{"203.0.113.9", "203.0.113.10"})
+	if !reflect.DeepEqual(got, []string{"203.0.113.10"}) {
+		t.Fatalf("delete reported %v as still in the set, want [203.0.113.10]: an element nft no longer has is gone, one it refused for another reason is still there", got)
+	}
+}
+
 func TestRouteNftScriptErrorKeepsTheFirstLineOnly(t *testing.T) {
 	long := "command [nft -f -] failed: exit status 1 (/dev/stdin:1:36-45: Error: conflicting intervals specified\nadd element inet b4_route b4r_x_v4 { " + strings.Repeat("10.0.0.0/24, ", 5000) + "}"
 	got := routeNftScriptError(errors.New(long))

@@ -508,3 +508,53 @@ func TestACountBeingCheckedLastsUntilTheCheckEnds(t *testing.T) {
 		t.Fatal("once the check is over an expired count is dropped")
 	}
 }
+
+func TestANewConnectionOnAReusedTupleStartsUncounted(t *testing.T) {
+	for name, collect := range map[string]bool{"block": false, "collect": true} {
+		t.Run(name, func(t *testing.T) {
+			tracker := &destStateTracker{}
+			now := time.Now()
+			stale := historyWatch("reused-tuple", 71)
+			stale.collect, stale.setID, stale.helloAck, stale.counted, stale.deadline = collect, "s", 1, true, now.Add(-time.Second)
+			fresh := historyWatch("reused-tuple", 72)
+			fresh.collect, fresh.setID, fresh.helloAck, fresh.deadline = collect, "s", 2, now.Add(3*time.Second)
+			if !collect {
+				stale.flowID, fresh.flowID = 0, 0
+			}
+			tracker.WatchHello(stale)
+			tracker.WatchHello(fresh)
+
+			cur := tracker.watches["reused-tuple"]
+			if cur != fresh {
+				t.Fatal("a ClientHello acknowledging another server sequence is a new connection and replaces the stale watch")
+			}
+			if cur.counted {
+				t.Fatal("a new connection on a reused tuple must start uncounted, or it is never counted on its own")
+			}
+			if due := tracker.DueSilent(now); len(due) != 0 {
+				t.Fatalf("the new connection waits for its own deadline, %d came due", len(due))
+			}
+			if due := tracker.DueCollected(now, maxSilenceLookups); len(due) != 0 {
+				t.Fatalf("the new connection waits for its own deadline, %d came due", len(due))
+			}
+		})
+	}
+}
+
+func TestABlockWatchOnAReusedTupleGetsTheNewConnectionsDeadline(t *testing.T) {
+	tracker := &destStateTracker{}
+	now := time.Now()
+	stale := &helloWatch{key: "reused-tuple", setID: "s", helloAck: 1, deadline: now.Add(-time.Second)}
+	tracker.WatchHello(stale)
+	gen := stale.gen
+	fresh := &helloWatch{key: "reused-tuple", setID: "s", helloAck: 2, deadline: now.Add(3 * time.Second)}
+	tracker.WatchHello(fresh)
+
+	cur := tracker.watches["reused-tuple"]
+	if cur != fresh || cur.gen == gen || !cur.deadline.After(now) {
+		t.Fatalf("the new connection must get a new watch with its own deadline, got %+v", cur)
+	}
+	if due := tracker.DueSilent(now); len(due) != 0 {
+		t.Fatalf("the stale deadline must not make the new connection due right after its ClientHello, %d came due", len(due))
+	}
+}

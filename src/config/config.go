@@ -19,6 +19,8 @@ type Config struct {
 	UI     UIConfig     `json:"ui"`
 
 	tcpPortMap map[uint16]bool // pre-computed TCP port set for fast lookup in packet handler
+	viewOf     *Config
+	viewAt     *Config
 }
 
 var DefaultSetConfig = SetConfig{
@@ -39,6 +41,7 @@ var DefaultSetConfig = SetConfig{
 	},
 
 	TCP: TCPConfig{
+		WSSizeReuse:    WSSizeReuseConfig{MaxAgeSeconds: DefaultWSReuseMaxAgeSeconds},
 		ConnBytesLimit: 19,
 		Seg2Delay:      0,
 		SynFake:        false,
@@ -75,6 +78,7 @@ var DefaultSetConfig = SetConfig{
 		},
 
 		IPBlockDetect: IPBlockDetectConfig{
+			Action:              "block",
 			Enabled:             false,
 			RetransmitThreshold: 3,
 			TimeoutMs:           3000,

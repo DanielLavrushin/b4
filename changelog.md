@@ -6,6 +6,8 @@ All notable changes to b4 are recorded in this file.
 
 ### Added
 
+- **IP Block Detection** can **Collect detected IPs**: when two connections in a row to an address stall, the address joins a pool for sets with **Use collected IPs**, listed in **Collected IPs** on the **Dashboard**. Before installing an earlier version, turn off **IP Block Detection** in the sets that collect, and turn off sets with a **Port Filter** whose only target is **Use collected IPs**: that version would block and ban detected addresses, or apply such a set to every connection on those ports. ([#618](https://github.com/DanielLavrushin/b4/pull/618), thanks [@SoloIl](https://github.com/SoloIl))
+- **Reuse WSSIZE connection** warms up a connection to a set's IP target with its **Real TCP window (wssize)** from [zapret2](https://github.com/bol-van/zapret2), then sends the device's HTTPS from the same router port with the normal window. If the warm-up fails, the set's own strategy applies to the whole connection, and **Traffic** marks it `fallback`. ([#618](https://github.com/DanielLavrushin/b4/pull/618), thanks [@SoloIl](https://github.com/SoloIl))
 - A **Telegram set** under **Telegram upstream (shared)** takes b4's own connections to Telegram on every route, the CF proxy domains and the Worker included, in NFQUEUE and TUN mode: its strategy, or its interface or proxy route; **Create a Telegram set** adds one, and a **Telegram set** badge marks it on the **Sets** page. [#615](https://github.com/DanielLavrushin/b4/issues/615), [#639](https://github.com/DanielLavrushin/b4/issues/639), [#640](https://github.com/DanielLavrushin/b4/issues/640)
 - After an **Update** or **Upload** on the **Geo Databases** page, the card lists the sets with categories that match nothing in the new file, and the set editor marks a category absent from the file in red with the reason on hover. [#620](https://github.com/DanielLavrushin/b4/issues/620)
 - **Discovery** and the watchdog's heals run under the TUN engine, routers without NFQUEUE included. Under TUN they test IPv4 only, skip strategies with **Incoming Mode** or **RST Injection Protection**, and cannot test a set with its own DSCP value. [#528](https://github.com/DanielLavrushin/b4/issues/528)
@@ -57,6 +59,7 @@ All notable changes to b4 are recorded in this file.
 - Deleting a payload with `&`, `#`, `+` or `%` in its name could delete another one, a payload with a blank name could not be deleted, a 64 KB file was refused, and errors on the **Payloads** page gave no reason. [#647](https://github.com/DanielLavrushin/b4/issues/647), [#650](https://github.com/DanielLavrushin/b4/issues/650)
 - **Generate** wrote a port typed with the domain into the payload and put a Cyrillic domain into it as raw text instead of its punycode form. [#647](https://github.com/DanielLavrushin/b4/issues/647)
 - A payload file cut short by a full disk replaced the old one, an empty payload file was sent as **Preset: Google (classic)** with no error in the log, and after a backup restore the next payload change lost the restored payload list. [#647](https://github.com/DanielLavrushin/b4/issues/647)
+- The **TCP** tab's warning that the **Port Filter** leaves out port 443 read the filter differently from how b4 saves it, so it could appear when the saved filter covered 443 and stay hidden when it did not.
 
 ### Security
 

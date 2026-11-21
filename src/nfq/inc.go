@@ -15,6 +15,11 @@ import (
 var corruptionStrategies = []string{"badsum", "badseq", "badack", "all"}
 
 func (w *Worker) HandleIncoming(vc *verdictCtx, v byte, raw []byte, ihl int, src net.IP, dstStr string, dport uint16, srcStr string, sport uint16, payload []byte) int {
+	if w.destState.CollectWatching() && len(raw) >= ihl+TCPHeaderMinLen {
+		key := fmt.Sprintf(connKeyFormat, dstStr, dport, srcStr, sport)
+		w.destState.NoteCollectedServerPacket(key, raw[ihl:], len(payload), len(raw))
+	}
+
 	isSynAck := false
 	if len(raw) > ihl+13 {
 		flags := raw[ihl+13]

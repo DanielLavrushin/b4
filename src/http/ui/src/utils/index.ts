@@ -17,3 +17,5 @@ export * from "./setExport";
 export * from "./setByPath";
 export * from "./ports";
 export * from "./docs";
+export * from "./targets";
+export * from "./wssizeReuse";

@@ -187,6 +187,7 @@ func discoveryPoolConfig(cfg *config.Config, start, threads int, flowMark, injec
 
 	for _, set := range discoveryCfg.Sets {
 		set.DNS = config.DNSConfig{}
+		set.TCP.WSSizeReuse = config.DefaultSetConfig.TCP.WSSizeReuse
 	}
 	return discoveryCfg
 }

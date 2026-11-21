@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { B4Alert, B4Dialog } from "@b4.elements";
 import { DeleteIcon } from "@b4.icons";
 import { B4Config, B4SetConfig } from "@models/config";
-import { macKey } from "@utils";
+import { macKey, mssClampIpScope } from "@utils";
 
 interface ForgetCandidate {
   mac: string;
@@ -41,10 +41,7 @@ const setsLeftWithoutDevices = (config: B4Config, drop: Set<string>) =>
   });
 
 const clampsWithoutAddressTargets = (s: B4SetConfig) =>
-  !!s.mss_clamp?.enabled &&
-  (s.targets.ip ?? []).length === 0 &&
-  (s.targets.geoip_categories ?? []).length === 0 &&
-  (s.targets.asns ?? []).length === 0;
+  !!s.mss_clamp?.enabled && !mssClampIpScope(s.targets);
 
 export const ForgetDevicesDialog = ({
   open,

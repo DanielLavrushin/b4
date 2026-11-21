@@ -48,8 +48,8 @@ rule without a mask, such as nftables `meta mark set 0x00021546` or iptables
 | --- | --- | --- | --- |
 | 0-14, 17 | `0x27fff` | The route of a routing set | One per set; sets routed through the same interface with the same egress IP, gateway and kill switch share one. See [sets routed through an interface](#sets-routed-through-an-interface) and [proxy sets](#proxy-sets-and-telegram-over-websocket) |
 | 15 by default | `0x8000` by default | The queue mark: packets b4 sends from its raw sockets, except those toward a device in TUN mode, the DNS queries it sends for clients and for its sets, and its probes that bypass its own processing | **Packet Mark** under **Settings, Core, Packet Engine**, `0x8000` (32768) by default |
-| 18 | `0x40000` | Connections b4 opens to the upstream of a proxy set, to Telegram, the Community Hub, ipinfo and RIPEstat, and its transparent listeners; see [socket marks](#socket-marks) | Fixed |
-| 21 | `0x200000` | b4's own connections whose outgoing packets packet processing leaves alone; b4 recognizes them by the whole of `0x240000`, not by this bit | Fixed, carried together with bit 18 as `0x240000` |
+| 18 | `0x40000` | Connections b4 opens to the upstream of a proxy set, to Telegram, the Community Hub, ipinfo and RIPEstat, the warm and fallback connections of **Reuse WSSIZE connection**, and its transparent listeners; see [socket marks](#socket-marks) | Fixed |
+| 21 | `0x200000` | b4's own connections whose outgoing packets packet processing leaves alone, such as the connection that carries a device's TLS for **Reuse WSSIZE connection**; b4 recognizes them by the whole of `0x240000`, not by this bit | Fixed, carried together with bit 18 as `0x240000` |
 | 24 | `0x1000000` | A proxy set's TCP packet that the router sent itself | Fixed, added to the set's mark |
 | 25 | `0x2000000` | NFQUEUE mode: the packets b4 sends into a connection from its raw sockets, such as fakes, split segments and re-sent SYNs; see [connections b4 sends packets into](#connections-b4-sends-packets-into) | Fixed, added to the queue mark |
 | 26 | `0x4000000` | b4's own connections to Telegram while a **Telegram set** without routing applies, in NFQUEUE mode the packets b4 sends into the TCP connections it opens itself, and in TUN mode the packets b4 sends into the connections it opens for the Telegram set; see [connections b4 opens itself](#connections-b4-opens-itself) | Fixed, carried together with bit 18 as `0x4040000` |
@@ -76,9 +76,9 @@ them on the packets they take. Bit 16 is left free for XrayUI's `0x10000`.
 | Bits | Mask | Used for |
 | --- | --- | --- |
 | 30 | `0x40000000` | The connection belongs to a set routed through an interface |
-| 0-14, 17 | `0x27fff` | The mark of that set, copied from the connection's first packet |
+| 0-14, 17 | `0x27fff` | The mark of that set, copied from the connection's first packet. A set that diverts with TPROXY and uses collected IPs writes its own mark here as well, without bit `0x40000000`, on a new connection to a collected address; see [Collected addresses](#collected-addresses) |
 | 15 by default | The queue mark, `0x8000` by default | NFQUEUE mode, on iptables when the connmark module is available: a packet carrying the queue mark and neither `0x2000000` nor `0x20000000` left the router on this connection, as b4's own lookups and probes do. A fake or split segment b4 sends into a device's connection does not set it, and neither does a packet b4 sends toward a device. b4's queue rules for packets entering the router skip the replies of such connections that reach a socket on the router; see [The queue mark](#the-queue-mark) |
-| 25 | `0x2000000` | NFQUEUE mode, on iptables when the connmark module is available: b4 sent a packet of its own into this connection, such as a fake or split segment. b4's queue rules for packets entering the router skip the connection's TCP packets other than SYN-ACKs and resets, unless an enabled set uses an incoming mode; see [connections b4 sends packets into](#connections-b4-sends-packets-into) |
+| 25 | `0x2000000` | NFQUEUE mode, on iptables when the connmark module is available: b4 sent a packet of its own into this connection, such as a fake or split segment. b4's queue rules for packets entering the router skip the connection's TCP packets other than SYN-ACKs and resets, unless an enabled set uses an incoming mode or **Collect detected IPs**; see [connections b4 sends packets into](#connections-b4-sends-packets-into) |
 | all | `0xffffffff` | Discovery's probe connections, while a run is active in NFQUEUE mode |
 
 ### Socket marks
@@ -90,6 +90,7 @@ them on the packets they take. Bit 16 is left free for XrayUI's `0x10000`.
 | The DNS queries b4 sends for clients (a set's DNS redirect, DNS over TCP) and its lookups through a set's resolver, including the lookup of a DoH resolver's host name for either | The queue mark |
 | The DPI Detector's checks, except its fetches through b4 and its lookups through the system resolver; health probes of pinned DNS answers and of unreachable addresses; the public address lookup; the fetches that bypass b4 in the MCP tool `b4_test_domain_now` and in the test of an applied Community Hub set | The queue mark |
 | Transparent listeners of proxy sets and every connection they open, to the upstream or, with **Fall back to direct on upstream failure**, directly; TCP connections of b4's SOCKS5 server to a domain name a proxy set targets, which go through the set's upstream; connections of the MTProto proxy and Telegram over WebSocket to Telegram and the address lists they download; the MTProto proxy's forward to its fake SNI domain; Community Hub, ipinfo and RIPEstat requests | `0x40000`. When a Community Hub sync cannot connect, b4 retries it with the queue mark; if that retry connects, later Hub requests keep the queue mark until a sync cannot connect with it and a retry with `0x40000` can |
+| **Reuse WSSIZE connection**: the transparent listener, the warm connection from a source port in 63000-63999 that b4 leases for it, the connection that then carries a device's TLS from that port, and the fallback connection from an ordinary source port | `0x40000`; `0x240000` for the connection that carries the device's TLS |
 | Connections through Cloudflare-proxied domains or a custom WebSocket domain, and to a Cloudflare Worker | `0x240000` while no **Telegram set** applies; while one applies, the marks in the next row |
 | Connections of the MTProto proxy and Telegram over WebSocket to Telegram on every route, the Cloudflare-proxied domains, a custom WebSocket domain and a Cloudflare Worker included, their connection test, the address and domain lists they download, and the direct connections of a Telegram over WebSocket set, while a **Telegram set** applies, in NFQUEUE and in TUN mode | `0x4040000` for a set without routing; `0x240000` with the set's route mark for a set routed through an interface; none of their own for a proxy set, whose listener opens them through the upstream |
 | Discovery probes and their name lookups; the packets Discovery sends | The flow mark; the injected mark, with `0x20000000` added on packets sent back toward the probes. By default the queue mark plus 1 and plus 2, and `0x20008002` toward the probes. In TUN mode the injected mark with `0x10000000` added, `0x10008002` by default, and `0x20000000` alone toward the probes |
@@ -102,13 +103,13 @@ packet processing and through every set that carries the router's own traffic.
 
 | b4 rules | A packet is left alone when |
 | --- | --- |
-| Packet processing, nftables (`inet b4_mangle`) | `b4_chain`, the rules for outgoing ports, returns it when its mark reads as b4's own (see [The queue mark](#the-queue-mark)), its bits under `0x27fff` equal `0x24bab` or the mark of a proxy set, its mark holds bit `0x1000000`, a bit under `0x27fff` and no bit outside `0x1027fff`, as a packet of the router's own that a proxy set marked does, it matches `0x240000/0x8efd8000`, or it leaves by `lo` with any bit under `0x27fff`, as a connection the router opens does on its way to the listener of a proxy set or of Telegram over WebSocket, and during a Discovery run when its mark is exactly the flow or injected mark. `postrouting` jumps to `b4_chain`, or, when [device filtering](../settings/core.md#device-filtering) selects devices, `forward` for their packets and `output` for the router's own. `output` accepts a packet with every bit of the queue mark, above that jump. Below its returns, `b4_chain` drops UDP whose addresses and ports are in the set `b4_udp_drop4` or `b4_udp_drop6`, the QUIC connections a set drops, rejects or blocks; see [Packet capture](../internals/capture.md#dropped-quic-connections). `prerouting`, with the rules for DNS answers and other replies, tests no packet mark. It skips a reply that reaches a socket on the router when its connection mark has every bit of the queue mark, and, while no enabled set uses an incoming mode, the TCP packets without SYN or RST of connections whose connection mark has bit `0x2000000` and none of the queue mark's bits. `raw_prerouting` and `raw_output`, which queue DNS queries at priority -300, ahead of conntrack, return a packet whose mark reads as b4's own, and during a Discovery run one whose mark is exactly the flow or injected mark; `raw_output` also returns one that leaves through `lo`. While they queue DNS queries, `b4_chain` returns UDP to port 53. The MSS clamp rules come first in `prerouting`, `output` and `forward`, apart from the rules a Discovery run adds above them |
+| Packet processing, nftables (`inet b4_mangle`) | `b4_chain`, the rules for outgoing ports, returns it when its mark reads as b4's own (see [The queue mark](#the-queue-mark)), its bits under `0x27fff` equal `0x24bab` or the mark of a proxy set, its mark holds bit `0x1000000`, a bit under `0x27fff` and no bit outside `0x1027fff`, as a packet of the router's own that a proxy set marked does, it matches `0x240000/0x8efd8000`, or it leaves by `lo` with any bit under `0x27fff`, as a connection the router opens does on its way to the listener of a proxy set or of Telegram over WebSocket, and during a Discovery run when its mark is exactly the flow or injected mark. `postrouting` jumps to `b4_chain`, or, when [device filtering](../settings/core.md#device-filtering) selects devices, `forward` for their packets and `output` for the router's own. `output` accepts a packet with every bit of the queue mark, above that jump. Below its returns, `b4_chain` drops UDP whose addresses and ports are in the set `b4_udp_drop4` or `b4_udp_drop6`, the QUIC connections a set drops, rejects or blocks; see [Packet capture](../internals/capture.md#dropped-quic-connections). `prerouting`, with the rules for DNS answers and other replies, tests no packet mark. It skips a reply that reaches a socket on the router when its connection mark has every bit of the queue mark, and, while no enabled set uses an incoming mode or **Collect detected IPs**, the TCP packets without SYN or RST of connections whose connection mark has bit `0x2000000` and none of the queue mark's bits. `raw_prerouting` and `raw_output`, which queue DNS queries at priority -300, ahead of conntrack, return a packet whose mark reads as b4's own, and during a Discovery run one whose mark is exactly the flow or injected mark; `raw_output` also returns one that leaves through `lo`. While they queue DNS queries, `b4_chain` returns UDP to port 53. The MSS clamp rules come first in `prerouting`, `output` and `forward`, apart from the rules a Discovery run adds above them |
 | Packet processing, iptables (`B4`, `B4_PREROUTING`) | `B4`, the rules for outgoing ports, first returns a packet whose mark reads as b4's own, as `b4_chain` does on nftables. The jumps to `B4` come from mangle `POSTROUTING`, or, when [device filtering](../settings/core.md#device-filtering) selects devices, from mangle `FORWARD` for their packets and from mangle `OUTPUT` for the router's own. Mangle `OUTPUT` accepts a packet the router sends with every bit of the queue mark, above that jump. `B4` also returns a packet whose bits under `0x27fff` equal `0x24bab` or the mark of a proxy set, whose mark holds bit `0x1000000`, a bit under `0x27fff` and no bit outside `0x1027fff`, whose mark matches `0x240000/0x8efd8000`, or that leaves by `lo` with any bit under `0x27fff`, and during a Discovery run one whose mark is exactly the flow or injected mark. `B4_PREROUTING` and the rules for DNS answers test no packet mark; with the connmark module, `B4_PREROUTING` skips the same packets as `prerouting` on nftables. DNS queries are queued from `B4_RAW` in the raw table, which raw `PREROUTING` and `OUTPUT` jump to for UDP to port 53 and which returns a packet whose mark reads as b4's own, and during a Discovery run one whose mark is exactly the flow or injected mark; while it queues them, `B4` returns UDP to port 53. On KeeneticOS, where b4 never uses `B4_RAW`, and on a kernel before 4.18 (4.14 before 4.14.173) whose raw table cannot queue packets, DNS queries are copied instead: mangle `INPUT` and `FORWARD` jump at their top to `B4_DNSCOPY` for UDP to port 53, and mangle `OUTPUT` for such UDP that does not leave through `lo`. `B4_DNSCOPY` returns a packet whose mark reads as b4's own and copies every other one to NFLOG group `queue.start_num`, 537 by default, with the prefix `b4dns`, and b4 ignores a copy from mangle `OUTPUT` whose mark has every bit of the queue mark; while it copies them, `B4` returns UDP to port 53 as well, and, as with `B4_RAW`, the rules for DNS answers skip UDP to port 53. When b4 can neither queue DNS queries from the raw table nor copy them, the rules for DNS queries sit in `B4_PREROUTING` and mangle `OUTPUT` instead and test no packet mark |
-| The queue itself, both backends | b4 releases a packet unchanged when its mark matches `0x240000/0x8efd8000`, has `0x24bab` under `0x27fff`, or has every bit of the queue mark with the rest made only of bits of `0x27fff`, `0x2000000` and `0x4040000`, and is not exactly one of Discovery's two marks. On kernels 3.14 and later it also releases a packet that a socket on the router sent with every bit of the queue mark, unless the mark is exactly one of Discovery's two marks. A packet that leaves through a tunnel gets no strategy either, and neither does one that another service's mark sends by another route than the packets b4 injects would take. With legacy iptables that check covers every mark, as long as no other service on the router keeps nftables tables and **Skip IPTables/NFTables Setup** is off. Otherwise it covers only marks with every bit of the queue mark; see [Packets that leave by another route](../internals/capture.md#tunnel-egress) |
-| Routing sets other than block sets, packets entering the router (`b4r_*_pre`), including the router's own packets a proxy set loops through `lo` | Its mark has every bit of the queue mark or bit `0x40000`, or its bits under `0x27fff` are not zero and, in a proxy set's chain, differ from that set's own mark |
-| Routing sets, the router's own packets (`b4r_*_out`) | Its mark has bit `0x40000` or any bit under `0x27fff`. A packet with every bit of the queue mark is left alone as well, after a set routed through an interface has given it the set's mark when its destination is in the set; a set that leaves the router's own traffic alone and lists its devices only by IP address does this only for packets from those addresses. The IPv4 ICMP redirects that a set with a gateway drops, as [sets routed through an interface](#sets-routed-through-an-interface) describes, are dropped whatever their mark |
+| The queue itself, both backends | b4 releases a packet unchanged when its mark matches `0x240000/0x8efd8000`, has `0x24bab` under `0x27fff`, or has every bit of the queue mark with the rest made only of bits of `0x27fff`, `0x2000000` and `0x4040000`, and is not exactly one of Discovery's two marks. On kernels 3.14 and later it also releases a packet that a socket on the router sent with every bit of the queue mark, unless the mark is exactly one of Discovery's two marks. A TCP packet to port 443 whose mark lacks bit `0x40000` is released unchanged when the set its address matches has **Reuse WSSIZE connection** in effect, counts as diverted and its **IP Version Filter** allows the packet's address family; see [Reuse WSSIZE connection](#reuse-wssize-connection). A packet that leaves through a tunnel gets no strategy either, and neither does one that another service's mark sends by another route than the packets b4 injects would take. With legacy iptables that check covers every mark, as long as no other service on the router keeps nftables tables and **Skip IPTables/NFTables Setup** is off. Otherwise it covers only marks with every bit of the queue mark; see [Packets that leave by another route](../internals/capture.md#tunnel-egress) |
+| Routing sets other than block sets, packets entering the router (`b4r_*_pre`), including the router's own packets a proxy set loops through `lo` | Its mark has every bit of the queue mark or bit `0x40000`, or its bits under `0x27fff` are not zero and, in a proxy set's chain, differ from that set's own mark. In a set with **Use collected IPs**, also a packet to a collected address whose connection is not new and whose connection mark does not carry the set's mark under `0x27fff`, unless, in a proxy set's chain, it is a TCP packet of a connection a transparent socket already holds; see [Collected addresses](#collected-addresses) |
+| Routing sets, the router's own packets (`b4r_*_out`) | Its mark has bit `0x40000` or any bit under `0x27fff`. A packet with every bit of the queue mark is left alone as well, after a set routed through an interface has given it the set's mark when its destination is in the set; a set that leaves the router's own traffic alone and lists its devices only by IP address does this only for packets from those addresses. The IPv4 ICMP redirects that a set with a gateway drops, as [sets routed through an interface](#sets-routed-through-an-interface) describes, are dropped whatever their mark. In a set with **Use collected IPs**, a packet to a collected address is left alone as well when its connection is not new and its connection mark does not carry the set's mark under `0x27fff` |
 | QUIC refusal of a proxy set with **Route UDP through upstream** off or **Block QUIC (force TCP)** on, for forwarded packets (`b4r_*_q`) and the router's own (`b4r_*_qo`) | Its mark has every bit of the queue mark, or bit `0x40000`; in `b4r_*_q` also when it comes from a device outside the set's source devices |
-| Block sets | Never: they test no mark, only the destination and, when the set has them, its source interfaces and source devices |
+| Block sets | They test no mark, only the destination and, when the set has them, its source interfaces and source devices. A set with **Use collected IPs** lets a packet to a collected address pass when its connection is not new |
 | TUN capture (`B4_TUN`) | Its mark has every bit of the queue mark or bit `0x20000000`, matches `0x240000/0x8efd8000`, has `0x24bab` as its bits under `0x27fff`, or is exactly Discovery's flow mark, or its injected mark with or without `0x10000000`, when that mark lacks a bit of the queue mark; on iptables also when its destination is in a routing set other than a block set, unless its mark is `0x4040000` under `0x8efd8000`. b4's own connections with `0x40000` or `0x4040000` are captured like any other, and those of the **Telegram set** also when a routing set holds their destination. A packet to a network in which the router has an IPv4 address of its own is left alone as well, unless it is UDP DNS or a TCP reset the chain captures; while b4 captures only the router's own connections, such a packet is always left alone, except a UDP DNS query to the uplink gateway |
 | TUN on the whole default route | Only packets with bit `0x10000000`, and with bit `0x20000000` when `ip` accepts `suppress_prefixlength`, leave by b4's rules; every other packet that follows the default route enters `b4tun0`. During a Discovery run, packets whose mark is exactly the flow or injected mark follow Discovery's rules at priorities 80-83 instead, see [Discovery](#discovery-tun) |
 | **NAT Masquerade** (`b4_masq`, `B4_MASQ`) | Its mark has bit `0x20000000`. On iptables that `RETURN` sits at the top of nat `POSTROUTING`, so such a packet skips every later rule there, other services' included |
@@ -129,6 +130,7 @@ and `-m conntrack --ctdir REPLY` in `B4_PREROUTING`. See
 | Sets routed through an interface | The packet mark's bits under `0x27fff`; the connection mark's bits under `0x27fff` and bit `0x40000000`. Masked, the other bits stay |
 | Proxy sets, iptables | The packet mark's bits under `0x1027fff`. Masked |
 | Proxy sets, nftables | The whole packet mark |
+| Proxy sets and sets in the Telegram over WebSocket mode, with **Use collected IPs** | The connection mark's bits under `0x27fff`, set to the set's mark, on a new TCP connection to a collected address and, with **Route UDP through upstream** on, on a new UDP flow to one; see [Collected addresses](#collected-addresses). Masked |
 | Packet processing | The queue-mark bits into the connection mark of every connection on which the router itself sends a packet with every bit of the queue mark, such as b4's own lookups. Bit `0x2000000` instead when the packet also has that bit, as the fakes and split segments b4 sends into a device's connection do. Nothing for a packet whose mark has bit `0x20000000` that the queue mark lacks, such as a DNS answer b4 sends to a device. NFQUEUE mode only; on nftables not for packets sent to `lo`, on iptables only with the connmark module. Masked |
 | TUN capture | Bit `0x40000000` of the packet mark. Masked |
 | Discovery, during a run in NFQUEUE mode | The whole packet mark of a packet whose connection mark is exactly the flow mark, and the whole connection mark of a connection that carries a packet whose mark is exactly the flow mark; both get the flow mark |
@@ -232,6 +234,10 @@ b4 refuses a value that:
   injected mark) a value that matches `0x240000/0x8efd8000` or equals the other Discovery
   mark.
 
+A value that has a bit of `0x240000` together with other bits is accepted, but
+**Reuse WSSIZE connection** does nothing while it is in effect; see
+[Reuse WSSIZE connection](#reuse-wssize-connection).
+
 A packet another service marks with every bit of the queue mark reads to the other rules as
 one b4 sent itself. Proxy sets, Telegram over WebSocket and the QUIC refusal leave it alone. A set
 routed through an interface gives it the set's mark when the router sends it to an address
@@ -276,9 +282,9 @@ reach b4, for **RST Injection Protection** and the escalation on forged resets, 
 server's other packets stay out of the queue. nftables 1.1.6 lists its flag test as
 `tcp flags ! syn,rst`.
 
-While an enabled set uses an incoming mode, the rule is left out. The server's packets of
-every connection b4 sends packets into then reach the queue rules, whichever set the
-connection belongs to.
+While an enabled set uses an incoming mode or **Collect detected IPs**, the rule is left
+out. The server's packets of every connection b4 sends packets into then reach the queue
+rules, whichever set the connection belongs to.
 
 Firmware that writes the whole connection mark can remove the bit. ASUS firmware rewrites the
 connection mark of device connections, for example while AiProtection or QoS is on, and the
@@ -333,6 +339,9 @@ this order:
    travel in the direction of the first packet.
 4. Marks new connections to the set's destinations and saves the mark with the claim.
 
+A set with **Use collected IPs** has one more return between steps 3 and 4; see
+[Collected addresses](#collected-addresses).
+
 With an IPv4 [gateway](../internals/routing.md#gateway) that b4 uses, on an output interface
 of the Ethernet type (Ethernet, bridge, VLAN, Wi-Fi, TAP), step 2 is narrower. The set first
 returns packets to local, broadcast, multicast and IPv6 link-local addresses, whatever
@@ -349,12 +358,14 @@ interfaces applies steps 3 and 4 only to packets arriving on them.
 chain the same way. `b4r_<set>_out` does the same for the router's own connections when the
 set carries them, and gives the set's mark to b4's own queue-marked packets addressed to the
 set; a set limited to source devices that are all given by IP address does this only for
-packets from those addresses. With the narrower step 2, the first rule of `b4r_<set>_out`
-drops the IPv4 ICMP redirects that leave through the output interface, whatever their mark
-and whether or not the set carries the router's own traffic. With `net.ipv4.fwmark_reflect`
-set to `1`, the kernel gives a redirect the mark of the packet that caused it. Masquerade matches the
-set's mark and the output interface; with an egress IP present on the interface, SNAT to
-that address takes its place and also requires the destination to be in the set.
+packets from those addresses. With the narrower step 2, `b4r_<set>_out` drops the IPv4 ICMP
+redirects that leave through the output interface, whatever their mark and whether or not
+the set carries the router's own traffic. That drop is its first rule, or, in a set with
+**Use collected IPs**, the first rule below the collected returns. With
+`net.ipv4.fwmark_reflect` set to `1`, the kernel gives a redirect the mark of the packet that
+caused it. Masquerade matches the set's mark and the output interface; with an egress IP
+present on the interface, SNAT to that address takes its place and also requires the
+destination to be in the set.
 
 On a router whose firmware overwrites the connection mark b4 writes, the restore never
 matches. b4 on iptables notices this while the firewall monitor runs: when several
@@ -397,11 +408,12 @@ port.
 link-local addresses. Of the packets to the set's destinations, it then marks TCP packets of
 connections already held by a transparent socket and accepts them, and hands the other TCP
 packets, and UDP ones when **Route UDP through upstream** is on, to TPROXY with the set's
-mark; a set limited to source interfaces hands over only packets arriving on them. When the
-set refuses QUIC, with **Route UDP through upstream** off or **Block QUIC (force TCP)** on,
-the chain accepts its UDP to port 443 instead, so no later set's chain takes it and the QUIC
-refusal rejects it; on iptables that accept also skips every later rule in mangle
-`PREROUTING`. Source devices limit this chain as they do for
+mark; a set limited to source interfaces hands over only packets arriving on them. In a set
+with **Use collected IPs**, the [collected rules](#collected-addresses) sit between the
+accept and TPROXY. When the set refuses QUIC, with **Route UDP through upstream** off or
+**Block QUIC (force TCP)** on, the chain accepts its UDP to port 443 instead, so no later
+set's chain takes it and the QUIC refusal rejects it; on iptables that accept also skips
+every later rule in mangle `PREROUTING`. Source devices limit this chain as they do for
 [sets routed through an interface](#sets-routed-through-an-interface). iptables writes the
 mark under the mask `0x1027fff`; nftables writes the whole mark.
 
@@ -418,7 +430,8 @@ direction with the set's mark plus bit `0x1000000`, the priority 3 rule sends th
 and they come back through prerouting, where TPROXY takes them. Once new connections to the
 set's destinations exceed 200 per second (burst 400), `b4r_<set>_out` leaves the first
 packet of each further connection unmarked, but marks its later TCP packets in the original
-direction as usual.
+direction as usual. The limit does not cover collected addresses where the
+[collected rules](#collected-addresses) are installed: they mark those packets above it.
 
 With `src_valid_mark` at `1`, in `net.ipv4.conf.all` or on the interface a connection
 arrives on, the kernel checks the source of every diverted connection in the table its mark
@@ -451,19 +464,138 @@ rules with its own mark:
 3:      from all fwmark 0x21546/0x27fff lookup 252
 ```
 
+### Reuse WSSIZE connection {#reuse-wssize-connection}
+
+A set with **Reuse WSSIZE connection** on gets the rules of a proxy set, limited to TCP to
+port 443: a mark and a listener port from the same range, the accept for connections its
+listener already holds, TPROXY, the mark on the router's own packets with its rate limit,
+the input accept and the rules at priorities 2 and 3. It has no upstream, no UDP rules and
+no QUIC refusal. Elsewhere on this page such a set counts as a proxy set within these
+limits. b4 installs the rules only while reuse is in effect: not while the TUN engine runs
+or is the saved engine, not with **Skip IPTables/NFTables Setup** on, and not while the
+queue mark shares a bit with `0x240000`.
+
+The set counts as diverted only while its TPROXY rule went in for every enabled address
+family its **IP Version Filter** allows. Without TPROXY or the socket match, `xt_TPROXY`
+and `xt_socket` on iptables, `nft_tproxy` and `nft_socket` on nftables, or when the
+firewall refuses the rule, b4 logs a warning for the set. While the set is diverted, the
+queue releases unchanged a TCP packet to port 443 of the set, of an address family its
+**IP Version Filter** allows, whose mark lacks bit `0x40000`. Otherwise the set's
+connections that reach the queue get its own TCP strategy. Either way, a connection whose
+ClientHello the queue saw before a change to the collected addresses keeps the set it had
+then.
+b4's own connections to the set's addresses get the set's TCP strategy when their mark is
+`0x40000`, and the strategy of the set chosen under **Telegram set** when it is
+`0x4040000`. Those marked `0x240000`, such as the connection that carries a device's TLS
+after a warm, or one through a Cloudflare-proxied domain while no **Telegram set** applies,
+get no strategy.
+
+| Connection | Source port | Mark | Packet processing |
+| --- | --- | --- | --- |
+| Warm connection | Leased from 63000-63999 | `0x40000` | The set's TCP strategy |
+| The connection that carries the device's TLS after a warm | The warmed port | `0x240000` | None |
+| Fallback connection | Any port outside 63000-63999 | `0x40000` | The set's TCP strategy |
+
+## Collected addresses {#collected-addresses}
+
+A routing set with **Use collected IPs** on adds the addresses that **Collect detected IPs**
+gathers to its destinations. The rules below leave a connection that was open before its
+address was collected on the route it had, and send the new ones by the set. b4 also keeps
+the set's collected addresses in guard sets of their own:
+
+| Backend | Guard sets |
+| --- | --- |
+| nftables | `b4r_<set>_v4c` and `b4r_<set>_v6c` in `inet b4_route`, of type `ipv4_addr` and `ipv6_addr`, without intervals or timeouts |
+| iptables | ipsets `b4r_<set>_v4c` and `b4r_<set>_v6c` of type `hash:net`, with entries that do not time out |
+
+b4 adds an address when it installs a change of the pool that holds it, and deletes it when
+it leaves the pool or when b4 rolls back a failed install; a delete the kernel refuses is
+retried with the routing sync. Turning **Use collected IPs** off empties the guard sets,
+and removing the set deletes them. A rebuild of the set's rules, such as after a change of
+its routing mode, fills them again.
+
+With the IPv4 guard set, the rules read:
+
+| Rule | nftables | iptables |
+| --- | --- | --- |
+| Tag, TCP | `ip daddr @b4r_<set>_v4c meta l4proto tcp tcp flags & (syn\|ack) == syn ct state new ct mark set ct mark & 0xfffd8000 or <mark>` | `-m set --match-set b4r_<set>_v4c dst -p tcp --syn -m conntrack --ctstate NEW -j CONNMARK --set-xmark <mark>/0x27fff` |
+| Tag, UDP | `ip daddr @b4r_<set>_v4c meta l4proto udp ct state new ct mark set ct mark & 0xfffd8000 or <mark>` | `-m set --match-set b4r_<set>_v4c dst -p udp -m conntrack --ctstate NEW -j CONNMARK --set-xmark <mark>/0x27fff` |
+| Restore | `ct direction original ct mark & 0x27fff == <mark> meta mark set <mark>` | `-m conntrack --ctdir ORIGINAL -m connmark --mark <mark>/0x27fff -j MARK --set-xmark <mark>/0x1027fff` |
+| Return | `ip daddr @b4r_<set>_v4c ct state != new ct mark & 0x27fff != <mark> counter return` | `-m set --match-set b4r_<set>_v4c dst -m conntrack ! --ctstate NEW -m connmark ! --mark <mark>/0x27fff -j RETURN` |
+| Return, block sets | `ip daddr @b4r_<set>_v4c ct state != new counter return` | `-m set --match-set b4r_<set>_v4c dst -m conntrack ! --ctstate NEW -j RETURN`, in the filter table |
+
+The tag keeps every bit of the connection mark outside `0x27fff`. `nft list` prints it as
+under [Reading a mark](#reading-a-mark), with the set's mark folded into the constant: for
+`0x251b1`, `ct mark set ct mark & 0xffffd1b1 | 0x000251b1`. IPv6 uses `ip6 daddr` and
+`b4r_<set>_v6c`. A set limited to source interfaces gets each rule once per interface, with
+`iifname` or `-i`, and a set with **Reuse WSSIZE connection** gets each rule for TCP to
+port 443 only.
+
+**Proxy sets**, and sets in the Telegram over WebSocket mode, get every rule but the return
+of block sets:
+
+- The tag writes the set's mark into the connection mark of a new TCP connection to a
+  collected address. In `b4r_<set>_pre` it also tags a new UDP flow when
+  **Route UDP through upstream** is on and the set routes UDP by address, not by port. With
+  **Block QUIC (force TCP)** on, that tag leaves out UDP to port 443, which the QUIC refusal
+  still rejects.
+- The restore gives the set's mark back to every later packet in the original direction
+  whose connection carries it, whatever its destination. In `b4r_<set>_out` it writes the
+  set's mark plus `0x1000000`.
+- The return takes a connection to a collected address that is not new, and whose
+  connection mark does not carry the set's mark, out of the chain before TPROXY.
+
+In `b4r_<set>_pre` the rules sit below the accept for connections a transparent socket
+already holds and above TPROXY, the QUIC pass and UDP. A TCP connection that the listener
+holds therefore stays diverted whatever its connection mark; the router's own connections
+and UDP flows depend on the connection mark. On Linux 3.16, a diverted connection whose
+connection mark another service rewrites at its SYN still breaks. `b4r_<set>_out`, present
+when the set carries the router's own traffic, has no UDP tag. There the rules sit below
+the returns for the queue mark, `0x40000` and any bit under `0x27fff`, and a second return
+for any bit under `0x27fff` follows them: it ends the chain for a packet the restore has
+marked, above the rate limit and the mark rule. On nftables the restore follows the tag of
+the last enabled address family, so a set with both families has tag, return, tag,
+restore, return. On iptables each family has its own tag, restore and return.
+
+**Sets routed through an interface** save their mark in the connection mark when they claim
+a connection, see [Sets routed through an interface](#sets-routed-through-an-interface).
+They get only the return: in `b4r_<set>_pre` between the restore and the marking of new
+connections, and at the top of `b4r_<set>_out`, so the packets b4 sends into a connection
+the set does not route keep that connection's path too. While `.conntrack-mark` holds `0`,
+they get no collected rules, and the set marks the packets to collected addresses as it
+marks those to its other destinations.
+
+**Block sets** get the return of block sets above their block rules. They block new
+connections to a collected address and let the others pass.
+
+On iptables without the connmark match or the `CONNMARK` target, `xt_connmark` and
+`xt_CONNMARK`, sets other than block sets get none of these rules, and b4 logs one warning
+per set: a connection that is open when its address is collected no longer keeps its
+route. Block sets keep their return. An address family whose iptables binary is missing,
+such as `ip6tables`, gets none of the rules.
+
+A UDP flow that was open through the uplink when its address was collected keeps going
+through the uplink until it goes idle and conntrack drops it; new flows take the set's
+route. b4's check of whether the router keeps the connection mark, `.conntrack-mark`, does
+not count the tags as claims of a set routed through an interface. No mark bit is reserved
+for collected addresses.
+
 ## Connections b4 opens itself
 
 b4 opens these connections with `0x40000`: to the upstream of a proxy set and the direct
 connections a proxy set opens in its place, to Telegram, for the address and domain lists
-the Telegram features download, the MTProto proxy's forward to its fake SNI domain, and
-requests to the Community Hub, ipinfo and RIPEstat. The chains of interface, proxy and
+the Telegram features download, the MTProto proxy's forward to its fake SNI domain, the
+warm and fallback connections of **Reuse WSSIZE connection**, and requests to the Community
+Hub, ipinfo and RIPEstat. The chains of interface, proxy and
 Telegram over WebSocket sets return on it, so none of these sets routes such connections and
 they never loop into b4's own listeners; they follow the rest of the router's routing rules,
 normally the main table. Block sets still block them, and in TUN mode they can still pass
 through `b4tun0`.
 
 Packet processing does not skip `0x40000`: a set whose targets match the destination applies
-its strategy to b4's own connections as it does to a device's. A set in a proxy or Telegram
+its strategy to b4's own connections as it does to a device's. A set with
+**Reuse WSSIZE connection** applies its TCP strategy to them as well, never the release of
+[Reuse WSSIZE connection](#reuse-wssize-connection). A set in a proxy or Telegram
 over WebSocket mode, or one routed into a TUN, TAP or WireGuard tunnel that is up, lets them
 through unmodified instead, and since its routing chains skip them, they leave by the main
 route with no strategy at all.
@@ -477,6 +609,8 @@ domain and on those to a Cloudflare Worker. In NFQUEUE mode and with port captur
 mode, no set processes these connections, whatever it targets. Their connections to the data
 centres, a **DC Relay** and Telegram's WebSocket edge carry `0x40000`, and a set whose
 targets cover those addresses applies its strategy to them.
+**Reuse WSSIZE connection** puts `0x240000` on the connection that carries a device's TLS
+after a warm.
 
 A set chosen under **Telegram set** on the Telegram page handles all of b4's own connections
 to Telegram, in NFQUEUE and in TUN mode: the connections of the MTProto proxy and Telegram
@@ -646,8 +780,8 @@ removed when the TUN engine next starts, before its own rules.
 
 | Priority | Rule | Table | Present for |
 | --- | --- | --- | --- |
-| 2 | `fwmark <mark>/0x1027fff iif lo` | `main` | Proxy sets and Telegram over WebSocket, IPv4 |
-| 3 | `fwmark <mark>/0x27fff` | 252; 251, 250, 300-399 | Proxy sets and Telegram over WebSocket |
+| 2 | `fwmark <mark>/0x1027fff iif lo` | `main` | Proxy sets, Telegram over WebSocket and **Reuse WSSIZE connection**, IPv4 |
+| 3 | `fwmark <mark>/0x27fff` | 252; 251, 250, 300-399 | Proxy sets, Telegram over WebSocket and **Reuse WSSIZE connection** |
 | 3-9 | `fwmark 0x40000000/0x40000000` | `local` | TUN mode with port capture, IPv4, when no rule looks up `local` for every packet ahead of the capture rule |
 | 4-10 | `fwmark 0x40000000/0x40000000` | 96 down to 61, or next to `queue.tun.route_table` | TUN mode with port capture, IPv4 |
 | 80 | `fwmark <flow mark>/0xffffffff`; also `fwmark <injected mark>/0xffffffff` on the whole default route | `local` | A Discovery run in TUN mode, IPv4, when no rule looks up `local` for every packet ahead of priority 81 |
@@ -892,6 +1026,10 @@ iptables -t raw -S
 # the ipsets of the sets' own DSCP values on iptables, and the entry count of one
 ipset list -n | grep '^b4d_'
 ipset save b4d_u_v4 | grep -c '^add'
+
+# the guard set of a set's collected addresses
+nft list set inet b4_route b4r_<set>_v4c
+ipset list b4r_<set>_v4c
 
 # routing rules of every service, and b4's tables
 ip rule
