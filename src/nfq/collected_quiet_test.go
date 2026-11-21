@@ -87,6 +87,35 @@ func TestACollectedPoolStillGetsItsPass(t *testing.T) {
 	}
 }
 
+func TestAQuietPoolStillEndsALeftoverCollectWatch(t *testing.T) {
+	r, paused := quietTickRig(t)
+	now := time.Now()
+	r.pool.escalationTick(now)
+	if !r.pool.collectedQuiet.Load() {
+		t.Fatal("setup: with nothing collected or in use, the first tick must leave the pool quiet")
+	}
+	paused.Store(0)
+
+	leftover := historyWatch("leftover", 81)
+	leftover.setID = r.w.getConfig().Sets[0].Id
+	leftover.opened, leftover.deadline = now.Add(-2*time.Second), now.Add(-time.Second)
+	r.w.destState.WatchHello(leftover)
+	if !r.w.destState.CollectWatching() {
+		t.Fatal("setup: the leftover Collect watch is not counted, so this test proves nothing")
+	}
+
+	r.pool.escalationTick(now)
+	if r.w.destState.CollectWatching() {
+		t.Error("a quiet pool skipped the pass with a Collect watch open, so a watch left from a set that no longer collects was never ended and every packet to its server kept paying for it")
+	}
+	if deadline, pending := r.w.destState.NextCollectedDeadline(); pending {
+		t.Errorf("the leftover watch's deadline %v stays queued, so the collected timer fires at once on every loop", deadline)
+	}
+	if paused.Load() == 0 {
+		t.Error("the tick never reached the collected pass")
+	}
+}
+
 func TestTheCollectedHistoryCleanupSkipsTheWatchLockWhenNothingIsRemembered(t *testing.T) {
 	tracker := &destStateTracker{}
 	tracker.watchMu.Lock()
