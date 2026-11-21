@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -109,6 +110,18 @@ func TestReuseSwitchDescriptionNamesUseCollectedIPs(t *testing.T) {
 		}
 		if !strings.Contains(text, want) {
 			t.Errorf("%s sets.tcp.general.wssizeReuseDesc lists the targets a reuse set may have, and b4 saves one whose only target is Use collected IPs, but it does not name %q: %q", locale, want, text)
+		}
+	}
+}
+
+func TestWarmValidityHelpStatesTheRangeAndTheDefault(t *testing.T) {
+	for locale, format := range map[string]string{"en": "1 to %d, default %d.", "ru": "От 1 до %d, по умолчанию %d."} {
+		text, ok := uiStrings(t, locale)["sets.tcp.general.wssizeReuseAgeDesc"]
+		if !ok {
+			t.Fatalf("%s.json has no sets.tcp.general.wssizeReuseAgeDesc", locale)
+		}
+		if want := fmt.Sprintf(format, MaxWSReuseMaxAgeSeconds, DefaultWSReuseMaxAgeSeconds); !strings.HasPrefix(text, want) {
+			t.Errorf("%s sets.tcp.general.wssizeReuseAgeDesc does not start with %q, the range and default a set gets: %q", locale, want, text)
 		}
 	}
 }

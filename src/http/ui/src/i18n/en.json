@@ -1889,7 +1889,7 @@
         "wssizeReuse": "Reuse WSSIZE connection",
         "wssizeReuseDesc": "Warms a connection to the server with this set's strategy, then relays the device's TLS unchanged over a new connection from the same router port. TCP/443, NFQUEUE and IP/GeoIP/ASN targets or Use collected IPs only; no domain or TLS filters. Requires TLS SNI. The warm needs TCP timestamps, CA certificates on the router and any HTTP answer to /generate_204 over verified TLS 1.3; without them, or when the warm fails, the connection is relayed with this set's strategy without reuse. Not used by Discovery or shared through the Community Hub.",
         "wssizeReuseAge": "Warm validity (seconds)",
-        "wssizeReuseAgeDesc": "Default 120, at most 300. How long a warmed source port keeps taking new connections, counted from the start of its warm-up. After that, the next connection warms a new source port. The age never cuts a connection that is already relayed.",
+        "wssizeReuseAgeDesc": "1 to 300, default 300. How long a warmed source port keeps taking new connections, counted from the start of its warm-up. After that, the next connection warms a new source port. The age never cuts a connection that is already relayed.",
         "wssizeReuseAlert": "After a good warm, the small window and this set's TCP strategy apply only to the warm connection, and client TLS uses a new connection with its normal Window Scale; b4 chooses the router port it leaves from. When the warm fails, this set's TCP strategy applies to the whole client connection. Requires TPROXY; QUIC is not relayed.",
         "wssizeReuseIssue": {
           "window": "Reuse WSSIZE connection needs Real TCP window (wssize) on, with a Window above 0, so b4 refuses to save the set as it is.",

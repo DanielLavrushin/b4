@@ -286,7 +286,7 @@ const (
 const MaxDisorderSplitPosition = 1460
 
 const (
-	DefaultWSReuseMaxAgeSeconds = 120
+	DefaultWSReuseMaxAgeSeconds = 300
 	MaxWSReuseMaxAgeSeconds     = 300
 )
 

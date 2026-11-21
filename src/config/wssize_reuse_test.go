@@ -280,13 +280,13 @@ func TestWSReuseRefusalNamesTheSetAndTheCondition(t *testing.T) {
 }
 
 func TestWSReuseWarmAgeDefaultAndCap(t *testing.T) {
-	if got := NewSetConfig().TCP.WSSizeReuse.MaxAgeSeconds; got != 120 {
-		t.Fatalf("a new set's warm validity is %d s, want 120", got)
+	if got := NewSetConfig().TCP.WSSizeReuse.MaxAgeSeconds; got != 300 {
+		t.Fatalf("a new set's warm validity is %d s, want 300", got)
 	}
 	unset := reuseConfig(t)
 	unset.Sets[0].TCP.WSSizeReuse.MaxAgeSeconds = 0
-	if err := unset.Validate(); err != nil || unset.Sets[0].TCP.WSSizeReuse.MaxAgeSeconds != 120 {
-		t.Fatalf("an unset warm validity became %d s (%v), want 120", unset.Sets[0].TCP.WSSizeReuse.MaxAgeSeconds, err)
+	if err := unset.Validate(); err != nil || unset.Sets[0].TCP.WSSizeReuse.MaxAgeSeconds != 300 {
+		t.Fatalf("an unset warm validity became %d s (%v), want 300", unset.Sets[0].TCP.WSSizeReuse.MaxAgeSeconds, err)
 	}
 	top := reuseConfig(t)
 	top.Sets[0].TCP.WSSizeReuse.MaxAgeSeconds = 300

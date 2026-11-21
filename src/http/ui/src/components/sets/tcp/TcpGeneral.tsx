@@ -54,7 +54,7 @@ export const TcpGeneral = ({
     strip_scale: false,
     ...config.tcp.wssize,
   };
-  const reuse = config.tcp.wssize_reuse ?? { enabled: false, max_age_seconds: 120 };
+  const reuse = config.tcp.wssize_reuse ?? { enabled: false, max_age_seconds: 300 };
   const reuseIssues = wssizeReuseIssues(config, {
     tunEngine,
     skipSetup,
