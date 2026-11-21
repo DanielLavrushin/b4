@@ -46,6 +46,8 @@ export const CaptureSettings = () => {
   const {
     captures,
     loading,
+    uploading,
+    generating,
     loadCaptures,
     generate,
     deleteCapture,
@@ -236,7 +238,7 @@ export const CaptureSettings = () => {
                 }
                 placeholder="youtube.com"
                 helperText={t("settings.Capture.nameDomainHelp")}
-                disabled={loading}
+                disabled={uploading}
               />
               <B4Select
                 label={t("settings.Capture.protocol")}
@@ -252,14 +254,14 @@ export const CaptureSettings = () => {
                   })
                 }
                 helperText={t("settings.Capture.protocolHelp")}
-                disabled={loading}
+                disabled={uploading}
               />
               <Stack direction="row" spacing={1} alignItems="center">
                 <Button
                   component="label"
                   color="secondary"
                   variant="outlined"
-                  disabled={loading}
+                  disabled={uploading}
                   sx={{ flexShrink: 0 }}
                 >
                   {uploadForm.file
@@ -283,14 +285,14 @@ export const CaptureSettings = () => {
                 <Button
                   variant="contained"
                   startIcon={
-                    loading ? <CircularProgress size={16} /> : <UploadIcon />
+                    uploading ? <CircularProgress size={16} /> : <UploadIcon />
                   }
                   onClick={() => {
                     uploadCapture().catch(() => {});
                   }}
-                  disabled={loading || !uploadForm.file || !uploadForm.domain}
+                  disabled={uploading || !uploadForm.file || !uploadForm.domain}
                 >
-                  {loading ? t("core.uploading") : t("core.upload")}
+                  {uploading ? t("core.uploading") : t("core.upload")}
                 </Button>
               </Stack>
             </Stack>
@@ -311,25 +313,29 @@ export const CaptureSettings = () => {
                   setProbeForm({ domain: e.target.value.toLowerCase() })
                 }
                 onKeyDown={(e: { key: string }) => {
-                  if (e.key === "Enter" && !loading && probeForm.domain) {
+                  if (e.key === "Enter" && !generating && probeForm.domain) {
                     void generateCapture();
                   }
                 }}
                 placeholder="max.ru"
                 helperText={t("settings.Capture.domainHelp")}
-                disabled={loading}
+                disabled={generating}
               />
               <Stack direction="row" spacing={1}>
                 <Button
                   fullWidth
                   variant="contained"
                   startIcon={
-                    loading ? <CircularProgress size={16} /> : <CaptureIcon />
+                    generating ? (
+                      <CircularProgress size={16} />
+                    ) : (
+                      <CaptureIcon />
+                    )
                   }
                   onClick={() => void generateCapture()}
-                  disabled={loading || !probeForm.domain}
+                  disabled={generating || !probeForm.domain}
                 >
-                  {loading
+                  {generating
                     ? t("settings.Capture.generating")
                     : t("core.generate")}
                 </Button>

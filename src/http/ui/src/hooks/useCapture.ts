@@ -5,6 +5,8 @@ import { useCallback, useState } from "react";
 export function useCaptures() {
   const [captures, setCaptures] = useState<Capture[]>([]);
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   const loadCaptures = useCallback(async () => {
     try {
@@ -22,7 +24,7 @@ export function useCaptures() {
 
   const generate = useCallback(
     async (domain: string, protocol: string) => {
-      setLoading(true);
+      setGenerating(true);
       try {
         const result = await captureApi.generate(domain, protocol);
 
@@ -30,7 +32,7 @@ export function useCaptures() {
 
         return result;
       } finally {
-        setLoading(false);
+        setGenerating(false);
       }
     },
     [loadCaptures],
@@ -51,13 +53,13 @@ export function useCaptures() {
 
   const upload = useCallback(
     async (file: File, domain: string, protocol: string) => {
-      setLoading(true);
+      setUploading(true);
       try {
         const result = await captureApi.upload(file, domain, protocol);
         await loadCaptures();
         return result;
       } finally {
-        setLoading(false);
+        setUploading(false);
       }
     },
     [loadCaptures],
@@ -84,6 +86,8 @@ export function useCaptures() {
   return {
     captures,
     loading,
+    uploading,
+    generating,
     loadCaptures,
     generate,
     deleteCapture,
