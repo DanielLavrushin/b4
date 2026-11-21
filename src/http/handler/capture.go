@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"github.com/daniellavrushin/b4/capture"
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/sni"
 )
 
 type CaptureRequest struct {
@@ -49,15 +52,12 @@ func (api *API) handleGenerateCapture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Domain == "" {
-		http.Error(w, "Domain required", http.StatusBadRequest)
+	host, ok := normalizeHostName(req.Domain)
+	if !ok {
+		http.Error(w, fmt.Sprintf("Not a host name: %q", strings.TrimSpace(req.Domain)), http.StatusBadRequest)
 		return
 	}
-
-	req.Domain = strings.ToLower(strings.TrimSpace(req.Domain))
-	req.Domain = strings.TrimPrefix(req.Domain, "http://")
-	req.Domain = strings.TrimPrefix(req.Domain, "https://")
-	req.Domain = strings.Split(req.Domain, "/")[0]
+	req.Domain = host
 
 	if req.Protocol == "" {
 		req.Protocol = "tls"
@@ -77,6 +77,7 @@ func (api *API) handleGenerateCapture(w http.ResponseWriter, r *http.Request) {
 				"success":          true,
 				"message":          fmt.Sprintf("Payload for %s already exists", req.Domain),
 				"already_captured": true,
+				"domain":           req.Domain,
 			})
 			return
 		}
@@ -96,7 +97,29 @@ func (api *API) handleGenerateCapture(w http.ResponseWriter, r *http.Request) {
 		"message": generatedPayloadMessage(req.Domain, size),
 		"method":  "generated",
 		"size":    size,
+		"domain":  req.Domain,
 	})
+}
+
+func normalizeHostName(raw string) (string, bool) {
+	host := strings.ToLower(strings.TrimSpace(raw))
+	if strings.Contains(host, "://") {
+		u, err := url.Parse(host)
+		if err != nil {
+			return "", false
+		}
+		host = u.Host
+	} else if i := strings.IndexByte(host, '/'); i >= 0 {
+		host = host[:i]
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host, err := sni.HostToASCII(strings.TrimSuffix(host, "."))
+	if err != nil || !sni.IsValidSNI([]byte(host)) {
+		return "", false
+	}
+	return host, true
 }
 
 func generatedPayloadMessage(domain string, size int) string {
