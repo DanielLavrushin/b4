@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import type { TFunction } from "i18next";
 import { Capture, useCaptures } from "@b4.capture";
+import { bytesLabel, kindLabel } from "@components/settings/payloads/facts";
 
 export type ChosenPayloadFile =
   | { state: "none" }
@@ -12,6 +14,21 @@ export const samePayloadFile = (a: string, b: string) =>
 
 export const payloadFileName = (path: string) =>
   path.split(/[\\/]/).pop() ?? path;
+
+export const byPayloadName = (a: Capture, b: Capture) =>
+  a.domain.localeCompare(b.domain);
+
+export function payloadNote(t: TFunction, capture: Capture): string {
+  const faults = capture.facts?.faults?.length ?? 0;
+  return [
+    capture.origin ? t(`settings.Capture.origins.${capture.origin}`) : "",
+    capture.facts ? kindLabel(t, capture.facts) : "",
+    bytesLabel(t, capture.size),
+    faults > 0 ? t("sets.faking.fakeSni.payloadFaults", { count: faults }) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
 
 export function chosenPayloadFile(
   captures: Capture[],

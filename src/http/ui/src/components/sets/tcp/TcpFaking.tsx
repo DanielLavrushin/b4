@@ -25,12 +25,13 @@ import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useChangedFields } from "@context/ChangedFieldsContext";
 import {
+  byPayloadName,
   chosenPayloadFile,
+  payloadNote,
   samePayloadFile,
   useListedCaptures,
 } from "../payloadFile";
 import { sendsFake, tlsModChangesTheFake } from "./fakePayload";
-import { bytesLabel } from "@components/settings/payloads/facts";
 
 interface TcpFakingProps {
   config: B4SetConfig;
@@ -62,9 +63,9 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
   const [newFakeSni, setNewFakeSni] = useState("");
   const [newWinValue, setNewWinValue] = useState("");
   const { captures, listed: capturesListed } = useListedCaptures();
-  const tlsCaptures = captures.filter(
-    (c) => c.protocol === "tls" && !c.missing,
-  );
+  const tlsCaptures = captures
+    .filter((c) => c.protocol === "tls" && !c.missing)
+    .sort(byPayloadName);
   const payloadFile = config.faking.payload_file;
   const chosenFile = chosenPayloadFile(
     captures,
@@ -201,37 +202,44 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
     config.faking.sni_type === FakingPayloadType.DOMAIN &&
     !(config.faking.payload_domain || "").trim();
 
-  let chosenFileLabel: string | undefined;
+  let chosenFileOption: { label: string; note?: string } | undefined;
   let payloadFileHelper = t(
     tlsCaptures.length === 0
       ? "sets.faking.fakeSni.noPayloadsHelper"
       : "sets.faking.fakeSni.selectPayloadHelper",
   );
   if (chosenFile.state === "missing") {
-    chosenFileLabel = t("sets.faking.fakeSni.payloadFileMissing", {
-      name: chosenFile.name,
-    });
+    chosenFileOption = {
+      label: t("sets.faking.fakeSni.payloadFileMissing", {
+        name: chosenFile.name,
+      }),
+      note: t("sets.faking.fakeSni.payloadFileMissingNote"),
+    };
     payloadFileHelper = t("sets.faking.fakeSni.payloadFileMissingHelper", {
       file: payloadFile,
     });
   } else if (chosenFile.state === "unknown") {
-    chosenFileLabel = chosenFile.name;
+    chosenFileOption = { label: chosenFile.name };
   } else if (
     chosenFile.state === "listed" &&
     chosenFile.capture.protocol !== "tls"
   ) {
-    chosenFileLabel = t("sets.faking.fakeSni.payloadFileQuic", {
-      name: chosenFile.capture.domain,
-    });
+    chosenFileOption = {
+      label: t("sets.faking.fakeSni.payloadFileQuic", {
+        name: chosenFile.capture.domain,
+      }),
+      note: payloadNote(t, chosenFile.capture),
+    };
     payloadFileHelper = t("sets.faking.fakeSni.payloadFileQuicHelper");
   }
 
   const payloadFileOptions = [
     { value: "", label: t("sets.faking.fakeSni.selectPayload") },
-    ...(chosenFileLabel ? [{ value: payloadFile, label: chosenFileLabel }] : []),
+    ...(chosenFileOption ? [{ value: payloadFile, ...chosenFileOption }] : []),
     ...tlsCaptures.map((c) => ({
       value: samePayloadFile(c.filepath, payloadFile) ? payloadFile : c.filepath,
-      label: `${c.domain} (${bytesLabel(t, c.size)})`,
+      label: c.domain,
+      note: payloadNote(t, c),
     })),
   ];
 
