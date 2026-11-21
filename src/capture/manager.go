@@ -124,6 +124,15 @@ func (m *Manager) readPayloadFile(name string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
+func (m *Manager) payloadFileExists(name string) bool {
+	path, err := m.payloadPath(name)
+	if err != nil {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
+}
+
 func (m *Manager) removePayloadFile(name string) {
 	path, err := m.payloadPath(name)
 	if err != nil {
@@ -266,16 +275,19 @@ func (m *Manager) removeEntry(name, protocol string) {
 
 func (m *Manager) ListCaptures() []*Capture {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	var captures []*Capture
-
+	var files []string
 	for domain, protocols := range m.metadata {
 		for protocol, meta := range protocols {
 			captures = append(captures, captureOf(protocol, domain, meta))
+			files = append(files, meta.Filepath)
 		}
 	}
+	m.mu.RUnlock()
 
+	for i, c := range captures {
+		c.Missing = !m.payloadFileExists(files[i])
+	}
 	sort.Slice(captures, func(i, j int) bool {
 		if captures[i].Domain != captures[j].Domain {
 			return captures[i].Domain < captures[j].Domain

@@ -24,5 +24,6 @@ type Capture struct {
 	Timestamp time.Time `json:"timestamp"`
 	Size      int       `json:"size"`
 	Filepath  string    `json:"filepath"`
+	Missing   bool      `json:"missing"`
 	UsedBy    []string  `json:"used_by,omitempty"`
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -70,6 +71,39 @@ func TestThePayloadListCarriesNoFileBytes(t *testing.T) {
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/capture/download?file="+filepath.Base(file), nil))
 	if rec.Code != http.StatusOK || !bytes.Equal(rec.Body.Bytes(), data) {
 		t.Errorf("the per-payload request must return the file's %d bytes, got %d and %d bytes", len(data), rec.Code, rec.Body.Len())
+	}
+}
+
+func TestThePayloadListMarksAPayloadWhoseFileIsGone(t *testing.T) {
+	mux, api := captureTestMux(t)
+	manager := capture.GetManager(api.getCfg())
+	files := map[string]string{}
+	for _, name := range []string{"kept.missing.example", "gone.missing.example", "replaced.missing.example"} {
+		file, err := manager.SaveImportedPayload("tls", name, []byte("payload of "+name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = filepath.Join(manager.GetOutputPath(), filepath.Base(file))
+		t.Cleanup(func() {
+			manager.DeleteCapture("tls", name)
+			os.RemoveAll(files[name])
+		})
+	}
+	if err := os.Remove(files["gone.missing.example"]); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(files["replaced.missing.example"]); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(files["replaced.missing.example"], 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, want := range map[string]bool{"kept.missing.example": false, "gone.missing.example": true, "replaced.missing.example": true} {
+		entry := listedPayloadObject(t, mux, "tls", name)
+		if got, ok := entry["missing"].(bool); !ok || got != want {
+			t.Errorf("the %q card carries missing=%v (present: %t), want %t; it still says %v bytes", name, entry["missing"], ok, want, entry["size"])
+		}
 	}
 }
 
