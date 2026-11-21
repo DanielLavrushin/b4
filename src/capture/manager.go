@@ -5,91 +5,175 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/sni"
 	"github.com/daniellavrushin/b4/tlsgen"
 	"github.com/daniellavrushin/b4/utils"
 )
 
 const payloadFilenameFmt = "%s_%s.bin"
 
+const MaxNameLength = 200
+
 var (
 	instance *Manager
 	once     sync.Once
+	started  atomic.Pointer[Manager]
 )
 
 func GetManager(cfg *config.Config) *Manager {
 	once.Do(func() {
-		baseDirPath := filepath.Dir(cfg.ConfigPath)
-		outputPath := filepath.Join(baseDirPath, "captures")
-
-		instance = &Manager{
-			metadata:        make(map[string]map[string]*PayloadMetadata),
-			outputPath:      outputPath,
-			metadataFile:    filepath.Join(outputPath, "payloads.json"),
-			activeProbes:    make(map[string]time.Time),
-			pendingCaptures: make(map[string]*PendingCapture),
-			connToDomain:    make(map[string]string),
-		}
-
+		instance = newManager(filepath.Join(filepath.Dir(cfg.ConfigPath), "captures"))
 		os.MkdirAll(instance.outputPath, 0755)
-
 		instance.loadMetadata()
-		go instance.cleanupExpiredProbes()
+		started.Store(instance)
 	})
 	return instance
+}
+
+func Reload() {
+	if m := started.Load(); m != nil {
+		m.Reload()
+	}
+}
+
+func newManager(outputPath string) *Manager {
+	return &Manager{
+		metadata:     make(map[string]map[string]*PayloadMetadata),
+		outputPath:   outputPath,
+		metadataFile: filepath.Join(outputPath, "payloads.json"),
+	}
 }
 
 func (m *Manager) GetOutputPath() string {
 	return m.outputPath
 }
 
-func (m *Manager) cleanupExpiredProbes() {
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		m.mu.Lock()
-		now := time.Now()
-
-		for key, expiry := range m.activeProbes {
-			if now.After(expiry) {
-				delete(m.activeProbes, key)
-				log.Infof("Probe expired: %s", key)
-			}
-		}
-
-		for connKey, pending := range m.pendingCaptures {
-			if now.Sub(pending.firstSeen) > 5*time.Second {
-				delete(m.pendingCaptures, connKey)
-				delete(m.connToDomain, connKey)
-				log.Tracef("Cleaned stale capture for %s", connKey)
-			}
-		}
-
-		m.mu.Unlock()
-	}
+func (m *Manager) Reload() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.loadMetadata()
 }
 
 func (m *Manager) loadMetadata() {
 	data, err := os.ReadFile(m.metadataFile)
+	if os.IsNotExist(err) {
+		m.metadata = make(map[string]map[string]*PayloadMetadata)
+		return
+	}
 	if err != nil {
-		if !os.IsNotExist(err) {
-			log.Errorf("Failed to read metadata: %v", err)
-		}
+		log.Errorf("Failed to read metadata: %v", err)
 		return
 	}
 
-	if err := json.Unmarshal(data, &m.metadata); err != nil {
+	var loaded map[string]map[string]*PayloadMetadata
+	if err := json.Unmarshal(data, &loaded); err != nil {
 		log.Errorf("Failed to parse metadata: %v", err)
+		return
 	}
+	m.metadata = usableMetadata(loaded)
+	if m.completeLegacyEntries() {
+		m.saveMetadata()
+	}
+}
+
+func (m *Manager) completeLegacyEntries() bool {
+	changed := false
+	for _, protocols := range m.metadata {
+		for protocol, meta := range protocols {
+			if meta.Facts != nil && meta.Origin != "" {
+				continue
+			}
+			data, err := m.readPayloadFile(meta.Filepath)
+			if err != nil {
+				continue
+			}
+			if meta.Facts == nil {
+				meta.Facts = FactsOf(protocol, data)
+				changed = true
+			}
+			if meta.Origin == "" && protocol == "tls" && madeByTheGenerator(data, meta.Facts.SNI) {
+				meta.Origin = OriginGenerated
+				changed = true
+			}
+		}
+	}
+	return changed
+}
+
+func usableMetadata(loaded map[string]map[string]*PayloadMetadata) map[string]map[string]*PayloadMetadata {
+	usable := make(map[string]map[string]*PayloadMetadata, len(loaded))
+	for name, protocols := range loaded {
+		for protocol, meta := range protocols {
+			if meta == nil {
+				continue
+			}
+			if !isPayloadFileName(meta.Filepath) {
+				log.Errorf("Dropped the %s payload %q of payloads.json: its file %q is not a .bin file in the captures folder", protocol, name, meta.Filepath)
+				continue
+			}
+			if usable[name] == nil {
+				usable[name] = make(map[string]*PayloadMetadata)
+			}
+			usable[name][protocol] = meta
+		}
+	}
+	return usable
+}
+
+func isPayloadFileName(name string) bool {
+	return name != "" && filepath.Base(name) == name && strings.HasSuffix(name, ".bin")
+}
+
+func (m *Manager) payloadPath(name string) (string, error) {
+	if !isPayloadFileName(name) {
+		return "", fmt.Errorf("invalid payload file name %q", name)
+	}
+	fullPath := filepath.Clean(filepath.Join(m.outputPath, name))
+	if !strings.HasPrefix(fullPath, filepath.Clean(m.outputPath)+string(filepath.Separator)) {
+		return "", fmt.Errorf("access denied: path outside captures directory")
+	}
+	return fullPath, nil
+}
+
+func (m *Manager) readPayloadFile(name string) ([]byte, error) {
+	path, err := m.payloadPath(name)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
+}
+
+func (m *Manager) payloadFileSize(name string) (int64, bool) {
+	path, err := m.payloadPath(name)
+	if err != nil {
+		return 0, false
+	}
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return 0, false
+	}
+	return info.Size(), true
+}
+
+func (m *Manager) removePayloadFile(name string) {
+	path, err := m.payloadPath(name)
+	if err != nil {
+		log.Errorf("Not removing payload file %q: %v", name, err)
+		return
+	}
+	os.Remove(path)
 }
 
 func (m *Manager) saveMetadata() error {
@@ -106,178 +190,6 @@ func (m *Manager) saveMetadata() error {
 	return nil
 }
 
-func (m *Manager) CapturePayload(connKey, domain, protocol string, payload []byte) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if len(payload) == 0 {
-		return false
-	}
-
-	if domain != "" {
-		domain = strings.ToLower(strings.TrimSpace(domain))
-		m.connToDomain[connKey] = domain
-		log.Tracef("Mapped connection %s -> %s", connKey, domain)
-	}
-
-	pending, exists := m.pendingCaptures[connKey]
-	if !exists {
-		if protocol == "tls" {
-			if len(payload) < 6 || payload[0] != 0x16 || payload[5] != 0x01 {
-				return false
-			}
-		}
-
-		if domain == "" {
-			if mappedDomain, ok := m.connToDomain[connKey]; ok {
-				domain = mappedDomain
-			} else {
-				if protocol == "tls" {
-					log.Tracef("No domain yet for TLS connection %s, ignoring", connKey)
-					return false
-				}
-			}
-		}
-
-		pending = &PendingCapture{
-			protocol:  protocol,
-			domain:    domain,
-			data:      make([]byte, 0, 4096),
-			firstSeen: time.Now(),
-		}
-		m.pendingCaptures[connKey] = pending
-	} else {
-		if domain != "" && pending.domain == "" {
-			pending.domain = domain
-			log.Tracef("Updated pending capture domain to %s", domain)
-		}
-	}
-
-	if pending.domain == "" {
-		return false
-	}
-
-	probeKey := fmt.Sprintf("%s:%s", protocol, pending.domain)
-	if expiry, exists := m.activeProbes[probeKey]; !exists || time.Now().After(expiry) {
-		return false
-	}
-
-	pending.data = append(pending.data, payload...)
-	log.Tracef("Connection %s: accumulated %d bytes (total: %d)",
-		connKey, len(payload), len(pending.data))
-
-	var captureData []byte
-	switch protocol {
-	case "tls":
-		if len(pending.data) < 9 {
-			log.Tracef("Not enough data for TLS ClientHello: have %d bytes, need at least 9", len(pending.data))
-			return false
-		}
-
-		if pending.data[0] != 0x16 {
-			log.Warnf("Not a TLS handshake: %02x", pending.data[0])
-			delete(m.pendingCaptures, connKey)
-			return false
-		}
-
-		if pending.data[5] != 0x01 {
-			log.Warnf("Not a ClientHello: %02x", pending.data[5])
-			delete(m.pendingCaptures, connKey)
-			return false
-		}
-
-		recordLen := int(pending.data[3])<<8 | int(pending.data[4])
-		handshakeLen := int(pending.data[6])<<16 | int(pending.data[7])<<8 | int(pending.data[8])
-
-		totalNeeded := 9 + handshakeLen
-
-		if totalNeeded > 4096 {
-			log.Warnf("ClientHello too large: %d bytes", totalNeeded)
-			delete(m.pendingCaptures, connKey)
-			return false
-		}
-
-		log.Tracef("TLS ClientHello: record_len=%d, handshake_len=%d, need=%d, have=%d",
-			recordLen, handshakeLen, totalNeeded, len(pending.data))
-
-		if len(pending.data) < totalNeeded {
-			// Need more data
-			return false
-		}
-
-		captureData = pending.data[:totalNeeded]
-
-		// Log size for debugging
-		log.Infof("Capturing TLS ClientHello for %s: %d bytes", pending.domain, totalNeeded)
-
-	case "quic":
-		// QUIC Initial packet - capture first packet only
-		captureData = payload // Use only this packet, not accumulated
-		log.Tracef("Capturing QUIC Initial for %s: %d bytes", pending.domain, len(captureData))
-	default:
-		captureData = pending.data
-		log.Tracef("Capturing %s payload for %s: %d bytes", protocol, pending.domain, len(captureData))
-	}
-
-	filename := fmt.Sprintf(payloadFilenameFmt, protocol, sanitizeDomain(pending.domain))
-	filepath := filepath.Join(m.outputPath, filename)
-
-	if err := os.WriteFile(filepath, captureData, 0644); err != nil {
-		log.Errorf("Failed to save capture: %v", err)
-		return false
-	}
-
-	// Update metadata
-	if m.metadata[pending.domain] == nil {
-		m.metadata[pending.domain] = make(map[string]*PayloadMetadata)
-	}
-
-	m.metadata[pending.domain][protocol] = &PayloadMetadata{
-		Timestamp: time.Now(),
-		Size:      len(captureData),
-		Filepath:  filename,
-	}
-
-	m.saveMetadata()
-
-	// Clean up
-	delete(m.pendingCaptures, connKey)
-	delete(m.connToDomain, connKey)
-
-	// Remove probe
-	delete(m.activeProbes, probeKey)
-
-	log.Infof("✓ Captured %s payload for %s (%d bytes)",
-		protocol, pending.domain, len(captureData))
-
-	return true
-}
-
-func (m *Manager) ProbeCapture(domain, protocol string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// Check if already captured
-	if m.metadata[domain] != nil && m.metadata[domain][protocol] != nil {
-		return fmt.Errorf("already captured")
-	}
-
-	// Enable capture for 30 seconds to give time to open browser
-	if protocol == "both" {
-		m.activeProbes[fmt.Sprintf("tls:%s", domain)] = time.Now().Add(30 * time.Second)
-		m.activeProbes[fmt.Sprintf("quic:%s", domain)] = time.Now().Add(30 * time.Second)
-		log.Infof("Capture enabled for both TLS and QUIC on %s (expires in 30s)", domain)
-	} else {
-		key := fmt.Sprintf("%s:%s", protocol, domain)
-		m.activeProbes[key] = time.Now().Add(30 * time.Second)
-		log.Infof("Capture enabled for %s (expires in 30s)", key)
-	}
-
-	log.Infof("Open https://%s in your browser NOW to capture real payload", domain)
-
-	return nil
-}
-
 func (m *Manager) GenerateCapture(domain, protocol string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -287,7 +199,7 @@ func (m *Manager) GenerateCapture(domain, protocol string) error {
 	}
 
 	if protocol != "tls" {
-		return fmt.Errorf("generation only supported for TLS (use 'probe' for QUIC)")
+		return fmt.Errorf("generation only supported for TLS")
 	}
 
 	payload, err := tlsgen.GenerateTLSClientHello(domain)
@@ -295,25 +207,8 @@ func (m *Manager) GenerateCapture(domain, protocol string) error {
 		return fmt.Errorf("failed to generate payload: %v", err)
 	}
 
-	filename := fmt.Sprintf(payloadFilenameFmt, protocol, sanitizeDomain(domain))
-	filepath := filepath.Join(m.outputPath, filename)
-
-	if err := os.WriteFile(filepath, payload, 0644); err != nil {
-		return fmt.Errorf("failed to save payload: %v", err)
-	}
-
-	if m.metadata[domain] == nil {
-		m.metadata[domain] = make(map[string]*PayloadMetadata)
-	}
-
-	m.metadata[domain][protocol] = &PayloadMetadata{
-		Timestamp: time.Now(),
-		Size:      len(payload),
-		Filepath:  filename,
-	}
-
-	if err := m.saveMetadata(); err != nil {
-		log.Errorf("Failed to save metadata: %v", err)
+	if err := m.storeLocked(protocol, domain, payload, OriginGenerated); err != nil {
+		return err
 	}
 
 	log.Infof("✓ Generated a %d-byte TLS ClientHello for %s", len(payload), domain)
@@ -321,42 +216,192 @@ func (m *Manager) GenerateCapture(domain, protocol string) error {
 	return nil
 }
 
-// ListCaptures returns all captured payloads for API
-func (m *Manager) ListCaptures() []*Capture {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+var (
+	ErrPayloadNotFound = errors.New("payload not found")
+	ErrNotGenerated    = errors.New("not a generated payload")
+	ErrPayloadExists   = errors.New("a payload of this name and protocol exists")
+	ErrNoHostName      = errors.New("no host name to generate a ClientHello for")
+)
 
-	var captures []*Capture
+func (m *Manager) RegenerateCapture(domain string) (*Capture, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	for domain, protocols := range m.metadata {
-		for protocol, meta := range protocols {
-			// Read hex data on demand
-			fullPath := filepath.Join(m.outputPath, meta.Filepath)
-			data, err := os.ReadFile(fullPath)
-			var hexData string
-			if err == nil {
-				hexData = hex.EncodeToString(data)
-			}
+	meta := m.metadata[domain]["tls"]
+	if meta == nil {
+		return nil, ErrPayloadNotFound
+	}
+	if meta.Origin != OriginGenerated {
+		return nil, ErrNotGenerated
+	}
+	host, err := regenerationHost(domain, meta.Facts)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := tlsgen.GenerateTLSClientHello(host)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate payload: %v", err)
+	}
+	if err := m.storeLocked("tls", domain, payload, OriginGenerated); err != nil {
+		return nil, err
+	}
+	log.Infof("Regenerated the %d-byte TLS ClientHello of %s for %s", len(payload), domain, host)
+	return captureOf("tls", domain, m.metadata[domain]["tls"]), nil
+}
 
-			// Return relative path in the format "captures/filename.bin"
-			// This is what the config system expects when loading payloads
-			relativePath := filepath.Join("captures", meta.Filepath)
-
-			captures = append(captures, &Capture{
-				Protocol:  protocol,
-				Domain:    domain,
-				Timestamp: meta.Timestamp,
-				Size:      meta.Size,
-				Filepath:  relativePath,
-				HexData:   hexData,
-			})
+func regenerationHost(domain string, facts *Facts) (string, error) {
+	candidates := []string{domain}
+	if facts != nil && facts.SNI != "" {
+		candidates = []string{facts.SNI, domain}
+	}
+	for _, candidate := range candidates {
+		host, err := sni.HostToASCII(strings.ToLower(strings.TrimSuffix(candidate, ".")))
+		if err == nil && sni.IsValidSNI([]byte(host)) {
+			return host, nil
 		}
 	}
+	return "", ErrNoHostName
+}
 
+func (m *Manager) fileNameFor(protocol, name string, claimUnlisted bool) (string, error) {
+	if previous := m.metadata[name][protocol]; previous != nil {
+		return previous.Filepath, nil
+	}
+	sum := sha256.Sum256([]byte(protocol + "/" + name))
+	tagged := fileLabel(name) + "-" + hex.EncodeToString(sum[:4])
+	for i := range 64 {
+		filename := plainFileName(protocol, name)
+		switch {
+		case i == 1:
+			filename = fmt.Sprintf(payloadFilenameFmt, protocol, tagged)
+		case i > 1:
+			filename = fmt.Sprintf(payloadFilenameFmt, protocol, fmt.Sprintf("%s-%d", tagged, i))
+		}
+		if m.fileNameFree(filename, claimUnlisted && i == 0) {
+			return filename, nil
+		}
+	}
+	return "", fmt.Errorf("no free file name for the %s payload %q", protocol, name)
+}
+
+func plainFileName(protocol, name string) string {
+	return fmt.Sprintf(payloadFilenameFmt, protocol, fileLabel(name))
+}
+
+func fileLabel(name string) string {
+	label := sanitizeDomain(name)
+	if len(label) > MaxNameLength {
+		label = label[:MaxNameLength]
+	}
+	return label
+}
+
+func (m *Manager) fileOwned(filename string) bool {
+	for _, protocols := range m.metadata {
+		for _, meta := range protocols {
+			if meta.Filepath == filename {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (m *Manager) fileNameFree(filename string, claimUnlisted bool) bool {
+	if m.fileOwned(filename) {
+		return false
+	}
+	path, err := m.payloadPath(filename)
+	if err != nil {
+		return false
+	}
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return true
+	}
+	return claimUnlisted && err == nil && info.Mode().IsRegular()
+}
+
+func (m *Manager) storeLocked(protocol, name string, data []byte, origin string) error {
+	filename, err := m.fileNameFor(protocol, name, true)
+	if err != nil {
+		return err
+	}
+	path, err := m.payloadPath(filename)
+	if err != nil {
+		return err
+	}
+	previous := m.metadata[name][protocol]
+	previousData, readErr := os.ReadFile(path)
+	hadFile := readErr == nil
+
+	if err := utils.WriteFileAtomic(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to save file: %v", err)
+	}
+
+	m.setEntry(name, protocol, &PayloadMetadata{
+		Timestamp: time.Now(),
+		Size:      len(data),
+		Filepath:  filename,
+		Origin:    origin,
+		Facts:     FactsOf(protocol, data),
+	})
+	if err := m.saveMetadata(); err != nil {
+		if previous == nil {
+			m.removeEntry(name, protocol)
+		} else {
+			m.setEntry(name, protocol, previous)
+		}
+		if hadFile {
+			utils.WriteFileAtomic(path, previousData, 0644)
+		} else {
+			os.Remove(path)
+		}
+		return fmt.Errorf("failed to save metadata: %v", err)
+	}
+	return nil
+}
+
+func (m *Manager) setEntry(name, protocol string, meta *PayloadMetadata) {
+	if m.metadata[name] == nil {
+		m.metadata[name] = make(map[string]*PayloadMetadata)
+	}
+	m.metadata[name][protocol] = meta
+}
+
+func (m *Manager) removeEntry(name, protocol string) {
+	delete(m.metadata[name], protocol)
+	if len(m.metadata[name]) == 0 {
+		delete(m.metadata, name)
+	}
+}
+
+func (m *Manager) ListCaptures() []*Capture {
+	m.mu.RLock()
+	var captures []*Capture
+	var files []string
+	for domain, protocols := range m.metadata {
+		for protocol, meta := range protocols {
+			captures = append(captures, captureOf(protocol, domain, meta))
+			files = append(files, meta.Filepath)
+		}
+	}
+	m.mu.RUnlock()
+
+	for i, c := range captures {
+		size, present := m.payloadFileSize(files[i])
+		c.Missing = !present
+		c.Warnings = warningsOf(c.Protocol, c.Facts, !present, size == 0)
+	}
+	sort.Slice(captures, func(i, j int) bool {
+		if captures[i].Domain != captures[j].Domain {
+			return captures[i].Domain < captures[j].Domain
+		}
+		return captures[i].Protocol < captures[j].Protocol
+	})
 	return captures
 }
 
-// GetCapture returns specific capture
 func (m *Manager) GetCapture(protocol, domain string) (*Capture, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -365,31 +410,48 @@ func (m *Manager) GetCapture(protocol, domain string) (*Capture, bool) {
 		return nil, false
 	}
 
-	meta := m.metadata[domain][protocol]
-	fullPath := filepath.Join(m.outputPath, meta.Filepath)
-	data, err := os.ReadFile(fullPath)
-	var hexData string
-	if err == nil {
-		hexData = hex.EncodeToString(data)
-	}
+	return captureOf(protocol, domain, m.metadata[domain][protocol]), true
+}
 
-	// Return relative path in the format "captures/filename.bin"
-	// This is what the config system expects when loading payloads
-	relativePath := filepath.Join("captures", meta.Filepath)
-
-	capture := &Capture{
+func captureOf(protocol, domain string, meta *PayloadMetadata) *Capture {
+	return &Capture{
 		Protocol:  protocol,
 		Domain:    domain,
 		Timestamp: meta.Timestamp,
 		Size:      meta.Size,
-		Filepath:  relativePath,
-		HexData:   hexData,
+		Filepath:  filepath.Join("captures", meta.Filepath),
+		Origin:    meta.Origin,
+		Facts:     meta.Facts,
+		Warnings:  []string{},
 	}
-
-	return capture, true
 }
 
-// DeleteCapture removes a capture
+func warningsOf(protocol string, facts *Facts, missing, empty bool) []string {
+	switch {
+	case missing:
+		return []string{"missing"}
+	case empty:
+		return []string{"empty"}
+	}
+	warnings := []string{}
+	if facts == nil {
+		return warnings
+	}
+	if !facts.FitsOnePacket {
+		warnings = append(warnings, "too_large")
+	}
+	switch {
+	case facts.Kind == KindOther:
+		warnings = append(warnings, "unrecognized")
+	case SuggestedProtocol(facts.Kind) != protocol:
+		warnings = append(warnings, "kind_mismatch")
+	}
+	if len(facts.Faults) > 0 {
+		warnings = append(warnings, "malformed")
+	}
+	return warnings
+}
+
 func (m *Manager) DeleteCapture(protocol, domain string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -398,18 +460,9 @@ func (m *Manager) DeleteCapture(protocol, domain string) error {
 		return fmt.Errorf("capture not found")
 	}
 
-	// Delete file
-	meta := m.metadata[domain][protocol]
-	filepath := filepath.Join(m.outputPath, meta.Filepath)
-	os.Remove(filepath)
+	m.removePayloadFile(m.metadata[domain][protocol].Filepath)
+	m.removeEntry(domain, protocol)
 
-	// Update metadata
-	delete(m.metadata[domain], protocol)
-	if len(m.metadata[domain]) == 0 {
-		delete(m.metadata, domain)
-	}
-
-	// Save updated metadata
 	if err := m.saveMetadata(); err != nil {
 		log.Errorf("Failed to save metadata: %v", err)
 	}
@@ -418,23 +471,18 @@ func (m *Manager) DeleteCapture(protocol, domain string) error {
 	return nil
 }
 
-// ClearAll removes all captures
 func (m *Manager) ClearAll() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Delete all binary files
 	for _, protocols := range m.metadata {
 		for _, meta := range protocols {
-			filepath := filepath.Join(m.outputPath, meta.Filepath)
-			os.Remove(filepath)
+			m.removePayloadFile(meta.Filepath)
 		}
 	}
 
-	// Clear metadata
 	m.metadata = make(map[string]map[string]*PayloadMetadata)
 
-	// Save empty metadata
 	if err := m.saveMetadata(); err != nil {
 		log.Errorf("Failed to save metadata: %v", err)
 	}
@@ -456,30 +504,16 @@ func sanitizeDomain(domain string) string {
 	return result
 }
 
-func (m *Manager) SaveUploadedCapture(protocol, domain string, data []byte) error {
+func (m *Manager) SaveUploadedCapture(protocol, domain string, data []byte, replace bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	domain = strings.ToLower(strings.TrimSpace(domain))
-	filename := fmt.Sprintf(payloadFilenameFmt, protocol, sanitizeDomain(domain))
-	filePath := filepath.Join(m.outputPath, filename)
-
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
-		return fmt.Errorf("failed to save file: %v", err)
+	if !replace && m.metadata[domain][protocol] != nil {
+		return ErrPayloadExists
 	}
-
-	if m.metadata[domain] == nil {
-		m.metadata[domain] = make(map[string]*PayloadMetadata)
-	}
-
-	m.metadata[domain][protocol] = &PayloadMetadata{
-		Timestamp: time.Now(),
-		Size:      len(data),
-		Filepath:  filename,
-	}
-
-	if err := m.saveMetadata(); err != nil {
-		return fmt.Errorf("failed to save metadata: %v", err)
+	if err := m.storeLocked(protocol, domain, data, OriginUploaded); err != nil {
+		return err
 	}
 
 	log.Infof("✓ Saved uploaded %s payload for %s (%d bytes)", protocol, domain, len(data))
@@ -497,53 +531,77 @@ func (m *Manager) SaveImportedPayload(protocol, domain string, data []byte) (str
 	sum := sha256.Sum256(data)
 	candidates := []string{domain, domain + "-" + hex.EncodeToString(sum[:4])}
 	for _, name := range candidates {
-		filename := fmt.Sprintf(payloadFilenameFmt, protocol, sanitizeDomain(name))
-		filePath := filepath.Join(m.outputPath, filename)
-		existing, err := os.ReadFile(filePath)
-		if err == nil {
-			if !bytes.Equal(existing, data) {
+		if listed := m.metadata[name][protocol]; listed != nil {
+			existing, err := m.readPayloadFile(listed.Filepath)
+			switch {
+			case err == nil && bytes.Equal(existing, data):
+				return filepath.Join("captures", listed.Filepath), nil
+			case err == nil:
 				continue
+			case !os.IsNotExist(err):
+				return "", fmt.Errorf("failed to inspect %s: %v", listed.Filepath, err)
 			}
-			if m.metadata[name] == nil || m.metadata[name][protocol] == nil {
-				at := time.Now()
-				if info, err := os.Stat(filePath); err == nil {
+			return m.writeImportedPayload(name, protocol, listed.Filepath, data)
+		}
+		if plain := plainFileName(protocol, name); m.unlistedFileHolds(plain, data) {
+			at := time.Now()
+			if path, err := m.payloadPath(plain); err == nil {
+				if info, err := os.Stat(path); err == nil {
 					at = info.ModTime()
 				}
-				if err := m.registerImportedPayload(name, protocol, filename, len(data), at); err != nil {
-					return "", err
-				}
-				log.Infof("Registered existing shared %s payload for %s (%d bytes)", protocol, name, len(data))
 			}
-			return filepath.Join("captures", filename), nil
+			if err := m.registerImportedPayload(name, protocol, plain, data, at); err != nil {
+				return "", err
+			}
+			log.Infof("Registered existing shared %s payload for %s (%d bytes)", protocol, name, len(data))
+			return filepath.Join("captures", plain), nil
 		}
-		if !os.IsNotExist(err) {
-			return "", fmt.Errorf("failed to inspect %s: %v", filename, err)
-		}
-		if err := os.WriteFile(filePath, data, 0644); err != nil {
-			return "", fmt.Errorf("failed to save file: %v", err)
-		}
-		if err := m.registerImportedPayload(name, protocol, filename, len(data), time.Now()); err != nil {
+		filename, err := m.fileNameFor(protocol, name, false)
+		if err != nil {
 			return "", err
 		}
-		log.Infof("Saved shared %s payload for %s (%d bytes)", protocol, name, len(data))
-		return filepath.Join("captures", filename), nil
+		return m.writeImportedPayload(name, protocol, filename, data)
 	}
 	return "", fmt.Errorf("a different payload already exists under every name derived from %s", domain)
 }
 
-func (m *Manager) registerImportedPayload(name, protocol, filename string, size int, at time.Time) error {
-	if m.metadata[name] == nil {
-		m.metadata[name] = make(map[string]*PayloadMetadata)
+func (m *Manager) unlistedFileHolds(filename string, data []byte) bool {
+	if m.fileOwned(filename) {
+		return false
 	}
-	m.metadata[name][protocol] = &PayloadMetadata{
+	existing, err := m.readPayloadFile(filename)
+	return err == nil && bytes.Equal(existing, data)
+}
+
+func (m *Manager) writeImportedPayload(name, protocol, filename string, data []byte) (string, error) {
+	path, err := m.payloadPath(filename)
+	if err != nil {
+		return "", err
+	}
+	if err := utils.WriteFileAtomic(path, data, 0644); err != nil {
+		return "", fmt.Errorf("failed to save file: %v", err)
+	}
+	if err := m.registerImportedPayload(name, protocol, filename, data, time.Now()); err != nil {
+		return "", err
+	}
+	log.Infof("Saved shared %s payload for %s (%d bytes)", protocol, name, len(data))
+	return filepath.Join("captures", filename), nil
+}
+
+func (m *Manager) registerImportedPayload(name, protocol, filename string, data []byte, at time.Time) error {
+	previous := m.metadata[name][protocol]
+	m.setEntry(name, protocol, &PayloadMetadata{
 		Timestamp: at,
-		Size:      size,
+		Size:      len(data),
 		Filepath:  filename,
-	}
+		Origin:    OriginImported,
+		Facts:     FactsOf(protocol, data),
+	})
 	if err := m.saveMetadata(); err != nil {
-		delete(m.metadata[name], protocol)
-		if len(m.metadata[name]) == 0 {
-			delete(m.metadata, name)
+		if previous != nil {
+			m.setEntry(name, protocol, previous)
+		} else {
+			m.removeEntry(name, protocol)
 		}
 		return fmt.Errorf("failed to save metadata: %v", err)
 	}
@@ -554,20 +612,5 @@ func (m *Manager) LoadCaptureData(c *Capture) ([]byte, error) {
 	if c == nil || c.Filepath == "" {
 		return nil, fmt.Errorf("invalid capture")
 	}
-
-	filename := filepath.Base(c.Filepath)
-
-	if !strings.HasSuffix(filename, ".bin") {
-		return nil, fmt.Errorf("invalid file extension: %s", filename)
-	}
-
-	fullPath := filepath.Clean(filepath.Join(m.outputPath, filename))
-	cleanOutputPath := filepath.Clean(m.outputPath)
-
-	if !strings.HasPrefix(fullPath, cleanOutputPath+string(filepath.Separator)) &&
-		fullPath != cleanOutputPath {
-		return nil, fmt.Errorf("access denied: path outside captures directory")
-	}
-
-	return os.ReadFile(fullPath)
+	return m.readPayloadFile(filepath.Base(c.Filepath))
 }

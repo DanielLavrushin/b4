@@ -30,7 +30,7 @@ func TestAPickedPayloadResolvesToItsTLSCapture(t *testing.T) {
 		if c.protocol == "tls" {
 			data = hello
 		}
-		if err := manager.SaveUploadedCapture(c.protocol, c.domain, data); err != nil {
+		if err := manager.SaveUploadedCapture(c.protocol, c.domain, data, true); err != nil {
 			t.Fatal(err)
 		}
 	}

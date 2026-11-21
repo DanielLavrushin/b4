@@ -130,6 +130,7 @@ export const UDP_L7_DISCORD = "discord";
 export const UDP_L7_STUN = "stun";
 export const UDP_FAKE_PAYLOAD_PRESET_1 = "@preset:quic1";
 export const UDP_FAKE_PAYLOAD_PRESET_2 = "@preset:quic2";
+export const UDP_FAKE_LEN_MAX = 1472;
 
 export interface UdpConfig {
   mode: UdpMode;

@@ -8,6 +8,12 @@ func TestFakePayloadTopicDescribesTheVKPreset(t *testing.T) {
 		[]string{"duckduckgo", "staticcdn"})
 }
 
+func TestFakePayloadTopicNamesOnlyTheWaysAPayloadFileIsMade(t *testing.T) {
+	checkTopicWording(t, "faking.sni_type",
+		[]string{"a generated ClientHello, an uploaded file, or the fake data of an imported zapret or byedpi command line"},
+		[]string{"captured"})
+}
+
 func TestTLSModTopicSaysRndRedrawsTheSessionID(t *testing.T) {
 	checkTopicWording(t, "faking.tls_mod",
 		[]string{
