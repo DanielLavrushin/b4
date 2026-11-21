@@ -2,6 +2,7 @@ import { Grid, Box, Typography } from "@mui/material";
 import { colors } from "@design";
 import { B4SetConfig } from "@models/config";
 import { B4FormHeader } from "@b4.elements";
+import { firstByteWait } from "@utils";
 import { useTranslation } from "react-i18next";
 
 interface FirstByteSettingsProps {
@@ -10,12 +11,11 @@ interface FirstByteSettingsProps {
 
 export const FirstByteSettings = ({ config }: FirstByteSettingsProps) => {
   const { t } = useTranslation();
-  const low = config.tcp.seg2delay;
-  const high = config.tcp.seg2delay_max;
-  const wait =
-    high > low && high >= 10
-      ? `${low}-${high}${t("core.units.ms")}`
-      : `${low < 10 ? 30 : low}${t("core.units.ms")}+`;
+  const wait = firstByteWait(
+    config.tcp.seg2delay,
+    config.tcp.seg2delay_max,
+    t("core.units.ms"),
+  );
 
   return (
     <>
