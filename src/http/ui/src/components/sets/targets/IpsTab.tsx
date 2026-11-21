@@ -124,6 +124,16 @@ export const IpsTab = ({
       <Box sx={{ my: 3, display: "flex", gap: 2, flexWrap: "wrap" }}>
         <Box sx={{ maxWidth: 360, flex: "1 1 260px", minWidth: 0 }}>
           <B4Switch
+            label={t("sets.targets.useCollectedIps")}
+            description={t("sets.targets.useCollectedIpsDesc")}
+            checked={config.targets.use_collected_ips ?? false}
+            path="targets.use_collected_ips"
+            onChange={(checked: boolean) => onChange("targets.use_collected_ips", checked)}
+            aiTopic="targets.use_collected_ips"
+          />
+        </Box>
+        <Box sx={{ maxWidth: 360, flex: "1 1 260px", minWidth: 0 }}>
+          <B4Switch
             label={t("sets.targets.catchAllIps")}
             description={t("sets.targets.catchAllIpsDesc", {
               value: catchAllEntries.join(", "),

@@ -21,6 +21,7 @@ const (
 
 type linkWatcher struct {
 	cfgPtr  *atomic.Pointer[config.Config]
+	view    func(*config.Config) *config.Config
 	conn    *netlink.Conn
 	stop    chan struct{}
 	wg      sync.WaitGroup
@@ -32,12 +33,21 @@ type linkWatcher struct {
 	reinstalls    sync.WaitGroup
 }
 
-func newLinkWatcher(cfgPtr *atomic.Pointer[config.Config]) *linkWatcher {
+func newLinkWatcher(cfgPtr *atomic.Pointer[config.Config], view func(*config.Config) *config.Config) *linkWatcher {
 	return &linkWatcher{
 		cfgPtr:        cfgPtr,
+		view:          view,
 		stop:          make(chan struct{}),
 		pendingIfaces: make(map[string]struct{}),
 	}
+}
+
+func (w *linkWatcher) config() *config.Config {
+	cfg := w.cfgPtr.Load()
+	if cfg == nil || w.view == nil {
+		return cfg
+	}
+	return w.view(cfg)
 }
 
 func (w *linkWatcher) Start() error {
@@ -194,7 +204,7 @@ func (w *linkWatcher) reinstallPending() {
 	w.debounceTimer = nil
 	w.debounceMu.Unlock()
 
-	cfg := w.cfgPtr.Load()
+	cfg := w.config()
 	if cfg == nil {
 		return
 	}

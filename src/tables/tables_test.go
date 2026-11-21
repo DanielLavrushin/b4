@@ -1929,11 +1929,12 @@ func (m *mockRouteBackend) addElements(setName string, ips []string, ttlSec int)
 	}
 	return nil
 }
-func (m *mockRouteBackend) delElements(setName string, ips []string) {
+func (m *mockRouteBackend) delElements(setName string, ips []string) []string {
 	m.setOps = append(m.setOps, "del "+setName)
 	if m.delElementsFn != nil {
 		m.delElementsFn(setName, ips)
 	}
+	return nil
 }
 
 func TestMonitor_BackendPropagation(t *testing.T) {
@@ -2225,5 +2226,121 @@ func TestRefreshThrottleStaysBoundedUnderABurst(t *testing.T) {
 	}
 	if len(routeRefreshedAt) > routeRefreshedMax {
 		t.Fatalf("%d throttle entries after a burst of fresh addresses, the limit is %d", len(routeRefreshedAt), routeRefreshedMax)
+	}
+}
+
+func TestCollectedAccountingLeavesAnAcctAlreadyOnAlone(t *testing.T) {
+	prevSnap := sysctlSnapPath
+	sysctlSnapPath = filepath.Join(t.TempDir(), "sysctl.json")
+	t.Cleanup(func() { sysctlSnapPath = prevSnap })
+
+	cfg := config.NewConfig()
+	producer := config.NewSetConfig()
+	producer.Enabled = true
+	producer.TCP.IPBlockDetect.Enabled = true
+	producer.TCP.IPBlockDetect.Action = "collect"
+	cfg.Sets = []*config.SetConfig{&producer}
+
+	for _, c := range []struct {
+		cur       string
+		wantSnap  bool
+		wantWrite []string
+	}{
+		{"1", false, nil},
+		{"0", true, []string{collectedAccounting.Name + "=1"}},
+	} {
+		t.Run("acct="+c.cur, func(t *testing.T) {
+			_ = os.Remove(sysctlSnapPath)
+			var wrote []string
+			prevGet, prevSet := getSysctl, setSysctl
+			getSysctl = func(name string) string {
+				if name == collectedAccounting.Name {
+					return c.cur
+				}
+				return ""
+			}
+			setSysctl = func(name, val string) { wrote = append(wrote, name+"="+val) }
+			t.Cleanup(func() { getSysctl, setSysctl = prevGet, prevSet })
+
+			applyCollectedAccounting(&cfg)
+			_, saved := loadSysctlSnapshot()[collectedAccounting.Name]
+			if saved != c.wantSnap || strings.Join(wrote, ",") != strings.Join(c.wantWrite, ",") {
+				t.Errorf("with nf_conntrack_acct at %s, a Collect producer saved it=%v (want %v) and wrote %v (want %v); b4 did not turn an acct that already reads 1 on, so it owns no value to save or put back when its rules are cleared", c.cur, saved, c.wantSnap, wrote, c.wantWrite)
+			}
+		})
+	}
+}
+
+func TestCollectedAccountingStaysOffWhenNoSetCollectsReplies(t *testing.T) {
+	prevSnap := sysctlSnapPath
+	sysctlSnapPath = filepath.Join(t.TempDir(), "sysctl.json")
+	t.Cleanup(func() { sysctlSnapPath = prevSnap })
+
+	for _, consumer := range []bool{true, false} {
+		t.Run(fmt.Sprintf("uses collected IPs=%v", consumer), func(t *testing.T) {
+			_ = os.Remove(sysctlSnapPath)
+			cfg := config.NewConfig()
+			collector := config.NewSetConfig()
+			collector.Enabled = true
+			collector.TCP.IPBlockDetect.Enabled = true
+			collector.TCP.IPBlockDetect.Action = "collect"
+			collector.Targets.UseCollectedIPs = consumer
+			cfg.Sets = []*config.SetConfig{&collector}
+			var wrote []string
+			prevGet, prevSet := getSysctl, setSysctl
+			getSysctl = func(string) string { return "0" }
+			setSysctl = func(name, val string) { wrote = append(wrote, name+"="+val) }
+			t.Cleanup(func() { getSysctl, setSysctl = prevGet, prevSet })
+
+			applyCollectedAccounting(&cfg)
+			if want := !consumer; (len(wrote) > 0) != want || cfg.CollectsReplies() != want {
+				t.Errorf("a Collect set that uses collected IPs=%v: CollectsReplies=%v, wrote %v; nf_conntrack_acct is turned on only when some set reads reply counters", consumer, cfg.CollectsReplies(), wrote)
+			}
+		})
+	}
+}
+
+func TestCollectedAccountingIsPutBackWhenTheCollectSetStartsUsingCollectedIPs(t *testing.T) {
+	prevSnap := sysctlSnapPath
+	sysctlSnapPath = filepath.Join(t.TempDir(), "sysctl.json")
+	t.Cleanup(func() { sysctlSnapPath = prevSnap })
+
+	acct := "0"
+	var wrote []string
+	prevGet, prevSet := getSysctl, setSysctl
+	getSysctl = func(name string) string {
+		if name == collectedAccounting.Name {
+			return acct
+		}
+		return ""
+	}
+	setSysctl = func(name, val string) {
+		wrote = append(wrote, name+"="+val)
+		if name == collectedAccounting.Name {
+			acct = val
+		}
+	}
+	t.Cleanup(func() { getSysctl, setSysctl = prevGet, prevSet })
+
+	collector := config.NewSetConfig()
+	collector.Enabled = true
+	collector.TCP.IPBlockDetect.Enabled = true
+	collector.TCP.IPBlockDetect.Action = "collect"
+	cfg := config.NewConfig()
+	cfg.Sets = []*config.SetConfig{&collector}
+	applyCollectedAccounting(&cfg)
+	if _, saved := loadSysctlSnapshot()[collectedAccounting.Name]; !saved || acct != "1" {
+		t.Fatalf("setup: a Collect set that reads reply counters saved acct=%v and left it at %s, want saved and 1 (wrote %v)", saved, acct, wrote)
+	}
+
+	consumer := collector
+	consumer.Targets.UseCollectedIPs = true
+	next := cfg
+	next.Sets = []*config.SetConfig{&consumer}
+	wrote = nil
+	applyCollectedAccounting(&next)
+	_, saved := loadSysctlSnapshot()[collectedAccounting.Name]
+	if next.CollectsReplies() || acct != "0" || saved || strings.Join(wrote, ",") != collectedAccounting.Name+"=0" {
+		t.Errorf("after the only Collect set also started using collected IPs (CollectsReplies=%v), acct reads %s, the saved value is kept=%v and b4 wrote %v; nothing reads the reply counters any more, so b4 puts back the 0 it saved and forgets it", next.CollectsReplies(), acct, saved, wrote)
 	}
 }

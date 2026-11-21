@@ -34,6 +34,7 @@ type NFTablesManager struct {
 	sysctlsApplied       bool
 	dropSetV4            bool
 	dropSetV6            bool
+	collected            map[string]*captureCollectedSet
 }
 
 func NewNFTablesManager(cfg *config.Config) *NFTablesManager {
@@ -209,7 +210,15 @@ func queueMatchInDirection(match []string, dir string, ctDirection bool) []strin
 }
 
 func (n *NFTablesManager) addLimitedQueueRule(chain, dir, limit string, ctDirection bool, match ...string) error {
-	return n.addQueueRule(chain, queueMatchWithLimit(match, dir, limit, n.ctPacketsSupported, ctDirection)...)
+	return n.addQueueRule(chain, n.limitedQueueMatch(dir, limit, ctDirection, match...)...)
+}
+
+func (n *NFTablesManager) limitedQueueMatch(dir, limit string, ctDirection bool, match ...string) []string {
+	args := queueMatchWithLimit(match, dir, limit, n.ctPacketsSupported, ctDirection)
+	if dir == "reply" && n.ctPacketsSupported && collectedReplyObservation(n.cfg) {
+		args[len(match)+1] = "reply"
+	}
+	return args
 }
 
 func nftInjectedReplyReturn(mark uint) []string {
@@ -263,6 +272,27 @@ func (n *NFTablesManager) Apply() error {
 	}
 	noteQueueDirectionExact(n.ctDirectionSupported, n.ctDirectionSupported)
 	noteUDPDropSets(n.dropSetV4, n.dropSetV6)
+	for name, s := range n.collected {
+		captureCollectedRecord(name, s)
+	}
+	return nil
+}
+
+func (n *NFTablesManager) addCollectedSet(name, setID string, v6 bool, entries []string) error {
+	addrType := "ipv4_addr"
+	if v6 {
+		addrType = "ipv6_addr"
+	}
+	if err := n.createSet(name, addrType, ""); err != nil {
+		return err
+	}
+	if err := n.addSetElements(name, entries); err != nil {
+		return err
+	}
+	if n.collected == nil {
+		n.collected = make(map[string]*captureCollectedSet)
+	}
+	n.collected[name] = &captureCollectedSet{setID: setID, v6: v6, entries: slices.Clone(entries)}
 	return nil
 }
 
@@ -521,6 +551,28 @@ func (n *NFTablesManager) addDuplicateQueueRules(tcpPortExpr string) error {
 			return err
 		}
 		args := append(queueMatchInDirection([]string{"meta", "nfproto", "ipv6", "ip6", "daddr", "@b4_dup_v6", "tcp", "dport", tcpPortExpr}, "original", n.ctDirectionSupported), queueAction...)
+		if err := n.addRule(nftChainName, args...); err != nil {
+			return err
+		}
+	}
+	if !captureCollectedEmitted(cfg) {
+		return nil
+	}
+	for _, family := range []struct {
+		v6      bool
+		enabled bool
+		nfproto string
+		addr    string
+	}{{false, cfg.Queue.IPv4Enabled, "ipv4", "ip"}, {true, cfg.Queue.IPv6Enabled, "ipv6", "ip6"}} {
+		entries, used := captureCollectedDupFill(cfg, family.v6)
+		if !used || !family.enabled {
+			continue
+		}
+		name := captureCollectedDupName(family.v6)
+		if err := n.addCollectedSet(name, "", family.v6, entries); err != nil {
+			return err
+		}
+		args := append(queueMatchInDirection([]string{"meta", "nfproto", family.nfproto, family.addr, "daddr", "@" + name, "tcp", "dport", tcpPortExpr}, "original", n.ctDirectionSupported), queueAction...)
 		if err := n.addRule(nftChainName, args...); err != nil {
 			return err
 		}
@@ -831,8 +883,34 @@ func (n *NFTablesManager) ApplyMSSClamp() error {
 				return err
 			}
 		}
+		collected := e.Collected && captureCollectedEmitted(cfg)
+		if collected {
+			emitted := 0
+			for _, family := range []struct {
+				v6      bool
+				enabled bool
+				nfproto string
+				addr    string
+			}{{false, cfg.Queue.IPv4Enabled, "ipv4", "ip"}, {true, cfg.Queue.IPv6Enabled, "ipv6", "ip6"}} {
+				if !family.enabled || !setHasSourceForFamily(e.Sources, family.v6) {
+					continue
+				}
+				name := captureCollectedMSSName(e.SetIdx, family.v6)
+				entries := captureCollectedMSSEntries(cfg, e, family.v6)
+				if err := n.addCollectedSet(name, e.SetID, family.v6, entries); err != nil {
+					return fmt.Errorf("failed to create the collected-address MSS set of set %s: %w", e.SetID, err)
+				}
+				if err := applyFamily(family.nfproto, family.addr, name, true); err != nil {
+					return err
+				}
+				emitted += len(entries)
+			}
+			log.Infof("NFTABLES: per-set MSS clamp for the collected addresses of set %q (size: %d, addresses: %d)", e.SetID, e.Size, emitted)
+		}
 		if mssClampUnresolved(cfg, e) {
-			log.Infof("NFTABLES: per-set MSS clamp for set %q skipped: its IP targets resolve to no addresses yet", e.SetID)
+			if !collected {
+				log.Infof("NFTABLES: per-set MSS clamp for set %q skipped: its IP targets resolve to no addresses yet", e.SetID)
+			}
 			continue
 		}
 		if mssClampMACOnly(cfg, e) {

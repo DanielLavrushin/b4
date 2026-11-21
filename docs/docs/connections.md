@@ -73,9 +73,11 @@ Labels mark special cases: next to the domain in **Aggregated** mode, and next t
 | `dup` | The packet was duplicated, see [Packet duplication](sets/tcp/general.md#packet-duplication) |
 | `ip` | The destination was found blocked by IP. An outlined label means the address was already in the cache of blocked addresses |
 | `ban` | The destination is a [banned address](sets/tcp/general.md#banned-addresses), and b4 reset the connection or, for QUIC, refused it |
+| `collect` | b4 put the destination address in the [collected pool](sets/targets.md#collected-ips), or found it there, and reset this silent connection, see [Collect detected IPs](sets/tcp/general.md#collect-detected-ips). A set that has **Use collected IPs** turned on can take later connections to the address |
 | `block` | A [block set](sets/blocking.md) blocked the packet |
 | `voice` | A call packet passed through untouched: by a set with **Calls** on **Pass call setup**, or by a [set that handles only calls](sets/udp.md#protocol-selection), as a later packet of a call the set took. The packet such a set takes itself carries no `voice` label and shows that set in the **Set** column |
 | `proxy` | The connection came through b4's [SOCKS5 proxy](settings/core.md#socks5-proxy) |
+| `fallback` | [Reuse WSSIZE connection](sets/tcp/general.md#warm-connection) fell back: b4 sent the device's connection from an ordinary router port, with the set's TCP strategy on the whole connection. A connection that stays on the warmed port carries no label |
 | Telegram icon | A connection of b4's [MTProto proxy](telegram/mtproto-proxy.md), with the secret's name |
 | Telegram icon with **Telegram bridge** | A connection relayed by [Telegram over WebSocket](telegram/websocket-bridge.md) |
 | `doh`, `forward`, `pin`, `sinkhole` and others | What b4 did with a DNS query, see [DNS for sets](dns.md#reading-the-result) |

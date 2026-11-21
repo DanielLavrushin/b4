@@ -1,0 +1,636 @@
+package nfq
+
+import (
+	"container/heap"
+	"context"
+	"encoding/binary"
+	"net"
+	"net/netip"
+	"slices"
+	"testing"
+	"time"
+
+	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/ctnl"
+	"github.com/daniellavrushin/b4/engine"
+	"github.com/daniellavrushin/b4/iphealth"
+	"github.com/daniellavrushin/b4/warmtuple"
+)
+
+type collectCountRig struct {
+	w        *Worker
+	p        *Pool
+	sent     func() [][]byte
+	installs int
+	flows    map[ctnl.Tuple]*ctnl.Flow
+	start    time.Time
+	now      time.Duration
+	stamped  uint64
+}
+
+const collectRigTimeout = time.Second
+
+func newCollectCountRig(t *testing.T, extra ...*config.SetConfig) *collectCountRig {
+	t.Helper()
+	r := &collectCountRig{flows: make(map[ctnl.Tuple]*ctnl.Flow), start: time.Now()}
+	r.w, r.p, r.sent = unseededCollectedRig(t, func(context.Context, *config.Config) error {
+		r.installs++
+		return nil
+	}, extra...)
+	r.w.bans = newTestIPBans(t, nil)
+	lookupFlow = func(tuple ctnl.Tuple, _ ctnl.Direction) (ctnl.Flow, bool, error) {
+		return *r.flowOf(tuple), true, nil
+	}
+	r.detectionTimeout(collectRigTimeout)
+	return r
+}
+
+func (r *collectCountRig) detectionTimeout(timeout time.Duration) {
+	for _, set := range r.w.getConfig().Sets {
+		if set.TCP.IPBlockDetect.Collects() {
+			set.TCP.IPBlockDetect.TimeoutMs = int(timeout / time.Millisecond)
+		}
+	}
+}
+
+func (r *collectCountRig) stamp() {
+	tracker := r.w.destState
+	tracker.watchMu.Lock()
+	defer tracker.watchMu.Unlock()
+	at := r.start.Add(r.now)
+	for _, h := range tracker.watches {
+		if !h.collect || h.gen <= r.stamped {
+			continue
+		}
+		h.deadline = at.Add(h.deadline.Sub(h.opened))
+		h.opened = at
+		if h.collectIndex >= 0 {
+			heap.Fix(&tracker.collectDeadlines, h.collectIndex)
+		}
+	}
+	r.stamped = tracker.watchGen
+}
+
+func (r *collectCountRig) at(now time.Duration) {
+	r.stamp()
+	r.now = now
+}
+
+func (r *collectCountRig) flowOf(tuple ctnl.Tuple) *ctnl.Flow {
+	f := r.flows[tuple]
+	if f == nil {
+		flow := silentFlow().flow
+		flow.ID = uint32(100 + len(r.flows))
+		f = &flow
+		r.flows[tuple] = f
+	}
+	return f
+}
+
+func (r *collectCountRig) flow(t *testing.T, sport uint16) *ctnl.Flow {
+	t.Helper()
+	tuple, err := ctnl.NewTuple(6, netip.AddrPortFrom(netip.MustParseAddr("10.0.0.1"), sport), netip.MustParseAddrPort("1.2.3.4:443"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r.flowOf(tuple)
+}
+
+func (r *collectCountRig) watched(sport uint16) bool {
+	r.w.destState.watchMu.RLock()
+	defer r.w.destState.watchMu.RUnlock()
+	for _, h := range r.w.destState.watches {
+		if h.cport == sport {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *collectCountRig) hello(t *testing.T, sport uint16) {
+	t.Helper()
+	if v := r.w.ProcessPacket(silentHelloFrom(sport)); v != engine.VerdictAccept {
+		t.Fatalf("Collect changed the verdict of the ClientHello from port %d: %v", sport, v)
+	}
+	if !r.watched(sport) {
+		t.Fatalf("the ClientHello from port %d is not watched, so this test proves nothing", sport)
+	}
+	r.stamp()
+}
+
+func (r *collectCountRig) serverSends(t *testing.T, sport uint16, flags byte, payload []byte) {
+	t.Helper()
+	raw := collectedReply(sport, afterHello(), flags, payload)
+	f := r.flow(t, sport)
+	f.ReplyPackets++
+	f.ReplyBytes += uint64(len(raw))
+	r.w.ProcessPacket(raw)
+}
+
+func (r *collectCountRig) silent(t *testing.T, sport uint16) {
+	t.Helper()
+	r.hello(t, sport)
+	r.serverSends(t, sport, 0x10, nil)
+}
+
+func (r *collectCountRig) sweep(after time.Duration) {
+	r.at(after)
+	r.p.collectedPass(r.start.Add(after))
+}
+
+func (r *collectCountRig) collected() int {
+	r.p.configMu.Lock()
+	defer r.p.configMu.Unlock()
+	return len(r.p.collected)
+}
+
+func TestOneSilentConnectionDoesNotCollectTheAddress(t *testing.T) {
+	r := newCollectCountRig(t)
+	r.silent(t, 42000)
+	r.sweep(4 * time.Second)
+
+	if r.collected() != 0 || r.installs != 0 {
+		t.Fatalf("one silent connection must not collect the address: candidates=%d installs=%d", r.collected(), r.installs)
+	}
+	if ports := resetsTo(r.sent()); len(ports) != 0 {
+		t.Fatalf("one silent connection must not be reset, got resets to %v", ports)
+	}
+	if !r.watched(42000) {
+		t.Fatal("the counted connection must stay watched, so it can be reset with the connection that completes the count")
+	}
+}
+
+func TestTwoSilentConnectionsInARowCollectAndResetBoth(t *testing.T) {
+	r := newCollectCountRig(t)
+	r.silent(t, 42000)
+	r.sweep(4 * time.Second)
+	r.silent(t, 42001)
+	r.sweep(5 * time.Second)
+
+	if r.collected() != 1 || r.installs != 1 {
+		t.Fatalf("the second silent connection in a row must collect the address once: candidates=%d installs=%d", r.collected(), r.installs)
+	}
+	if ports := resetsTo(r.sent()); !slices.Equal(ports, []uint16{42000, 42001}) {
+		t.Fatalf("both silent connections must be reset so their retries reach the consumer, got resets to %v", ports)
+	}
+	if r.w.destState.Watching() {
+		t.Error("reset connections must not stay watched")
+	}
+}
+
+func TestTwoConnectionsHalfASecondApartToASlowServerAreNotCollected(t *testing.T) {
+	r := newCollectCountRig(t)
+	r.detectionTimeout(3 * time.Second)
+	r.silent(t, 42000)
+	r.at(500 * time.Millisecond)
+	r.silent(t, 42001)
+	r.sweep(3 * time.Second)
+	r.sweep(3500 * time.Millisecond)
+
+	if ports := resetsTo(r.sent()); r.collected() != 0 || r.installs != 0 || len(ports) != 0 {
+		t.Fatalf("two connections opened 0.5 s apart ran alongside each other, not one after the other, yet at 3.5 s the address was collected (candidates=%d installs=%d) and the clients were reset (%v) before the server's answers due at 6 s", r.collected(), r.installs, ports)
+	}
+	if !r.watched(42000) || !r.watched(42001) {
+		t.Fatal("both connections must stay watched, so that an answer on either starts the count over")
+	}
+
+	r.at(6 * time.Second)
+	r.serverSends(t, 42001, 0x18, []byte{0x16, 3, 3, 0, 1, 2})
+	if r.watched(42001) || !r.watched(42000) || r.w.destState.collectRunOpen(net.ParseIP("1.2.3.4"), 443) {
+		t.Fatal("the server's answer at 6 s on the uncounted connection must end its watch and start the count over, and leave the first connection waiting for its own answer")
+	}
+	r.serverSends(t, 42000, 0x18, []byte{0x16, 3, 3, 0, 1, 2})
+	if r.watched(42000) {
+		t.Fatal("the server's answer on the first connection must end its watch")
+	}
+	r.at(10 * time.Second)
+	r.silent(t, 42002)
+	r.sweep(13 * time.Second)
+	if r.collected() != 0 || !r.watched(42002) {
+		t.Fatalf("a silent connection after the answers is the first of a new count: candidates=%d", r.collected())
+	}
+}
+
+func TestOnlyAConnectionOpenedOnceTheFirstTimedOutCountsAsTheSecond(t *testing.T) {
+	const timeout = 3 * time.Second
+	for name, tc := range map[string]struct {
+		second    time.Duration
+		collected bool
+	}{
+		"0.5 s after the first":                {second: 500 * time.Millisecond},
+		"just before the first's timeout ends": {second: timeout - 100*time.Millisecond},
+		"as the first's timeout ends":          {second: timeout, collected: true},
+		"5 s after the first":                  {second: 5 * time.Second, collected: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newCollectCountRig(t)
+			r.detectionTimeout(timeout)
+			r.silent(t, 42000)
+			if tc.second < timeout {
+				r.at(tc.second)
+				r.silent(t, 42001)
+			}
+			r.sweep(timeout)
+			if tc.second >= timeout {
+				r.at(tc.second)
+				r.silent(t, 42001)
+			}
+			r.sweep(tc.second + timeout)
+
+			ports := resetsTo(r.sent())
+			if !tc.collected {
+				if r.collected() != 0 || len(ports) != 0 || !r.watched(42000) || !r.watched(42001) {
+					t.Fatalf("a connection whose ClientHello came before the first one's timeout ended must not complete the count: candidates=%d resets=%v", r.collected(), ports)
+				}
+				return
+			}
+			if r.collected() != 1 || !slices.Equal(ports, []uint16{42000, 42001}) {
+				t.Fatalf("a connection whose ClientHello came once the first one's timeout had ended is the second in a row and must collect the address: candidates=%d resets=%v", r.collected(), ports)
+			}
+		})
+	}
+}
+
+func TestAConnectionThatRanAlongsideIsResetWhenTheCountCompletes(t *testing.T) {
+	r := newCollectCountRig(t)
+	r.detectionTimeout(3 * time.Second)
+	r.silent(t, 42000)
+	r.at(500 * time.Millisecond)
+	r.silent(t, 42001)
+	r.sweep(3 * time.Second)
+	r.sweep(3500 * time.Millisecond)
+	r.at(5 * time.Second)
+	r.silent(t, 42002)
+	r.sweep(8 * time.Second)
+
+	if ports := resetsTo(r.sent()); r.collected() != 1 || !slices.Equal(ports, []uint16{42000, 42001, 42002}) {
+		t.Fatalf("a silent connection opened after the first one's timeout completes the count, and the uncounted one that ran alongside the first is still silent, so all three must be reset: candidates=%d resets=%v", r.collected(), ports)
+	}
+}
+
+func TestASilentConnectionItsClientClosedStillCountsAsTheFirst(t *testing.T) {
+	r := newCollectCountRig(t)
+	r.detectionTimeout(3 * time.Second)
+	r.silent(t, 42000)
+	r.sweep(3 * time.Second)
+	r.at(6 * time.Second)
+	r.w.ProcessPacket(clientPacket(42000, afterHello(), 0x11, nil))
+	if r.watched(42000) {
+		t.Fatal("the client's FIN must end the watch of the first connection, or this test proves nothing")
+	}
+	r.at(8 * time.Second)
+	r.silent(t, 42001)
+	r.sweep(11 * time.Second)
+
+	if ports := resetsTo(r.sent()); r.collected() != 1 || !slices.Equal(ports, []uint16{42001}) {
+		t.Fatalf("a silent connection the client closed after its timeout still counts, so the next silent one must collect the address and be reset: candidates=%d resets=%v", r.collected(), ports)
+	}
+}
+
+func TestAfterAnAnswerTwoNewSilentConnectionsCollectTheAddress(t *testing.T) {
+	r := newCollectCountRig(t)
+	r.detectionTimeout(3 * time.Second)
+	r.silent(t, 42000)
+	r.sweep(3 * time.Second)
+	r.at(5 * time.Second)
+	r.hello(t, 42001)
+	r.serverSends(t, 42001, 0x18, []byte{0x16, 3, 3, 0, 1, 2})
+	r.at(10 * time.Second)
+	r.silent(t, 42002)
+	r.sweep(13 * time.Second)
+	if r.collected() != 0 || len(resetsTo(r.sent())) != 0 {
+		t.Fatalf("silent, answered, silent must not collect the address: candidates=%d resets=%v", r.collected(), resetsTo(r.sent()))
+	}
+
+	r.at(20 * time.Second)
+	r.silent(t, 42003)
+	r.sweep(23 * time.Second)
+	if ports := resetsTo(r.sent()); r.collected() != 1 || !slices.Equal(ports, []uint16{42000, 42002, 42003}) {
+		t.Fatalf("a fourth silent connection is the second in a row after the answer and must collect the address, resetting every silent connection still waiting: candidates=%d resets=%v", r.collected(), ports)
+	}
+}
+
+func TestAnAnsweredConnectionStartsTheCollectCountOver(t *testing.T) {
+	for name, answer := range map[string]func(*testing.T, *collectCountRig){
+		"the server sent data the queue saw": func(t *testing.T, r *collectCountRig) {
+			r.hello(t, 42001)
+			r.serverSends(t, 42001, 0x18, []byte{0x16, 3, 3, 0, 1, 2})
+		},
+		"the client acknowledged server bytes": func(t *testing.T, r *collectCountRig) {
+			r.silent(t, 42001)
+			r.w.ProcessPacket(clientPacketAcking(42001, afterHello(), silentServerAck+1400, 0x10, nil))
+		},
+		"conntrack shows server bytes the queue did not see": func(t *testing.T, r *collectCountRig) {
+			r.silent(t, 42001)
+			f := r.flow(t, 42001)
+			f.ReplyPackets++
+			f.ReplyBytes += 1400
+			r.sweep(5 * time.Second)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newCollectCountRig(t)
+			r.silent(t, 42000)
+			r.sweep(4 * time.Second)
+			answer(t, r)
+			if r.watched(42001) {
+				t.Fatal("an answered connection must not stay watched")
+			}
+			r.silent(t, 42002)
+			r.sweep(6 * time.Second)
+
+			if r.collected() != 0 || r.installs != 0 || len(resetsTo(r.sent())) != 0 {
+				t.Fatalf("an answered connection between two silent ones must start the count over: candidates=%d installs=%d resets=%v", r.collected(), r.installs, resetsTo(r.sent()))
+			}
+			if !r.watched(42002) {
+				t.Fatal("the silent connection after the answer is the first of a new count and waits")
+			}
+		})
+	}
+}
+
+func TestAnAnswerInTheSameSweepLeavesSilentConnectionsUncounted(t *testing.T) {
+	r := newCollectCountRig(t)
+	r.silent(t, 42000)
+	r.silent(t, 42001)
+	r.silent(t, 42002)
+	f := r.flow(t, 42002)
+	f.ReplyPackets++
+	f.ReplyBytes += 1400
+	r.sweep(4 * time.Second)
+
+	if r.collected() != 0 || r.installs != 0 || len(resetsTo(r.sent())) != 0 {
+		t.Fatalf("silent connections that come due with an answered one must not be counted: candidates=%d installs=%d resets=%v", r.collected(), r.installs, resetsTo(r.sent()))
+	}
+	r.silent(t, 42003)
+	r.sweep(5 * time.Second)
+	if r.collected() != 0 {
+		t.Fatal("a silent connection after the sweep with the answer is the first of a new count")
+	}
+}
+
+func TestHeaderOnlyRepliesTheQueueMissedNeitherCountNorStartTheCollectCountOver(t *testing.T) {
+	for name, tc := range map[string]struct {
+		packets, bytes uint64
+		answered       bool
+	}{
+		"a pure ACK past the queue's byte limit":   {packets: 1, bytes: 52},
+		"two packets at the header allowance":      {packets: 2, bytes: 2 * (60 + 20)},
+		"one byte more than the header allowance":  {packets: 1, bytes: 60 + 20 + 1, answered: true},
+		"server data the queue did not see at all": {packets: 1, bytes: 1400, answered: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newCollectCountRig(t)
+			r.silent(t, 42000)
+			r.sweep(4 * time.Second)
+			r.silent(t, 42001)
+			f := r.flow(t, 42001)
+			f.ReplyPackets += tc.packets
+			f.ReplyBytes += tc.bytes
+			r.sweep(5 * time.Second)
+			if r.collected() != 0 || r.watched(42001) || len(resetsTo(r.sent())) != 0 {
+				t.Fatalf("a connection with replies the queue did not see must neither count nor wait: candidates=%d watched=%v resets=%v", r.collected(), r.watched(42001), resetsTo(r.sent()))
+			}
+			r.silent(t, 42002)
+			r.sweep(6 * time.Second)
+
+			if tc.answered {
+				if r.collected() != 0 || !r.watched(42002) {
+					t.Fatalf("reply bytes beyond the headers are an answer and start the count over: candidates=%d", r.collected())
+				}
+				return
+			}
+			if ports := resetsTo(r.sent()); r.collected() != 1 || !slices.Equal(ports, []uint16{42000, 42002}) {
+				t.Fatalf("header-only replies are no answer, so the count must go on: candidates=%d resets=%v", r.collected(), ports)
+			}
+		})
+	}
+}
+
+func collectedV6Hello(sport uint16) []byte {
+	pkt := makeV6TCPPacket(silentHello(), silentHelloSeq)
+	binary.BigEndian.PutUint16(pkt[IPv6HeaderLen:IPv6HeaderLen+2], sport)
+	binary.BigEndian.PutUint32(pkt[IPv6HeaderLen+8:IPv6HeaderLen+12], silentServerAck)
+	return pkt
+}
+
+func collectedV6Reply(sport uint16) []byte {
+	pkt := makeV6TCPPacket(nil, silentServerAck)
+	copy(pkt[8:24], net.ParseIP("2001:db8::2"))
+	copy(pkt[24:40], net.ParseIP("2001:db8::1"))
+	binary.BigEndian.PutUint16(pkt[IPv6HeaderLen:IPv6HeaderLen+2], 443)
+	binary.BigEndian.PutUint16(pkt[IPv6HeaderLen+2:IPv6HeaderLen+4], sport)
+	binary.BigEndian.PutUint32(pkt[IPv6HeaderLen+8:IPv6HeaderLen+12], afterHello())
+	pkt[IPv6HeaderLen+13] = 0x10
+	return pkt
+}
+
+func TestTheHeaderAllowanceForIPv6RepliesTheQueueMissedCoversTheIPv6Header(t *testing.T) {
+	flow := func(t *testing.T, r *collectCountRig, sport uint16) *ctnl.Flow {
+		t.Helper()
+		tuple, err := ctnl.NewTuple(6, netip.AddrPortFrom(netip.MustParseAddr("2001:db8::1"), sport), netip.MustParseAddrPort("[2001:db8::2]:443"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r.flowOf(tuple)
+	}
+	silent := func(t *testing.T, r *collectCountRig, sport uint16) {
+		t.Helper()
+		r.w.ProcessPacket(collectedV6Hello(sport))
+		if !r.watched(sport) {
+			t.Fatalf("the IPv6 ClientHello from port %d is not watched, so this test proves nothing", sport)
+		}
+		reply := collectedV6Reply(sport)
+		f := flow(t, r, sport)
+		f.ReplyPackets++
+		f.ReplyBytes += uint64(len(reply))
+		r.w.ProcessPacket(reply)
+	}
+	for name, tc := range map[string]struct {
+		bytes    uint64
+		answered bool
+	}{
+		"a packet at the IPv6 header allowance":        {bytes: 60 + 40},
+		"one byte more than the IPv6 header allowance": {bytes: 60 + 40 + 1, answered: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newCollectCountRig(t)
+			r.w.getConfig().Queue.IPv6Enabled = true
+			silent(t, r, 42000)
+			r.sweep(4 * time.Second)
+			silent(t, r, 42001)
+			f := flow(t, r, 42001)
+			f.ReplyPackets++
+			f.ReplyBytes += tc.bytes
+			r.sweep(5 * time.Second)
+			if r.collected() != 0 || r.watched(42001) || len(resetsTo(r.sent())) != 0 {
+				t.Fatalf("an IPv6 connection with replies the queue did not see must neither count nor wait: candidates=%d watched=%v resets=%v", r.collected(), r.watched(42001), resetsTo(r.sent()))
+			}
+			silent(t, r, 42002)
+			r.sweep(6 * time.Second)
+
+			if tc.answered {
+				if r.collected() != 0 || !r.watched(42002) {
+					t.Fatalf("IPv6 reply bytes beyond the headers are an answer and start the count over: candidates=%d", r.collected())
+				}
+				return
+			}
+			if ports := resetsTo(r.sent()); r.collected() != 1 || !slices.Equal(ports, []uint16{42000, 42002}) {
+				t.Fatalf("an IPv6 packet's 40-byte header is no answer, so the count must go on: candidates=%d resets=%v", r.collected(), ports)
+			}
+		})
+	}
+}
+
+func TestAnAnswerOnABlockWatchClearsTheCollectCount(t *testing.T) {
+	blockHello := buildClientHello("www.block.example", 16, 0xAB)
+	blockSet := func(consumer bool) *config.SetConfig {
+		set := silenceSet()
+		set.Id, set.Name = "block", "block"
+		set.Targets.DomainsToMatch = []string{"block.example"}
+		set.Targets.UseCollectedIPs = consumer
+		return &set
+	}
+	for name, tc := range map[string]struct {
+		consumer bool
+		answer   func(*testing.T, *collectCountRig)
+	}{
+		"the client acknowledged server bytes": {answer: func(t *testing.T, r *collectCountRig) {
+			r.w.ProcessPacket(clientPacketAcking(43000, silentHelloSeq+uint32(len(blockHello)), silentServerAck+1400, 0x10, nil))
+		}},
+		"conntrack shows server bytes at the deadline": {answer: func(t *testing.T, r *collectCountRig) {
+			f := r.flow(t, 43000)
+			f.ReplyPackets, f.ReplyBytes = 4, 4200
+			r.w.sweepSilentHellos(r.w.getConfig(), r.start.Add(5*time.Second))
+		}},
+		"Block's answer check before a ban": {answer: func(t *testing.T, r *collectCountRig) {
+			f := r.flow(t, 43000)
+			f.ReplyPackets, f.ReplyBytes = 4, 4200
+			r.w.bans.gotAnswer = r.w.silentHelloGotAnswer
+			dst := net.ParseIP("1.2.3.4")
+			if r.w.bans.stillSilent(iphealth.BanKey(dst, 443), dst, 443) {
+				t.Fatal("Block's answer check must find the server bytes conntrack counted")
+			}
+		}},
+		"a set that uses collected IPs": {consumer: true, answer: func(t *testing.T, r *collectCountRig) {
+			r.w.ProcessPacket(clientPacketAcking(43000, silentHelloSeq+uint32(len(blockHello)), silentServerAck+1400, 0x10, nil))
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newCollectCountRig(t, blockSet(tc.consumer))
+			r.silent(t, 42000)
+			r.sweep(4 * time.Second)
+			r.w.ProcessPacket(clientPacket(43000, silentHelloSeq, 0x18, blockHello))
+			if !r.watched(43000) {
+				t.Fatal("the Block set does not watch its connection, so this test proves nothing")
+			}
+			tc.answer(t, r)
+			if r.watched(43000) {
+				t.Fatal("the answered Block connection must not stay watched")
+			}
+			r.silent(t, 42001)
+			r.sweep(6 * time.Second)
+
+			if want := map[bool]int{false: 0, true: 1}[tc.consumer]; r.collected() != want {
+				t.Fatalf("candidates=%d, want %d: an answer on a watch of a set that does not use collected IPs starts the count over, one on a consumer's watch does not", r.collected(), want)
+			}
+		})
+	}
+}
+
+func TestAParkedConnectionEndsAfterTheWatchLifetime(t *testing.T) {
+	r := newCollectCountRig(t)
+	r.silent(t, 42000)
+	r.sweep(4 * time.Second)
+	if !r.watched(42000) {
+		t.Fatal("the first silent connection must wait for a second one, or this test proves nothing")
+	}
+	r.sweep(helloWatchTTL)
+	if !r.watched(42000) {
+		t.Fatal("a waiting connection must stay watched for the watch lifetime past its deadline")
+	}
+	r.sweep(4*time.Second + helloWatchTTL)
+	if r.w.destState.Watching() || len(r.w.destState.collectDeadlines) != 0 {
+		t.Fatal("a connection that waited the whole watch lifetime must stop being watched")
+	}
+	if r.collected() != 0 || len(resetsTo(r.sent())) != 0 {
+		t.Fatal("a connection that waited in vain is neither collected nor reset")
+	}
+}
+
+func TestTheCollectCountStartsOverAfterTheRetestInterval(t *testing.T) {
+	r := newCollectCountRig(t)
+	r.w.getConfig().System.IPHealth.RetestIntervalSec = 30
+
+	r.silent(t, 42000)
+	r.sweep(10 * time.Second)
+	r.silent(t, 42001)
+	r.sweep(50 * time.Second)
+	if r.collected() != 0 {
+		t.Fatal("a silent connection counted longer than the retest interval ago no longer counts")
+	}
+
+	r.silent(t, 42002)
+	r.sweep(60 * time.Second)
+	if r.collected() != 1 {
+		t.Fatal("two silent connections within the retest interval must collect the address")
+	}
+	if ports := resetsTo(r.sent()); !slices.Equal(ports, []uint16{42000, 42001, 42002}) {
+		t.Fatalf("every connection still waiting on the address is reset once it is collected, got resets to %v", ports)
+	}
+}
+
+func TestABlockBanDoesNotTakeAParkedCollectWatch(t *testing.T) {
+	tracker := &destStateTracker{}
+	dst := net.ParseIP("1.2.3.4")
+	tracker.WatchHello(&helloWatch{key: "c", setID: "producer", collect: true, flowID: 7, replyKey: "r", dst: dst, port: 443, deadline: time.Now()})
+	tracker.Park(*tracker.watches["c"])
+	if taken := tracker.TakeSilent(dst, 443); len(taken) != 0 {
+		t.Fatalf("a Block ban settling on %s:443 took %d parked Collect watches", dst, len(taken))
+	}
+	if watched := tracker.WatchesTo(dst, 443); len(watched) != 0 {
+		t.Fatalf("Block's answer check sees %d Collect watches", len(watched))
+	}
+
+	r := newCollectCountRig(t)
+	r.silent(t, 42000)
+	r.sweep(4 * time.Second)
+	r.w.settleSilentHellos(dst, 443, true)
+	if !r.watched(42000) || len(resetsTo(r.sent())) != 0 {
+		t.Fatal("a Block ban on the address must leave the waiting Collect connection alone")
+	}
+	r.silent(t, 42001)
+	r.sweep(5 * time.Second)
+	if ports := resetsTo(r.sent()); r.collected() != 1 || !slices.Equal(ports, []uint16{42000, 42001}) {
+		t.Fatalf("the waiting connection is still reset with the one that completes the count, got candidates=%d resets=%v", r.collected(), ports)
+	}
+}
+
+func TestAWarmFlowIsNeverWatched(t *testing.T) {
+	for _, action := range []string{"block", "collect"} {
+		t.Run(action, func(t *testing.T) {
+			set := silenceSet()
+			set.TCP.IPBlockDetect.Action = action
+			r := newFreshSilenceWorker(t, &set, iphealth.TLSSilent)
+			r.answerLookups(t, func(ctnl.Tuple) flowAnswer {
+				a := silentFlow()
+				a.flow.ID = 71
+				return a
+			})
+			r.w.warmFlows = warmtuple.NewFlows()
+			release, err := r.w.warmFlows.Register(netip.MustParseAddrPort("10.0.0.1:42000"), netip.MustParseAddrPort("1.2.3.4:443"), r.w.getConfig(), r.w.getConfig().Sets[0], "i.ytimg.com")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer release()
+			sendHello(t, r.w, 42000, engine.VerdictAccept)
+			if r.w.destState.Watching() {
+				t.Fatal("a warm connection carries no device traffic, so IP Block Detection must not watch it")
+			}
+			sendHello(t, r.w, 42001, engine.VerdictAccept)
+			if !r.w.destState.Watching() {
+				t.Fatal("a device connection to the same address must still be watched, or this test proves nothing")
+			}
+		})
+	}
+}

@@ -500,10 +500,17 @@ type IPSet struct {
 	Family  string // "inet" for IPv4, "inet6" for IPv6
 	Entries []string
 	MaxElem int
+	Type    string
+
+	collected *captureCollectedSet
 }
 
 func (s IPSet) Create() error {
-	args := []string{"ipset", "create", s.Name, "hash:net", "family", s.Family}
+	kind := s.Type
+	if kind == "" {
+		kind = "hash:net"
+	}
+	args := []string{"ipset", "create", s.Name, kind, "family", s.Family}
 	if s.MaxElem > 0 {
 		args = append(args, "maxelem", strconv.Itoa(s.MaxElem))
 	}
@@ -934,6 +941,35 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 			dupSetName = "b4_dup_v6"
 			dupSetFamily = "inet6"
 		}
+		dupQueueRules := func(setName string) []Rule {
+			var out []Rule
+			if manager.hasMultiportSupport(ipt) {
+				for _, chunk := range chunkPorts(tcpPorts, 15) {
+					dupSpec := slices.Concat(
+						[]string{"-p", "tcp", "-m", "set", "--match-set", setName, "dst",
+							"-m", "multiport", "--dports", strings.Join(chunk, ",")},
+						originalDir,
+						manager.buildNFQSpec(queueNum, threads),
+					)
+					out = append(out,
+						Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: dupSpec},
+					)
+				}
+				return out
+			}
+			for _, port := range tcpPorts {
+				dupSpec := slices.Concat(
+					[]string{"-p", "tcp", "-m", "set", "--match-set", setName, "dst",
+						"--dport", port},
+					originalDir,
+					manager.buildNFQSpec(queueNum, threads),
+				)
+				out = append(out,
+					Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: dupSpec},
+				)
+			}
+			return out
+		}
 		dupSkip := ""
 		if len(dupIPs) > 0 {
 			dupSkip = manager.ipsetUnusable(ipt, teardown)
@@ -942,30 +978,20 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 			log.Warnf("%s; skipping duplicate-IPs rules for %s", dupSkip, dupSetName)
 		} else if len(dupIPs) > 0 {
 			ipsets = append(ipsets, IPSet{Name: dupSetName, Family: dupSetFamily, Entries: dupIPs})
-			if manager.hasMultiportSupport(ipt) {
-				for _, chunk := range chunkPorts(tcpPorts, 15) {
-					dupSpec := slices.Concat(
-						[]string{"-p", "tcp", "-m", "set", "--match-set", dupSetName, "dst",
-							"-m", "multiport", "--dports", strings.Join(chunk, ",")},
-						originalDir,
-						manager.buildNFQSpec(queueNum, threads),
-					)
-					rules = append(rules,
-						Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: dupSpec},
-					)
+			rules = append(rules, dupQueueRules(dupSetName)...)
+		}
+		collectedV6 := dupSetFamily == "inet6"
+		if collectedDup, used := captureCollectedDupFill(cfg, collectedV6); used && captureCollectedEmitted(cfg) {
+			collectedName := captureCollectedDupName(collectedV6)
+			if reason := manager.ipsetUnusable(ipt, teardown); reason != "" {
+				if !teardown {
+					log.Warnf("%s; skipping the duplicate rules for collected addresses (%s)", reason, collectedName)
 				}
 			} else {
-				for _, port := range tcpPorts {
-					dupSpec := slices.Concat(
-						[]string{"-p", "tcp", "-m", "set", "--match-set", dupSetName, "dst",
-							"--dport", port},
-						originalDir,
-						manager.buildNFQSpec(queueNum, threads),
-					)
-					rules = append(rules,
-						Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: dupSpec},
-					)
-				}
+				collectedRules := dupQueueRules(collectedName)
+				ipsets = append(ipsets, IPSet{Name: collectedName, Family: dupSetFamily, Type: "hash:ip", Entries: collectedDup,
+					collected: &captureCollectedSet{v6: collectedV6, entries: slices.Clone(collectedDup), rules: collectedRules}})
+				rules = append(rules, collectedRules...)
 			}
 		}
 
@@ -1174,10 +1200,27 @@ func (manager *IPTablesManager) buildMSSManifestFor(ipts []string, preChain stri
 				setName = fmt.Sprintf("b4_mss_%d_v4", e.SetIdx)
 				setFamily = "inet"
 			}
+			collected := e.Collected && captureCollectedEmitted(cfg)
+			if collected && setHasSourceForFamily(e.Sources, isV6) {
+				collectedName := captureCollectedMSSName(e.SetIdx, isV6)
+				if reason := manager.ipsetUnusable(ipt, teardown); reason != "" {
+					if !teardown {
+						log.Warnf("%s; skipping the per-set MSS clamp of set %q for collected addresses", reason, e.SetID)
+					}
+				} else {
+					entries := captureCollectedMSSEntries(cfg, e, isV6)
+					collectedRules := manager.setMSSRules(ipt, preChain, e, collectedName, isV6)
+					mssIPSets = append(mssIPSets, IPSet{Name: collectedName, Family: setFamily, Type: "hash:ip", Entries: entries,
+						collected: &captureCollectedSet{setID: e.SetID, v6: isV6, entries: slices.Clone(entries), rules: collectedRules}})
+					mssRules = append(mssRules, collectedRules...)
+					log.Infof("IPTABLES[%s]: per-set MSS clamp for the collected addresses of set %q (size: %d, addresses: %d)",
+						ipt, e.SetID, e.Size, len(entries))
+				}
+			}
 			hasIPs := len(ips) > 0
 			macOnly := mssClampMACOnly(cfg, e)
 			if !hasIPs && !macOnly {
-				if mssClampUnresolved(cfg, e) {
+				if mssClampUnresolved(cfg, e) && !collected {
 					log.Infof("IPTABLES[%s]: per-set MSS clamp for set %q skipped: its IP targets resolve to no addresses yet", ipt, e.SetID)
 				}
 				continue
@@ -1191,53 +1234,12 @@ func (manager *IPTablesManager) buildMSSManifestFor(ipts []string, preChain stri
 					continue
 				}
 			}
+			matchSet := ""
 			if hasIPs {
 				mssIPSets = append(mssIPSets, IPSet{Name: setName, Family: setFamily, Entries: ips})
+				matchSet = setName
 			}
-			tcpMSSSpec := fmt.Sprintf("%d", e.Size)
-			if len(e.Sources) > 0 {
-				for _, src := range e.Sources {
-					out, ok := iptSourceMatchArgs(src, isV6)
-					if !ok {
-						continue
-					}
-					spec := append(out, "-p", "tcp", "--dport", "443")
-					if hasIPs {
-						spec = append(spec, "-m", "set", "--match-set", setName, "dst")
-					}
-					spec = append(spec, "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--set-mss", tcpMSSSpec)
-					mssRules = append(mssRules,
-						Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "FORWARD", Action: "I", Spec: spec},
-					)
-					back, backOK := iptReplyMatchArgs(src, isV6)
-					if !backOK {
-						continue
-					}
-					reply := append(back, "-p", "tcp", "--sport", "443")
-					if hasIPs {
-						reply = append(reply, "-m", "set", "--match-set", setName, "src")
-					}
-					reply = append(reply, "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--set-mss", tcpMSSSpec)
-					mssRules = append(mssRules,
-						Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "FORWARD", Action: "I", Spec: reply},
-					)
-				}
-			} else if hasIPs {
-				mssRules = append(mssRules,
-					Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I",
-						Spec: []string{"-p", "tcp", "--dport", "443",
-							"-m", "set", "--match-set", setName, "dst",
-							"--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--set-mss", tcpMSSSpec}},
-					Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "FORWARD", Action: "I",
-						Spec: []string{"-p", "tcp", "--dport", "443",
-							"-m", "set", "--match-set", setName, "dst",
-							"--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--set-mss", tcpMSSSpec}},
-					Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChain, Action: "I",
-						Spec: []string{"-p", "tcp", "--sport", "443",
-							"-m", "set", "--match-set", setName, "src",
-							"--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--set-mss", tcpMSSSpec}},
-				)
-			}
+			mssRules = append(mssRules, manager.setMSSRules(ipt, preChain, e, matchSet, isV6)...)
 			log.Infof("IPTABLES[%s]: per-set MSS clamp for set %q (size: %d, ips=%d sources=%d)",
 				ipt, e.SetID, e.Size, len(ips), len(e.Sources))
 		}
@@ -1304,6 +1306,57 @@ func (manager *IPTablesManager) buildMSSManifestFor(ipts []string, preChain stri
 	return mssIPSets, mssRules
 }
 
+func (manager *IPTablesManager) setMSSRules(ipt, preChain string, e config.SetMSSClampEntry, setName string, isV6 bool) []Rule {
+	tcpMSSSpec := fmt.Sprintf("%d", e.Size)
+	var rules []Rule
+	if len(e.Sources) > 0 {
+		for _, src := range e.Sources {
+			out, ok := iptSourceMatchArgs(src, isV6)
+			if !ok {
+				continue
+			}
+			spec := append(out, "-p", "tcp", "--dport", "443")
+			if setName != "" {
+				spec = append(spec, "-m", "set", "--match-set", setName, "dst")
+			}
+			spec = append(spec, "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--set-mss", tcpMSSSpec)
+			rules = append(rules,
+				Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "FORWARD", Action: "I", Spec: spec},
+			)
+			back, backOK := iptReplyMatchArgs(src, isV6)
+			if !backOK {
+				continue
+			}
+			reply := append(back, "-p", "tcp", "--sport", "443")
+			if setName != "" {
+				reply = append(reply, "-m", "set", "--match-set", setName, "src")
+			}
+			reply = append(reply, "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--set-mss", tcpMSSSpec)
+			rules = append(rules,
+				Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "FORWARD", Action: "I", Spec: reply},
+			)
+		}
+		return rules
+	}
+	if setName == "" {
+		return nil
+	}
+	return []Rule{
+		{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I",
+			Spec: []string{"-p", "tcp", "--dport", "443",
+				"-m", "set", "--match-set", setName, "dst",
+				"--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--set-mss", tcpMSSSpec}},
+		{manager: manager, IPT: ipt, Table: "mangle", Chain: "FORWARD", Action: "I",
+			Spec: []string{"-p", "tcp", "--dport", "443",
+				"-m", "set", "--match-set", setName, "dst",
+				"--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--set-mss", tcpMSSSpec}},
+		{manager: manager, IPT: ipt, Table: "mangle", Chain: preChain, Action: "I",
+			Spec: []string{"-p", "tcp", "--sport", "443",
+				"-m", "set", "--match-set", setName, "src",
+				"--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--set-mss", tcpMSSSpec}},
+	}
+}
+
 func (manager *IPTablesManager) ApplyMSSClamp() error {
 	sets, rules := manager.buildMSSManifest("PREROUTING")
 	if len(sets) == 0 && len(rules) == 0 {
@@ -1340,6 +1393,11 @@ func (ipt *IPTablesManager) Apply() error {
 	result := m.Apply()
 	noteQueueRulesApplied(m.DirectionExact, result == nil)
 	if result == nil {
+		for _, s := range m.IPSets {
+			if s.collected != nil {
+				captureCollectedRecord(s.Name, s.collected)
+			}
+		}
 		ipt.dropUnusedDNSQueryPlacement(m.DNSQueries)
 		warnPortChangingDNSNat(m.DNSQueries)
 		for _, bin := range m.ECHOnlyDNS {
@@ -1389,7 +1447,7 @@ func destroyOrphanMSSIPSets() {
 	}
 	for _, name := range strings.Split(out, "\n") {
 		name = strings.TrimSpace(name)
-		if strings.HasPrefix(name, "b4_mss_") {
+		if strings.HasPrefix(name, "b4_mss_") || name == captureCollectedDupName(false) || name == captureCollectedDupName(true) {
 			_, _ = run("ipset", "destroy", name)
 		}
 	}

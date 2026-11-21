@@ -86,10 +86,19 @@ CI runs only the router UI's vite build, and only at release. Before calling a U
 
 ```sh
 make gen-defaults && pnpm -C src/http/ui exec tsc -p tsconfig.json
+pnpm -C src/http/ui test
 pnpm -C src/http/ui exec oxlint --type-aware --report-unused-disable-directives-severity=warn
 pnpm -C src/http/ui build
 pnpm -C hub/ui build            # tsc, then vite; when hub/ui or shared/design changed
 ```
+
+`pnpm test` runs the helper tests: `tsc` on `tsconfig.test.json`, which adds the node types,
+then every `src/**/*.test.ts` bundled with esbuild and run by `node --test`. `tsconfig.json`
+excludes the test files, so the first command does not type-check them. The tests sit next to
+the helpers they cover, such as `src/utils/ports.test.ts` for `portFilterCovers`, which reads a
+port filter the way b4's Go validation saves it.
+`pnpm -C src/http/ui test src/utils/ports.test.ts` runs one file's tests; its `tsc` step still
+checks every test file.
 
 `pnpm lint` in either package runs oxlint with `--fix` and rewrites files; the command above
 only checks, and prints nothing when clean. `/b4-check` runs the rest.

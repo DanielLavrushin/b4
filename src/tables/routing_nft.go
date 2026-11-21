@@ -77,6 +77,22 @@ func (b *routeNftBackend) ensureIPSet(name string, v6 bool) error {
 	return nil
 }
 
+func (b *routeNftBackend) ensureCollectedSet(name string, v6 bool) error {
+	typ := "ipv4_addr"
+	if v6 {
+		typ = "ipv6_addr"
+	}
+	out, err := run("nft", "list", "set", "inet", routeNftTable, name)
+	if err == nil && strings.Contains(out, "interval") {
+		runLogged("routing: recreate set "+name, "nft", "flush", "set", "inet", routeNftTable, name)
+		runLogged("routing: delete old set "+name, "nft", "delete", "set", "inet", routeNftTable, name)
+	}
+	if err := runEnsure("nft", "add", "set", "inet", routeNftTable, name, "{", "type", typ, ";", "}"); err != nil {
+		return fmt.Errorf("ensure set %s: %w", name, err)
+	}
+	return nil
+}
+
 func (b *routeNftBackend) addElements(setName string, ips []string, ttlSec int) []string {
 	if len(ips) == 0 {
 		return nil
@@ -221,19 +237,20 @@ func routeNftScriptError(err error) string {
 	return msg
 }
 
-func (b *routeNftBackend) delElements(setName string, ips []string) {
+func (b *routeNftBackend) delElements(setName string, ips []string) []string {
 	if len(ips) == 0 {
-		return
+		return nil
 	}
 
 	_, err := runNftStdin(routeNftElementScript("delete", setName, ips))
 	if err == nil {
-		return
+		return nil
 	}
 	log.Tracef("routing: deleting %d elements from %s in one script failed (%s), falling back to batches", len(ips), setName, routeNftScriptError(err))
 
 	const chunkSize = 128
 
+	var stuck []string
 	for i := 0; i < len(ips); i += chunkSize {
 		end := i + chunkSize
 		if end > len(ips) {
@@ -257,9 +274,13 @@ func (b *routeNftBackend) delElements(setName string, ips []string) {
 		for _, ip := range chunk {
 			if out, err := run("nft", "delete", "element", "inet", routeNftTable, setName, "{", ip, "}"); err != nil {
 				log.Tracef("routing: delete element %s from %s failed: %s", ip, setName, strings.TrimSpace(out))
+				if !strings.Contains(out, "No such file or directory") {
+					stuck = append(stuck, ip)
+				}
 			}
 		}
 	}
+	return stuck
 }
 
 func (b *routeNftBackend) ensureChain(chain string, _ bool) error {
@@ -425,18 +446,28 @@ func (b *routeNftBackend) addClaimedBypassRule(chain string, own uint32) {
 }
 
 func (b *routeNftBackend) addRouterTrafficGuard(chain string, v6 bool, setName string, mark uint32) bool {
+	return b.addRouterTrafficGuardForPort(chain, v6, setName, mark, 0)
+}
+
+func (b *routeNftBackend) addRouterTrafficGuardForPort(chain string, v6 bool, setName string, mark uint32, port int) bool {
+	var ports []int
+	if port > 0 {
+		ports = []int{port}
+	}
 	family := "ip"
 	if v6 {
 		family = "ip6"
 	}
 	added := true
 	for _, sn := range []string{setName, routeNftDynSet(setName)} {
-		if _, err := run("nft", "add", "rule", "inet", routeNftTable, chain,
+		args := append([]string{"nft", "add", "rule", "inet", routeNftTable, chain}, proxyNftPorts(ports)...)
+		args = append(args,
 			"ct", "state", "new",
 			family, "daddr", "@"+sn,
 			"limit", "rate", "over", fmt.Sprintf("%d/second", routeRouterTrafficRate),
 			"burst", fmt.Sprintf("%d", routeRouterTrafficRate*2), "packets",
-			"counter", "return"); err != nil {
+			"counter", "return")
+		if _, err := run(args...); err != nil {
 			log.Tracef("routing: %s takes no router-traffic rate guard on @%s (%v); a routing loop through this set would not be capped", chain, sn, err)
 			added = false
 		}

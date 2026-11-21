@@ -20,6 +20,7 @@ import (
 	"github.com/daniellavrushin/b4/netif"
 	"github.com/daniellavrushin/b4/sni"
 	"github.com/daniellavrushin/b4/tables"
+	"github.com/daniellavrushin/b4/warmtuple"
 )
 
 func NewWorkerWithQueue(cfg *config.Config, qnum uint16) *Worker {
@@ -92,6 +93,7 @@ func NewPool(cfg *config.Config) *Pool {
 	}
 
 	state := newRuntimeState()
+	warmFlows := warmtuple.NewFlows()
 	if !cfg.Queue.IsDiscovery {
 		state.bans = newIPBans(iphealth.NewBanRegistry(iphealth.BanFilePath(cfg.ConfigPath)), state.goodIPs, nil)
 		state.bans.applyConfig(cfg)
@@ -103,6 +105,7 @@ func NewPool(cfg *config.Config) *Pool {
 	for i := 0; i < threads; i++ {
 		w := NewWorkerWithQueue(cfg, start+uint16(i))
 		w.matcher.Store(matcher)
+		w.warmFlows = warmFlows
 		w.ipToMac.Store(make(map[string]string))
 		w.tlsCache = state.tlsCache
 		w.wssize = state.wssize
@@ -124,7 +127,18 @@ func NewPool(cfg *config.Config) *Pool {
 		ws = append(ws, w)
 	}
 
-	pool := &Pool{Workers: ws, Dhcp: dhcpMgr, stopCleanup: make(chan struct{}), cleanupDone: make(chan struct{}), state: state}
+	pool := &Pool{warmFlows: warmFlows, Workers: ws, Dhcp: dhcpMgr, stopCleanup: make(chan struct{}), cleanupDone: make(chan struct{}), state: state}
+	pool.collectedBase = cfg
+	pool.collectedQuiet.Store(pool.collectedIdleLocked())
+	pool.collectedEngineTUN = cfg.Queue.Mode == "tun"
+	if !cfg.Queue.IsDiscovery {
+		metrics.GetMetricsCollector().UpdateCollectedIPs(nil)
+		metrics.GetMetricsCollector().UpdateCollectedRefused(0)
+	}
+	pool.collectedCtx, pool.collectedCancel = context.WithCancel(context.Background())
+	for _, w := range ws {
+		w.pool = pool
+	}
 	pool.wireBans()
 	if !cfg.Queue.IsDiscovery {
 		pool.dnsCopy = newDNSCopyListener(ws[0])
@@ -159,9 +173,16 @@ func NewPool(cfg *config.Config) *Pool {
 		defer cleanupTicker.Stop()
 		escalationTicker := time.NewTicker(2 * time.Second)
 		defer escalationTicker.Stop()
+		collectedTimer := time.NewTimer(time.Hour)
+		defer collectedTimer.Stop()
+		collectedWake := pool.state.destState.CollectedWake()
 		pool.checkDNSPins(pool.GetFirstWorkerConfig())
 		for {
+			collectedDue := pool.state.destState.resetCollectedTimer(collectedTimer)
 			select {
+			case <-collectedWake:
+			case <-collectedDue:
+				pool.collectedPass(time.Now())
 			case <-cleanupTicker.C:
 				retest := pool.retestInterval()
 				pool.state.connState.Cleanup()
@@ -179,12 +200,7 @@ func NewPool(cfg *config.Config) *Pool {
 				}
 				pool.state.bans.tick(pool.GetFirstWorkerConfig())
 			case <-escalationTicker.C:
-				pool.state.pendingHello.Cleanup()
-				pool.state.wssize.cleanup(time.Now())
-				pool.sweepSilentHellos(time.Now())
-				pool.publishEscalations()
-				pool.publishBans()
-				pool.reportQueueDirection(time.Now())
+				pool.escalationTick(time.Now())
 			case <-pool.stopCleanup:
 				return
 			}
@@ -192,6 +208,17 @@ func NewPool(cfg *config.Config) *Pool {
 	}()
 
 	return pool
+}
+
+func (p *Pool) escalationTick(now time.Time) {
+	p.state.pendingHello.Cleanup()
+	p.state.wssize.cleanup(now)
+	p.collectedPass(now)
+	p.sweepSilentHellos(now)
+	p.state.destState.cleanupCollectedHistory()
+	p.publishEscalations()
+	p.publishBans()
+	p.reportQueueDirection(now)
 }
 
 func (p *Pool) Start() error {
@@ -304,6 +331,9 @@ func (p *Pool) ReleaseHolds() {
 }
 
 func (p *Pool) Stop() {
+	if p.collectedCancel != nil {
+		p.collectedCancel()
+	}
 	p.dnsCopy.disable()
 	p.ReleaseHolds()
 	p.dnsCopy.close()
@@ -415,6 +445,14 @@ func buildMatcher(cfg *config.Config) *sni.SuffixSet {
 func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 	p.configMu.Lock()
 	defer p.configMu.Unlock()
+	p.collectedBase = newCfg
+	p.collectedEpoch.Add(1)
+	p.collectedDirty = p.collectedRelevantLocked(newCfg)
+	if !p.collectedIdleLocked() {
+		p.collectedQuiet.Store(false)
+	}
+	p.collectedRetryWait, p.collectedRetryAt = 0, time.Time{}
+	newCfg = p.CollectedConfig(newCfg)
 
 	var oldMatcher *sni.SuffixSet
 	reuse := false
@@ -578,3 +616,5 @@ func (w *Worker) GetCacheStats() map[string]interface{} {
 	matcher := w.getMatcher()
 	return matcher.GetCacheStats()
 }
+
+func (p *Pool) WarmTupleFlows() *warmtuple.Flows { return p.warmFlows }

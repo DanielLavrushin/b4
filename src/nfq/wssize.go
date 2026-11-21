@@ -264,8 +264,9 @@ func (c *wsSizeCache) stepLocked(key streamKey, tcp []byte, hlen int, selected *
 	flags := tcp[13]
 	syn := flags&0x12 == 2
 	isn := binary.BigEndian.Uint32(tcp[4:8])
+	origin := cfg.Origin()
 	f, exists := c.flows[key]
-	if exists && (f.cfg != cfg || !now.Before(f.expires)) {
+	if exists && (f.cfg != origin || !now.Before(f.expires)) {
 		c.dropLocked(key)
 		exists = false
 	}
@@ -287,7 +288,7 @@ func (c *wsSizeCache) stepLocked(key streamKey, tcp []byte, hlen int, selected *
 			step.refused = c.refused.raise(now)
 			return step
 		}
-		f = wsSizeFlow{cfg: cfg, set: selected, isn: isn, syn: true}
+		f = wsSizeFlow{cfg: origin, set: selected, isn: isn, syn: true}
 		exists = true
 		step.opened = true
 	}

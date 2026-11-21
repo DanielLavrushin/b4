@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -726,7 +727,7 @@ func (set *SetConfig) MatchesIPVersion(version uint8) bool {
 }
 
 func (set *SetConfig) HasIPOrDomainTargets() bool {
-	return len(set.Targets.IpsToMatch) > 0 || len(set.Targets.DomainsToMatch) > 0
+	return set.HasTargetIPs() || len(set.Targets.DomainsToMatch) > 0
 }
 
 func (set *SetConfig) DeclaresDestinationTargets() bool {
@@ -734,12 +735,12 @@ func (set *SetConfig) DeclaresDestinationTargets() bool {
 		return true
 	}
 	t := &set.Targets
-	return len(t.SNIDomains) > 0 || len(t.IPs) > 0 || len(t.GeoSiteCategories) > 0 || len(t.GeoIpCategories) > 0 || len(t.ASNs) > 0
+	return t.UseCollectedIPs || len(t.SNIDomains) > 0 || len(t.IPs) > 0 || len(t.GeoSiteCategories) > 0 || len(t.GeoIpCategories) > 0 || len(t.ASNs) > 0
 }
 
 func (set *SetConfig) DeclaresIPTargets() bool {
 	t := &set.Targets
-	return len(t.IpsToMatch) > 0 || len(t.IPs) > 0 || len(t.GeoIpCategories) > 0 || len(t.ASNs) > 0
+	return t.UseCollectedIPs || len(t.IpsToMatch) > 0 || len(t.IPs) > 0 || len(t.GeoIpCategories) > 0 || len(t.ASNs) > 0
 }
 
 func (set *SetConfig) RoutingDivertsPackets() bool {
@@ -774,7 +775,7 @@ func (set *SetConfig) RoutingHandsOffPackets() bool {
 
 func (set *SetConfig) RoutesAddressesToInterface() bool {
 	return set.RoutingDivertsPackets() && set.RoutesToInterface() &&
-		!(set.Targets.DomainOnly && len(set.Targets.IpsToMatch) == 0)
+		!(set.Targets.DomainOnly && !set.HasTargetIPs())
 }
 
 func (set *SetConfig) RoutingIncludesRouterTraffic() bool {
@@ -872,6 +873,10 @@ func (set *SetConfig) SelectsL7Class(class string) bool {
 
 func (set *SetConfig) BlocksQUIC() bool {
 	return set.UDP.Mode == UDPModeReject && set.UDP.FilterQUIC == QUICFilterAll
+}
+
+func (d *DesyncConfig) ClosesConntrackEntry() bool {
+	return d.PostDesync || d.Mode != ConfigOff && d.Mode != "ack"
 }
 
 const DNSPort = 53
@@ -1049,7 +1054,7 @@ func (cfg *Config) CollectSetMSSClamps() []SetMSSClampEntry {
 		if set == nil || !set.Enabled || !set.MSSClamp.Enabled || set.MSSClamp.Size <= 0 {
 			continue
 		}
-		entry := SetMSSClampEntry{SetID: set.Id, SetIdx: i, Size: set.MSSClamp.Size}
+		entry := SetMSSClampEntry{SetID: set.Id, SetIdx: i, Size: set.MSSClamp.Size, Collected: set.Targets.UseCollectedIPs}
 		seen4 := make(map[string]struct{})
 		seen6 := make(map[string]struct{})
 		for _, ipStr := range set.Targets.IpsToMatch {
@@ -1079,7 +1084,7 @@ func (cfg *Config) CollectSetMSSClamps() []SetMSSClampEntry {
 				entry.Sources = AppendDeviceMatch(entry.Sources, seenSource, m)
 			}
 		}
-		if len(entry.IPv4) == 0 && len(entry.IPv6) == 0 && len(entry.Sources) == 0 {
+		if len(entry.IPv4) == 0 && len(entry.IPv6) == 0 && len(entry.Sources) == 0 && !entry.Collected {
 			continue
 		}
 		entries = append(entries, entry)
@@ -1175,6 +1180,9 @@ func (cfg *Config) AnySetDSCP() bool {
 
 func (cfg *Config) AnySetTCPIncoming() bool {
 	for _, set := range cfg.Sets {
+		if set != nil && set.Enabled && set.TCP.IPBlockDetect.Collects() {
+			return true
+		}
 		if set != nil && set.Enabled && set.TCP.Incoming.Mode != "" && set.TCP.Incoming.Mode != ConfigOff {
 			return true
 		}
@@ -1291,16 +1299,17 @@ func (cfg *Config) MSSClampFingerprint() string {
 		ipv6 := append([]string(nil), e.IPv6...)
 		sort.Strings(ipv4)
 		sort.Strings(ipv6)
-		declared := false
+		declared, collected := false, false
 		if e.SetIdx >= 0 && e.SetIdx < len(cfg.Sets) && cfg.Sets[e.SetIdx] != nil {
 			declared = cfg.Sets[e.SetIdx].DeclaresIPTargets()
+			collected = cfg.Sets[e.SetIdx].Targets.UseCollectedIPs
 		}
-		parts = append(parts, fmt.Sprintf("set:%s:%d:v4=%s:v6=%s:src=%s:declared=%t",
+		parts = append(parts, fmt.Sprintf("set:%s:%d:v4=%s:v6=%s:src=%s:declared=%t:collected=%t",
 			e.SetID, e.Size,
 			strings.Join(ipv4, ","),
 			strings.Join(ipv6, ","),
 			deviceMatchKeys(e.Sources),
-			declared))
+			declared, collected))
 	}
 
 	sort.Strings(parts)
@@ -1718,6 +1727,9 @@ func FirewallRefreshNeeded(oldCfg, newCfg *Config) bool {
 	if oldCfg.AnySetTCPIncoming() != newCfg.AnySetTCPIncoming() {
 		return true
 	}
+	if oldCfg.CollectsReplies() != newCfg.CollectsReplies() {
+		return true
+	}
 	if oldCfg.System.DNS.TCPDisabled != newCfg.System.DNS.TCPDisabled || oldCfg.DNSTCPListenPort() != newCfg.DNSTCPListenPort() {
 		return true
 	}
@@ -1739,6 +1751,9 @@ func FirewallRefreshNeeded(oldCfg, newCfg *Config) bool {
 	if !oldCfg.System.Tables.DSCP.Equal(newCfg.System.Tables.DSCP) {
 		return true
 	}
+	if !reflect.DeepEqual(wsReuseRoutingShape(oldCfg), wsReuseRoutingShape(newCfg)) {
+		return true
+	}
 	if !sameDuplicateIPs(oldCfg, newCfg) {
 		return true
 	}
@@ -1748,7 +1763,7 @@ func FirewallRefreshNeeded(oldCfg, newCfg *Config) bool {
 func sameDuplicateIPs(a, b *Config) bool {
 	a4, a6 := a.CollectDuplicateIPs()
 	b4, b6 := b.CollectDuplicateIPs()
-	return sameStringSet(a4, b4) && sameStringSet(a6, b6)
+	return sameStringSet(a4, b4) && sameStringSet(a6, b6) && sameStringSet(a.collectedDuplicateSetIDs(), b.collectedDuplicateSetIDs())
 }
 
 func sameStringSet(a, b []string) bool {

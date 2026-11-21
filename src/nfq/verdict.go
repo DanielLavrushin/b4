@@ -32,6 +32,7 @@ type verdictCtx struct {
 	outDev         uint32
 	inDev          uint32
 	localSocket    bool
+	selfDialed     bool
 	foreignMark    uint32
 	rerouted       string
 	rerouteChecked bool

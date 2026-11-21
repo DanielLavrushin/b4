@@ -1,5 +1,6 @@
 export {
   Add as AddIcon,
+  PlaylistAdd as CollectIcon,
   Edit as EditIcon,
   Close as CloseIcon,
   SyncAlt as TcpIcon,

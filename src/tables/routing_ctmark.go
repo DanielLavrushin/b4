@@ -124,7 +124,7 @@ func routeCheckCTMarkIn(out string) {
 	}
 
 	claimed, sawClaim := routeCountChainHits(out, func(l string) bool {
-		return strings.Contains(l, "CONNMARK") && strings.Contains(l, "ctstate NEW")
+		return strings.Contains(l, "CONNMARK") && strings.Contains(l, "ctstate NEW") && !routeCollectedGuardLine(l)
 	})
 	restored, sawRestore := routeCountChainHits(out, func(l string) bool {
 		return strings.Contains(l, "CONNMARK") && strings.Contains(l, "restore")

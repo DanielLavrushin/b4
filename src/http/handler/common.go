@@ -186,6 +186,7 @@ func (api *API) RegisterEndpoints(mux *http.ServeMux, cfgPtr *atomic.Pointer[con
 	api.RegisterUIApi()
 	api.RegisterMetricsApi()
 	api.RegisterIPBansApi()
+	api.RegisterCollectedIPsApi()
 	api.RegisterGeositeApi()
 	api.RegisterGeoipApi()
 	api.RegisterSystemApi()

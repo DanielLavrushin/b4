@@ -100,7 +100,7 @@ func actsByAddress(set *config.SetConfig) bool {
 	if _, stamps := set.DSCPStamp(); stamps || set.Routing.Enabled {
 		return true
 	}
-	return set.MSSClamp.Enabled && set.MSSClamp.Size > 0 && len(set.Targets.IpsToMatch) > 0
+	return set.MSSClamp.Enabled && set.MSSClamp.Size > 0 && len(set.TargetIPs()) > 0
 }
 
 func (c *Coverage) leaves(set *config.SetConfig) bool {
@@ -128,7 +128,7 @@ func (c *Coverage) domainKeys() map[string]bool {
 
 func (c *Coverage) networkKeys() map[string]bool {
 	if c.owner != nil && c.networks == nil {
-		c.networks = keySet(c.owner.Targets.IpsToMatch, networkKey)
+		c.networks = keySet(c.owner.TargetIPs(), networkKey)
 	}
 	return c.networks
 }
@@ -136,7 +136,7 @@ func (c *Coverage) networkKeys() map[string]bool {
 func (c *Coverage) networkRanges() cidranger.Ranger {
 	if c.owner != nil && c.ranges == nil {
 		c.ranges = cidranger.NewPCTrieRanger()
-		for _, entry := range c.owner.Targets.IpsToMatch {
+		for _, entry := range c.owner.TargetIPs() {
 			if network := parseTargetNetwork(entry); network != nil {
 				_ = c.ranges.Insert(cidranger.NewBasicRangerEntry(*network))
 			}

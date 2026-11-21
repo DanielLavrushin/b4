@@ -13,7 +13,7 @@ const TCP_SUB_INDEX: Record<string, number> = {
   faking: 2,
 };
 export const TCP_SUB_TABS: { labelKey: string; prefixes: string[] }[] = [
-  { labelKey: "sets.tcp.tabs.general", prefixes: ["tcp.conn_bytes_limit", "tcp.dport_filter", "tcp.drop_sack", "tcp.http_methodeol", "tcp.duplicate", "tcp.ip_block_detect", "tcp.rst_protection", "tcp.seg2delay", "tcp.seg2delay_max", "tcp.wssize", "mss_clamp"] },
+  { labelKey: "sets.tcp.tabs.general", prefixes: ["tcp.conn_bytes_limit", "tcp.dport_filter", "tcp.drop_sack", "tcp.http_methodeol", "tcp.duplicate", "tcp.ip_block_detect", "tcp.rst_protection", "tcp.seg2delay", "tcp.seg2delay_max", "tcp.wssize", "tcp.wssize_reuse", "mss_clamp"] },
   { labelKey: "sets.tcp.tabs.splitting", prefixes: ["fragmentation"] },
   { labelKey: "sets.tcp.tabs.faking", prefixes: ["faking", "tcp.syn_fake", "tcp.syn_fake_len", "tcp.syn_ttl", "tcp.desync", "tcp.win", "tcp.incoming"] },
 ];
@@ -21,7 +21,9 @@ export const TCP_SUB_TABS: { labelKey: string; prefixes: string[] }[] = [
 interface TcpTabContainerProps {
   initialSub?: string;
   config: B4SetConfig;
-  tunEngine?: boolean;
+  queueMode?: string;
+  skipSetup?: boolean;
+  queueMark?: number;
   onChange: (
     field: string,
     value: string | number | boolean | string[] | number[],
@@ -37,7 +39,9 @@ enum TCP_TABS {
 export const TcpTabContainer = ({
   initialSub,
   config,
-  tunEngine,
+  queueMode,
+  skipSetup,
+  queueMark,
   onChange,
 }: TcpTabContainerProps) => {
   const { t } = useTranslation();
@@ -81,7 +85,13 @@ export const TcpTabContainer = ({
       </B4Tabs>
 
       <B4TabPanel value={activeTab} index={TCP_TABS.GENERAL} idPrefix="tcp-tab">
-        <TcpGeneral config={config} tunEngine={tunEngine} onChange={onChange} />
+        <TcpGeneral
+          config={config}
+          queueMode={queueMode}
+          skipSetup={skipSetup}
+          queueMark={queueMark}
+          onChange={onChange}
+        />
       </B4TabPanel>
 
       <B4TabPanel value={activeTab} index={TCP_TABS.SPLITTING} idPrefix="tcp-tab">

@@ -139,6 +139,7 @@ export const GroupRow = memo<Props>(
                 whiteSpace: "nowrap",
                 minWidth: 0,
               }}
+              title={group.domain || undefined}
             >
               {group.domain || t("connections.aggregated.noDomain")}
             </Typography>

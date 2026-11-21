@@ -384,3 +384,29 @@ func TestAConnectionTableWhereNothingHasAnsweredDecidesNothing(t *testing.T) {
 			"that never had the evidence in it")
 	}
 }
+
+const conntrackProxiedWithoutTag = `ipv4     2 tcp      6 299 ESTABLISHED src=10.201.3.100 dst=198.51.100.7 sport=2 dport=443 packets=9 bytes=1 src=198.51.100.7 dst=10.201.3.100 sport=443 dport=2 packets=7 bytes=1 [ASSURED] mark=144333 use=2
+`
+
+func TestACollectedGuardTagIsNotAnInterfaceClaim(t *testing.T) {
+	for _, guard := range []string{"b4r_proxy_v4c", "b4r_proxy_v6c"} {
+		t.Run(guard, func(t *testing.T) {
+			routeForgetCTMarkVerdict()
+			t.Cleanup(routeForgetCTMarkVerdict)
+			writeConntrack(t, conntrackProxiedWithoutTag)
+
+			dump := ctmarkDump(0, 0) + `
+Chain b4r_proxy_pre (1 references)
+    pkts      bytes target     prot opt in     out     source               destination
+      40     2400 CONNMARK   tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set ` + guard + ` dst tcp flags:0x17/0x02 ctstate NEW CONNMARK xset 0x233cd/0x27fff
+      40     2400 CONNMARK   udp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set ` + guard + ` dst ctstate NEW CONNMARK xset 0x233cd/0x27fff
+`
+			chains := parseIptDump(dump)
+			routeCheckCTMarkFromDump(chains)
+			routeCheckCTMarkFromDump(chains)
+			if !routeCTMarkIsHeld() {
+				t.Fatal("an idle interface set next to a proxy consumer whose collected guard tagged 80 new connections gave up on the connection mark: the tag writes the proxy's mark without the interface claim bit, so those connections can never carry that bit, and counting the tag as an interface claim turns every answered proxied connection into evidence that the router overwrites the mark")
+			}
+		})
+	}
+}

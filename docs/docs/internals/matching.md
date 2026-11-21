@@ -34,7 +34,7 @@ flowchart TD
 
 | Step | Check | Result |
 | --- | --- | --- |
-| 1 | The destination address is in a set's IP addresses, GeoIP categories or ASN prefixes | Address match |
+| 1 | The destination address is in a set's IP addresses, GeoIP categories or ASN prefixes, or in the [collected IPs](../sets/targets.md#collected-ips) of a set with **Use collected IPs** on | Address match |
 | 2 | No address match, and the same device resolved one of a set's domains to this address in the last two minutes | DNS match |
 | 3 | No DNS match, and the address was learned from a server name match | Learned match. It replaces an address match, apart from one that [IP priority](#ip-priority) holds |
 | 4 | Still no match, and a set has a port filter and no destination targets at all | Port match |
@@ -77,7 +77,7 @@ A set with **Domain-only matching** on neither learns addresses nor uses DNS ans
 
 ## IP priority {#ip-priority}
 
-**IP priority** is a switch on the [Bypass IPs](../sets/targets.md#ip-addresses) sub-tab. It keeps a connection to one of the set's addresses with the set, even when a set lower in the list matches the connection by name. A match by name here is the server name in a ClientHello, the name in a QUIC Initial, or an address learned from an earlier connection's server name. The set's addresses are its IP addresses, GeoIP categories and ASN prefixes. The switch applies on save, without a restart.
+**IP priority** is a switch on the [Bypass IPs](../sets/targets.md#ip-addresses) sub-tab. It keeps a connection to one of the set's addresses with the set, even when a set lower in the list matches the connection by name. A match by name here is the server name in a ClientHello, the name in a QUIC Initial, or an address learned from an earlier connection's server name. The set's addresses are its IP addresses, GeoIP categories and ASN prefixes, and the collected IPs while **Use collected IPs** is on. The switch applies on save, without a restart.
 
 ### When the set holds a connection
 
@@ -140,7 +140,7 @@ A copy moved above its source wins the address match with the switch off. The so
 
 ## What happens on a match
 
-For a TCP connection that a set takes, b4 holds the packet and sends a modified version instead, with the techniques the set's [TCP](../sets/tcp/index.md) tab turns on: SACK removal, ClientHello mutation, desync packets, window manipulation, fake packets and splitting. [Packet duplication](../sets/tcp/general.md#packet-duplication) replaces all of them for a connection the set takes before its ClientHello, by address, DNS answer, learned address or port. The [real TCP window rewrite](#wssize) starts earlier, at the SYN. For UDP, the set's [action mode](../sets/udp.md#how-to-handle-matched-traffic) decides. A set that routes through a proxy, or through a tunnel interface that is up, leaves the packets alone. A packet that no set takes passes unchanged.
+For a TCP connection that a set takes, b4 holds the packet and sends a modified version instead, with the techniques the set's [TCP](../sets/tcp/index.md) tab turns on: SACK removal, ClientHello mutation, desync packets, window manipulation, fake packets and splitting. [Packet duplication](../sets/tcp/general.md#packet-duplication) replaces all of them for a connection the set takes before its ClientHello, by address, DNS answer, learned address or port. The [real TCP window rewrite](#wssize) starts earlier, at the SYN. For UDP, the set's [action mode](../sets/udp.md#how-to-handle-matched-traffic) decides. A set that routes through a proxy, or through a tunnel interface that is up, leaves the packets alone. So does a set with **Reuse WSSIZE connection** in effect for TCP to port 443, other than b4's own connections, while the set counts as diverted and its **IP Version Filter** allows the packet's address family; see [Reuse WSSIZE connection](../guides/marks.md#reuse-wssize-connection). A packet that no set takes passes unchanged.
 
 ## ASN targets {#asn-targets}
 

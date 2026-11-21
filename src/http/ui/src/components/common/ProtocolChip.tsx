@@ -4,12 +4,14 @@ import {
   TcpIcon,
   UdpIcon,
   BlockIcon,
+  CollectIcon,
   ProxyIcon,
   DuplicateIcon,
   TelegramIcon,
   DnsIcon,
   WarningIcon,
   VoiceIcon,
+  RoutingIcon,
 } from "@b4.icons";
 import { B4Badge } from "@b4.elements";
 
@@ -175,19 +177,22 @@ const DnsBadge = ({ verdict }: { verdict: DnsVerdict }) => {
 export const FlagBadges = ({ flags }: FlagBadgesProps) => {
   const { t } = useTranslation();
   const dnsVerdict = parseDnsVerdict(flags);
-  const isBlocked = flags?.startsWith("ipblock");
+  const isCollected = flags === "ipblock-collected";
+  const isBlocked = flags?.startsWith("ipblock") && !isCollected;
   const isBanned = flags === "ipblock-ban";
   const isBlackhole = flags === "block";
   const isSocks5 = flags === "socks5";
   const isDuplicate = flags === "tcp-dup";
   const isTelegramBridge = flags === "mtproto-ws";
   const isVoiceExempt = flags === "voice-exempt";
+  const isReuseFallback = flags === "wssize-reuse-fallback";
   const isMtproto = flags === "mtproto" || !!flags?.startsWith("mtproto:");
   const mtprotoName = isMtproto
     ? (flags as string).slice("mtproto".length).replace(/^:/, "").trim()
     : "";
 
   if (
+    !isCollected &&
     !isBlocked &&
     !isBlackhole &&
     !isSocks5 &&
@@ -195,6 +200,7 @@ export const FlagBadges = ({ flags }: FlagBadgesProps) => {
     !isMtproto &&
     !isTelegramBridge &&
     !isVoiceExempt &&
+    !isReuseFallback &&
     !dnsVerdict
   )
     return null;
@@ -258,6 +264,30 @@ export const FlagBadges = ({ flags }: FlagBadgesProps) => {
           title={t("connections.flags.voiceExempt")}
           variant="outlined"
           color="warning"
+        />
+      )}
+      {isReuseFallback && (
+        <B4Badge
+          icon={<RoutingIcon />}
+          label={t("connections.flags.wssizeReuseFallbackLabel")}
+          title={t("connections.flags.wssizeReuseFallback")}
+          variant="outlined"
+          color="warning"
+        />
+      )}
+      {isCollected && (
+        <B4Badge
+          icon={<CollectIcon />}
+          label={t("connections.flags.ipCollectedLabel")}
+          title={t("connections.flags.ipCollected")}
+          variant="outlined"
+          color="secondary"
+          sx={{
+            backgroundColor: "transparent",
+            borderColor: "secondary.dark",
+            color: "text.primary",
+            "& .MuiChip-icon": { color: "inherit" },
+          }}
         />
       )}
       {isBlocked && (

@@ -9,13 +9,11 @@ import { apiPost } from "@api/apiClient";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { describeApiError } from "@utils";
 import type { BanEntry } from "@models/metrics";
-import { useMetricsFrame, useServerNow } from "@/stores/useMetrics";
-import { formatUptime } from "../statusFormat";
-import { AGO_TICK_MS } from "./Ago";
+import { useMetricsFrame } from "@/stores/useMetrics";
 import { PanelCard } from "./PanelCard";
 import { ShowMore, visibleRows } from "./ShowMore";
 import { Tag } from "./Tag";
-import { formatSince, validTime } from "./format";
+import { TimeLeft } from "./TimeLeft";
 import { emptySx, listSx, numeric, rowSx } from "./styles";
 
 export interface BansClearResult {
@@ -34,31 +32,6 @@ interface HiddenKeys {
 }
 
 const NO_HIDDEN: HiddenKeys = { rev: -1, keys: [] };
-
-function TimeLeft({ until }: { until: number }) {
-  const { t, i18n } = useTranslation();
-  const now = useServerNow(AGO_TICK_MS);
-  if (!validTime(until)) return null;
-  const left = until - now;
-  const text =
-    left > 0
-      ? t("dashboard.bans.left", {
-          duration: formatUptime(Math.ceil(left / 1000), t),
-        })
-      : t("dashboard.bans.expiring");
-  return (
-    <Tooltip
-      title={t("dashboard.bans.endsAt", {
-        time: formatSince(until, now, i18n.language),
-      })}
-      describeChild
-    >
-      <Box component="span" sx={{ ...numeric, whiteSpace: "nowrap" }}>
-        {text}
-      </Box>
-    </Tooltip>
-  );
-}
 
 interface BanRowProps {
   entry: BanEntry;
@@ -157,7 +130,7 @@ const BanRow = memo(function BanRow({ entry, disabled, onUnban }: BanRowProps) {
               <Tag label={t("dashboard.bans.repeat")} />
             </Tooltip>
           )}
-          <TimeLeft until={entry.until} />
+          <TimeLeft until={entry.until} strings="dashboard.bans" />
         </Box>
       </Box>
       <Button

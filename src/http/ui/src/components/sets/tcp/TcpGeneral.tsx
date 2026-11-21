@@ -12,12 +12,23 @@ import {
   B4Hint,
 } from "@b4.elements";
 import { B4Switch } from "@common/B4Switch";
-import { portFilterCovers } from "@utils";
+import {
+  declaresIpTargets,
+  effectiveQueueMark,
+  isWSSizeReuseRefusal,
+  mssClampIpScope,
+  portFilterCovers,
+  reuseTunEngine,
+  wssizeReuseIssues,
+} from "@utils";
+import { useTunEngine } from "@hooks/useEngineMode";
 import { Trans, useTranslation } from "react-i18next";
 
 interface TcpGeneralProps {
   config: B4SetConfig;
-  tunEngine?: boolean;
+  queueMode?: string;
+  skipSetup?: boolean;
+  queueMark?: number;
   onChange: (
     field: string,
     value: string | number | boolean | number[],
@@ -29,12 +40,55 @@ function wssizeScaleMode(ws: WSSizeConfig): "keep" | "lower" | "strip" {
   return ws.scale > 0 ? "lower" : "keep";
 }
 
+interface WSSizeReuseIssuesProps {
+  config: B4SetConfig;
+  queueMode?: string;
+  skipSetup: boolean;
+  queueMark?: number;
+}
+
+const WSSizeReuseIssues = ({
+  config,
+  queueMode,
+  skipSetup,
+  queueMark,
+}: WSSizeReuseIssuesProps) => {
+  const { t } = useTranslation();
+  const tunRunning = useTunEngine();
+  const issues = wssizeReuseIssues(config, {
+    tunEngine: reuseTunEngine(queueMode, tunRunning),
+    skipSetup,
+    queueMark,
+  });
+  if (issues.length === 0) return null;
+  return (
+    <Grid size={{ xs: 12 }}>
+      <Stack spacing={1}>
+        {issues.map((issue) => (
+          <B4Alert
+            key={issue}
+            noWrapper
+            severity={isWSSizeReuseRefusal(issue) ? "error" : "warning"}
+          >
+            {t(`sets.tcp.general.wssizeReuseIssue.${issue}`, {
+              mark: `0x${effectiveQueueMark(queueMark).toString(16)}`,
+            })}
+          </B4Alert>
+        ))}
+      </Stack>
+    </Grid>
+  );
+};
+
 export const TcpGeneral = ({
   config,
-  tunEngine = false,
+  queueMode,
+  skipSetup = false,
+  queueMark,
   onChange,
 }: TcpGeneralProps) => {
   const { t } = useTranslation();
+  const tunEngine = queueMode === "tun";
   const ws: WSSizeConfig = {
     enabled: false,
     window: 0,
@@ -43,6 +97,7 @@ export const TcpGeneral = ({
     strip_scale: false,
     ...config.tcp.wssize,
   };
+  const reuse = config.tcp.wssize_reuse ?? { enabled: false, max_age_seconds: 300 };
   const dup = config.tcp.duplicate ?? { enabled: false, count: 3 };
   const wsConflict = (config.routing?.enabled ?? false) || dup.enabled;
   const wsTun = ws.enabled && !wsConflict && tunEngine;
@@ -58,6 +113,7 @@ export const TcpGeneral = ({
     ws.window === 0 &&
     wsScaleMode === "keep";
   const ibd = {
+    action: "block",
     enabled: false,
     retransmit_threshold: 3,
     timeout_ms: 3000,
@@ -68,20 +124,22 @@ export const TcpGeneral = ({
     heal_ttl_sec: 60,
     ...config.tcp.ip_block_detect,
   };
+  const desync = config.tcp.desync;
+  const collectFakesClose =
+    ibd.action === "collect" &&
+    (desync.post_desync || (desync.mode !== "off" && desync.mode !== "ack"));
   const rstProt = {
     enabled: false,
     ttl_tolerance: 3,
     ...config.tcp.rst_protection,
   };
   const mss: MSSClampConfig = config.mss_clamp ?? { enabled: false, size: 88 };
-  const hasIPScope =
-    (config.targets?.ip?.length ?? 0) > 0 ||
-    (config.targets?.geoip_categories?.length ?? 0) > 0 ||
-    (config.targets?.asns?.length ?? 0) > 0;
+  const declaresIPs = declaresIpTargets(config.targets);
+  const hasIPScope = mssClampIpScope(config.targets);
   const hasMACScope = (config.targets?.source_devices?.length ?? 0) > 0;
   const mssScopeOk = hasIPScope || hasMACScope;
   const hasDestinationTargets =
-    hasIPScope ||
+    declaresIPs ||
     (config.targets?.sni_domains?.length ?? 0) > 0 ||
     (config.targets?.geosite_categories?.length ?? 0) > 0;
   const wsDomainOnly =
@@ -90,7 +148,7 @@ export const TcpGeneral = ({
     !wsTun &&
     (config.targets?.domain_only ?? false) &&
     hasDestinationTargets &&
-    !hasIPScope;
+    !declaresIPs;
   const hasPortFilter = (config.tcp.dport_filter ?? "").trim() !== "";
   const portFilterSkipsHttps =
     hasDestinationTargets &&
@@ -174,7 +232,10 @@ export const TcpGeneral = ({
             description={t("sets.tcp.general.wssizeEnableDesc")}
             checked={ws.enabled}
             path="tcp.wssize.enabled"
-            onChange={(checked) => onChange("tcp.wssize.enabled", checked)}
+            onChange={(checked) => {
+              onChange("tcp.wssize.enabled", checked);
+              if (!checked) onChange("tcp.wssize_reuse.enabled", false);
+            }}
             disabled={wsConflict && !ws.enabled}
             aiTopic="tcp.wssize.enabled"
             aiContext={{
@@ -187,7 +248,7 @@ export const TcpGeneral = ({
         </Grid>
         <Grid size={{ xs: 12, md: 8 }}>
           <B4Hint sx={{ my: 1 }}>
-            {t("sets.tcp.general.wssizeAlert")}{" "}
+            {t(reuse.enabled ? "sets.tcp.general.wssizeReuseAlert" : "sets.tcp.general.wssizeAlert")}{" "}
             {t("sets.tcp.general.wssizeCredit")}{" "}
             <Link
               href="https://github.com/bol-van/zapret2"
@@ -314,7 +375,39 @@ export const TcpGeneral = ({
                 />
               </Grid>
             )}
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Switch
+                label={t("sets.tcp.general.wssizeReuse")}
+                description={t("sets.tcp.general.wssizeReuseDesc")}
+                checked={reuse.enabled}
+                path="tcp.wssize_reuse.enabled"
+                onChange={(checked) => onChange("tcp.wssize_reuse.enabled", checked)}
+                aiTopic="tcp.wssize_reuse.enabled"
+              />
+            </Grid>
+            {reuse.enabled && (
+              <Grid size={{ xs: 12, md: 6 }}>
+                <B4NumberField
+                  label={t("sets.tcp.general.wssizeReuseAge")}
+                  helperText={t("sets.tcp.general.wssizeReuseAgeDesc")}
+                  value={reuse.max_age_seconds}
+                  min={1}
+                  max={300}
+                  path="tcp.wssize_reuse.max_age_seconds"
+                  onChange={(value) => onChange("tcp.wssize_reuse.max_age_seconds", value)}
+                  aiTopic="tcp.wssize_reuse.max_age_seconds"
+                />
+              </Grid>
+            )}
           </>
+        )}
+        {config.enabled && reuse.enabled && (
+          <WSSizeReuseIssues
+            config={config}
+            queueMode={queueMode}
+            skipSetup={skipSetup}
+            queueMark={queueMark}
+          />
         )}
       </Grid>
 
@@ -374,10 +467,38 @@ export const TcpGeneral = ({
           />
         </Grid>
         <Grid size={{ xs: 12, md: 8 }}>
-          <B4Hint sx={{ my: 1 }}>{t("sets.tcp.general.ibdAlert")}</B4Hint>
+          <B4Hint sx={{ my: 1 }}>{t(ibd.action === "collect" ? "sets.tcp.general.ibdCollectNote" : "sets.tcp.general.ibdAlert")}</B4Hint>
         </Grid>
         {ibd.enabled && (
           <>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Select
+                label={t("sets.tcp.general.ibdAction")}
+                value={ibd.action}
+                path="tcp.ip_block_detect.action"
+                onChange={(event) => onChange("tcp.ip_block_detect.action", event.target.value)}
+                options={[
+                  { value: "block", label: t("sets.tcp.general.ibdBlock"), note: t("sets.tcp.general.ibdBlockNote") },
+                  { value: "collect", label: t("sets.tcp.general.ibdCollect"), note: t("sets.tcp.general.ibdCollectNote") },
+                ]}
+                aiTopic="tcp.ip_block_detect.action"
+              />
+            </Grid>
+            {collectFakesClose && (
+              <Grid size={{ xs: 12 }}>
+                <B4Alert severity="warning">
+                  {t("sets.tcp.general.ibdCollectClosingFakes", {
+                    tab: t("sets.tcp.tabs.faking"),
+                    mode: t("sets.faking.desync.mode"),
+                    off: t("sets.faking.desync.modeOff"),
+                    ack: t("sets.faking.desync.modeAck"),
+                    post: t("sets.faking.desync.postDesync"),
+                  })}
+                </B4Alert>
+              </Grid>
+            )}
+            {ibd.action !== "collect" && (
+              <>
             <Grid size={{ xs: 12, md: 6 }}>
               <B4Switch
                 label={t("sets.tcp.general.ibdHealDns")}
@@ -443,22 +564,6 @@ export const TcpGeneral = ({
               )}
             </Grid>
 
-            <Grid size={{ xs: 12, md: 6 }}>
-              <B4Slider
-                label={t("sets.tcp.general.ibdTimeout")}
-              value={ibd.timeout_ms}
-              path="tcp.ip_block_detect.timeout_ms"
-              onChange={(value: number) =>
-                  onChange("tcp.ip_block_detect.timeout_ms", value)
-                }
-                min={1000}
-                max={10000}
-                step={500}
-                valueSuffix={t("core.units.ms")}
-                helperText={t("sets.tcp.general.ibdTimeoutHelper")}
-              />
-            </Grid>
-
             {ibd.heal_dns && (
               <Grid size={{ xs: 12, md: 6 }}>
                 <B4Slider
@@ -487,6 +592,23 @@ export const TcpGeneral = ({
                 onChange={(checked) =>
                   onChange("tcp.ip_block_detect.cache_blocked_ips", checked)
                 }
+              />
+            </Grid>
+              </>
+            )}
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Slider
+                label={t("sets.tcp.general.ibdTimeout")}
+                value={ibd.timeout_ms}
+                path="tcp.ip_block_detect.timeout_ms"
+                onChange={(value: number) =>
+                  onChange("tcp.ip_block_detect.timeout_ms", value)
+                }
+                min={1000}
+                max={10000}
+                step={500}
+                valueSuffix={t("core.units.ms")}
+                helperText={t(ibd.action === "collect" ? "sets.tcp.general.ibdCollectTimeoutHelper" : "sets.tcp.general.ibdTimeoutHelper")}
               />
             </Grid>
           </>

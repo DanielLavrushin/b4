@@ -23,6 +23,7 @@ import {
   UDP_FAKE_LEN_MAX,
 } from "@models/config";
 import { useBuiltinPayloads } from "@b4.capture";
+import { declaresIpTargets } from "@utils";
 import {
   chosenPayloadFile,
   samePayloadFile,
@@ -159,10 +160,7 @@ export const UdpSettings = ({
     config.targets?.sni_domains?.length > 0 ||
     config.targets?.geosite_categories?.length > 0;
 
-  const hasIPTargets =
-    (config.targets?.ip?.length ?? 0) > 0 ||
-    (config.targets?.geoip_categories?.length ?? 0) > 0 ||
-    (config.targets?.asns?.length ?? 0) > 0;
+  const hasIPTargets = declaresIpTargets(config.targets);
 
   const hasUdpPortFilter = (config.udp.dport_filter ?? "").trim() !== "";
   const hasNonDomainTargets = hasIPTargets || hasUdpPortFilter;
