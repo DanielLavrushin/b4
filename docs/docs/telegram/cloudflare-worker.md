@@ -130,7 +130,7 @@ export default {
 ## When it does not work
 
 - **Cloudflare reports `The Workers runtime canceled this request because it detected that your Worker's code had hung`.** The compatibility date is earlier than `2026-04-07`. From that date on, the runtime answers a closing frame by itself.
-- **The stream stops after the first few kilobytes.** Some networks slow down `workers.dev`: the handshake completes, then the data stalls. b4 sets a Worker aside for ten minutes after two stalls within five minutes. When a set that covers the Worker already has a strategy that works for Cloudflare, **Let sets process Worker connections** applies it to the Worker connections too, in TUN mode as well, see [DPI processing](./websocket-bridge.md#dpi-processing). While a [Telegram set](./upstream.md#telegram-set) without routing applies, the switch applies that set's strategy to them instead. The CF proxy domains have a switch of their own, **Let sets process CF proxy connections**.
+- **The stream stops after the first few kilobytes.** Some networks slow down `workers.dev`: the handshake completes, then the data stalls. b4 sets a Worker aside for ten minutes after two stalls within five minutes. A [Telegram set](./upstream.md#telegram-set) without routing applies its strategy to the Worker connections, as to b4's other connections to Telegram. A set whose strategy already gets Cloudflare sites through can be chosen as the Telegram set. While no Telegram set applies, no set processes the Worker connections, see [DPI processing](./websocket-bridge.md#dpi-processing).
 - The log line of a stall is described under [The upstream goes silent mid-session](./troubleshooting.md#the-upstream-goes-silent-mid-session).
 
 ## How the script works

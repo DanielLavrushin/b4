@@ -129,7 +129,7 @@ func TestTheTelegramSetsTLSFilterStaysOffItsOwnConnectionsAfterASaveThatKeepsThe
 	}
 
 	next := cfg.Clone()
-	next.System.MTProto.CFProxyDPI = true
+	next.System.MTProto.CFWorkerDomain = "relay.example.workers.dev"
 	if !reflect.DeepEqual(cfg.Sets, next.Sets) {
 		t.Fatal("the save changed the sets, so the matcher would be rebuilt and this test proves nothing")
 	}

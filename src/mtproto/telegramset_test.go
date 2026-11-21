@@ -49,48 +49,22 @@ func TestEveryTelegramRouteCarriesTheTelegramSetMark(t *testing.T) {
 		t.Fatalf("self-dial mark 0x%x, want 0x%x while a Telegram set is chosen", base, config.TelegramSetDialMark)
 	}
 	for name, p := range everyRouteKind() {
-		want := uint(config.TelegramSetDialMark)
-		if p.isWorker {
-			want = uint(config.SelfDialRelayMark)
-		}
-		if got := planDialMark(p, base); got != want {
-			t.Errorf("%s dials with 0x%x, want 0x%x: every route but the Worker takes the Telegram set's strategy, the reserve included", name, got, want)
+		if got := planDialMark(p, base); got != uint(config.TelegramSetDialMark) {
+			t.Errorf("%s dials with 0x%x, want 0x%x: every route takes the Telegram set's strategy, the reserve and the Worker included", name, got, config.TelegramSetDialMark)
 		}
 	}
-}
-
-func TestTheWorkerTakesTheTelegramSetsStrategyOnlyWhenSetsMayProcessIt(t *testing.T) {
-	cfg := telegramSetTestConfig(true)
-	useTelegramSet(t, cfg)
-	worker := everyRouteKind()["Worker"]
-
-	setWorkerFollowsSets(cfg)
-	t.Cleanup(func() { setWorkerFollowsSets(nil) })
-	if got := planDialMark(worker, selfDialMark()); got != uint(config.SelfDialRelayMark) {
-		t.Errorf("a Worker dial plans 0x%x, want 0x%x: a strategy aimed at Telegram's edge can break the Worker, so it skips DPI unless sets may process it", got, config.SelfDialRelayMark)
-	}
-	if got := workerDialMark(selfDialMark()); got != uint(config.SelfDialRelayMark) {
-		t.Errorf("pool and fail-open Worker dials use 0x%x, want 0x%x", got, config.SelfDialRelayMark)
-	}
-
-	cfg.System.MTProto.CFWorkerDPI = true
-	setWorkerFollowsSets(cfg)
-	if got := planDialMark(worker, selfDialMark()); got != uint(config.TelegramSetDialMark) {
-		t.Errorf("with sets allowed to process the Worker, its dial plans 0x%x, want 0x%x: the Telegram set's strategy", got, config.TelegramSetDialMark)
-	}
-	if got := workerDialMark(selfDialMark()); got != uint(config.TelegramSetDialMark) {
-		t.Errorf("with sets allowed to process the Worker, pool dials use 0x%x, want 0x%x", got, config.TelegramSetDialMark)
+	if got := relayDialMark(base); got != uint(config.TelegramSetDialMark) {
+		t.Errorf("pool and fail-open Worker dials use 0x%x, want 0x%x", got, config.TelegramSetDialMark)
 	}
 }
 
 func TestARoutedTelegramSetCarriesTheWorkerOnItsRoute(t *testing.T) {
 	useTelegramSet(t, routedTelegramConfig(config.RoutingModeInterface))
 	useTelegramRouting(t, &TelegramRoute{Mode: config.RoutingModeInterface, Mark: 0x2a, IPv4: true}, nil)
-	setWorkerFollowsSets(nil)
 
 	want := uint(config.SelfDialRelayMark | 0x2a)
 	if got := planDialMark(everyRouteKind()["Worker"], selfDialMark()); got != want {
-		t.Fatalf("a Worker dial plans 0x%x, want 0x%x: the exemption covers DPI only, never the set's route", got, want)
+		t.Fatalf("a Worker dial plans 0x%x, want 0x%x: a routed set carries every route without a strategy", got, want)
 	}
 }
 
@@ -171,7 +145,7 @@ func TestTelegramSetProblemNamesWhatIsMissing(t *testing.T) {
 		{"a block set", func(c *config.Config) {
 			c.Sets[0].Routing.Enabled, c.Sets[0].Routing.Mode = true, config.RoutingModeBlock
 		}, true},
-		{"TUN mode", func(c *config.Config) { c.Queue.Mode = "tun" }, true},
+		{"TUN mode", func(c *config.Config) { c.Queue.Mode = "tun" }, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			cfg := telegramSetTestConfig(true)
@@ -571,7 +545,7 @@ func TestPoolSparesDialledBeforeTheTelegramRouteWasInPlaceAreNotHandedOut(t *tes
 				t.Fatal("the pool refused a spare")
 			}
 			offRouteWorker := idleWSConn(t, port)
-			offRouteWorker.mark = workerDialMark(workers.mark)
+			offRouteWorker.mark = relayDialMark(workers.mark)
 			park(offRouteWorker)
 
 			putTelegramRoute(t, mode, true)
@@ -592,7 +566,7 @@ func TestPoolSparesDialledBeforeTheTelegramRouteWasInPlaceAreNotHandedOut(t *tes
 				t.Fatal("the WebSocket pool dropped a spare dialled on the set's route")
 			}
 			onRouteWorker := idleWSConn(t, port)
-			onRouteWorker.mark = workerDialMark(workers.mark)
+			onRouteWorker.mark = relayDialMark(workers.mark)
 			park(onRouteWorker)
 			if got := workers.get(worker); got != onRouteWorker {
 				t.Fatal("the Worker pool dropped a spare dialled on the set's route")

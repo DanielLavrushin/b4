@@ -70,7 +70,7 @@ func (p *cfWorkerPool) get(pl transportPlan) *wsConn {
 	}
 	k := planWorkerKey(pl)
 	now := time.Now()
-	mark := workerDialMark(p.mark)
+	mark := relayDialMark(p.mark)
 
 	p.mu.Lock()
 	bucket := p.idle[k]
@@ -123,7 +123,7 @@ func (p *cfWorkerPool) refill(k cfWorkerKey, pl transportPlan) {
 		p.mu.Unlock()
 	}()
 
-	conn, err := dialWS(pl.dialHost, pl.sni, pl.wsPath, wsPoolDialTimeout, workerDialMark(p.mark))
+	conn, err := dialWS(pl.dialHost, pl.sni, pl.wsPath, wsPoolDialTimeout, relayDialMark(p.mark))
 	if err != nil {
 		log.Tracef("%s CF worker pool warm %s DC %d failed: %v", tg(""), k.domain, k.dc, err)
 		return

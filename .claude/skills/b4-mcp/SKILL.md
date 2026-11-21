@@ -13,10 +13,11 @@ active probes". Each switch changes the tool list a client sees.
 ## The byte budget
 
 `TestToolsListStaysWithinContextBudget` caps the whole `tools/list` answer, output schemas
-included: 17,000 bytes with the default switches, 30,000 with writes and probes on. Small local
-models get it in every request. On 2026-10-30 the default surface was at 97% and the full one
-32 bytes short of its cap, so new tool text needs a trim somewhere else. The test logs
-the current size; run it before and after a change:
+included: 17,911 bytes with the default switches, 32,116 with writes and probes on. Small local
+models get it in every request. On 2026-11-21 the default surface was at 97% and the full one
+6 bytes short of its cap, so new tool text needs a trim somewhere else. The test logs
+the current size; run it before and after a change. `toolkit/b4-mcp.mjs tools <server>` lists
+each tool's size as a running b4 serves it, to find the widest:
 
 ```sh
 go -C src test ./http/handler -run 'TestToolsListStaysWithinContextBudget' -count=1 -v
@@ -78,6 +79,11 @@ entry is parsed once.
 
 ## Verify
 
-`go -C src test ./http/handler -count=1` covers the guards above. Then connect a real
-client to a test box (a raw JSON-RPC client over HTTP works against a local degraded b4) and
-call the changed tool. `/b4-check` for the rest.
+`go -C src test ./http/handler -count=1` covers the guards above. Then call the changed tool
+on a real b4 with `toolkit/b4-mcp.mjs call <server> <tool> '<json>'`. It takes the server's
+address and token from the repository's `.mcp.json`, so it also reaches a tool a deploy just
+added, which an AI app's open session sees only after it reconnects. A local b4 without a
+router (the b4-ui skill's recipe, plus `"mcp":{"enabled":true,"token":"..."}` under
+`web_server`) serves MCP too. Around a write test, `snap <server> <file>` before and
+`restore <server> <file>` after put the configuration back through `b4_revert_last_change`
+and list each change undone. `--help` has the rest; `/b4-check` for everything else.

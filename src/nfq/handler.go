@@ -36,6 +36,7 @@ type pktInfo struct {
 
 	srcUnattributed bool
 	devicePort      uint16
+	srcOrigin       tunSrcOrigin
 }
 
 func (p *pktInfo) clientPort() uint16 {
@@ -174,6 +175,14 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 	pkt, ok := w.parseIPHeaders(raw)
 	if !ok {
 		return vc.accept()
+	}
+	if vc.tunEntry && vc.telegramSet == nil {
+		if set := w.ownTelegramSet(pkt); set != nil {
+			vc.telegramSet, vc.selfDial = set, true
+			w.telegramFlows.note(pkt.raw, time.Now())
+		} else if openingSYN(pkt) {
+			w.telegramFlows.forget(pkt.raw)
+		}
 	}
 	vc.dir = w.packetDirection(cfg, vc, pkt)
 	if !cfg.Queue.IsDiscovery && cfg.Queue.Mode != "tun" && !cfg.IPFamilyEnabled(pkt.ver == IPv6) {
@@ -336,7 +345,9 @@ func (w *Worker) parseIPHeaders(raw []byte) (*pktInfo, bool) {
 			seen.syn = raw[p.ihl+13]&0x12 == 0x02
 			seen.seq = binary.BigEndian.Uint32(raw[p.ihl+4 : p.ihl+8])
 		}
-		switch lan, port, origin := w.srcResolver.attributePacket(seen, p.proto, p.src, sport, p.dst, dport); origin {
+		lan, port, origin := w.srcResolver.attributePacket(seen, p.proto, p.src, sport, p.dst, dport)
+		p.srcOrigin = origin
+		switch origin {
 		case tunSrcLAN, tunSrcRouter:
 			if v4 := lan.To4(); v4 != nil {
 				copy(p.addr[0:4], v4)

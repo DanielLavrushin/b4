@@ -9,6 +9,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/selfdial"
 	"github.com/daniellavrushin/b4/sock"
 )
 
@@ -63,6 +64,43 @@ func (w *Worker) openTelegramInjector(cfg *config.Config) {
 func (w *Worker) divertTelegramFlows(telegram *sock.Sender) {
 	w.telegramSock = telegram
 	w.sock.Divert(telegram, w.telegramFlows.carries)
+}
+
+func (w *Worker) ownTelegramSet(pkt *pktInfo) *config.SetConfig {
+	cfg := w.getConfig()
+	if cfg == nil || cfg.Queue.IsDiscovery || cfg.System.MTProto.UpstreamSet == "" || pkt.proto != ipProtoTCP || len(pkt.raw) < pkt.ihl+14 {
+		return nil
+	}
+	if w.srcResolver != nil && pkt.srcOrigin != tunSrcRouter && pkt.srcOrigin != tunSrcUnknown {
+		return nil
+	}
+	dst, ok := netip.AddrFromSlice(pkt.dst)
+	if !ok {
+		return nil
+	}
+	tcp := pkt.raw[pkt.ihl:]
+	dport := binary.BigEndian.Uint16(tcp[2:4])
+	if !selfdial.HoldsSegment(pkt.clientPort(), netip.AddrPortFrom(dst.Unmap(), dport), openingSYN(pkt), binary.BigEndian.Uint32(tcp[4:8])) {
+		return nil
+	}
+	return cfg.TelegramUpstreamSet()
+}
+
+func openingSYN(pkt *pktInfo) bool {
+	return pkt.proto == ipProtoTCP && len(pkt.raw) >= pkt.ihl+14 && pkt.raw[pkt.ihl+13]&0x12 == 0x02
+}
+
+func (w *Worker) openTUNTelegramInjector(reinject int) {
+	if w.telegramFlows == nil {
+		return
+	}
+	mark := reinject | int(config.TelegramSetDialMark)
+	s, err := sock.NewSenderWithMark(mark)
+	if err != nil {
+		log.Warnf("TUN: no raw socket with mark 0x%x (%v), so the packets b4 sends into its own Telegram connections carry the ordinary re-send mark and follow a routing set that lists their address", mark, err)
+		return
+	}
+	w.divertTelegramFlows(s)
 }
 
 func telegramFlowOf(packet []byte) (telegramFlow, bool, bool) {
@@ -138,6 +176,22 @@ func (f *telegramFlows) note(packet []byte, now time.Time) {
 	f.noteFlow(flow, now)
 }
 
+func (f *telegramFlows) forget(packet []byte) {
+	if f == nil || f.live.Load() == 0 {
+		return
+	}
+	flow, whole, ok := telegramFlowOf(packet)
+	if !ok || !whole {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, had := f.flows[flow]; had {
+		delete(f.flows, flow)
+		f.countLocked()
+	}
+}
+
 func (f *telegramFlows) noteReply(packet []byte, now time.Time) {
 	if f == nil {
 		return
@@ -184,6 +238,21 @@ func (f *telegramFlows) carries(packet []byte) bool {
 }
 
 func (f *telegramFlows) carriesAt(packet []byte, now time.Time) bool {
+	return f.lookupAt(packet, now, false)
+}
+
+func (f *telegramFlows) carriesOn(packet []byte) bool {
+	if f == nil || f.live.Load() == 0 {
+		return false
+	}
+	return f.carriesOnAt(packet, time.Now())
+}
+
+func (f *telegramFlows) carriesOnAt(packet []byte, now time.Time) bool {
+	return f.lookupAt(packet, now, true)
+}
+
+func (f *telegramFlows) lookupAt(packet []byte, now time.Time, extend bool) bool {
 	if f == nil || f.live.Load() == 0 {
 		return false
 	}
@@ -191,13 +260,23 @@ func (f *telegramFlows) carriesAt(packet []byte, now time.Time) bool {
 	if !ok {
 		return false
 	}
+	pair := telegramPair{src: flow.src, dst: flow.dst}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var held bool
 	if whole {
 		held = telegramFlowHeld(f.flows, flow, now)
 	} else {
-		held = telegramFlowHeld(f.pairs, telegramPair{src: flow.src, dst: flow.dst}, now)
+		held = telegramFlowHeld(f.pairs, pair, now)
+	}
+	if held && extend {
+		until := now.Add(telegramFlowTTL)
+		if whole {
+			f.flows[flow] = until
+		}
+		if _, had := f.pairs[pair]; had {
+			f.pairs[pair] = until
+		}
 	}
 	f.countLocked()
 	return held

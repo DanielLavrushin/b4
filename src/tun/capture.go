@@ -338,8 +338,9 @@ func (r *routeManager) captureChainRules(excl, local []string) []captureRule {
 		captureRule{spec: []string{"-m", "mark", "--mark", config.SelfDialSkipMarkMatch(), "-j", "RETURN"}},
 		captureRule{spec: []string{"-m", "mark", "--mark", fmt.Sprintf("0x%x/0x%x", config.TelegramBridgeMark, config.PerSetRouteMarkBits), "-j", "RETURN"}},
 	)
+	telegramSet := fmt.Sprintf("0x%x/0x%x", config.TelegramSetDialMark, config.SelfDialSkipMatchMask)
 	for _, set := range excl {
-		rules = append(rules, captureRule{spec: []string{"-m", "set", "--match-set", set, "dst", "-j", "RETURN"}, soft: true})
+		rules = append(rules, captureRule{spec: []string{"-m", "mark", "!", "--mark", telegramSet, "-m", "set", "--match-set", set, "dst", "-j", "RETURN"}, soft: true})
 	}
 
 	var replies []captureRule

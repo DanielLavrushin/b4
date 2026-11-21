@@ -6,8 +6,7 @@ All notable changes to b4 are recorded in this file.
 
 ### Added
 
-- A **Telegram set** under **Telegram upstream (shared)** takes b4's own connections to Telegram, the CF proxy domains included: its strategy, or its interface or proxy route; **Create a Telegram set** adds one, and a **Telegram set** badge marks it on the **Sets** page. [#615](https://github.com/DanielLavrushin/b4/issues/615), [#640](https://github.com/DanielLavrushin/b4/issues/640)
-- **Let sets process CF proxy connections** under **Telegram upstream (shared)** lets a set covering the CF proxy domains or a custom WebSocket domain process b4's connections to them, in TUN mode too, and **DPI processing now** shows what handles each route. [#639](https://github.com/DanielLavrushin/b4/issues/639)
+- A **Telegram set** under **Telegram upstream (shared)** takes b4's own connections to Telegram on every route, the CF proxy domains and the Worker included, in NFQUEUE and TUN mode: its strategy, or its interface or proxy route; **Create a Telegram set** adds one, and a **Telegram set** badge marks it on the **Sets** page. [#615](https://github.com/DanielLavrushin/b4/issues/615), [#639](https://github.com/DanielLavrushin/b4/issues/639), [#640](https://github.com/DanielLavrushin/b4/issues/640)
 - After an **Update** or **Upload** on the **Geo Databases** page, the card lists the sets with categories that match nothing in the new file, and the set editor marks a category absent from the file in red with the reason on hover. [#620](https://github.com/DanielLavrushin/b4/issues/620)
 - **Discovery** and the watchdog's heals run under the TUN engine, routers without NFQUEUE included. Under TUN they test IPv4 only, skip strategies with **Incoming Mode** or **RST Injection Protection**, and cannot test a set with its own DSCP value. [#528](https://github.com/DanielLavrushin/b4/issues/528)
 - The **Payloads** page shows what each payload is: its kind, size and server name, whether it fits one packet, where it came from, any malformed fields and the sets that use it. A file chosen for upload is described the same way, and replacing a payload asks first. [#651](https://github.com/DanielLavrushin/b4/issues/651)
@@ -30,6 +29,10 @@ All notable changes to b4 are recorded in this file.
 
 - The `/api/capture/probe` API, unused by the web interface, is removed. Its hook cost every connection some work and slowly leaked memory when clients sent their ClientHello in two packets. [#646](https://github.com/DanielLavrushin/b4/issues/646)
 
+### Removed
+
+- **Let sets process Worker connections** under **Telegram upstream (shared)** is gone: a **Telegram set** without routing applies its strategy to b4's Worker connections, and without one no set processes them. [#639](https://github.com/DanielLavrushin/b4/issues/639)
+
 ### Fixed
 
 - After b4 stopped, a router with its own connection-tracking settings, such as OpenWrt, was left with the kernel defaults instead, and in rare cases with b4's settings. ([#613](https://github.com/DanielLavrushin/b4/pull/613), thanks [@mvanhorn](https://github.com/mvanhorn); [#575](https://github.com/DanielLavrushin/b4/issues/575))
@@ -37,7 +40,7 @@ All notable changes to b4 are recorded in this file.
 - A set added or changed through the API by a script, not in the web interface, could start sending fake packets nobody had turned on, and changing just one setting this way wiped the set's name and targets. [#527](https://github.com/DanielLavrushin/b4/issues/527)
 - When the interface a set routes to went away, the log said the set's traffic would not leave by the normal uplink, although without **Kill switch** it did.
 - A connection of a set routed into a tunnel such as WireGuard was logged as `routed->` on the **Logs** page even when it left by another interface, as for a KeeneticOS device in an internet access policy.
-- With **Let sets process Worker connections** on, b4's connection to the Cloudflare Worker broke when a set routed through an interface held the Worker's address.
+- b4's own connections that a set processes, such as its direct connections to Telegram, broke when a set routed through an interface held their address.
 - b4 could crash, again after every restart, at the first packet of a set whose UDP **Fake Packet Size** was below zero (set through the API or the config file) or whose fake from a zapret import was close to 64 KB. [#645](https://github.com/DanielLavrushin/b4/issues/645)
 - On a 1500-byte link a fake that did not fit one packet was never sent, with at most an occasional log line: a UDP **Fake Packet Size** over 1472, a payload file over 1448 bytes without **Match Fake Size**, or an MD5 fake with **Match Fake Size** on a ClientHello of two packets. [#645](https://github.com/DanielLavrushin/b4/issues/645)
 - **Randomize TLS Random** left the fakes of **Enable Decoy**, **SYN Fake Packets** and **Match Fake Size** unchanged, and **Duplicate Session ID** did nothing for a ClientHello longer than one packet, as current browsers send. [#649](https://github.com/DanielLavrushin/b4/issues/649)
