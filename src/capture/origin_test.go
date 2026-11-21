@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/sni"
+	"github.com/daniellavrushin/b4/tlsgen"
 )
 
 func managerWithLegacyEntries(t *testing.T, files map[string][]byte) *Manager {
@@ -150,5 +152,44 @@ func TestRegenerateRebuildsAGeneratedPayloadInPlace(t *testing.T) {
 	}
 	if _, err := m.RegenerateCapture("never.saved.example"); !errors.Is(err, ErrPayloadNotFound) {
 		t.Errorf("regenerating an unknown name answered %v, want ErrPayloadNotFound", err)
+	}
+}
+
+func regeneratedServerName(t *testing.T, m *Manager, name string) string {
+	t.Helper()
+	regenerated, err := m.RegenerateCapture(name)
+	if err != nil {
+		t.Fatalf("regenerate %s: %v", name, err)
+	}
+	data, err := m.LoadCaptureData(regenerated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, _, _ := sni.ParseTLSClientHelloSNI(data)
+	return host
+}
+
+func TestRegenerateWritesAnASCIIServerName(t *testing.T) {
+	raw, err := tlsgen.GenerateTLSClientHello("пример.рф")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := managerWithLegacyEntries(t, map[string][]byte{"пример.рф": raw})
+	if c, ok := m.GetCapture("tls", "пример.рф"); !ok || c.Origin != OriginGenerated {
+		t.Fatalf("fixture: a hello the generator wrote for the raw name пример.рф must load as generated, got %+v", c)
+	}
+	if host := regeneratedServerName(t, m, "пример.рф"); host != "xn--e1afmkfd.xn--p1ai" {
+		t.Errorf("regenerating the payload generated for пример.рф wrote the server_name %q (% x), want xn--e1afmkfd.xn--p1ai", host, []byte(host))
+	}
+
+	stored := managerWithPayloadsJSON(t, `{
+		"fallback.regenerate.example":{"tls":{"timestamp":"2026-03-02T00:00:00Z","size":1,"filepath":"tls_fallback_regenerate_example.bin","origin":"generated","facts":{"kind":"tls_client_hello","sni":"bad☃name.example","fits_one_packet":true}}},
+		"bad☃name.example":{"tls":{"timestamp":"2026-03-02T00:00:00Z","size":1,"filepath":"tls_badname_example.bin","origin":"generated","facts":{"kind":"tls_client_hello","sni":"bad☃name.example","fits_one_packet":true}}}
+	}`)
+	if host := regeneratedServerName(t, stored, "fallback.regenerate.example"); host != "fallback.regenerate.example" {
+		t.Errorf("a stored server name that is no host name must give way to the entry's name, regenerate wrote %q", host)
+	}
+	if regenerated, err := stored.RegenerateCapture("bad☃name.example"); !errors.Is(err, ErrNoHostName) {
+		t.Errorf("with no host name in the facts or the name, regenerate answered %v and wrote %+v, want ErrNoHostName", err, regenerated)
 	}
 }

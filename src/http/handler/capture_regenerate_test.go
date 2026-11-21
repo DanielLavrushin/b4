@@ -15,6 +15,7 @@ import (
 	"github.com/daniellavrushin/b4/capture"
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/sock"
+	"github.com/daniellavrushin/b4/tlsgen"
 )
 
 func plantLegacyPayload(t *testing.T, manager *capture.Manager, name, file string, data []byte) string {
@@ -126,5 +127,26 @@ func TestRegenerateTakesOnlyAGeneratedTLSPayload(t *testing.T) {
 	}
 	if rec, _ := serveRecovered(mux, httptest.NewRequest(http.MethodGet, "/api/capture/regenerate", nil)); rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("GET /api/capture/regenerate answered %d, want 405", rec.Code)
+	}
+}
+
+func TestRegenerateRefusesAPayloadWithNoHostName(t *testing.T) {
+	mux, api := captureTestMux(t)
+	manager := capture.GetManager(api.getCfg())
+	const name = "bad☃name.regenerate.example"
+	hello, err := tlsgen.GenerateTLSClientHello(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plantLegacyPayload(t, manager, name, "tls_badname_regenerate_example.bin", hello)
+	if c, ok := manager.GetCapture("tls", name); !ok || c.Origin != capture.OriginGenerated {
+		t.Fatalf("fixture: the old generator's hello for %s must load as generated, got %+v", name, c)
+	}
+	rec := regenerate(t, mux, name)
+	if rec.Code != http.StatusConflict {
+		t.Errorf("regenerating a payload whose server name and name are no host name answered %d %q, want 409", rec.Code, strings.TrimSpace(rec.Body.String()))
+	}
+	if c, _ := manager.GetCapture("tls", name); c == nil || c.Size != len(hello) {
+		t.Errorf("a refused regenerate must leave the payload as it was, got %+v", c)
 	}
 }

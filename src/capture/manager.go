@@ -17,6 +17,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/sni"
 	"github.com/daniellavrushin/b4/tlsgen"
 	"github.com/daniellavrushin/b4/utils"
 )
@@ -217,6 +218,7 @@ var (
 	ErrPayloadNotFound = errors.New("payload not found")
 	ErrNotGenerated    = errors.New("not a generated payload")
 	ErrPayloadExists   = errors.New("a payload of this name and protocol exists")
+	ErrNoHostName      = errors.New("no host name to generate a ClientHello for")
 )
 
 func (m *Manager) RegenerateCapture(domain string) (*Capture, error) {
@@ -230,9 +232,9 @@ func (m *Manager) RegenerateCapture(domain string) (*Capture, error) {
 	if meta.Origin != OriginGenerated {
 		return nil, ErrNotGenerated
 	}
-	host := domain
-	if meta.Facts != nil && meta.Facts.SNI != "" {
-		host = meta.Facts.SNI
+	host, err := regenerationHost(domain, meta.Facts)
+	if err != nil {
+		return nil, err
 	}
 	payload, err := tlsgen.GenerateTLSClientHello(host)
 	if err != nil {
@@ -243,6 +245,20 @@ func (m *Manager) RegenerateCapture(domain string) (*Capture, error) {
 	}
 	log.Infof("Regenerated the %d-byte TLS ClientHello of %s for %s", len(payload), domain, host)
 	return captureOf("tls", domain, m.metadata[domain]["tls"]), nil
+}
+
+func regenerationHost(domain string, facts *Facts) (string, error) {
+	candidates := []string{domain}
+	if facts != nil && facts.SNI != "" {
+		candidates = []string{facts.SNI, domain}
+	}
+	for _, candidate := range candidates {
+		host, err := sni.HostToASCII(strings.ToLower(strings.TrimSuffix(candidate, ".")))
+		if err == nil && sni.IsValidSNI([]byte(host)) {
+			return host, nil
+		}
+	}
+	return "", ErrNoHostName
 }
 
 func (m *Manager) fileNameFor(protocol, name string, claimUnlisted bool) (string, error) {

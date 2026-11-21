@@ -172,6 +172,9 @@ func (api *API) handleRegenerateCapture(w http.ResponseWriter, r *http.Request) 
 	case errors.Is(err, capture.ErrNotGenerated):
 		http.Error(w, fmt.Sprintf("The TLS payload %q was not made by Generate, so it cannot be regenerated", domain), http.StatusConflict)
 		return
+	case errors.Is(err, capture.ErrNoHostName):
+		http.Error(w, fmt.Sprintf("Neither the server name of the TLS payload %q nor its name is a host name, so it cannot be regenerated", domain), http.StatusConflict)
+		return
 	case err != nil:
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
