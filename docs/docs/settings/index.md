@@ -10,7 +10,7 @@ The **Settings** page holds the configuration of b4 itself. Sets have their own 
 
 | Tab | What it holds |
 | --- | --- |
-| [Core](./core.md) | How traffic reaches b4 and what b4 does with it, on the sub-tabs **Packet Engine**, **Devices**, **Firewall**, **DNS** and **SOCKS5**, and the values new sets start with on **New sets** |
+| [Core](./core.md) | How traffic reaches b4 and what b4 does with it, on the sub-tabs **Packet Engine**, **Devices**, **Firewall**, **DNS** and **SOCKS5**, and the values new sets start with on **Other** |
 | [System](./system.md) | The service itself, on the sub-tabs **Service** (restart, **System Info**, language, logging), **Web Server** and **Backup** |
 | [Geodat Settings](./geodata.md) | The GeoSite and GeoIP databases: sources, downloads and updates |
 | [Discovery](./discovery.md) | Discovery and the watchdog |

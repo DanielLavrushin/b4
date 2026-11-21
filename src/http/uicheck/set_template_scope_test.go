@@ -35,7 +35,7 @@ func TestOnlyCreateSetReadsTheNewSetTemplate(t *testing.T) {
 
 func TestNewSetTemplateStringsExistInBothLocales(t *testing.T) {
 	keys := []string{
-		"settings.coreTabs.sets",
+		"settings.coreTabs.other",
 		"settings.NewSetTemplate.title",
 		"settings.NewSetTemplate.info",
 		"settings.NewSetTemplate.label",

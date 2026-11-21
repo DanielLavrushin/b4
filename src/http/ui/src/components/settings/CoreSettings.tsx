@@ -82,7 +82,7 @@ export const CoreSettings = ({
         ),
         dns: <DnsSettings {...props} />,
         socks5: <Socks5Settings {...props} />,
-        sets: <NewSetTemplateSettings {...props} />,
+        other: <NewSetTemplateSettings {...props} />,
       }}
     />
   );

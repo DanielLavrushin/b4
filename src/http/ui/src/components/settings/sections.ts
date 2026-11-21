@@ -1,13 +1,13 @@
 import type { SvgIconComponent } from "@mui/icons-material";
 import {
   BackupIcon,
+  CategoryIcon,
   ConnectionIcon,
   ControlIcon,
   DeviceUnknowIcon,
   DnsIcon,
   FilterIcon,
   NetworkIcon,
-  SetsIcon,
   WebIcon,
 } from "@b4.icons";
 import { B4Config } from "@models/config";
@@ -18,7 +18,7 @@ export type CoreSectionId =
   | "firewall"
   | "dns"
   | "socks5"
-  | "sets";
+  | "other";
 
 export type SystemSectionId = "service" | "web" | "backup";
 
@@ -123,10 +123,10 @@ export const CORE_SECTIONS: SettingsSection<CoreSectionId>[] = [
     restartPick: nothing,
   },
   {
-    id: "sets",
-    labelKey: "settings.coreTabs.sets",
+    id: "other",
+    labelKey: "settings.coreTabs.other",
     prefixes: ["ui.new_set_template"],
-    Icon: SetsIcon,
+    Icon: CategoryIcon,
     pick: (c) => [c.ui?.new_set_template ?? null],
     restartPick: nothing,
   },

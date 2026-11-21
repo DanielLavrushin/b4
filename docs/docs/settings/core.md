@@ -193,9 +193,13 @@ A change to **Enable SOCKS5 Proxy**, **Bind Address** or **Port** restarts the p
 
 Chrome and Chromium cannot log in to a SOCKS5 proxy, so a source list is the way to limit them. With a login and a list, a client needs both. The list is not authentication: addresses can be spoofed. It adds no firewall rule either, and binding the proxy to the LAN address is what keeps it off the WAN.
 
-## New sets {#new-sets}
+## Other {#other}
 
-The sub-tab holds the values a set created with **Create Set** on the **Sets** page starts with, in place of b4's own defaults. When it is empty, new sets start with b4's defaults.
+The sub-tab holds **New set defaults**.
+
+### New set defaults {#new-sets}
+
+The block holds the values a set created with **Create Set** on the **Sets** page starts with, in place of b4's own defaults. When it is empty, new sets start with b4's defaults.
 
 **Values for new sets (JSON)** takes the JSON of a set, such as the one on a set's [Import/Export](../sets/index.md#import-and-export) tab. Saving keeps only the values that differ from b4's defaults and leaves out the name, the targets, the proxy username and password and the URLs of the **Discovery** tab. **Use for new sets** in a set card's menu fills it from that set, and **Clear** empties it.
 
