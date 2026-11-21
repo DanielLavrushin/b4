@@ -115,6 +115,19 @@ function shownAddress(raw) {
   }
 }
 
+function listedServer(name, entry, file) {
+  const listed = { name, type: entry.type || (entry.url ? "http" : "stdio") };
+  if (!entry.url) return listed;
+  try {
+    listed.url = shownAddress(expand(entry.url, `server ${name} in ${file}`));
+  } catch (e) {
+    if (!(e instanceof UsageError)) throw e;
+    listed.url = null;
+    listed.note = e.message;
+  }
+  return listed;
+}
+
 function targetOf(raw) {
   return crypto.createHash("sha256").update(new URL(raw).href).digest("hex").slice(0, 16);
 }
@@ -347,13 +360,7 @@ async function main(argv) {
       need(rest, 0, "servers");
       const file = configFile(opt);
       const servers = readServers(file);
-      print(
-        Object.entries(servers).map(([name, entry]) => ({
-          name,
-          type: entry.type || (entry.url ? "http" : "stdio"),
-          url: entry.url ? shownAddress(entry.url) : undefined,
-        })),
-      );
+      print(Object.entries(servers).map(([name, entry]) => listedServer(name, entry, file)));
       return 0;
     }
     case "tools": {

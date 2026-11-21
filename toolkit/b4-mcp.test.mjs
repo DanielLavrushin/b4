@@ -11,10 +11,10 @@ const script = path.join(path.dirname(fileURLToPath(import.meta.url)), "b4-mcp.m
 
 const initResult = { protocolVersion: "2025-11-25", capabilities: {}, serverInfo: { name: "stand-in", version: "0" } };
 
-function run(args, limitMs = 10000) {
+function run(args, limitMs = 10000, env = process.env) {
   return new Promise((resolve) => {
     const started = Date.now();
-    const child = spawn(process.execPath, [script, ...args], { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [script, ...args], { stdio: ["ignore", "pipe", "pipe"], env });
     let out = "";
     let err = "";
     child.stdout.on("data", (c) => (out += c));
@@ -97,6 +97,39 @@ test("restore refuses a fingerprint from the same address with another query str
   assert.equal(same.code, 0, same.err);
   assert.equal(JSON.parse(same.out).restored, true);
   assert.deepEqual(reverts, { a: 0, b: 0 });
+});
+
+test("servers expands ${VAR} in addresses and never reads the headers", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "b4-mcp-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const config = path.join(dir, "mcp.json");
+  fs.writeFileSync(
+    config,
+    JSON.stringify({
+      mcpServers: {
+        env: { type: "http", url: "${B4_MCP_TEST_URL}", headers: { Authorization: "Bearer ${B4_MCP_TEST_UNSET}" } },
+        fallback: { type: "http", url: "${B4_MCP_TEST_UNSET:-https://fallback.example/api/mcp}" },
+        unset: { type: "http", url: "${B4_MCP_TEST_UNSET}" },
+        plain: { type: "http", url: "https://plain.example/api/mcp?token=secret" },
+      },
+    }),
+  );
+  const env = { ...process.env, B4_MCP_TEST_URL: "https://env.example:7000/api/mcp?token=secret" };
+  delete env.B4_MCP_TEST_UNSET;
+  const r = await run(["--config", config, "servers"], 10000, env);
+  assert.equal(r.code, 0, r.err);
+  const listed = JSON.parse(r.out);
+  assert.deepEqual(
+    listed.map((s) => [s.name, s.url]),
+    [
+      ["env", "https://env.example:7000/api/mcp"],
+      ["fallback", "https://fallback.example/api/mcp"],
+      ["unset", null],
+      ["plain", "https://plain.example/api/mcp"],
+    ],
+  );
+  assert.match(listed[2].note, /B4_MCP_TEST_UNSET is not set/);
+  assert.doesNotMatch(r.out, /secret/);
 });
 
 test("a result larger than a pipe's buffer reaches the reader whole", async (t) => {
