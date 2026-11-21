@@ -1,7 +1,7 @@
 ---
 sidebar_position: 1
 title: Core
-description: Packet engine, devices, firewall, DNS and SOCKS5 settings.
+description: Packet engine, devices, firewall, DNS and SOCKS5 settings, and the values new sets start with.
 ---
 
 The **Core** tab decides how traffic reaches b4 and what b4 does with it. Some fields apply only after a restart, see [Saving and restarting](./index.md#saving). [Packet capture](../internals/capture.md) explains how the engine works.
@@ -192,3 +192,17 @@ A change to **Enable SOCKS5 Proxy**, **Bind Address** or **Port** restarts the p
 **Add IP or CIDR** adds an address or a range, IPv4 or IPv6, and **From device** adds the address of a known device. Other addresses are refused. A client on the router itself needs `127.0.0.1/32`.
 
 Chrome and Chromium cannot log in to a SOCKS5 proxy, so a source list is the way to limit them. With a login and a list, a client needs both. The list is not authentication: addresses can be spoofed. It adds no firewall rule either, and binding the proxy to the LAN address is what keeps it off the WAN.
+
+## New sets {#new-sets}
+
+The sub-tab holds the values a set created with **Create Set** on the **Sets** page starts with, in place of b4's own defaults. When it is empty, new sets start with b4's defaults.
+
+**Values for new sets (JSON)** takes the JSON of a set, such as the one on a set's [Import/Export](../sets/index.md#import-and-export) tab. Saving keeps only the values that differ from b4's defaults and leaves out the name, the targets and the URLs of the **Discovery** tab. **Use for new sets** in a set card's menu fills it from that set, and **Clear** empties it.
+
+These values make a new set neither split nor fake the TLS ClientHello, for sets that only route traffic:
+
+```json
+{"fragmentation": {"strategy": "none"}, "faking": {"sni": false}}
+```
+
+Only **Create Set** uses these values. Imported sets, community sets, [Discovery](../discovery.md) and sets that AI apps create over MCP keep b4's defaults, so the JSON of a set means the same on every router. A set created from these values stores them, and its export carries them.

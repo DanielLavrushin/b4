@@ -1,5 +1,5 @@
-import { apiGet, apiPost, apiFetch, apiUpload } from "./apiClient";
-import { B4Config } from "@models/config";
+import { apiGet, apiPost, apiPut, apiFetch, apiUpload } from "./apiClient";
+import { B4Config, SetTemplate } from "@models/config";
 import {
   GeoFileInfo,
   GeodatDownloadResult,
@@ -21,6 +21,11 @@ export const configApi = {
       body: JSON.stringify(config),
     }),
   reset: () => apiPost<void>("/api/config/reset"),
+  saveNewSetTemplate: (template: SetTemplate) =>
+    apiPut<{ new_set_template: SetTemplate | null }>(
+      "/api/ui/new-set-template",
+      template,
+    ),
 };
 
 // Geodat API

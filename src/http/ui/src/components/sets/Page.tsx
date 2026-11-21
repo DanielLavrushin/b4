@@ -4,8 +4,8 @@ import { colors } from "@design";
 import { usePageTitleDetail } from "@hooks/usePageTitle";
 import { useSets } from "@hooks/useSets";
 import { isStaleWriteError, reportSaveError, reportStaleWrite } from "@utils";
-import { B4Config, B4SetConfig } from "@models/config";
-import { createDefaultSet } from "@models/defaults";
+import { B4Config, B4SetConfig, SetTemplate } from "@models/config";
+import { createSetFromTemplate } from "@models/setTemplate";
 import {
   Backdrop,
   Box,
@@ -86,11 +86,13 @@ function SetEditorRoute({
     }
     return map;
   }, [sets, id]);
+  const templateKey = JSON.stringify(config.ui?.new_set_template ?? null);
   const defaultSet = useMemo(() => {
-    const created = createDefaultSet(sets.length);
+    const template = JSON.parse(templateKey) as SetTemplate | null;
+    const created = createSetFromTemplate(sets.length, template);
     created.name = i18n.t("sets.editor.defaultName", { n: sets.length + 1 });
     return created;
-  }, [sets.length]);
+  }, [sets.length, templateKey]);
   const set = isNew ? defaultSet : existingSet;
 
   usePageTitleDetail(isNew ? t("sets.editor.newSet") : existingSet?.name);

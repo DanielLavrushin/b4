@@ -16,6 +16,7 @@ import {
 } from "./Firewall";
 import { IPHealthSettings } from "./IPHealth";
 import { MSSClampingSettings } from "./MSSClamping";
+import { NewSetTemplateSettings } from "./NewSetTemplate";
 import { QueueSettings } from "./Queue";
 import { Socks5Settings } from "./Socks5";
 
@@ -81,6 +82,7 @@ export const CoreSettings = ({
         ),
         dns: <DnsSettings {...props} />,
         socks5: <Socks5Settings {...props} />,
+        sets: <NewSetTemplateSettings {...props} />,
       }}
     />
   );

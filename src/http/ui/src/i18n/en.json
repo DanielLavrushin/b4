@@ -162,6 +162,7 @@
       "firewall": "Firewall",
       "dns": "DNS",
       "socks5": "SOCKS5",
+      "sets": "New sets",
       "needsRestart": "Applies after a restart"
     },
     "systemTabs": {
@@ -583,6 +584,15 @@
       "repeatBanTtl": "Repeat ban (days)",
       "repeatBanTtlHelper": "How long the ban lasts when an address is caught again within 30 days after its previous ban ended.",
       "credit": "Ban list and re-test approach inspired by"
+    },
+    "NewSetTemplate": {
+      "title": "New set defaults",
+      "info": "A set you create on the Sets page starts with these values instead of b4's own defaults. Paste a set's JSON from its Import/Export tab, or choose Use for new sets in a set's menu: b4 keeps only the values that differ from its defaults and leaves out the name, the targets and the Discovery tab's URLs. Imported sets, community sets, Discovery, MCP and the sets API keep b4's defaults, so a shared set means the same on every router.",
+      "label": "Values for new sets (JSON)",
+      "placeholder": "{\"fragmentation\": {\"strategy\": \"none\"}, \"faking\": {\"sni\": false}}",
+      "help": "Empty: new sets start with b4's defaults. After saving, only the values that differ from them stay.",
+      "invalid": "This is not a JSON object, so it is not saved.",
+      "clear": "Clear"
     },
     "Dns": {
       "title": "DNS",
@@ -1569,6 +1579,15 @@
       "noSetsHint": "Create your first set to start configuring bypass rules",
       "importFromTool": "Import"
     },
+    "templateDialog": {
+      "title": "Use for new sets",
+      "intro": "Sets you create on the Sets page will start with these values:",
+      "empty": "This set keeps b4's defaults, so new sets will start with b4's defaults.",
+      "note": "The name, the targets and the Discovery tab's URLs are not copied. Change or clear these values in Settings > Core > New sets.",
+      "confirm": "Use for new sets",
+      "saved": "New sets will start with these values",
+      "failed": "Failed to save the values for new sets"
+    },
     "deleteDialog": {
       "title": "Delete Configuration Set",
       "subtitle": "This action cannot be undone",
@@ -1710,6 +1729,7 @@
         "mark": "Mark conflict"
       },
       "findStrategy": "Find a strategy",
+      "useForNewSets": "Use for new sets",
       "watchdog": "Watchdog",
       "watchdogPending": "The watchdog is on for this set and has not checked it yet.",
       "watchdogGlobalOff": "The watchdog is on for this set but off in Settings, so the set is not checked.",
@@ -4186,6 +4206,7 @@
     "tls_pair_unloadable": "TLS certificate/key pair does not load: {{error}}",
     "geosite_path_missing": "Geosite path must be configured to use geosite categories",
     "geoip_path_missing": "Geoip path must be configured to use geoip categories",
+    "invalid_set_template": "The new set defaults are not a valid set: {{error}}",
     "invalid_routing_mode": "Set \"{{set}}\": unknown routing mode \"{{mode}}\"",
     "socks5_loop": "Set \"{{set}}\": upstream proxy points to b4's own SOCKS5 server (loop)",
     "socks5_invalid_source": "\"{{value}}\" is not an IP address or CIDR range",

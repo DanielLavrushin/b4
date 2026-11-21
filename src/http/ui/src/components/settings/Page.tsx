@@ -129,7 +129,7 @@ const TAB_SECTIONS = new Map<TABS, SettingsSection[]>([
 ]);
 
 const TAB_GROUP_PREFIXES: Record<TABS, { labelKey: string; prefixes: string[] }> = {
-  [TABS.GENERAL]: { labelKey: "settings.tabs.core", prefixes: ["queue", "system.tables", "system.dns", "system.socks5", "system.ip_health"] },
+  [TABS.GENERAL]: { labelKey: "settings.tabs.core", prefixes: ["queue", "system.tables", "system.dns", "system.socks5", "system.ip_health", "ui.new_set_template"] },
   [TABS.SYSTEM]: { labelKey: "settings.tabs.system", prefixes: ["system.logging", "system.memory_limit", "system.timezone", "system.update", "system.web_server"] },
   [TABS.DOMAINS]: { labelKey: "settings.tabs.geodat", prefixes: ["system.geo"] },
   [TABS.DISCOVERY]: { labelKey: "settings.tabs.discovery", prefixes: ["system.checker"] },

@@ -18,7 +18,7 @@ Guides that start here: [Unblocking a site](../guides/unblock.md), [Adding sites
 | **Search sets...** | Shows only the sets whose name, domains, GeoSite categories or ASNs contain the text. |
 | **Select** | Selects several sets. **Delete** removes the selected sets after a confirmation, and **Cancel** leaves the selection. |
 | **Import** | Builds sets from a byedpi or zapret command line, see [Importing from zapret or byedpi](./import.md). |
-| **Create Set** | Opens the editor for a new set. |
+| **Create Set** | Opens the editor for a new set. The set starts with b4's defaults, or with the values under [Settings, Core, New sets](../settings/core.md#new-sets). |
 
 ## Set order
 
@@ -47,6 +47,7 @@ The menu at the top right of a card holds:
 | **Edit** | Opens the set in the editor. |
 | **Duplicate** | Creates a copy of the set right after it. The copy starts with **IP priority** off. |
 | **Compare** | Opens **Compare Sets** with this set and another side by side. **Differences only** hides the fields that match. |
+| **Use for new sets** | Shows the values of the set that differ from b4's defaults and, after a confirmation, makes them the starting values of sets created with **Create Set**, see [New sets](../settings/core.md#new-sets). The name, the targets and the **Discovery** URLs are not copied. |
 | **Find a strategy** | Opens [Discovery](../discovery.md) for the set. Not shown for a set that routes its traffic. |
 | **Delete** | Deletes the set after a confirmation. |
 

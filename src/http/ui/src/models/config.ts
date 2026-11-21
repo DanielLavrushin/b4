@@ -427,10 +427,18 @@ export interface DnsSystemConfig {
   keep_ipv6_answers: boolean;
 }
 
+export type SetTemplate = Record<string, unknown>;
+
+export interface UIConfig {
+  dashboard?: unknown;
+  new_set_template?: SetTemplate | null;
+}
+
 export interface B4Config {
   queue: QueueConfig;
   system: SystemConfig;
   sets: B4SetConfig[];
+  ui?: UIConfig;
   available_ifaces: string[];
   iface_details?: Record<string, IfaceDetail>;
   tunnel_ifaces?: string[];

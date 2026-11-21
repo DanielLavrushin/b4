@@ -7,6 +7,7 @@ import {
   DnsIcon,
   FilterIcon,
   NetworkIcon,
+  SetsIcon,
   WebIcon,
 } from "@b4.icons";
 import { B4Config } from "@models/config";
@@ -16,7 +17,8 @@ export type CoreSectionId =
   | "devices"
   | "firewall"
   | "dns"
-  | "socks5";
+  | "socks5"
+  | "sets";
 
 export type SystemSectionId = "service" | "web" | "backup";
 
@@ -118,6 +120,14 @@ export const CORE_SECTIONS: SettingsSection<CoreSectionId>[] = [
     prefixes: ["system.socks5"],
     Icon: ConnectionIcon,
     pick: (c) => [c.system.socks5],
+    restartPick: nothing,
+  },
+  {
+    id: "sets",
+    labelKey: "settings.coreTabs.sets",
+    prefixes: ["ui.new_set_template"],
+    Icon: SetsIcon,
+    pick: (c) => [c.ui?.new_set_template ?? null],
     restartPick: nothing,
   },
 ];

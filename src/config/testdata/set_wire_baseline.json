@@ -1,0 +1,208 @@
+{
+  "config_version": 52,
+  "set": {
+    "discovery": {
+      "urls": [],
+      "watchdog": false
+    },
+    "dns": {
+      "doh_url": "",
+      "enabled": false,
+      "fragment_query": false,
+      "strict": false,
+      "strip_ech": false,
+      "target_dns": ""
+    },
+    "dscp": {
+      "enabled": false,
+      "value": 0
+    },
+    "enabled": true,
+    "escalate": {
+      "dns_threshold": 2,
+      "rst_threshold": 3,
+      "rst_window_sec": 30,
+      "stall_threshold": 3,
+      "stall_timeout_ms": 3000,
+      "to": "",
+      "ttl_sec": 3600
+    },
+    "faking": {
+      "apply_ttl": false,
+      "custom_payload": "",
+      "fake_len_mode": "",
+      "md5_on_fake": false,
+      "payload_domain": "",
+      "payload_file": "",
+      "seq_offset": 10000,
+      "sni": true,
+      "sni_mutation": {
+        "fake_ext_count": 5,
+        "fake_snis": [
+          "ya.ru",
+          "vk.com",
+          "max.ru"
+        ],
+        "grease_count": 3,
+        "mode": "off",
+        "padding_size": 2048
+      },
+      "sni_seq_length": 1,
+      "sni_type": 2,
+      "strategy": "pastseq",
+      "tcp_md5": false,
+      "timestamp_decrease": 600000,
+      "tls_mod": [],
+      "ttl": 7
+    },
+    "fragmentation": {
+      "combo": {
+        "decoy_enabled": false,
+        "extension_split": true,
+        "fake_per_seg_count": 1,
+        "fake_per_seg_count_max": 0,
+        "fake_per_segment": false,
+        "first_byte_split": true,
+        "first_delay_ms": 30,
+        "first_delay_ms_max": 0,
+        "jitter_max_us": 1000,
+        "jitter_max_us_max": 0,
+        "shuffle_mode": "full"
+      },
+      "disorder": {
+        "fake_per_seg_count": 1,
+        "fake_per_seg_count_max": 0,
+        "fake_per_segment": false,
+        "max_jitter_us": 3000,
+        "min_jitter_us": 1000,
+        "shuffle_mode": "full",
+        "split_position": 0
+      },
+      "middle_sni": true,
+      "oob_char": 120,
+      "oob_position": 0,
+      "oob_position_max": 0,
+      "reverse_order": true,
+      "seq_overlap_length": 0,
+      "seq_overlap_pattern": [],
+      "sni_position": 1,
+      "sni_position_max": 0,
+      "strategy": "combo",
+      "strategy_pool": [],
+      "tlsrec_pos": 0,
+      "tlsrec_pos_max": 0
+    },
+    "id": "",
+    "mss_clamp": {
+      "enabled": false,
+      "size": 0
+    },
+    "name": "",
+    "routing": {
+      "block_action": "reject",
+      "egress_gateway": "",
+      "egress_interface": "",
+      "egress_ip": "",
+      "enabled": false,
+      "fwmark": 0,
+      "ip_ttl_seconds": 3600,
+      "kill_switch": false,
+      "mode": "interface",
+      "router_traffic": "auto",
+      "source_interfaces": [],
+      "table": 0,
+      "upstream": {
+        "fail_open": false,
+        "host": "",
+        "port": 0,
+        "udp": false,
+        "use_domain": true
+      }
+    },
+    "targets": {
+      "asns": [],
+      "domain_only": false,
+      "geoip_categories": [],
+      "geosite_categories": [],
+      "ip": [],
+      "ip_priority": false,
+      "ip_version": "",
+      "sni_domains": [],
+      "source_devices": [],
+      "source_devices_exclude": false,
+      "tls": ""
+    },
+    "tcp": {
+      "conn_bytes_limit": 19,
+      "desync": {
+        "count": 3,
+        "mode": "off",
+        "post_desync": false,
+        "ttl": 7
+      },
+      "dport_filter": "",
+      "drop_sack": false,
+      "duplicate": {
+        "count": 3,
+        "enabled": false
+      },
+      "http_methodeol": false,
+      "incoming": {
+        "fake_count": 3,
+        "fake_ttl": 7,
+        "max": 14,
+        "min": 14,
+        "mode": "off",
+        "strategy": "badsum"
+      },
+      "ip_block_detect": {
+        "cache_blocked_ips": true,
+        "enabled": false,
+        "heal_dns": false,
+        "heal_ttl_sec": 60,
+        "retransmit_threshold": 3,
+        "syn_detect": true,
+        "syn_threshold": 3,
+        "timeout_ms": 3000
+      },
+      "rst_protection": {
+        "enabled": false,
+        "ttl_tolerance": 3
+      },
+      "seg2delay": 0,
+      "seg2delay_max": 0,
+      "syn_fake": false,
+      "syn_fake_len": 0,
+      "syn_ttl": 7,
+      "win": {
+        "mode": "off",
+        "values": [
+          0,
+          1460,
+          8192,
+          65535
+        ]
+      },
+      "wssize": {
+        "cutoff": "",
+        "enabled": false,
+        "scale": 0,
+        "strip_scale": false,
+        "window": 0
+      }
+    },
+    "udp": {
+      "conn_bytes_limit": 8,
+      "dport_filter": "",
+      "fake_len": 64,
+      "fake_payload_file": "",
+      "fake_seq_length": 6,
+      "faking_strategy": "none",
+      "filter_quic": "sni",
+      "filter_stun": true,
+      "mode": "fake",
+      "seg2delay": 0,
+      "seg2delay_max": 0
+    }
+  }
+}

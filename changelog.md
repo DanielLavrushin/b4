@@ -13,10 +13,11 @@ All notable changes to b4 are recorded in this file.
 - **Regenerate** on the **Payloads** page rebuilds a generated payload under the same name, and the sets that use it send the new one at once. [#651](https://github.com/DanielLavrushin/b4/issues/651)
 - The **Payloads** page lists the payloads built into b4 under **Built In**, read-only, with their size and what each one is. [#651](https://github.com/DanielLavrushin/b4/issues/651)
 - In a set, the **My own Payload File** list is sorted and describes each payload, and the **UDP** tab says how much of a payload file a fake carries, with **Use the file size**. [#651](https://github.com/DanielLavrushin/b4/issues/651)
+- A set created on the **Sets** page can start from your own values instead of b4's defaults, set under **Settings, Core, New sets** or with **Use for new sets** in a set's menu; imported and shared sets keep b4's defaults.
 
 ### Changed
 
-- Settings left out when a set is sent through the API get their default values, as in a new set in the web interface, and a change that leaves out the set's name, targets or on/off state is refused. A set already affected stops sending the extra fake packets after the update. [#527](https://github.com/DanielLavrushin/b4/issues/527)
+- Settings left out when a set is sent through the API get their default values, and a change that leaves out the set's name, targets or on/off state is refused. A set already affected stops sending the extra fake packets after the update. [#527](https://github.com/DanielLavrushin/b4/issues/527)
 - The built-in fake payload **Preset: DuckDuckGo** is replaced by **Preset: VK**, a 517-byte ClientHello for `vk.com`, and sets that used it send the new one; **MCP** names it `vk`. [#648](https://github.com/DanielLavrushin/b4/issues/648)
 - **Randomize TLS Random** also gives each fake a random session ID, as zapret's `rnd` does. [#649](https://github.com/DanielLavrushin/b4/issues/649)
 - **Fake Packet Size** on a set's **UDP** tab goes up to 1472 bytes, what one 1500-byte packet carries, and a saved value above that is lowered to 1472 when b4 starts. [#645](https://github.com/DanielLavrushin/b4/issues/645)

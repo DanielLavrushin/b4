@@ -53,7 +53,9 @@ import { SetCard } from "./SetCard";
 import { EditorSection } from "./facets";
 import { FacetCompareBar } from "./SignalRail";
 
-import { colors, radius } from "@design";
+import { colors, fonts, radius, radiusPx } from "@design";
+import { configApi } from "@api/settings";
+import { formatSetTemplate, setTemplateFromSet } from "@models/setTemplate";
 import { useSets } from "@hooks/useSets";
 import { useSetFacetSelection } from "@hooks/useSetFacetSelection";
 import { useWatchdogSetStatuses } from "@hooks/useWatchdog";
@@ -188,6 +190,8 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
     open: boolean;
     setId: string | null;
   }>({ open: false, setId: null });
+  const [templateSetId, setTemplateSetId] = useState<string | null>(null);
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [highlightedSetId, setHighlightedSetId] = useState<string | null>(null);
@@ -396,6 +400,33 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
       } else {
         reportSaveError(result.error, showError, t, "sets.manager.failedToDelete");
         onRefresh();
+      }
+    })();
+  };
+
+  const templateSet = templateSetId
+    ? (sets.find((s) => s.id === templateSetId) ?? null)
+    : null;
+  const templatePreview = templateSet ? setTemplateFromSet(templateSet) : null;
+  const templateText = formatSetTemplate(templatePreview);
+
+  const closeTemplateDialog = () => {
+    if (!savingTemplate) setTemplateSetId(null);
+  };
+
+  const handleUseForNewSets = () => {
+    if (!templatePreview) return;
+    setSavingTemplate(true);
+    void (async () => {
+      try {
+        await configApi.saveNewSetTemplate(templatePreview);
+        showSuccess(t("sets.templateDialog.saved"));
+        setTemplateSetId(null);
+        onRefresh();
+      } catch (error) {
+        reportSaveError(error, showError, t, "sets.templateDialog.failed");
+      } finally {
+        setSavingTemplate(false);
       }
     })();
   };
@@ -751,6 +782,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                           onCompare={() =>
                             setCompareDialog({ open: true, setId: set.id })
                           }
+                          onUseForNewSets={() => setTemplateSetId(set.id)}
                           onDelete={() =>
                             setDeleteDialog({ open: true, setId: set.id })
                           }
@@ -918,6 +950,58 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
               </li>
             ))}
         </Box>
+      </B4Dialog>
+
+      <B4Dialog
+        open={templateSetId !== null}
+        title={t("sets.templateDialog.title")}
+        subtitle={templateSet?.name}
+        icon={<SetsIcon />}
+        onClose={closeTemplateDialog}
+        actions={
+          <>
+            <Button onClick={closeTemplateDialog} disabled={savingTemplate}>
+              {t("core.cancel")}
+            </Button>
+            <Box sx={{ flex: 1 }} />
+            <Button
+              onClick={handleUseForNewSets}
+              variant="contained"
+              disabled={savingTemplate || !templateSet}
+            >
+              {t("sets.templateDialog.confirm")}
+            </Button>
+          </>
+        }
+      >
+        <Typography sx={{ mt: 2, mb: 1.5 }}>
+          {templateText
+            ? t("sets.templateDialog.intro")
+            : t("sets.templateDialog.empty")}
+        </Typography>
+        {templateText && (
+          <Box
+            component="pre"
+            sx={{
+              m: 0,
+              p: "12px 13px",
+              maxHeight: 320,
+              overflow: "auto",
+              border: `1px solid ${colors.border.light}`,
+              borderRadius: `${radiusPx.sm}px`,
+              bgcolor: colors.background.default,
+              fontFamily: fonts.mono,
+              fontSize: "0.72rem",
+              lineHeight: 1.7,
+              color: colors.text.secondary,
+            }}
+          >
+            {templateText}
+          </Box>
+        )}
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
+          {t("sets.templateDialog.note")}
+        </Typography>
       </B4Dialog>
 
       <ImportToolDialog
