@@ -59,6 +59,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
   const [newFakeSni, setNewFakeSni] = useState("");
   const [newWinValue, setNewWinValue] = useState("");
   const { captures, loadCaptures } = useCaptures();
+  const tlsCaptures = captures.filter((c) => c.protocol === "tls");
 
   useEffect(() => {
     loadCaptures().catch(() => {});
@@ -401,7 +402,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
           </Grid>
           {config.faking.sni_type === FakingPayloadType.CAPTURE && (
             <Grid container size={{ xs: 12 }}>
-              {captures.length > 0 && (
+              {tlsCaptures.length > 0 && (
                 <Grid size={{ xs: 6 }}>
                   <B4Select
                     label={t("sets.faking.fakeSni.generatedPayload")}
@@ -412,7 +413,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                         value: "",
                         label: t("sets.faking.fakeSni.selectPayload"),
                       },
-                      ...captures.map((c) => ({
+                      ...tlsCaptures.map((c) => ({
                         value: c.filepath,
                         label: `${c.domain} (${c.size} bytes)`,
                       })),
@@ -421,17 +422,18 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                       onChange("faking.payload_file", e.target.value)
                     }
                     helperText={
-                      captures.length === 0
+                      tlsCaptures.length === 0
                         ? t("sets.faking.fakeSni.noPayloadsHelper")
                         : t("sets.faking.fakeSni.selectPayloadHelper")
                     }
-                    disabled={!config.faking.sni || captures.length === 0}
+                    disabled={!config.faking.sni || tlsCaptures.length === 0}
                   />
                 </Grid>
               )}
-              <Grid size={{ xs: captures.length > 0 ? 6 : 12 }}>
+              <Grid size={{ xs: tlsCaptures.length > 0 ? 6 : 12 }}>
                 <B4Alert>
-                  {captures.length === 0 && t("sets.faking.fakeSni.noPayloads")}
+                  {tlsCaptures.length === 0 &&
+                    t("sets.faking.fakeSni.noPayloads")}
 
                   <Link to="/settings/payloads">
                     {" "}
