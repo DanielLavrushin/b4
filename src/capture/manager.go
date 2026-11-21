@@ -79,6 +79,27 @@ func (m *Manager) loadMetadata() {
 		return
 	}
 	m.metadata = usableMetadata(loaded)
+	if m.completeFacts() {
+		m.saveMetadata()
+	}
+}
+
+func (m *Manager) completeFacts() bool {
+	changed := false
+	for _, protocols := range m.metadata {
+		for protocol, meta := range protocols {
+			if meta.Facts != nil {
+				continue
+			}
+			data, err := m.readPayloadFile(meta.Filepath)
+			if err != nil {
+				continue
+			}
+			meta.Facts = FactsOf(protocol, data)
+			changed = true
+		}
+	}
+	return changed
 }
 
 func usableMetadata(loaded map[string]map[string]*PayloadMetadata) map[string]map[string]*PayloadMetadata {
@@ -124,13 +145,16 @@ func (m *Manager) readPayloadFile(name string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
-func (m *Manager) payloadFileExists(name string) bool {
+func (m *Manager) payloadFileSize(name string) (int64, bool) {
 	path, err := m.payloadPath(name)
 	if err != nil {
-		return false
+		return 0, false
 	}
 	info, err := os.Stat(path)
-	return err == nil && info.Mode().IsRegular()
+	if err != nil || !info.Mode().IsRegular() {
+		return 0, false
+	}
+	return info.Size(), true
 }
 
 func (m *Manager) removePayloadFile(name string) {
@@ -243,6 +267,7 @@ func (m *Manager) storeLocked(protocol, name string, data []byte) error {
 		Timestamp: time.Now(),
 		Size:      len(data),
 		Filepath:  filename,
+		Facts:     FactsOf(protocol, data),
 	})
 	if err := m.saveMetadata(); err != nil {
 		if previous == nil {
@@ -286,7 +311,9 @@ func (m *Manager) ListCaptures() []*Capture {
 	m.mu.RUnlock()
 
 	for i, c := range captures {
-		c.Missing = !m.payloadFileExists(files[i])
+		size, present := m.payloadFileSize(files[i])
+		c.Missing = !present
+		c.Warnings = warningsOf(c.Protocol, c.Facts, !present, size == 0)
 	}
 	sort.Slice(captures, func(i, j int) bool {
 		if captures[i].Domain != captures[j].Domain {
@@ -315,7 +342,42 @@ func captureOf(protocol, domain string, meta *PayloadMetadata) *Capture {
 		Timestamp: meta.Timestamp,
 		Size:      meta.Size,
 		Filepath:  filepath.Join("captures", meta.Filepath),
+		Facts:     meta.Facts,
+		Warnings:  []string{},
 	}
+}
+
+func warningsOf(protocol string, facts *Facts, missing, empty bool) []string {
+	switch {
+	case missing:
+		return []string{"missing"}
+	case empty:
+		return []string{"empty"}
+	}
+	warnings := []string{}
+	if facts == nil {
+		return warnings
+	}
+	if !facts.FitsOnePacket {
+		warnings = append(warnings, "too_large")
+	}
+	switch {
+	case facts.Kind == KindOther:
+		warnings = append(warnings, "unrecognized")
+	case kindProtocol(facts.Kind) != protocol:
+		warnings = append(warnings, "kind_mismatch")
+	}
+	if len(facts.Faults) > 0 {
+		warnings = append(warnings, "malformed")
+	}
+	return warnings
+}
+
+func kindProtocol(kind string) string {
+	if kind == KindTLSClientHello {
+		return "tls"
+	}
+	return "quic"
 }
 
 func (m *Manager) DeleteCapture(protocol, domain string) error {
@@ -406,7 +468,7 @@ func (m *Manager) SaveImportedPayload(protocol, domain string, data []byte) (str
 				if info, err := os.Stat(filePath); err == nil {
 					at = info.ModTime()
 				}
-				if err := m.registerImportedPayload(name, protocol, filename, len(data), at); err != nil {
+				if err := m.registerImportedPayload(name, protocol, filename, data, at); err != nil {
 					return "", err
 				}
 				log.Infof("Registered existing shared %s payload for %s (%d bytes)", protocol, name, len(data))
@@ -419,7 +481,7 @@ func (m *Manager) SaveImportedPayload(protocol, domain string, data []byte) (str
 		if err := utils.WriteFileAtomic(filePath, data, 0644); err != nil {
 			return "", fmt.Errorf("failed to save file: %v", err)
 		}
-		if err := m.registerImportedPayload(name, protocol, filename, len(data), time.Now()); err != nil {
+		if err := m.registerImportedPayload(name, protocol, filename, data, time.Now()); err != nil {
 			return "", err
 		}
 		log.Infof("Saved shared %s payload for %s (%d bytes)", protocol, name, len(data))
@@ -428,14 +490,15 @@ func (m *Manager) SaveImportedPayload(protocol, domain string, data []byte) (str
 	return "", fmt.Errorf("a different payload already exists under every name derived from %s", domain)
 }
 
-func (m *Manager) registerImportedPayload(name, protocol, filename string, size int, at time.Time) error {
+func (m *Manager) registerImportedPayload(name, protocol, filename string, data []byte, at time.Time) error {
 	if m.metadata[name] == nil {
 		m.metadata[name] = make(map[string]*PayloadMetadata)
 	}
 	m.metadata[name][protocol] = &PayloadMetadata{
 		Timestamp: at,
-		Size:      size,
+		Size:      len(data),
 		Filepath:  filename,
+		Facts:     FactsOf(protocol, data),
 	}
 	if err := m.saveMetadata(); err != nil {
 		delete(m.metadata[name], protocol)

@@ -16,6 +16,7 @@ type PayloadMetadata struct {
 	Timestamp time.Time `json:"timestamp"`
 	Size      int       `json:"size"`
 	Filepath  string    `json:"filepath"`
+	Facts     *Facts    `json:"facts,omitempty"`
 }
 
 type Capture struct {
@@ -24,6 +25,8 @@ type Capture struct {
 	Timestamp time.Time `json:"timestamp"`
 	Size      int       `json:"size"`
 	Filepath  string    `json:"filepath"`
+	Facts     *Facts    `json:"facts,omitempty"`
+	Warnings  []string  `json:"warnings"`
 	Missing   bool      `json:"missing"`
 	UsedBy    []string  `json:"used_by,omitempty"`
 }

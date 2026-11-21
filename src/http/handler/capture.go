@@ -87,8 +87,10 @@ func (api *API) handleGenerateCapture(w http.ResponseWriter, r *http.Request) {
 	}
 
 	size := 0
+	var facts *capture.Facts
 	if generated, ok := manager.GetCapture(req.Protocol, req.Domain); ok {
 		size = generated.Size
+		facts = generated.Facts
 	}
 
 	setJsonHeader(w)
@@ -98,6 +100,7 @@ func (api *API) handleGenerateCapture(w http.ResponseWriter, r *http.Request) {
 		"method":  "generated",
 		"size":    size,
 		"domain":  req.Domain,
+		"facts":   facts,
 	})
 }
 
@@ -397,10 +400,12 @@ func (api *API) handleUploadCapture(w http.ResponseWriter, r *http.Request) {
 		"size":     len(data),
 		"domain":   domain,
 		"protocol": protocol,
+		"facts":    nil,
 	}
 	var files []string
 	if c, ok := manager.GetCapture(protocol, domain); ok {
 		files = append(files, c.Filepath)
+		response["facts"] = c.Facts
 	}
 	api.reloadSetsNaming(files, response)
 	setJsonHeader(w)
