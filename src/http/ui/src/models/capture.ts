@@ -5,6 +5,7 @@ export interface Capture {
   size: number;
   filepath: string;
   hex_data: string;
+  missing?: boolean;
   used_by?: string[];
 }
 

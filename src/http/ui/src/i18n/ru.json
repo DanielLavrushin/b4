@@ -906,6 +906,9 @@
       "hexCopyFailed": "Не удалось скопировать hex данные",
       "viewHex": "Просмотр/Копирование hex",
       "downloadBin": "Скачать .bin",
+      "downloadFailed": "Не удалось скачать payload: {{error}}",
+      "missingFileTls": "Файла этого payload нет. Сеты, которые его используют, отправляют вместо него «Пресет: Google (классический)».",
+      "missingFileQuic": "Файла этого payload нет. Сеты, которые его используют, отправляют вместо него нули.",
       "uploadedSuccess": "Загружен пэйлоад для {{domain}}"
     },
     "SystemInfo": {

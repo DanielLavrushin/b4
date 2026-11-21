@@ -899,6 +899,9 @@
       "hexCopyFailed": "Failed to copy hex data",
       "viewHex": "View/Copy hex",
       "downloadBin": "Download .bin",
+      "downloadFailed": "Failed to download payload: {{error}}",
+      "missingFileTls": "The file of this payload is missing. Sets that use it send Preset: Google (classic) instead.",
+      "missingFileQuic": "The file of this payload is missing. Sets that use it send zeros instead.",
       "uploadedSuccess": "Uploaded payload for {{domain}}"
     },
     "SystemInfo": {

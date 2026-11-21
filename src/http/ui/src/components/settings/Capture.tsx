@@ -220,6 +220,16 @@ export const CaptureSettings = () => {
     }
   };
 
+  const handleDownload = async (capture: Capture) => {
+    try {
+      await download(capture);
+    } catch (error) {
+      showError(
+        t("settings.Capture.downloadFailed", { error: describeApiError(error) }),
+      );
+    }
+  };
+
   const copyHex = async (hexData: string) => {
     const ok = await copyText(hexData);
     if (ok) showSuccess(t("settings.Capture.hexCopied"));
@@ -411,7 +421,7 @@ export const CaptureSettings = () => {
                 <CaptureCard
                   capture={capture}
                   onViewHex={() => setHexDialog({ open: true, capture })}
-                  onDownload={() => void download(capture)}
+                  onDownload={() => void handleDownload(capture)}
                   onDelete={() => void handleDelete(capture)}
                 />
               </Grid>
@@ -578,10 +588,17 @@ const CaptureCard = ({
         />
       </Stack>
 
-      {/* Timestamp */}
       <Typography variant="caption" color="text.secondary" sx={{ mb: 2 }}>
         {new Date(capture.timestamp).toLocaleString()}
       </Typography>
+
+      {capture.missing && (
+        <B4Alert severity="warning" noWrapper sx={{ mb: 2 }}>
+          {capture.protocol === "quic"
+            ? t("settings.Capture.missingFileQuic")
+            : t("settings.Capture.missingFileTls")}
+        </B4Alert>
+      )}
 
       {/* Spacer */}
       <Box sx={{ flex: 1 }} />
@@ -595,16 +612,20 @@ const CaptureCard = ({
           borderTop: `1px solid ${colors.border.light}`,
         }}
       >
-        <Tooltip title={t("settings.Capture.viewHex")}>
-          <IconButton size="small" onClick={onViewHex}>
-            <CopyIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title={t("settings.Capture.downloadBin")}>
-          <IconButton size="small" onClick={onDownload}>
-            <DownloadIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
+        {!capture.missing && (
+          <>
+            <Tooltip title={t("settings.Capture.viewHex")}>
+              <IconButton size="small" onClick={onViewHex}>
+                <CopyIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title={t("settings.Capture.downloadBin")}>
+              <IconButton size="small" onClick={onDownload}>
+                <DownloadIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </>
+        )}
         <Box sx={{ flex: 1 }} />
         <Tooltip title={t("core.delete")}>
           <IconButton size="small" onClick={onDelete}>

@@ -1,4 +1,6 @@
+import { ApiError } from "@api/apiClient";
 import { captureApi } from "@api/capture";
+import { readErrorBody } from "@api/errorBody";
 import { Capture } from "@b4.capture";
 import { describeApiError } from "@utils";
 import { useCallback, useState } from "react";
@@ -81,7 +83,12 @@ export function useCaptures() {
     const url = `/api/capture/download?file=${encodeURIComponent(filename)}`;
     const response = await fetch(url);
     if (!response.ok) {
-      throw new Error(`Download failed: ${response.statusText}`);
+      throw new ApiError(
+        url,
+        response.status,
+        response.statusText,
+        await readErrorBody(response),
+      );
     }
     const blob = await response.blob();
     const blobUrl = URL.createObjectURL(blob);
