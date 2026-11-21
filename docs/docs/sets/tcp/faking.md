@@ -41,7 +41,7 @@ With **My own Payload File**, the **Generated Payload** list offers the TLS payl
 
 ![The open Generated Payload list, with a missing file at the top](/img/faking/20261121100400.png)
 
-A file the set names that is gone from the router stays selected, with (file missing) after its name, and an empty file gets (file empty). The text under the list then says the set sends **Preset: Google (classic)** until another payload is picked. A QUIC payload the set already names stays selected as well, with a note to pick a TLS ClientHello. While the set sends fakes and no payload is chosen, or **Generated from Domain** has no domain, a warning says the set sends **Preset: Google (classic)**.
+A file the set names that is gone from the router stays selected, with (file missing) after its name, and an empty file gets (file empty). The text under the list then says the set sends **Preset: Google (classic)** until another payload is picked. A file that is on the router but not in the payload list, such as one copied there by hand, gets (not in the list), and the set sends it as it is. A QUIC payload the set already names stays selected as well, with a note to pick a TLS ClientHello. While the set sends fakes and no payload is chosen, or **Generated from Domain** has no domain, a warning says the set sends **Preset: Google (classic)**.
 
 **Randomize TLS Random** and **Duplicate Session ID** are under **Fake Packet TLS Modification**. It is shown only when the fake is a TLS ClientHello these switches can change:
 

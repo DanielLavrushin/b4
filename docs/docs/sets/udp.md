@@ -93,4 +93,4 @@ When **Fake Packet Payload** is **QUIC preset 1**, **QUIC preset 2** or a payloa
 
 ![The UDP tab in Fake & Fragment mode, with a note that only 64 of 1200 bytes go out](/img/udp/20261121100500.png)
 
-A payload file the set names that is gone from the router stays selected, with (file missing) after its name, and the fakes carry zeros until another payload is picked.
+A payload file the set names that is gone from the router stays selected, with (file missing) after its name, and an empty one with (file empty); the fakes carry zeros until another payload is picked. A file that is on the router but not in the payload list gets (not in the list), and the fakes carry it.
