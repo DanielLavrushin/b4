@@ -13,7 +13,8 @@ const usage = `usage: node toolkit/b4-mcp.mjs [options] <command> ...
 
 commands:
   servers                        the servers in the config file and their addresses
-  tools <server>                 the tools a server lists, with the size of each in bytes
+  tools <server>                 the tools a server lists, with the size of each in bytes as Go's
+                                 json.Marshal writes it, which the tools/list budget test counts
   call <server> <tool> [json]    call a tool with JSON arguments and print its result as JSON
   snap <server> <file>           save a fingerprint of b4's configuration to file
   restore <server> <file>        undo b4's MCP changes one at a time until the configuration
@@ -297,6 +298,11 @@ async function fingerprint(session) {
   };
 }
 
+function goJSONBytes(value) {
+  const escaped = JSON.stringify(value).replace(/[<>&\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+  return Buffer.byteLength(escaped);
+}
+
 function print(value) {
   process.stdout.write(`${JSON.stringify(value)}\n`);
 }
@@ -366,7 +372,7 @@ async function main(argv) {
     case "tools": {
       need(rest, 1, "tools <server>");
       const session = await connect(rest[0], opt);
-      const tools = (await listTools(session)).map((t) => ({ name: t.name, bytes: Buffer.byteLength(JSON.stringify(t)) }));
+      const tools = (await listTools(session)).map((t) => ({ name: t.name, bytes: goJSONBytes(t) }));
       print({
         server: session.info.name,
         version: session.info.version,

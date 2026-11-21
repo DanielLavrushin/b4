@@ -132,6 +132,15 @@ test("servers expands ${VAR} in addresses and never reads the headers", async (t
   assert.doesNotMatch(r.out, /secret/);
 });
 
+test("tools counts each tool's bytes as Go's json.Marshal writes them", async (t) => {
+  const tool = { name: "t", description: "<a> & b\u2028", inputSchema: { type: "object", properties: {} } };
+  const url = await standIn(t, (req, res, msg) => answerJSON(res, msg.id, { tools: [tool] }));
+  const r = await run(["tools", url]);
+  assert.equal(r.code, 0, r.err);
+  const goJSON = '{"name":"t","description":"\\u003ca\\u003e \\u0026 b\\u2028","inputSchema":{"type":"object","properties":{}}}';
+  assert.deepEqual(JSON.parse(r.out).tools, [{ name: "t", bytes: Buffer.byteLength(goJSON) }]);
+});
+
 test("a result larger than a pipe's buffer reaches the reader whole", async (t) => {
   const lines = Array.from({ length: 4000 }, (_, i) => `line ${i} ${"x".repeat(40)}`);
   const url = await standIn(t, (req, res, msg) => answerJSON(res, msg.id, { content: [], structuredContent: { lines } }));
