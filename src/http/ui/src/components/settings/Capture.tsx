@@ -33,6 +33,7 @@ import {
   useBuiltinPayloads,
   useCaptures,
   Capture,
+  PAYLOAD_NAME_MAX_LENGTH,
   PayloadInspection,
   PayloadProtocol,
 } from "@b4.capture";
@@ -73,6 +74,9 @@ const emptyUploadForm: UploadForm = {
   protocol: "tls",
   file: null,
 };
+
+const suggestedName = (name: string) =>
+  name.toLowerCase().slice(0, PAYLOAD_NAME_MAX_LENGTH);
 
 function existsConflictSets(error: unknown): string[] | null {
   if (
@@ -151,7 +155,7 @@ export const CaptureSettings = () => {
 
   const handleFileChange = async (file: File | null) => {
     if (!file) return;
-    const fileName = file.name.replace(/\.[^.]+$/, "").toLowerCase();
+    const fileName = suggestedName(file.name.replace(/\.[^.]+$/, ""));
     setUploadForm((prev) => ({
       ...prev,
       file,
@@ -171,7 +175,7 @@ export const CaptureSettings = () => {
               protocol: result.protocol || "tls",
               domain: prev.nameTyped
                 ? prev.domain
-                : (result.name || fileName).toLowerCase(),
+                : suggestedName(result.name || fileName),
             }
           : prev,
       );
@@ -556,9 +560,10 @@ export const CaptureSettings = () => {
                   })
                 }
                 placeholder="youtube.com"
+                slotProps={{ htmlInput: { maxLength: PAYLOAD_NAME_MAX_LENGTH } }}
                 helperText={
                   inspected?.name &&
-                  uploadForm.domain === inspected.name.toLowerCase()
+                  uploadForm.domain === suggestedName(inspected.name)
                     ? t("settings.Capture.nameFromSni")
                     : t("settings.Capture.nameDomainHelp")
                 }

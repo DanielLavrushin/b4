@@ -1,5 +1,7 @@
 export type PayloadProtocol = "tls" | "quic";
 
+export const PAYLOAD_NAME_MAX_LENGTH = 200;
+
 export type PayloadKind =
   | "tls_client_hello"
   | "quic_initial"
