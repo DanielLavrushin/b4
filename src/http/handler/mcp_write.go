@@ -114,7 +114,7 @@ var mcpRanges = map[string]mcpRange{
 	mcpSetPathPrefix + ".tcp.wssize.window":                             {Min: 0, Max: config.MaxWSSizeWindow},
 	mcpSetPathPrefix + ".tcp.wssize.scale":                              {Min: 0, Max: config.MaxWSSizeScale},
 	mcpSetPathPrefix + ".udp.fake_seq_length":                           {Min: 1, Max: 20},
-	mcpSetPathPrefix + ".udp.fake_len":                                  {Min: 32, Max: 1500},
+	mcpSetPathPrefix + ".udp.fake_len":                                  {Min: 32, Max: config.MaxUDPFakeLen},
 	mcpSetPathPrefix + ".udp.seg2delay":                                 {Min: 0, Max: 1000},
 	mcpSetPathPrefix + ".udp.seg2delay_max":                             {Min: 0, Max: 1000},
 	mcpSetPathPrefix + ".faking.sni_seq_length":                         {Min: 1, Max: 20},

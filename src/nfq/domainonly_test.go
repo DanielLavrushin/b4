@@ -182,6 +182,7 @@ func TestASetWithoutFragmentationLeavesLaterEncryptedDataAloneInBothModes(t *tes
 		if v := w.ProcessPacket(makeV4TCPPacket(hello, 1000)); v != engine.VerdictDrop {
 			t.Fatalf("domain-only=%v: the ClientHello must get the set's techniques, got %v", domainOnly, v)
 		}
+		w.wg.Wait()
 		if v := w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), 1000+uint32(len(hello)))); v != engine.VerdictAccept {
 			t.Errorf("domain-only=%v: a set without fragmentation or desync leaves encrypted data alone, as it does on an address it learned; got %v", domainOnly, v)
 		}
@@ -753,6 +754,7 @@ func TestTheConnectionsSetFollowsItsDeviceOnceTheDeviceIsKnown(t *testing.T) {
 			if c.knownLater {
 				w.ipToMac.Store(known)
 			}
+			w.wg.Wait()
 			if v := w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), 1000+uint32(len(hello)))); v != c.later {
 				t.Errorf("domain-only=%v, %s: later outgoing data must get %v, got %v", domainOnly, c.name, c.later, v)
 			}

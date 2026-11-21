@@ -13,6 +13,12 @@ All notable changes to b4 are recorded in this file.
 ### Changed
 
 - Settings left out when a set is sent through the API get their default values, as in a new set in the web interface, and a change that leaves out the set's name, targets or on/off state is refused. A set already affected stops sending the extra fake packets after the update. [#527](https://github.com/DanielLavrushin/b4/issues/527)
+- The built-in fake payload **Preset: DuckDuckGo** is replaced by **Preset: VK**, a 517-byte ClientHello for `vk.com`, and sets that used it send the new one; **MCP** names it `vk`. [#648](https://github.com/DanielLavrushin/b4/issues/648)
+- **Randomize TLS Random** also gives each fake a random session ID, as zapret's `rnd` does. [#649](https://github.com/DanielLavrushin/b4/issues/649)
+- **Fake Packet Size** on a set's **UDP** tab goes up to 1472 bytes, what one 1500-byte packet carries, and a saved value above that is lowered to 1472 when b4 starts. [#645](https://github.com/DanielLavrushin/b4/issues/645)
+- The **Payloads** page and the message after a payload is generated describe it by its size and domain, no longer as an "optimized" payload for getting past blocks. [#648](https://github.com/DanielLavrushin/b4/issues/648)
+- With a splitting strategy such as **Combo**, the second packet of a ClientHello sent in two packets waits until the first has gone out in pieces, which adds one **First Segment Delay** (30 ms by default) to such connections. [#653](https://github.com/DanielLavrushin/b4/issues/653)
+- A set that worked only while the second packet of a ClientHello overtook the first, such as one with a **Preset: STUN** fake and no splitting, can stop working after the update; **Discovery** run again for its sites finds a new strategy. [#653](https://github.com/DanielLavrushin/b4/issues/653)
 
 ### Removed
 
@@ -26,6 +32,14 @@ All notable changes to b4 are recorded in this file.
 - When the interface a set routes to went away, the log said the set's traffic would not leave by the normal uplink, although without **Kill switch** it did.
 - A connection of a set routed into a tunnel such as WireGuard was logged as `routed->` on the **Logs** page even when it left by another interface, as for a KeeneticOS device in an internet access policy.
 - b4's own connections that a set processes, such as its direct connections to Telegram, broke when a set routed through an interface held their address.
+- b4 could crash, again after every restart, at the first packet of a set whose UDP **Fake Packet Size** was below zero (set through the API or the config file) or whose fake from a zapret import was close to 64 KB. [#645](https://github.com/DanielLavrushin/b4/issues/645)
+- On a 1500-byte link a fake that did not fit one packet was never sent, with at most an occasional log line: a UDP **Fake Packet Size** over 1472, a payload file over 1448 bytes without **Match Fake Size**, or an MD5 fake with **Match Fake Size** on a ClientHello of two packets. [#645](https://github.com/DanielLavrushin/b4/issues/645)
+- **Randomize TLS Random** left the fakes of **Enable Decoy**, **SYN Fake Packets** and **Match Fake Size** unchanged, and **Duplicate Session ID** did nothing for a ClientHello longer than one packet, as current browsers send. [#649](https://github.com/DanielLavrushin/b4/issues/649)
+- A **Past Sequence** or **Random Sequence** fake with a **Sequence Offset** smaller than the fake, set by hand or by a zapret import, reached the server as the start of the connection's data. [#649](https://github.com/DanielLavrushin/b4/issues/649)
+- With **Match Fake Size**, the fake for a site whose name ends the payload's own, such as `google.com` with **Preset: Google (classic)**, was a byte-for-byte copy of the real ClientHello. [#649](https://github.com/DanielLavrushin/b4/issues/649)
+- A payload generated on the **Payloads** page or by **Generated from Domain** had three malformed fields that a strict parser rejects. Payloads generated before this version keep them until they are deleted and generated again. [#648](https://github.com/DanielLavrushin/b4/issues/648)
+- A zapret import reported `rndsni` as matched exactly although the fake kept its name, and left out the `rnd` and `dupsid` that zapret applies to its own fake when none is given. [#649](https://github.com/DanielLavrushin/b4/issues/649)
+- When a browser sent its ClientHello in two packets, as current Chrome and Firefox do, the second packet often left before the fake and the first one, so whether a set worked depended on timing and on the router's load. [#653](https://github.com/DanielLavrushin/b4/issues/653)
 
 ## [1.92.0] - 2026-11-17
 

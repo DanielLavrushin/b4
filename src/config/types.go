@@ -139,7 +139,15 @@ func SelectsKnownL7(classes []string) bool {
 	return slices.ContainsFunc(classes, func(c string) bool { return slices.Contains(UDPL7Classes, c) })
 }
 
-const maxSTUNFakeLen = (0xffff - 20 - 8) &^ 3
+const MaxUDPFakeLen = 1500 - 20 - 8
+
+const MaxTCPFakeLenInOnePacket = 1500 - 20 - 32
+
+const MaxImportedPayloadBytes = 16 * 1024
+
+const MaxCapturePayloadBytes = 64 * 1024
+
+const maxSTUNFakeLen = MaxUDPFakeLen &^ 3
 
 func NormalizeSTUNFakeLen(size int) int {
 	switch {
@@ -177,7 +185,7 @@ var FakePayloadNames = [FakePayloadSTUN + 1]string{
 	FakePayloadRandom:   "random",
 	FakePayloadCustom:   "custom",
 	FakePayloadDefault1: "google",
-	FakePayloadDefault2: "duckduckgo",
+	FakePayloadDefault2: "vk",
 	FakePayloadCapture:  "capture",
 	FakePayloadZero:     "zero",
 	FakePayloadInverted: "inverted",

@@ -102,6 +102,11 @@ func startedHello(payload []byte) (uint32, bool) {
 	return uint32(len(payload)-len(hello)) + n, true
 }
 
+func opensHello(payload []byte) bool {
+	_, starts := startedHello(payload)
+	return starts
+}
+
 func truncatedClientHello(payload []byte) bool {
 	if !startsClientHello(payload) {
 		return false

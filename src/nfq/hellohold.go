@@ -129,7 +129,32 @@ func (w *Worker) sendCopies(raw []byte, dst net.IP, ver uint8, n int) {
 	}
 }
 
-func (w *Worker) injectHeldThen(set *config.SetConfig, held *helloHold, cur []byte, dst net.IP, ver uint8, fakes bool) {
+func (w *Worker) injectHeldThen(set *config.SetConfig, held *helloHold, cur []byte, dst net.IP, ver uint8, fakes bool, connKey string, ordered bool) bool {
+	if w.injector == nil {
+		w.injectUnordered(set, held, cur, dst, ver, fakes)
+		return false
+	}
+	inject := w.tcpInjector(ver)
+	if held == nil {
+		job := w.flowJob(func() func() { return inject(set, cur, dst, fakes) })
+		if w.injector.submit(connKey, ordered, job) {
+			return true
+		}
+		go func() { job.finish(job.run()) }()
+		return false
+	}
+	stagger := helloReplayStagger
+	w.injector.submit(connKey, true,
+		w.flowJob(func() func() { return inject(set, held.raw, held.dst, true) }),
+		w.flowJob(func() func() {
+			time.Sleep(stagger)
+			return inject(set, cur, dst, fakes)
+		}),
+	)
+	return true
+}
+
+func (w *Worker) injectUnordered(set *config.SetConfig, held *helloHold, cur []byte, dst net.IP, ver uint8, fakes bool) {
 	inject := w.dropAndInjectTCP
 	if ver != IPv4 {
 		inject = w.dropAndInjectTCPv6

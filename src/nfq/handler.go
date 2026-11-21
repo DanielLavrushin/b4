@@ -481,6 +481,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	if cfg.IsTCPPort(dport) && tcp[13]&0x12 == 0x02 {
 		if w.tlsCache.DropOtherConnection(connKey, binary.BigEndian.Uint32(tcp[4:8])+1) || len(payload) == 0 {
 			w.destState.ForgetConnection(connKey)
+			w.injector.detach(connKey)
 		}
 		w.pendingHello.ForgetHeld(connKey)
 	}
@@ -615,18 +616,38 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 
 		held := vc.takeHeld()
+		ordered := w.followsInjection(connKey, tcp, payload) && injectAcquire()
 		if !vc.drop() {
+			if ordered {
+				injectRelease()
+			}
 			if held != nil {
 				held.settle(nfqueue.NfAccept, "released, the next packet could not be dropped")
 			}
 			return 0
 		}
 
+		count := set.TCP.Duplicate.Count
 		if held != nil {
 			held.settle(nfqueue.NfDrop, "sent as duplicates through set "+set.Name)
-			w.sendCopies(held.raw, held.dst, held.ver, set.TCP.Duplicate.Count)
 		}
-		w.sendCopies(pkt.raw, pkt.dst, pkt.ver, set.TCP.Duplicate.Count)
+		if ordered {
+			raw := append([]byte(nil), pkt.raw...)
+			dst := append(net.IP(nil), pkt.dst...)
+			ver := pkt.ver
+			w.injector.submit(connKey, true, w.flowJob(func() func() {
+				if held != nil {
+					w.sendCopies(held.raw, held.dst, held.ver, count)
+				}
+				w.sendCopies(raw, dst, ver, count)
+				return nil
+			}))
+			return 0
+		}
+		if held != nil {
+			w.sendCopies(held.raw, held.dst, held.ver, count)
+		}
+		w.sendCopies(pkt.raw, pkt.dst, pkt.ver, count)
 		return 0
 	}
 
@@ -1034,7 +1055,13 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			}
 		}
 
-		if routeHandsOff || !needsTCPInjection(set) {
+		if routeHandsOff {
+			return vc.accept()
+		}
+		if !needsTCPInjection(set) {
+			if w.resendInOrder(vc, pkt, tcp, connKey, payload) {
+				return 0
+			}
 			return vc.accept()
 		}
 
@@ -1101,11 +1128,18 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		if held != nil {
 			held.settle(nfqueue.NfDrop, "sent through set "+set.Name)
 		}
-		w.injectHeldThen(setCopy, held, packetCopy, dstCopy, pkt.ver, !w.tlsCache.PastHello(connKey, binary.BigEndian.Uint32(tcp[4:8])))
+		seq := binary.BigEndian.Uint32(tcp[4:8])
+		inside := w.tlsCache.InsideHello(connKey, seq)
+		if w.injectHeldThen(setCopy, held, packetCopy, dstCopy, pkt.ver, !w.tlsCache.PastHello(connKey, seq), connKey, held != nil || inside || opensHello(payload)) && inside {
+			w.tlsCache.MarkLaned(connKey, seq)
+		}
 		return 0
 	}
 
 	if vc.own != nil {
+		return 0
+	}
+	if w.resendInOrder(vc, pkt, tcp, connKey, payload) {
 		return 0
 	}
 	return vc.accept()

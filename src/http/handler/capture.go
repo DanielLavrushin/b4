@@ -85,12 +85,25 @@ func (api *API) handleGenerateCapture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	size := 0
+	if generated, ok := manager.GetCapture(req.Protocol, req.Domain); ok {
+		size = generated.Size
+	}
+
 	setJsonHeader(w)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
-		"message": fmt.Sprintf("Generated optimized %s payload for %s (SNI-first for DPI bypass)", req.Protocol, req.Domain),
+		"message": generatedPayloadMessage(req.Domain, size),
 		"method":  "generated",
+		"size":    size,
 	})
+}
+
+func generatedPayloadMessage(domain string, size int) string {
+	if size <= 0 {
+		return fmt.Sprintf("Generated a TLS ClientHello for %s", domain)
+	}
+	return fmt.Sprintf("Generated a %d-byte TLS ClientHello for %s", size, domain)
 }
 
 // @Summary Probe domain for capture
@@ -339,10 +352,9 @@ func (api *API) handleUploadCapture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Max 64KB for a ClientHello
-	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
+	r.Body = http.MaxBytesReader(w, r.Body, config.MaxCapturePayloadBytes)
 
-	if err := r.ParseMultipartForm(64 * 1024); err != nil {
+	if err := r.ParseMultipartForm(config.MaxCapturePayloadBytes); err != nil {
 		http.Error(w, "File too large (max 64KB)", http.StatusBadRequest)
 		return
 	}

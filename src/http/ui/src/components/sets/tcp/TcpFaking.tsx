@@ -33,6 +33,11 @@ interface TcpFakingProps {
     value: string | boolean | number | string[] | number[],
   ) => void;
 }
+const ONE_PACKET_TCP_PAYLOAD = 1448;
+
+const samePayloadFile = (a: string, b: string) =>
+  a.replace(/^\.\//, "") === b.replace(/^\.\//, "");
+
 export const FAKING_ACCORDIONS: { labelKey: string; prefixes: string[] }[] = [
   { labelKey: "sets.faking.fakeSni.title", prefixes: ["faking.sni", "faking.sni_seq_length", "faking.sni_type", "faking.custom_payload", "faking.payload_domain", "faking.fake_len_mode", "faking.payload_file", "faking.strategy", "faking.seq_offset", "faking.timestamp_decrease", "faking.tls_mod", "faking.ttl", "faking.apply_ttl", "faking.md5_on_fake"] },
   { labelKey: "sets.faking.synFake.title", prefixes: ["tcp.syn_fake", "tcp.syn_fake_len", "tcp.syn_ttl", "faking.tcp_md5"] },
@@ -70,7 +75,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
   const FAKE_PAYLOAD_TYPES = [
     { value: 0, label: t("sets.faking.fakeSni.payloadRandom") },
     { value: 2, label: t("sets.faking.fakeSni.payloadGoogle") },
-    { value: 3, label: t("sets.faking.fakeSni.payloadDuckDuckGo") },
+    { value: 3, label: t("sets.faking.fakeSni.payloadVk") },
     { value: 8, label: t("sets.faking.fakeSni.payloadStun") },
     { value: 4, label: t("sets.faking.fakeSni.payloadFile") },
     { value: 5, label: t("sets.faking.fakeSni.payloadZeros") },
@@ -175,6 +180,21 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
     fake_ext_count: 5,
     fake_snis: [],
   };
+
+  const selectedCapture =
+    config.faking.sni_type === FakingPayloadType.CAPTURE &&
+    config.faking.payload_file
+      ? captures.find((c) =>
+          samePayloadFile(c.filepath, config.faking.payload_file),
+        )
+      : undefined;
+  const oversizedCapture =
+    config.faking.sni &&
+    config.faking.fake_len_mode !== "match" &&
+    selectedCapture &&
+    selectedCapture.size > ONE_PACKET_TCP_PAYLOAD
+      ? selectedCapture
+      : undefined;
 
   const isMutationEnabled = mutation.mode !== "off";
   const showGreaseSettings = ["grease", "advanced"].includes(mutation.mode);
@@ -419,6 +439,16 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                   </Link>
                 </B4Alert>
               </Grid>
+              {oversizedCapture && (
+                <Grid size={{ xs: 12 }}>
+                  <B4Alert severity="warning">
+                    {t("sets.faking.fakeSni.payloadOverOnePacket", {
+                      count: oversizedCapture.size,
+                      max: ONE_PACKET_TCP_PAYLOAD,
+                    })}
+                  </B4Alert>
+                </Grid>
+              )}
             </Grid>
           )}
           {/* TLS Mod Options - only show when payload has TLS structure */}
@@ -449,6 +479,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                   }}
                   description={t("sets.faking.fakeSni.randomizeTlsRandomDesc")}
                   disabled={!config.faking.sni}
+                  aiTopic="faking.tls_mod"
                 />
                 <B4Switch
                   label={t("sets.faking.fakeSni.dupSessionId")}
@@ -464,6 +495,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                   }}
                   description={t("sets.faking.fakeSni.dupSessionIdDesc")}
                   disabled={!config.faking.sni}
+                  aiTopic="faking.tls_mod"
                 />
               </Stack>
             </Grid>

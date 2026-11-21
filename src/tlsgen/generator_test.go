@@ -42,7 +42,7 @@ func TestGenerateTLSClientHello(t *testing.T) {
 	t.Logf("✓ First 64 bytes: %s", hex.EncodeToString(payload[:64]))
 }
 
-func TestSNIFirstExtension(t *testing.T) {
+func TestServerNameIsTheFirstExtension(t *testing.T) {
 	payload, err := GenerateTLSClientHello(domain)
 
 	if err != nil {
@@ -78,11 +78,7 @@ func TestSNIFirstExtension(t *testing.T) {
 	firstExtLen := int(payload[offset+2])<<8 | int(payload[offset+3])
 
 	if firstExtType != 0x0000 {
-		t.Errorf("CRITICAL: First extension is NOT SNI! Got 0x%04x instead of 0x0000", firstExtType)
-		t.Errorf("This payload will NOT bypass Russian DPI!")
-	} else {
-		t.Logf("✓ CRITICAL CHECK PASSED: SNI (0x0000) is the FIRST extension")
-		t.Logf("✓ This payload structure matches working DPI bypass pattern")
+		t.Errorf("first extension is 0x%04x, want server_name 0x0000", firstExtType)
 	}
 
 	// Verify SNI contains the domain

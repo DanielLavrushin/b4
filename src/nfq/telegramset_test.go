@@ -76,6 +76,7 @@ func TestTheTelegramSetNeedsNoTargets(t *testing.T) {
 	if got := telegramSetVerdict(t, w, config.TelegramSetDialMark); got != nfqueue.NfDrop {
 		t.Fatalf("verdict %d: a set with no targets must still take the connections b4 marks for it", got)
 	}
+	w.wg.Wait()
 	if got := telegramSetVerdict(t, w, config.SelfDialMark); got != nfqueue.NfAccept {
 		t.Fatalf("verdict %d: an unmarked connection must not reach a set that targets nothing", got)
 	}

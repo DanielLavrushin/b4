@@ -188,20 +188,28 @@ func (api *API) stageConvertedSets(cfg *config.Config, sets []config.SetConfig) 
 
 func (api *API) installConvertPayloads(sets []*config.SetConfig) error {
 	var manager *capture.Manager
-	install := func(set *config.SetConfig, protocol, path string, file *string, data []byte) error {
+	install := func(set *config.SetConfig, protocol, path string, file *string, data []byte, limit int) error {
 		name, pending := strings.CutPrefix(*file, convert.PendingPayloadPrefix)
 		if !pending {
 			return nil
 		}
-		if manager == nil {
-			manager = capture.GetManager(api.getCfg())
+		status := http.StatusInternalServerError
+		var rel string
+		var err error
+		if limit > 0 && len(data) > limit {
+			status = http.StatusBadRequest
+			err = fmt.Errorf("the payload is %d bytes, more than the %d bytes an import may carry", len(data), limit)
+		} else {
+			if manager == nil {
+				manager = capture.GetManager(api.getCfg())
+			}
+			rel, err = manager.SaveImportedPayload(protocol, name, data)
 		}
-		rel, err := manager.SaveImportedPayload(protocol, name, data)
 		if err != nil {
 			log.Errorf("Convert: could not save the %s fake payload of set %q: %v", protocol, set.Name, err)
 			message := fmt.Sprintf("The %s fake payload of set %q could not be saved to the captures folder: %v", protocol, set.Name, err)
 			return &APIError{
-				Status:  http.StatusInternalServerError,
+				Status:  status,
 				Code:    "payload_install_failed",
 				Message: message,
 				Fields: []FieldError{{
@@ -216,10 +224,10 @@ func (api *API) installConvertPayloads(sets []*config.SetConfig) error {
 		return nil
 	}
 	for _, set := range sets {
-		if err := install(set, "tls", "faking.payload_file", &set.Faking.PayloadFile, set.Faking.PayloadData); err != nil {
+		if err := install(set, "tls", "faking.payload_file", &set.Faking.PayloadFile, set.Faking.PayloadData, config.MaxImportedPayloadBytes); err != nil {
 			return err
 		}
-		if err := install(set, "quic", "udp.fake_payload_file", &set.UDP.FakePayloadFile, set.UDP.FakePayloadData); err != nil {
+		if err := install(set, "quic", "udp.fake_payload_file", &set.UDP.FakePayloadFile, set.UDP.FakePayloadData, 0); err != nil {
 			return err
 		}
 	}

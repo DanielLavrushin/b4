@@ -46,6 +46,7 @@ type Worker struct {
 	packetsProcessed uint64
 	lastOverflowLog  int64
 	lastFakeSendLog  int64
+	lastUDPFakeLog   int64
 	cfg              atomic.Value
 	qnum             uint16
 	ctx              context.Context
@@ -82,4 +83,5 @@ type Worker struct {
 	holdStopOnce     sync.Once
 	holdsLive        atomic.Int32
 	dnsCopy          *dnsCopyListener
+	injector         *flowInjector
 }

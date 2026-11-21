@@ -4,8 +4,11 @@ import (
 	"encoding/binary"
 	"net"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/utils"
 )
+
+const maxUDPFakeLenV6 = config.MaxUDPFakeLen - 20
 
 func BuildUDPPacketV6(srcIP, dstIP net.IP, srcPort, dstPort uint16, payload []byte) []byte {
 	src := srcIP.To16()
@@ -83,9 +86,10 @@ func BuildFakeUDPFromOriginalV6(orig []byte, fakeLen int, hopLimit uint8, payloa
 	}
 
 	ipv6HdrLen := 40
-	if len(orig) < ipv6HdrLen+8 || orig[6] != 17 {
+	if len(orig) < ipv6HdrLen+8 || orig[6] != 17 || fakeLen < 0 {
 		return nil, false
 	}
+	fakeLen = min(fakeLen, maxUDPFakeLenV6)
 
 	out := make([]byte, ipv6HdrLen+8+fakeLen)
 

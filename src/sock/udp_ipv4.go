@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"net"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/utils"
 )
 
@@ -74,9 +75,10 @@ func BuildFakeUDPFromOriginalV4(orig []byte, fakeLen int, ttl uint8, payload []b
 		return nil, false
 	}
 	ihl := int((orig[0] & 0x0f) << 2)
-	if ihl < 20 || len(orig) < ihl+8 {
+	if ihl < 20 || len(orig) < ihl+8 || fakeLen < 0 {
 		return nil, false
 	}
+	fakeLen = min(fakeLen, config.MaxUDPFakeLen)
 	out := make([]byte, 20+8+fakeLen)
 	copy(out, orig[:20])
 	out[0] = (out[0] & 0xF0) | 0x05

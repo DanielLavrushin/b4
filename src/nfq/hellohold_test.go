@@ -638,7 +638,7 @@ func TestReleasingThePoolsHoldsReleasesHeldHellos(t *testing.T) {
 }
 
 func TestSplitHelloOfADomainOnlySetIsReplayedFromSegmentOne(t *testing.T) {
-	staggerReplays(t, 100*time.Millisecond)
+	staggerReplays(t, 0)
 	set := newFragmentingYTImagesSet()
 	w, sent := heldHelloWorker(t, &set)
 	q := &verdictLog{}
