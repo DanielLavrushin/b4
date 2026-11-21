@@ -1,4 +1,5 @@
 import { B4SetConfig, FakingPayloadType } from "@models/config";
+import type { PayloadFacts } from "@models/capture";
 import type { ChosenPayloadFile } from "../payloadFile";
 
 export function sendsComboFragments(config: B4SetConfig): boolean {
@@ -14,6 +15,9 @@ export const sendsSynOrDecoyFake = (config: B4SetConfig) =>
 export const sendsFake = (config: B4SetConfig) =>
   config.faking.sni || sendsSynOrDecoyFake(config);
 
+const tlsModReachesTheFile = (config: B4SetConfig, facts: PayloadFacts) =>
+  facts.tls_mod !== false || config.faking.fake_len_mode === "match";
+
 export function tlsModChangesTheFake(
   config: B4SetConfig,
   chosen: ChosenPayloadFile,
@@ -25,10 +29,12 @@ export function tlsModChangesTheFake(
       return true;
     case FakingPayloadType.CAPTURE:
       return chosen.state === "listed"
-        ? chosen.capture.facts?.kind === "tls_client_hello"
+        ? chosen.capture.facts?.kind === "tls_client_hello" &&
+            tlsModReachesTheFile(config, chosen.capture.facts)
         : chosen.state !== "unlisted" ||
             chosen.tooLarge ||
-            chosen.facts?.kind === "tls_client_hello";
+            (chosen.facts?.kind === "tls_client_hello" &&
+              tlsModReachesTheFile(config, chosen.facts));
     case FakingPayloadType.INVERTED:
       return sendsSynOrDecoyFake(config);
     default:

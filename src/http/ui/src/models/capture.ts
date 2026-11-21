@@ -23,6 +23,7 @@ export interface PayloadFacts {
   sni?: string;
   extensions?: number;
   ech?: boolean;
+  tls_mod?: boolean;
   fits_one_packet?: boolean;
   faults?: string[] | null;
 }
