@@ -544,16 +544,21 @@ func warmTransparentBinary(t *testing.T, binary, backend string, ipv6 bool, vers
 			t.Fatalf("preexisting TLS connection: %v", e)
 		}
 		first.Body.Close()
-		stalledRaws := []net.Conn{dial(), dial()}
+		stalled := 2
+		apart := 2 * time.Duration(ordinary.TCP.IPBlockDetect.TimeoutMs) * time.Millisecond
 		started := time.Now()
-		handshakes := make(chan error, len(stalledRaws))
-		for _, stalledRaw := range stalledRaws {
+		handshakes := make(chan error, stalled)
+		for i := range stalled {
+			if i > 0 {
+				time.Sleep(apart)
+			}
+			stalledRaw := dial()
 			defer stalledRaw.Close()
 			go func() {
 				handshakes <- tls.Client(stalledRaw, &tls.Config{ServerName: warmTestHost, RootCAs: roots, MinVersion: version, MaxVersion: version, CurvePreferences: []tls.CurveID{tls.X25519}}).Handshake()
 			}()
 		}
-		for range stalledRaws {
+		for range stalled {
 			e := <-handshakes
 			if e == nil || !strings.Contains(e.Error(), "reset") || time.Since(started) > 10*time.Second {
 				t.Fatalf("both stalled connections that collect the address must receive an exact reset: %v after %s", e, time.Since(started))
