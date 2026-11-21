@@ -70,6 +70,10 @@ func usableMetadata(loaded map[string]map[string]*PayloadMetadata) map[string]ma
 			if meta == nil {
 				continue
 			}
+			if !isPayloadFileName(meta.Filepath) {
+				log.Errorf("Dropped the %s payload %q of payloads.json: its file %q is not a .bin file in the captures folder", protocol, name, meta.Filepath)
+				continue
+			}
 			if usable[name] == nil {
 				usable[name] = make(map[string]*PayloadMetadata)
 			}
@@ -77,6 +81,38 @@ func usableMetadata(loaded map[string]map[string]*PayloadMetadata) map[string]ma
 		}
 	}
 	return usable
+}
+
+func isPayloadFileName(name string) bool {
+	return name != "" && filepath.Base(name) == name && strings.HasSuffix(name, ".bin")
+}
+
+func (m *Manager) payloadPath(name string) (string, error) {
+	if !isPayloadFileName(name) {
+		return "", fmt.Errorf("invalid payload file name %q", name)
+	}
+	fullPath := filepath.Clean(filepath.Join(m.outputPath, name))
+	if !strings.HasPrefix(fullPath, filepath.Clean(m.outputPath)+string(filepath.Separator)) {
+		return "", fmt.Errorf("access denied: path outside captures directory")
+	}
+	return fullPath, nil
+}
+
+func (m *Manager) readPayloadFile(name string) ([]byte, error) {
+	path, err := m.payloadPath(name)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
+}
+
+func (m *Manager) removePayloadFile(name string) {
+	path, err := m.payloadPath(name)
+	if err != nil {
+		log.Errorf("Not removing payload file %q: %v", name, err)
+		return
+	}
+	os.Remove(path)
 }
 
 func (m *Manager) saveMetadata() error {
@@ -136,7 +172,6 @@ func (m *Manager) GenerateCapture(domain, protocol string) error {
 	return nil
 }
 
-// ListCaptures returns all captured payloads for API
 func (m *Manager) ListCaptures() []*Capture {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -145,24 +180,17 @@ func (m *Manager) ListCaptures() []*Capture {
 
 	for domain, protocols := range m.metadata {
 		for protocol, meta := range protocols {
-			// Read hex data on demand
-			fullPath := filepath.Join(m.outputPath, meta.Filepath)
-			data, err := os.ReadFile(fullPath)
 			var hexData string
-			if err == nil {
+			if data, err := m.readPayloadFile(meta.Filepath); err == nil {
 				hexData = hex.EncodeToString(data)
 			}
-
-			// Return relative path in the format "captures/filename.bin"
-			// This is what the config system expects when loading payloads
-			relativePath := filepath.Join("captures", meta.Filepath)
 
 			captures = append(captures, &Capture{
 				Protocol:  protocol,
 				Domain:    domain,
 				Timestamp: meta.Timestamp,
 				Size:      meta.Size,
-				Filepath:  relativePath,
+				Filepath:  filepath.Join("captures", meta.Filepath),
 				HexData:   hexData,
 			})
 		}
@@ -171,7 +199,6 @@ func (m *Manager) ListCaptures() []*Capture {
 	return captures
 }
 
-// GetCapture returns specific capture
 func (m *Manager) GetCapture(protocol, domain string) (*Capture, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -181,30 +208,21 @@ func (m *Manager) GetCapture(protocol, domain string) (*Capture, bool) {
 	}
 
 	meta := m.metadata[domain][protocol]
-	fullPath := filepath.Join(m.outputPath, meta.Filepath)
-	data, err := os.ReadFile(fullPath)
 	var hexData string
-	if err == nil {
+	if data, err := m.readPayloadFile(meta.Filepath); err == nil {
 		hexData = hex.EncodeToString(data)
 	}
 
-	// Return relative path in the format "captures/filename.bin"
-	// This is what the config system expects when loading payloads
-	relativePath := filepath.Join("captures", meta.Filepath)
-
-	capture := &Capture{
+	return &Capture{
 		Protocol:  protocol,
 		Domain:    domain,
 		Timestamp: meta.Timestamp,
 		Size:      meta.Size,
-		Filepath:  relativePath,
+		Filepath:  filepath.Join("captures", meta.Filepath),
 		HexData:   hexData,
-	}
-
-	return capture, true
+	}, true
 }
 
-// DeleteCapture removes a capture
 func (m *Manager) DeleteCapture(protocol, domain string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -213,18 +231,13 @@ func (m *Manager) DeleteCapture(protocol, domain string) error {
 		return fmt.Errorf("capture not found")
 	}
 
-	// Delete file
-	meta := m.metadata[domain][protocol]
-	filepath := filepath.Join(m.outputPath, meta.Filepath)
-	os.Remove(filepath)
+	m.removePayloadFile(m.metadata[domain][protocol].Filepath)
 
-	// Update metadata
 	delete(m.metadata[domain], protocol)
 	if len(m.metadata[domain]) == 0 {
 		delete(m.metadata, domain)
 	}
 
-	// Save updated metadata
 	if err := m.saveMetadata(); err != nil {
 		log.Errorf("Failed to save metadata: %v", err)
 	}
@@ -233,23 +246,18 @@ func (m *Manager) DeleteCapture(protocol, domain string) error {
 	return nil
 }
 
-// ClearAll removes all captures
 func (m *Manager) ClearAll() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Delete all binary files
 	for _, protocols := range m.metadata {
 		for _, meta := range protocols {
-			filepath := filepath.Join(m.outputPath, meta.Filepath)
-			os.Remove(filepath)
+			m.removePayloadFile(meta.Filepath)
 		}
 	}
 
-	// Clear metadata
 	m.metadata = make(map[string]map[string]*PayloadMetadata)
 
-	// Save empty metadata
 	if err := m.saveMetadata(); err != nil {
 		log.Errorf("Failed to save metadata: %v", err)
 	}
@@ -369,20 +377,5 @@ func (m *Manager) LoadCaptureData(c *Capture) ([]byte, error) {
 	if c == nil || c.Filepath == "" {
 		return nil, fmt.Errorf("invalid capture")
 	}
-
-	filename := filepath.Base(c.Filepath)
-
-	if !strings.HasSuffix(filename, ".bin") {
-		return nil, fmt.Errorf("invalid file extension: %s", filename)
-	}
-
-	fullPath := filepath.Clean(filepath.Join(m.outputPath, filename))
-	cleanOutputPath := filepath.Clean(m.outputPath)
-
-	if !strings.HasPrefix(fullPath, cleanOutputPath+string(filepath.Separator)) &&
-		fullPath != cleanOutputPath {
-		return nil, fmt.Errorf("access denied: path outside captures directory")
-	}
-
-	return os.ReadFile(fullPath)
+	return m.readPayloadFile(filepath.Base(c.Filepath))
 }
