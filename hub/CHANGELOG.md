@@ -7,11 +7,6 @@ All notable changes to the b4hub community hub service are recorded in this file
 ### Changed
 
 - The console's **Check** treats `targets.use_collected_ips` and `tcp.wssize_reuse`, b4's new **Use collected IPs** and **Reuse WSSIZE connection** set options, as private fields that are never shared, and lists them under **Stripped fields** when the **Full set JSON** changes one from its default.
-
-## [1.9.1] - 2026-11-20
-
-### Changed
-
 - Set cards name the built-in fake payload 3 `vk`, after b4 replaced its DuckDuckGo ClientHello with one for `vk.com`. [b4#648](https://github.com/DanielLavrushin/b4/issues/648)
 
 ## [1.9.0] - 2026-11-15
@@ -104,8 +99,7 @@ All notable changes to the b4hub community hub service are recorded in this file
 
 - b4hub is versioned and released on its own from the `b4hub` repository, and the binary reports the b4 source tree it was built from.
 
-[1.10.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.9.1...v1.10.0
-[1.9.1]: https://github.com/DanielLavrushin/b4hub/compare/v1.9.0...v1.9.1
+[1.10.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.6.0...v1.7.0
