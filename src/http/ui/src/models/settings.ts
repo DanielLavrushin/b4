@@ -1,5 +1,5 @@
 import { B4SetConfig } from "@b4.sets";
-import { Device, MTProtoSecret } from "./config";
+import { Device, MTProtoSecret, SetTemplate } from "./config";
 
 export type SettingsPropHandlerType =
   | string
@@ -9,6 +9,7 @@ export type SettingsPropHandlerType =
   | B4SetConfig[]
   | Device[]
   | MTProtoSecret[]
+  | SetTemplate
   | null
   | undefined;
 

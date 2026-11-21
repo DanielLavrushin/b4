@@ -9,6 +9,7 @@
   "core": {
     "save": "Save Changes",
     "saving": "Saving...",
+    "saveBlockedInvalid": "Fix the values marked in red before saving",
     "cancel": "Cancel",
     "close": "Close",
     "reload": "Reload",
@@ -160,6 +161,7 @@
       "firewall": "Firewall",
       "dns": "DNS",
       "socks5": "SOCKS5",
+      "other": "Other",
       "needsRestart": "Applies after a restart"
     },
     "systemTabs": {
@@ -621,6 +623,16 @@
       "rememberBansInfo": "Applies to sets with IP block detection and Cache Blocked IPs on. For a banned address, new connections are reset at once, QUIC is refused, and DNS answers for names in any set leave it out. Bans survive restarts and set edits; the dashboard lists them.",
       "rememberBansIdle": "No set has IP block detection and Cache Blocked IPs on, so no address is banned yet.",
       "repeatBanTtlInfo": "The 30 days count from the end of the previous ban."
+    },
+    "NewSetTemplate": {
+      "title": "New set defaults",
+      "info": "b4 keeps only the values that differ from its defaults and leaves out the name, the targets, the proxy username and password and the Discovery tab's URLs.\n\nImported sets, community sets, Discovery, MCP and the sets API keep b4's defaults, so a shared set means the same on every router.",
+      "label": "Values for new sets (JSON)",
+      "placeholder": "{\"fragmentation\": {\"strategy\": \"none\"}, \"faking\": {\"sni\": false}}",
+      "help": "Empty: new sets start with b4's defaults. After saving, only the values that differ from them stay.",
+      "invalid": "This is not a JSON object, so it is not saved.",
+      "clear": "Clear",
+      "intro": "A set you create on the Sets page starts with these values instead of b4's own defaults. Paste a set's JSON from its Import/Export tab, or choose Use for new sets in a set's menu."
     },
     "Dns": {
       "title": "DNS",
@@ -1639,6 +1651,15 @@
       "orderInfo": "The most specific match is a set restricted to source devices, then the longest matching domain or IP range.\n\nFor a set with IP priority on, connections to its addresses stay with it even when a set lower in the list matches the domain.",
       "orderTitle": "Order of sets"
     },
+    "templateDialog": {
+      "title": "Use for new sets",
+      "intro": "Sets you create on the Sets page will start with these values:",
+      "empty": "This set keeps b4's defaults, so new sets will start with b4's defaults.",
+      "note": "The name, the targets, the proxy username and password and the Discovery tab's URLs are not copied. Change or clear these values in Settings > Core > Other.",
+      "confirm": "Use for new sets",
+      "saved": "New sets will start with these values",
+      "failed": "Failed to save the values for new sets"
+    },
     "deleteDialog": {
       "title": "Delete Configuration Set",
       "subtitle": "This action cannot be undone",
@@ -1780,6 +1801,7 @@
         "mark": "Mark conflict"
       },
       "findStrategy": "Find a strategy",
+      "useForNewSets": "Use for new sets",
       "watchdog": "Watchdog",
       "watchdogPending": "The watchdog is on for this set and has not checked it yet.",
       "watchdogGlobalOff": "The watchdog is on for this set but off in Settings, so the set is not checked.",
@@ -4236,7 +4258,7 @@
     "clickToView": "Click to view update",
     "available": "Update available",
     "install": "Install",
-    "upToDate": "up to date",
+    "upToDate": "Up to date",
     "installFromFile": "Install from a file instead",
     "installFromFileHelp": "For a network where no download source can be reached. Download b4-linux-<arch>.tar.gz from the release page on another machine and upload it here. The archive is checked against this router's architecture before anything is replaced.",
     "chooseArchive": "Choose archive",
@@ -4386,6 +4408,7 @@
     "tls_pair_unloadable": "TLS certificate/key pair does not load: {{error}}",
     "geosite_path_missing": "Geosite path must be configured to use geosite categories",
     "geoip_path_missing": "Geoip path must be configured to use geoip categories",
+    "invalid_set_template": "The new set defaults are not a valid set: {{error}}",
     "invalid_routing_mode": "Set \"{{set}}\": unknown routing mode \"{{mode}}\"",
     "socks5_loop": "Set \"{{set}}\": upstream proxy points to b4's own SOCKS5 server (loop)",
     "socks5_invalid_source": "\"{{value}}\" is not an IP address or CIDR range",

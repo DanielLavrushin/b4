@@ -61,10 +61,8 @@ export default function Version() {
     : `${DOCS_URL}/`;
 
   const versionStr = currentVersion.replace(/^v/, "");
-  const fromTag = currentVersion.startsWith("v")
-    ? currentVersion
-    : `v${currentVersion}`;
-  const toTag = latestRelease?.tag_name ?? "";
+  const fromVersion = versionStr;
+  const toVersion = (latestRelease?.tag_name ?? "").replace(/^v/, "");
 
   const handleDismiss = () => {
     if (latestRelease) dismissVersion(latestRelease.tag_name);
@@ -131,9 +129,9 @@ export default function Version() {
             title={t("update.clickToView")}
             sx={{
               display: "flex",
-              alignItems: "center",
+              alignItems: "flex-start",
               gap: "10px",
-              p: "8px 10px",
+              p: "10px 12px",
               borderRadius: `${radiusPx.sm}px`,
               backgroundColor: "rgba(245, 173, 24, 0.12)",
               border: "1px solid rgba(245, 173, 24, 0.4)",
@@ -152,6 +150,7 @@ export default function Version() {
                 position: "relative",
                 width: 8,
                 height: 8,
+                mt: "4px",
                 borderRadius: "50%",
                 backgroundColor: colors.secondary,
                 flexShrink: 0,
@@ -170,6 +169,7 @@ export default function Version() {
               sx={{
                 display: "flex",
                 flexDirection: "column",
+                gap: "4px",
                 flex: 1,
                 minWidth: 0,
                 lineHeight: 1.25,
@@ -178,11 +178,9 @@ export default function Version() {
               <Box
                 component="span"
                 sx={{
-                  fontSize: 11,
+                  fontSize: 12,
                   color: colors.secondary,
                   fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
                 }}
               >
                 {t("update.available")}
@@ -191,33 +189,39 @@ export default function Version() {
                 component="span"
                 sx={{
                   fontFamily: fonts.mono,
-                  fontSize: 10,
+                  fontSize: 11,
                   color: colors.text.secondary,
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
                 }}
               >
-                {fromTag} → {toTag}
+                {fromVersion} →{" "}
+                <Box
+                  component="span"
+                  sx={{ color: colors.text.primary, fontWeight: 600 }}
+                >
+                  {toVersion}
+                </Box>
               </Box>
-            </Box>
-            <Box
-              component="span"
-              sx={{
-                fontSize: 10,
-                color: colors.secondary,
-                fontWeight: 700,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-                px: "8px",
-                py: "3px",
-                border: `1px solid ${colors.secondary}`,
-                borderRadius: "3px",
-                backgroundColor: "rgba(245, 173, 24, 0.10)",
-                flexShrink: 0,
-              }}
-            >
-              {t("update.install")}
+              <Box
+                component="span"
+                sx={{
+                  mt: "4px",
+                  textAlign: "center",
+                  fontSize: 11,
+                  color: colors.secondary,
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                  py: "4px",
+                  border: `1px solid ${colors.secondary}`,
+                  borderRadius: "3px",
+                  backgroundColor: "rgba(245, 173, 24, 0.10)",
+                }}
+              >
+                {t("update.install")}
+              </Box>
             </Box>
           </Box>
         ) : (
@@ -232,7 +236,7 @@ export default function Version() {
                 setUpdateModalOpen(true);
               }
             }}
-            title={t("update.clickToView")}
+            title={t("update.upToDate")}
             sx={{
               display: "flex",
               alignItems: "center",
@@ -276,12 +280,6 @@ export default function Version() {
               sx={{ color: colors.text.primary, fontWeight: 600 }}
             >
               {versionStr}
-            </Box>
-            <Box
-              component="span"
-              sx={{ color: colors.text.secondary, opacity: 0.7 }}
-            >
-              · {t("update.upToDate")}
             </Box>
           </Box>
         )}

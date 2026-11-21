@@ -433,6 +433,12 @@ func (a *API) updateConfig(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrInvalidJSON())
 		return
 	}
+	template, err := config.NormalizeSetTemplate(newConfig.UI.NewSetTemplate)
+	if err != nil {
+		writeAPIError(w, err)
+		return
+	}
+	newConfig.UI.NewSetTemplate = template
 
 	curCfg := a.getCfg()
 	oldConfig := curCfg.Clone()

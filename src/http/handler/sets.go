@@ -576,7 +576,7 @@ func (api *API) getSet(w http.ResponseWriter, id string) {
 }
 
 // @Summary Create a new set
-// @Description A field the body leaves out takes its set default, the value a new set gets in the web interface. A set created without "enabled" is enabled.
+// @Description A field the body leaves out takes b4's set default, the value a config file or a set export means when it leaves the field out. The new set template (/ui/new-set-template) does not apply here: only the web interface's Create Set reads it. A set created without "enabled" is enabled.
 // @Tags Sets
 // @Accept json
 // @Produce json

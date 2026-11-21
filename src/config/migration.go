@@ -440,6 +440,7 @@ func (c *Config) LoadWithMigration(path string) (bool, error) {
 	}
 
 	c.System.Geo.SanitizePaths(filepath.Dir(c.ConfigPath))
+	c.loadSetTemplate()
 
 	if c.migratePasswordHash() {
 		migrated = true

@@ -26,6 +26,7 @@ import {
   EditIcon,
   EscalateInIcon,
   EscalateOutIcon,
+  SetsIcon,
   ShareIcon,
   TelegramIcon,
   ThumbDownIcon,
@@ -76,6 +77,7 @@ interface SetCardProps {
   onEdit: (section?: EditorSection) => void;
   onDuplicate: () => void;
   onCompare: () => void;
+  onUseForNewSets: () => void;
   onDelete: () => void;
   onToggleEnabled: (enabled: boolean) => void;
   syncing?: boolean;
@@ -104,6 +106,7 @@ export const SetCard = ({
   onEdit,
   onDuplicate,
   onCompare,
+  onUseForNewSets,
   onDelete,
   onToggleEnabled,
   syncing,
@@ -381,6 +384,12 @@ export const SetCard = ({
               <CompareIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText>{t("core.compare")}</ListItemText>
+          </MenuItem>
+          <MenuItem onClick={() => handleAction(onUseForNewSets)}>
+            <ListItemIcon>
+              <SetsIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>{t("sets.card.useForNewSets")}</ListItemText>
           </MenuItem>
           {!set.routing?.enabled && (
             <MenuItem

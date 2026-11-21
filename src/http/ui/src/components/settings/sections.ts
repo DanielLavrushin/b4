@@ -1,6 +1,7 @@
 import type { SvgIconComponent } from "@mui/icons-material";
 import {
   BackupIcon,
+  CategoryIcon,
   ConnectionIcon,
   ControlIcon,
   DeviceUnknowIcon,
@@ -16,7 +17,8 @@ export type CoreSectionId =
   | "devices"
   | "firewall"
   | "dns"
-  | "socks5";
+  | "socks5"
+  | "other";
 
 export type SystemSectionId = "service" | "web" | "backup";
 
@@ -118,6 +120,14 @@ export const CORE_SECTIONS: SettingsSection<CoreSectionId>[] = [
     prefixes: ["system.socks5"],
     Icon: ConnectionIcon,
     pick: (c) => [c.system.socks5],
+    restartPick: nothing,
+  },
+  {
+    id: "other",
+    labelKey: "settings.coreTabs.other",
+    prefixes: ["ui.new_set_template"],
+    Icon: CategoryIcon,
+    pick: (c) => [c.ui?.new_set_template ?? null],
     restartPick: nothing,
   },
 ];

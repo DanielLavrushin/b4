@@ -49,6 +49,8 @@ var placeholderPaths = map[string]bool{
 	"sets[].routing.upstream.password":        true,
 	"sets[].dns.doh_url":                      true,
 	"sets[].discovery.urls[]":                 true,
+	"ui.new_set_template.dns.doh_url":         true,
+	"ui.new_set_template.dns.upstreams[]":     true,
 }
 
 func (c *Config) RedactedCopy() (*Config, error) {
@@ -135,6 +137,7 @@ func (c *Config) RedactForSharing() {
 		}
 		set.Discovery.URLs = maskURLs(set.Discovery.URLs)
 	}
+	c.UI.NewSetTemplate = redactSetTemplateForSharing(c.UI.NewSetTemplate)
 }
 
 func (c *Config) RedactedValuePaths() []string {
