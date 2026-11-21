@@ -27,7 +27,6 @@ All notable changes to b4 are recorded in this file.
 - With a splitting strategy such as **Combo**, the second packet of a ClientHello sent in two packets waits until the first has gone out in pieces, which adds one **First Segment Delay** (30 ms by default) to such connections. [#653](https://github.com/DanielLavrushin/b4/issues/653)
 - A set that worked only while the second packet of a ClientHello overtook the first, such as one with a **Preset: STUN** fake and no splitting, can stop working after the update; **Discovery** run again for its sites finds a new strategy. [#653](https://github.com/DanielLavrushin/b4/issues/653)
 - The Russian interface writes "payload" in English throughout, the **Payloads** tab included. [#650](https://github.com/DanielLavrushin/b4/issues/650)
-- The version block at the bottom of the side menu shows only the version while b4 is up to date, and the **Update available** block puts the versions and **Install** on lines of their own.
 
 ### Removed
 
