@@ -256,7 +256,7 @@ func regenerationHost(domain string, facts *Facts) (string, error) {
 	}
 	for _, candidate := range candidates {
 		host, err := sni.HostToASCII(strings.ToLower(strings.TrimSuffix(candidate, ".")))
-		if err == nil && sni.IsValidSNI([]byte(host)) {
+		if err == nil && sni.ValidHostName(host) {
 			return host, nil
 		}
 	}

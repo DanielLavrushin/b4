@@ -114,11 +114,6 @@ func (api *API) handleGenerateCapture(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-const (
-	maxHostNameLength  = 253
-	maxHostLabelLength = 63
-)
-
 var fullStops = strings.NewReplacer("。", ".", "．", ".", "｡", ".")
 
 func normalizeHostName(raw string) (string, bool) {
@@ -140,13 +135,8 @@ func normalizeHostName(raw string) (string, bool) {
 		return "", false
 	}
 	host, err := sni.HostToASCII(host)
-	if err != nil || len(host) > maxHostNameLength || !sni.IsValidSNI([]byte(host)) {
+	if err != nil || !sni.ValidHostName(host) {
 		return "", false
-	}
-	for _, label := range strings.Split(host, ".") {
-		if len(label) == 0 || len(label) > maxHostLabelLength {
-			return "", false
-		}
 	}
 	return host, true
 }

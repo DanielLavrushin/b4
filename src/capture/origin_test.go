@@ -193,3 +193,11 @@ func TestRegenerateWritesAnASCIIServerName(t *testing.T) {
 		t.Errorf("with no host name in the facts or the name, regenerate answered %v and wrote %+v, want ErrNoHostName", err, regenerated)
 	}
 }
+
+func TestRegenerationRefusesANameWithALabelOverTheLimit(t *testing.T) {
+	for _, name := range []string{strings.Repeat("a", 57) + "ü.example", strings.Repeat("b", 70) + ".example"} {
+		if host, err := regenerationHost(name, &Facts{SNI: name}); !errors.Is(err, ErrNoHostName) {
+			t.Errorf("regenerating a payload named %q would write the server name %q (err %v), want ErrNoHostName: a label of a host name holds at most 63 bytes", name, host, err)
+		}
+	}
+}

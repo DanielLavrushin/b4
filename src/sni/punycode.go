@@ -48,6 +48,9 @@ func HostToASCII(host string) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		if len(punyACEPrefix)+len(encoded) > maxLabelLength {
+			return "", errLabelTooLong
+		}
 		labels[i] = punyACEPrefix + encoded
 	}
 	return strings.Join(labels, "."), nil

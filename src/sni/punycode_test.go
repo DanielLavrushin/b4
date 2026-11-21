@@ -1,6 +1,9 @@
 package sni
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestPunycodeEncodesKnownLabels(t *testing.T) {
 	for _, c := range []struct{ label, want string }{
@@ -59,12 +62,34 @@ func TestHostToASCIIRefusesALabelTooLongBeforeEncodingIt(t *testing.T) {
 		}
 		return string(runes)
 	}
-	if _, err := HostToASCII(label(63) + ".example"); err != nil {
-		t.Errorf("a label of 63 characters was refused before encoding: %v", err)
-	}
 	for _, n := range []int{64, 10000} {
 		if got, err := HostToASCII(label(n) + ".example"); err == nil {
 			t.Errorf("a label of %d characters was encoded (%d bytes) instead of being refused, although no label over 63 characters can fit a host name", n, len(got))
+		}
+	}
+}
+
+func TestHostToASCIIRefusesALabelThatEncodesPastTheLimit(t *testing.T) {
+	long := strings.Repeat("a", 57) + "ü.example"
+	if got, err := HostToASCII(long); err == nil {
+		t.Errorf("HostToASCII(%q) = %q, whose first label is %d bytes, want an error", long, got, len(strings.Split(got, ".")[0]))
+	}
+	if got, err := HostToASCII("пример.рф"); err != nil || got != "xn--e1afmkfd.xn--p1ai" {
+		t.Errorf("HostToASCII(\"пример.рф\") = %q, %v; want xn--e1afmkfd.xn--p1ai", got, err)
+	}
+}
+
+func TestValidHostNameKeepsTheDNSLimits(t *testing.T) {
+	label63 := strings.Repeat("a", 63)
+	for _, host := range []string{"example.com", label63 + ".example", "xn--e1afmkfd.xn--p1ai"} {
+		if !ValidHostName(host) {
+			t.Errorf("ValidHostName(%q) = false, want true", host)
+		}
+	}
+	name254 := strings.Repeat(strings.Repeat("c", 49)+".", 5) + "cccc"
+	for _, host := range []string{"", label63 + "a.example", "a..example", ".example", name254, "1.2.3.4", "bad host.example"} {
+		if ValidHostName(host) {
+			t.Errorf("ValidHostName(%q) = true, want false", host)
 		}
 	}
 }
