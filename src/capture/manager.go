@@ -252,14 +252,13 @@ func (m *Manager) fileNameFor(protocol, name string) (string, error) {
 	sum := sha256.Sum256([]byte(protocol + "/" + name))
 	tagged := sanitizeDomain(name) + "-" + hex.EncodeToString(sum[:4])
 	for i := range 64 {
-		label := sanitizeDomain(name)
+		filename := plainFileName(protocol, name)
 		switch {
 		case i == 1:
-			label = tagged
+			filename = fmt.Sprintf(payloadFilenameFmt, protocol, tagged)
 		case i > 1:
-			label = fmt.Sprintf("%s-%d", tagged, i)
+			filename = fmt.Sprintf(payloadFilenameFmt, protocol, fmt.Sprintf("%s-%d", tagged, i))
 		}
-		filename := fmt.Sprintf(payloadFilenameFmt, protocol, label)
 		if m.fileNameFree(filename) {
 			return filename, nil
 		}
@@ -267,13 +266,24 @@ func (m *Manager) fileNameFor(protocol, name string) (string, error) {
 	return "", fmt.Errorf("no free file name for the %s payload %q", protocol, name)
 }
 
-func (m *Manager) fileNameFree(filename string) bool {
+func plainFileName(protocol, name string) string {
+	return fmt.Sprintf(payloadFilenameFmt, protocol, sanitizeDomain(name))
+}
+
+func (m *Manager) fileOwned(filename string) bool {
 	for _, protocols := range m.metadata {
 		for _, meta := range protocols {
 			if meta.Filepath == filename {
-				return false
+				return true
 			}
 		}
+	}
+	return false
+}
+
+func (m *Manager) fileNameFree(filename string) bool {
+	if m.fileOwned(filename) {
+		return false
 	}
 	path, err := m.payloadPath(filename)
 	if err != nil {
@@ -493,55 +503,77 @@ func (m *Manager) SaveImportedPayload(protocol, domain string, data []byte) (str
 	sum := sha256.Sum256(data)
 	candidates := []string{domain, domain + "-" + hex.EncodeToString(sum[:4])}
 	for _, name := range candidates {
-		filename := fmt.Sprintf(payloadFilenameFmt, protocol, sanitizeDomain(name))
-		filePath := filepath.Join(m.outputPath, filename)
-		existing, err := os.ReadFile(filePath)
-		if err == nil {
-			if !bytes.Equal(existing, data) {
+		if listed := m.metadata[name][protocol]; listed != nil {
+			existing, err := m.readPayloadFile(listed.Filepath)
+			switch {
+			case err == nil && bytes.Equal(existing, data):
+				return filepath.Join("captures", listed.Filepath), nil
+			case err == nil:
 				continue
+			case !os.IsNotExist(err):
+				return "", fmt.Errorf("failed to inspect %s: %v", listed.Filepath, err)
 			}
-			if m.metadata[name] == nil || m.metadata[name][protocol] == nil {
-				at := time.Now()
-				if info, err := os.Stat(filePath); err == nil {
+			return m.writeImportedPayload(name, protocol, listed.Filepath, data)
+		}
+		if plain := plainFileName(protocol, name); m.unlistedFileHolds(plain, data) {
+			at := time.Now()
+			if path, err := m.payloadPath(plain); err == nil {
+				if info, err := os.Stat(path); err == nil {
 					at = info.ModTime()
 				}
-				if err := m.registerImportedPayload(name, protocol, filename, data, at); err != nil {
-					return "", err
-				}
-				log.Infof("Registered existing shared %s payload for %s (%d bytes)", protocol, name, len(data))
 			}
-			return filepath.Join("captures", filename), nil
+			if err := m.registerImportedPayload(name, protocol, plain, data, at); err != nil {
+				return "", err
+			}
+			log.Infof("Registered existing shared %s payload for %s (%d bytes)", protocol, name, len(data))
+			return filepath.Join("captures", plain), nil
 		}
-		if !os.IsNotExist(err) {
-			return "", fmt.Errorf("failed to inspect %s: %v", filename, err)
-		}
-		if err := utils.WriteFileAtomic(filePath, data, 0644); err != nil {
-			return "", fmt.Errorf("failed to save file: %v", err)
-		}
-		if err := m.registerImportedPayload(name, protocol, filename, data, time.Now()); err != nil {
+		filename, err := m.fileNameFor(protocol, name)
+		if err != nil {
 			return "", err
 		}
-		log.Infof("Saved shared %s payload for %s (%d bytes)", protocol, name, len(data))
-		return filepath.Join("captures", filename), nil
+		return m.writeImportedPayload(name, protocol, filename, data)
 	}
 	return "", fmt.Errorf("a different payload already exists under every name derived from %s", domain)
 }
 
-func (m *Manager) registerImportedPayload(name, protocol, filename string, data []byte, at time.Time) error {
-	if m.metadata[name] == nil {
-		m.metadata[name] = make(map[string]*PayloadMetadata)
+func (m *Manager) unlistedFileHolds(filename string, data []byte) bool {
+	if m.fileOwned(filename) {
+		return false
 	}
-	m.metadata[name][protocol] = &PayloadMetadata{
+	existing, err := m.readPayloadFile(filename)
+	return err == nil && bytes.Equal(existing, data)
+}
+
+func (m *Manager) writeImportedPayload(name, protocol, filename string, data []byte) (string, error) {
+	path, err := m.payloadPath(filename)
+	if err != nil {
+		return "", err
+	}
+	if err := utils.WriteFileAtomic(path, data, 0644); err != nil {
+		return "", fmt.Errorf("failed to save file: %v", err)
+	}
+	if err := m.registerImportedPayload(name, protocol, filename, data, time.Now()); err != nil {
+		return "", err
+	}
+	log.Infof("Saved shared %s payload for %s (%d bytes)", protocol, name, len(data))
+	return filepath.Join("captures", filename), nil
+}
+
+func (m *Manager) registerImportedPayload(name, protocol, filename string, data []byte, at time.Time) error {
+	previous := m.metadata[name][protocol]
+	m.setEntry(name, protocol, &PayloadMetadata{
 		Timestamp: at,
 		Size:      len(data),
 		Filepath:  filename,
 		Origin:    OriginImported,
 		Facts:     FactsOf(protocol, data),
-	}
+	})
 	if err := m.saveMetadata(); err != nil {
-		delete(m.metadata[name], protocol)
-		if len(m.metadata[name]) == 0 {
-			delete(m.metadata, name)
+		if previous != nil {
+			m.setEntry(name, protocol, previous)
+		} else {
+			m.removeEntry(name, protocol)
 		}
 		return fmt.Errorf("failed to save metadata: %v", err)
 	}

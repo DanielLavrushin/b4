@@ -394,30 +394,14 @@ func TestHubApplyRefusesASetWhosePayloadCannotBeStored(t *testing.T) {
 	}
 	env.publish(t, cs)
 
-	captures := capture.GetManager(env.api.getCfg()).GetOutputPath()
+	manager := capture.GetManager(env.api.getCfg())
 	sum := sha256.Sum256(payloads[0].Data)
-	clash := []string{
-		filepath.Join(captures, "tls_www_google_com.bin"),
-		filepath.Join(captures, "tls_www_google_com-"+hex.EncodeToString(sum[:4])+".bin"),
-	}
-	saved := map[string][]byte{}
-	for _, path := range clash {
-		if old, err := os.ReadFile(path); err == nil {
-			saved[path] = old
-		}
-		if err := os.WriteFile(path, []byte("not the shared payload"), 0644); err != nil {
+	for _, name := range []string{payloads[0].Domain, payloads[0].Domain + "-" + hex.EncodeToString(sum[:4])} {
+		if err := manager.SaveUploadedCapture(payloads[0].Protocol, name, []byte("not the shared payload"), true); err != nil {
 			t.Fatal(err)
 		}
+		t.Cleanup(func() { manager.DeleteCapture(payloads[0].Protocol, name) })
 	}
-	t.Cleanup(func() {
-		for _, path := range clash {
-			if old, ok := saved[path]; ok {
-				os.WriteFile(path, old, 0644)
-			} else {
-				os.Remove(path)
-			}
-		}
-	})
 
 	rec := postJSON(t, env.mux, "/api/hub/sets/p-2/apply", map[string]interface{}{})
 	expectCode(t, rec, http.StatusInternalServerError, "payload_install_failed")
