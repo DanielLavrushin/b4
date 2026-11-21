@@ -1,6 +1,8 @@
 package nfq
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -48,6 +50,99 @@ func TestTurningCollectedIPsOffLeavesTheFirewallAndMatcherToTheSave(t *testing.T
 	r.p.configMu.Unlock()
 	if dirty || !r.p.collectedQuiet.Load() {
 		t.Errorf("the drained pool did not settle: dirty=%v quiet=%v", dirty, r.p.collectedQuiet.Load())
+	}
+}
+
+func expectTheSavedConfigInstalledOnce(t *testing.T, r *lifetimeRig, installs int, at time.Duration) {
+	t.Helper()
+	changed := 0
+	r.p.collectedChanged = func(*sni.SuffixSet) { changed++ }
+	matcher := r.w.getMatcher()
+	r.sweep(at)
+	if r.installs != installs+1 {
+		t.Fatalf("an install that a save superseded can write the old view after the save's own rules, but the next pass did not install the saved config again: installs %d -> %d", installs, r.installs)
+	}
+	view := r.views[len(r.views)-1]
+	if view != r.p.collectedBase {
+		t.Error("the pass installed another config than the saved one")
+	}
+	for _, set := range view.Sets {
+		if len(set.Targets.CollectedIPs) > 0 {
+			t.Errorf("the installed config still gives set %q the collected addresses %v", set.Id, set.Targets.CollectedIPs)
+		}
+	}
+	if r.w.getMatcher() != matcher || changed != 0 {
+		t.Errorf("installing the saved config again rebuilt the matcher the save had already built: matcher kept=%v, resolver updates=%d", r.w.getMatcher() == matcher, changed)
+	}
+	r.sweep(at + time.Second)
+	if r.installs != installs+1 {
+		t.Errorf("the saved config was installed again on the pass after: installs %d -> %d", installs+1, r.installs)
+	}
+}
+
+func TestAnInstallASaveSupersedesIsRepairedOnTheNextPass(t *testing.T) {
+	r := newLifetimeRig(t, nil)
+	r.collect(t)
+	saved := false
+	r.p.collectedInstall = func(_ context.Context, view *config.Config, current func() bool) error {
+		r.installs++
+		r.views = append(r.views, view)
+		if !current() {
+			return errors.New("superseded")
+		}
+		if !saved {
+			saved = true
+			saveCollectedFeaturesOff(t, r)
+		}
+		return nil
+	}
+	installs := r.installs
+	r.expireAt(6 * time.Second)
+	r.sweep(6 * time.Second)
+	r.p.configMu.Lock()
+	dirty := r.p.collectedDirty
+	r.p.configMu.Unlock()
+	if !saved || r.installs != installs+1 || !dirty || r.collected() != 0 {
+		t.Fatalf("setup: the expiry's install must run and a save must supersede it after its first step: saved=%v installs %d -> %d dirty=%v pooled=%d", saved, installs, r.installs, dirty, r.collected())
+	}
+
+	expectTheSavedConfigInstalledOnce(t, r, installs+1, 7*time.Second)
+}
+
+func TestARollbackASaveSupersedesIsRepairedOnTheNextPass(t *testing.T) {
+	for name, rollback := range map[string]error{
+		"the rollback failed":   errors.New("kernel refused the rollback"),
+		"the rollback finished": nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newLifetimeRig(t, nil)
+			r.collect(t)
+			calls := 0
+			r.p.collectedInstall = func(_ context.Context, view *config.Config, current func() bool) error {
+				r.installs++
+				r.views = append(r.views, view)
+				calls++
+				if !current() {
+					return errors.New("superseded")
+				}
+				switch calls {
+				case 1:
+					return errors.New("kernel refused the update")
+				case 2:
+					saveCollectedFeaturesOff(t, r)
+					return rollback
+				}
+				return nil
+			}
+			installs := r.installs
+			r.expireAt(6 * time.Second)
+			r.sweep(6 * time.Second)
+			if calls != 2 || r.installs != installs+2 {
+				t.Fatalf("setup: the expiry's install must fail after its first step and its rollback must run, with a save during the rollback: calls=%d installs %d -> %d", calls, installs, r.installs)
+			}
+
+			expectTheSavedConfigInstalledOnce(t, r, installs+2, 7*time.Second)
+		})
 	}
 }
 

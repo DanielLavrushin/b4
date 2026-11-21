@@ -36,6 +36,7 @@ type Pool struct {
 	collectedCtx       context.Context
 	collectedCancel    context.CancelFunc
 	collectedDirty     bool
+	collectedReinstall bool
 	collectedQuiet     atomic.Bool
 	collectedEngineTUN bool
 	collectedRetryAt   time.Time

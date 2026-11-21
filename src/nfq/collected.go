@@ -740,7 +740,7 @@ func (p *Pool) publishCollectedWith(requireConsumer bool, prepared *collectedPre
 	}
 	sort.Strings(ips)
 	unchanged := slices.Equal(ips, p.publishedCollected())
-	if !cfg.CollectedViewNeeded() && (len(p.Workers) == 0 || p.Workers[0].getConfig() == cfg) {
+	if !p.collectedReinstall && !cfg.CollectedViewNeeded() && (len(p.Workers) == 0 || p.Workers[0].getConfig() == cfg) {
 		p.recordPublishedLocked(cfg, cfg, ips, unchanged)
 		p.configMu.Unlock()
 		return collectedPublish{outcome: collectedApplied, unchanged: unchanged}
@@ -756,7 +756,7 @@ func (p *Pool) publishCollectedWith(requireConsumer bool, prepared *collectedPre
 	default:
 		view = cfg.WithCollectedIPs(ips)
 	}
-	rebuild := !unchanged || len(p.Workers) == 0 || p.Workers[0].getConfig() != view
+	rebuild := len(p.Workers) == 0 || p.Workers[0].getConfig() != view
 	if rebuild && matcher == nil {
 		matcher = buildMatcher(view)
 	}
@@ -782,6 +782,7 @@ func (p *Pool) publishCollectedWith(requireConsumer bool, prepared *collectedPre
 		return result
 	case p.collectedEpoch.Load() != epoch:
 		log.Tracef("Collected IPs: a save or a pool change superseded the install, it runs again on the next pass")
+		p.collectedReinstall = p.collectedReinstall || result.mutated
 		result.outcome = collectedSuperseded
 		return result
 	case errors.Is(err, tables.ErrFirewallRefreshPending):
@@ -805,6 +806,7 @@ func (p *Pool) publishCollectedWith(requireConsumer bool, prepared *collectedPre
 		}
 	}
 	p.recordPublishedLocked(cfg, view, ips, unchanged)
+	p.collectedReinstall = false
 	if rebuild && p.collectedChanged != nil {
 		p.collectedChanged(matcher)
 	}
@@ -834,22 +836,32 @@ func (p *Pool) rollbackCollected() {
 	}
 	ctx, cancel := context.WithTimeout(p.collectedCtx, 5*time.Second)
 	defer cancel()
+	var mutated atomic.Bool
 	err := install(ctx, p.CollectedConfig(cfg), func() bool {
-		return ctx.Err() == nil && p.collectedEpoch.Load() == epoch
+		current := ctx.Err() == nil && p.collectedEpoch.Load() == epoch
+		if current {
+			mutated.Store(true)
+		}
+		return current
 	})
 	if err == nil {
 		err = ctx.Err()
 	}
-	if err == nil || p.collectedCtx.Err() != nil {
+	if p.collectedCtx.Err() != nil {
 		return
 	}
-	if p.collectedEpoch.Load() != epoch {
+	superseded := p.collectedEpoch.Load() != epoch
+	switch {
+	case superseded:
 		log.Tracef("Collected IPs: a save or a pool change superseded the rollback, the next pass installs the pool again")
-	} else {
+	case err != nil:
 		log.Warnf("Collected IPs: rollback incomplete: %v", err)
+	default:
+		return
 	}
 	p.configMu.Lock()
 	p.collectedDirty = true
+	p.collectedReinstall = p.collectedReinstall || superseded && mutated.Load()
 	p.configMu.Unlock()
 }
 
