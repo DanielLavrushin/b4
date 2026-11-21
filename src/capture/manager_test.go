@@ -2,6 +2,8 @@ package capture
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/signal"
@@ -303,6 +305,52 @@ func TestNamesThatSanitizeAlikeKeepTheirOwnFiles(t *testing.T) {
 	}
 	if info, err := os.Stat(blocker); err != nil || !info.IsDir() {
 		problems = append(problems, fmt.Sprintf("the upload replaced the directory %s: %v", filepath.Base(blocker), err))
+	}
+
+	if len(problems) > 0 {
+		t.Fatal(strings.Join(problems, "; "))
+	}
+}
+
+func atomicWriteFits(filename string) bool {
+	return len("."+filename+".4294967295.tmp") <= 255
+}
+
+func TestLongNamesGetFileNamesTheFileSystemTakes(t *testing.T) {
+	m := testManager(t)
+	prefix := strings.Repeat("a", 300)
+	var problems []string
+	files := map[string]string{}
+	for _, name := range []string{prefix + ".one.example", prefix + ".two.example"} {
+		if err := m.SaveUploadedCapture("tls", name, []byte(name), false); err != nil {
+			problems = append(problems, fmt.Sprintf("an upload named with %d characters failed: %v", len(name), err))
+			continue
+		}
+		c, _ := m.GetCapture("tls", name)
+		files[c.Filepath] = name
+		if !atomicWriteFits(filepath.Base(c.Filepath)) {
+			problems = append(problems, fmt.Sprintf("an upload named with %d characters got the %d-byte file name %s", len(name), len(filepath.Base(c.Filepath)), c.Filepath))
+		}
+	}
+	if len(files) != 2 && len(problems) == 0 {
+		problems = append(problems, fmt.Sprintf("two long names that share their first 300 characters share a file: %v", files))
+	}
+	if rel, err := m.SaveImportedPayload("quic", prefix+".import.example", []byte("imported")); err != nil || !atomicWriteFits(filepath.Base(rel)) {
+		problems = append(problems, fmt.Sprintf("an import named with %d characters answered %q, %v", len(prefix)+len(".import.example"), rel, err))
+	}
+
+	longest := strings.Repeat("b", MaxNameLength-len(".example")) + ".example"
+	label := sanitizeDomain(longest)
+	sum := sha256.Sum256([]byte("quic/" + longest))
+	for _, taken := range []string{label, label + "-" + hex.EncodeToString(sum[:4])} {
+		if err := os.Mkdir(filepath.Join(m.outputPath, "quic_"+taken+".bin"), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := m.SaveUploadedCapture("quic", longest, []byte("longest"), false); err != nil {
+		problems = append(problems, fmt.Sprintf("an upload named with %d characters, the limit, pushed past its plain and first tagged file failed: %v", len(longest), err))
+	} else if c, _ := m.GetCapture("quic", longest); !strings.HasSuffix(c.Filepath, "-2.bin") || !atomicWriteFits(filepath.Base(c.Filepath)) {
+		problems = append(problems, fmt.Sprintf("the longest name pushed past two taken files got %s (%d bytes)", c.Filepath, len(filepath.Base(c.Filepath))))
 	}
 
 	if len(problems) > 0 {

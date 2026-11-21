@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/daniellavrushin/b4/capture"
 	"github.com/daniellavrushin/b4/config"
@@ -517,7 +518,7 @@ func (api *API) handleInspectCapture(w http.ResponseWriter, r *http.Request) {
 // @Accept multipart/form-data
 // @Produce json
 // @Param file formData file true "Capture binary file"
-// @Param domain formData string true "Domain name"
+// @Param domain formData string true "Payload name, at most 200 characters"
 // @Param protocol formData string false "Protocol (tls or quic)" default(tls)
 // @Param replace formData string false "1 to replace an existing payload of this name and protocol"
 // @Success 200 {object} map[string]interface{}
@@ -541,6 +542,10 @@ func (api *API) handleUploadCapture(w http.ResponseWriter, r *http.Request) {
 
 	if domain == "" {
 		http.Error(w, "Domain required", http.StatusBadRequest)
+		return
+	}
+	if n := utf8.RuneCountInString(domain); n > capture.MaxNameLength {
+		http.Error(w, fmt.Sprintf("Name too long: a payload name may have at most %d characters, this one has %d", capture.MaxNameLength, n), http.StatusBadRequest)
 		return
 	}
 	if protocol == "" {

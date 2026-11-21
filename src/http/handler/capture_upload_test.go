@@ -5,6 +5,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -129,5 +130,33 @@ func TestPayloadUploadSaysWhyTheFormFailed(t *testing.T) {
 	text = strings.TrimSpace(rec.Body.String())
 	if rec.Code != http.StatusBadRequest || !strings.Contains(strings.ToLower(text), "too large") {
 		t.Errorf("a 200 KiB upload was answered %d %q, want 400 saying the file is too large", rec.Code, text)
+	}
+}
+
+func TestPayloadNamesLongerThanTheLimitAreRefusedAndLongHostNamesStillFit(t *testing.T) {
+	mux, api := captureTestMux(t)
+	manager := capture.GetManager(api.getCfg())
+	longest := strings.Repeat("a", capture.MaxNameLength-len(".limit.example")) + ".limit.example"
+	tooLong := strings.Repeat("a", 250) + ".example"
+	host := strings.Repeat("a", 63) + "." + strings.Repeat("b", 63) + "." + strings.Repeat("c", 63) + "." + strings.Repeat("d", 61)
+	t.Cleanup(func() {
+		for _, name := range []string{longest, tooLong, host} {
+			manager.DeleteCapture("tls", name)
+		}
+	})
+
+	rec := uploadCapturePayload(t, mux, tooLong, "tls", payloadTestHello(0x55, 100))
+	text := strings.TrimSpace(rec.Body.String())
+	if rec.Code != http.StatusBadRequest || !strings.Contains(text, strconv.Itoa(capture.MaxNameLength)) {
+		t.Errorf("an upload named with %d characters was answered %d %q, want 400 naming the limit of %d", len(tooLong), rec.Code, text, capture.MaxNameLength)
+	}
+	if rec := uploadCapturePayload(t, mux, longest, "tls", payloadTestHello(0x56, 100)); rec.Code != http.StatusOK {
+		t.Errorf("an upload named with %d characters, the limit, was answered %d %q", len(longest), rec.Code, strings.TrimSpace(rec.Body.String()))
+	}
+
+	if rec := generateRequest(t, mux, host); rec.Code != http.StatusOK {
+		t.Errorf("generate for a %d-byte host name was answered %d %q", len(host), rec.Code, strings.TrimSpace(rec.Body.String()))
+	} else if c, ok := manager.GetCapture("tls", host); !ok || len(filepath.Base(c.Filepath)) > 255 {
+		t.Errorf("generate for a %d-byte host name stored %+v", len(host), c)
 	}
 }

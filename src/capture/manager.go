@@ -24,6 +24,8 @@ import (
 
 const payloadFilenameFmt = "%s_%s.bin"
 
+const MaxNameLength = 200
+
 var (
 	instance *Manager
 	once     sync.Once
@@ -266,7 +268,7 @@ func (m *Manager) fileNameFor(protocol, name string, claimUnlisted bool) (string
 		return previous.Filepath, nil
 	}
 	sum := sha256.Sum256([]byte(protocol + "/" + name))
-	tagged := sanitizeDomain(name) + "-" + hex.EncodeToString(sum[:4])
+	tagged := fileLabel(name) + "-" + hex.EncodeToString(sum[:4])
 	for i := range 64 {
 		filename := plainFileName(protocol, name)
 		switch {
@@ -283,7 +285,15 @@ func (m *Manager) fileNameFor(protocol, name string, claimUnlisted bool) (string
 }
 
 func plainFileName(protocol, name string) string {
-	return fmt.Sprintf(payloadFilenameFmt, protocol, sanitizeDomain(name))
+	return fmt.Sprintf(payloadFilenameFmt, protocol, fileLabel(name))
+}
+
+func fileLabel(name string) string {
+	label := sanitizeDomain(name)
+	if len(label) > MaxNameLength {
+		label = label[:MaxNameLength]
+	}
+	return label
 }
 
 func (m *Manager) fileOwned(filename string) bool {
