@@ -91,6 +91,29 @@ export const resolverFields = (list: string[]): ResolverFields => {
   };
 };
 
+export interface AddedResolver<T> {
+  outcome: "added" | "present" | "full";
+  dns: T;
+}
+
+export const withResolver = <T extends ResolverSource & { enabled: boolean }>(
+  dns: T,
+  entry: string,
+): AddedResolver<T> => {
+  const value = resolverValue(entry);
+  const same = (e: string) => resolverKey(e) === resolverKey(value);
+  if (dns.enabled && askedResolvers(dns).some(same)) {
+    return { outcome: "present", dns };
+  }
+  const others = resolverList(dns).filter((e) => !same(e));
+  if (others.length >= MAX_SET_RESOLVERS) return { outcome: "full", dns };
+  const list = dns.enabled ? [...others, value] : [value, ...others];
+  return {
+    outcome: "added",
+    dns: { ...dns, ...resolverFields(list), enabled: true },
+  };
+};
+
 const decorated = (s: string): boolean => {
   const inner = BRACKETED.exec(s)?.[1] ?? IPV4_PORT.exec(s)?.[1] ?? s;
   const bare = inner.replace(/%.*$/, "");

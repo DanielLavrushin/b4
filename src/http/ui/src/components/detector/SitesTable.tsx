@@ -4,8 +4,6 @@ import {
   Button,
   Checkbox,
   IconButton,
-  Menu,
-  MenuItem,
   Stack,
   Table,
   TableBody,
@@ -18,9 +16,9 @@ import {
 import { useTranslation } from "react-i18next";
 import { AddIcon, DiscoveryIcon, SetsIcon } from "@b4.icons";
 import { colors } from "@design";
-import { B4Badge } from "@b4.elements";
 import type { B4SetConfig } from "@models/config";
 import type { SiteResult, SitesResult } from "@models/detector";
+import { SetMenu } from "./SetMenu";
 import { FetchChip } from "./statuses";
 
 type Filter = "all" | "problems" | "still";
@@ -280,20 +278,14 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
           </TableBody>
         </Table>
       </Box>
-      <Menu open={!!menu} anchorEl={menu?.anchor} onClose={() => setMenu(null)}>
-        {sets.map((set) => (
-          <MenuItem
-            key={set.id}
-            onClick={() => {
-              if (menu) onAddToSet(set.id, menu.domains);
-              setMenu(null);
-            }}
-          >
-            {set.name}
-            {!set.enabled && <B4Badge label={t("core.disabled")} size="small" sx={{ ml: 1 }} />}
-          </MenuItem>
-        ))}
-      </Menu>
+      <SetMenu
+        anchor={menu?.anchor ?? null}
+        sets={sets}
+        onPick={(setId) => {
+          if (menu) onAddToSet(setId, menu.domains);
+        }}
+        onClose={() => setMenu(null)}
+      />
     </Stack>
   );
 };

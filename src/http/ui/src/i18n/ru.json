@@ -4106,6 +4106,12 @@
       "hijackedMark": "перехват",
       "useDoH": "скопировать DoH URL",
       "dohCopied": "Скопировано {{url}}. Адрес можно вставить в DNS-редирект сета или в настройки DNS.",
+      "addToSetTip": "Добавить к резолверам сета",
+      "addedToSet": "{{resolver}} добавлен в резолверы сета «{{set}}»",
+      "addedTurnedOn": "{{resolver}} добавлен в резолверы сета «{{set}}», перенаправление DNS включено",
+      "alreadyInSet": "Сет «{{set}}» уже использует {{resolver}}",
+      "setFull": "В сете «{{set}}» уже {{max}} резолверов",
+      "addFailed": "Не удалось добавить {{resolver}}.",
       "verdictCounts": "Проверено заблокированных имён: {{checked}}; подменено: {{substituted}}, без ответа: {{noAnswer}}, NXDOMAIN или пустой ответ: {{filtered}}",
       "probe": {
         "ok": "OK",

@@ -3961,6 +3961,12 @@
       "hijackedMark": "hijacked",
       "useDoH": "copy DoH URL",
       "dohCopied": "Copied {{url}}. Paste it into a set's DNS redirect or the DNS settings.",
+      "addToSetTip": "Add to a set's resolvers",
+      "addedToSet": "{{resolver}} added to the resolvers of \"{{set}}\"",
+      "addedTurnedOn": "{{resolver}} added to the resolvers of \"{{set}}\", DNS redirect turned on",
+      "alreadyInSet": "\"{{set}}\" already asks {{resolver}}",
+      "setFull": "\"{{set}}\" already has {{max}} resolvers",
+      "addFailed": "Could not add {{resolver}}.",
       "verdictCounts": "{{checked}} blocked names checked: {{substituted}} substituted, {{noAnswer}} without an answer, {{filtered}} with NXDOMAIN or an empty answer",
       "probe": {
         "ok": "OK",

@@ -4,6 +4,10 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Add to a set's resolvers** in the DNS results of the **DPI Detector** adds a working encrypted resolver to the **Resolvers** of a set; in a set with **Enable DNS Redirect** off it comes first and the redirect is turned on.
+
 ### Changed
 
 - **Recommended DNS Servers** leave out Mullvad, which announced the end of its public resolvers, and xbox-dns.ru, which its operator reports as not working, and 94.140.14.140 is called **AdGuard No Filter** in place of AdGuard Family, as it blocks neither ads nor adult sites.

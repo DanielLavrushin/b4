@@ -81,7 +81,7 @@ The table has a row per resolver, with the resolvers of b4's host first. Latency
 | **No answer** | Ordinary names resolve, while blocked names time out or return an error. |
 | **Filters** | NXDOMAIN or an empty answer for blocked names, without a forged address. |
 
-**Port 53 answered by** is the network that answered a query sent to the resolver. A network that is neither the provider's own nor a known public resolver marks the row as **hijacked**. **copy DoH URL** copies a working DoH server, for a set's DNS redirect.
+**Port 53 answered by** is the network that answered a query sent to the resolver. A network that is neither the provider's own nor a known public resolver marks the row as **hijacked**. **copy DoH URL** copies a working DoH server, for a set's DNS redirect. **Add to a set's resolvers** adds the server to the end of the chosen set's **Resolvers**. In a set with the redirect off, the server comes first and the redirect is turned on.
 
 ### Hosting and CDN
 
