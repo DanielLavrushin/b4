@@ -4,8 +4,13 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- A lookup of the host name of a set's own `https://` resolver goes unchanged to the resolver the device asked, also with **Fail closed when no resolver is reachable**; **Traffic** marks it `doh host`.
+
 ### Fixed
 
+- A set whose domains include the host name of its own `https://` resolver, such as a set for every name, resolved with 5-second pauses on a router with its own DNS forwarder, such as OpenWrt, and not at all with **Fail closed when no resolver is reachable**.
 - After the router's WAN address changed, a set with a single `https://` resolver could go on for minutes without it: its names went to the device's resolver, or stopped resolving with **Fail closed when no resolver is reachable**.
 
 ## [1.93.0] - 2026-11-21

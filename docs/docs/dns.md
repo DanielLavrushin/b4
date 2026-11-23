@@ -52,7 +52,7 @@ When b4 looks up a set's names itself, for routing, a [DSCP value](sets/routing.
 
 When no resolver of the set answers, b4 answers from the last good reply it holds for the name, or else asks the resolver the device was addressing. **Query timeout** under [Settings > Core > DNS](settings/core.md#dns) sets how long b4 waits for each resolver.
 
-**Fail closed when no resolver is reachable** turns the fallback off. The device then gets an error (SERVFAIL), and the set's names resolve through its resolvers or not at all.
+**Fail closed when no resolver is reachable** turns the fallback off. The device then gets an error (SERVFAIL), and the set's names resolve through its resolvers or not at all. The host name of the set's own DoH resolver is the exception, see [How b4 handles DNS](internals/dns.md#doh-host-names).
 
 :::warning
 With fail closed on, every name of the set stops resolving while none of its resolvers is reachable, even while the bypass strategy works. On a censored connection, a DoH server itself can get blocked.
@@ -99,7 +99,7 @@ While **Enable IPv6 Support** is off, b4 in NFQUEUE mode also removes the key fr
 
 ## Sending every DNS query to DoH
 
-A set that targets every name sends the DNS of the whole network and of the router to one DoH resolver. Domains listed in other sets keep their own sets' resolvers.
+A set that targets every name sends the DNS of the whole network and of the router to one DoH resolver.
 
 1. Open **Sets** and click **Create Set**.
 2. On the **Import/Export** tab, paste the configuration below into **Set Configuration JSON** and click **Import**.
@@ -123,7 +123,15 @@ A set that targets every name sends the DNS of the whole network and of the rout
 }
 ```
 
-The set changes no packets, and its port filters of 53 keep it off TLS and QUIC connections. Router host names and `.lan` names stop resolving, since the public resolver does not know them; pins keep the ones that matter working. When the resolver is unreachable, every name [falls back](#when-the-resolver-fails), so a resolver reachable from the connection matters more than its features.
+The set changes no packets, and its port filters of 53 keep it off TLS and QUIC connections. It affects the whole network:
+
+| Names | What happens |
+| --- | --- |
+| Domains listed in other sets | They stay with those sets. A set with resolvers of its own asks them. The domains of a set without any go to the device's resolver unchanged, not over DoH, until the set gets an entry in **Resolvers**. |
+| Router host names and `.lan` names | They stop resolving, since the public resolver does not know them. [Pins](#pinned-addresses) keep the ones that matter working. |
+| Every name with IPv6 addresses | While **Enable IPv6 Support** is off, [the IPv4 fallback](#the-ipv4-fallback) applies to all of them, and devices connect over IPv4. |
+| The host name of the DoH resolver | The router's resolver looks it up, outside the set. A URL with the server's IP address in place of the name needs no lookup, where the server accepts it. |
+| Every name while the resolver is unreachable | It [falls back](#when-the-resolver-fails), so a resolver reachable from the connection matters more than its features. |
 
 ## Global DNS settings
 
@@ -147,7 +155,7 @@ Each query shows the set that matched it and a label:
 | `sinkhole`, `block` | A block set answered "does not exist" or dropped the query |
 | `fallback-cache`, `fallback-upstream` | No resolver of the set answered: the last good reply was used, or the device's resolver answered |
 | `servfail` | No resolver of the set answered and nothing else could, or the set fails closed |
-| `passthrough`, `bad target`, `from target`, `ipv6 off` | Passed on unchanged: the set has no resolver, its first resolver is not a valid address or URL and it has no other, the query came from one of the set's own resolvers, or it came over IPv6 while IPv6 support is off |
+| `passthrough`, `bad target`, `from target`, `doh host`, `ipv6 off` | Passed on unchanged: the set has no resolver, its first resolver is not a valid address or URL and it has no other, the query came from one of the set's own resolvers, it asks for the host name the set's own DoH resolver is reached by, or it came over IPv6 while IPv6 support is off |
 | `escalate <set>` | Lookups for the name kept failing, and the backup set of [Escalation](sets/escalation.md) answered |
 
 The [log](logs.md) records the same decisions, as `dns-doh->`, `dns-pin` and so on. Both show DNS decisions while **Log Level** is **Info**, the default, or more detailed.
@@ -159,7 +167,7 @@ The [log](logs.md) records the same decisions, as `dns-doh->`, `dns-pin` and so 
 | A device's lookups never show on the Traffic page | The device uses encrypted DNS. Turning off secure DNS in its browser, or Android Private DNS, sends its lookups to the router. |
 | The site still goes to the old address | The device keeps an answer it already has until the answer expires. |
 | A pinned site opens on the router, but devices behind a resolver on the network still get the old address | The resolver keeps the name's earlier answer, often an alias valid for up to an hour, until it expires. Clearing that resolver's cache brings in the pins at once. |
-| `servfail`, `fallback-cache` or `fallback-upstream` | None of the set's resolvers is reachable from this connection. Another resolver, or DoH in place of plain DNS, is the next try. |
+| `servfail`, `fallback-cache` or `fallback-upstream` | None of the set's resolvers is reachable from this connection. Another resolver, or DoH in place of plain DNS, is the next try. A DoH resolver given by host name also fails when the router's resolver has no address or a wrong one for that name; a URL with the server's IP address needs no lookup. |
 | The set's names resolve slowly or not at all, with a resolver on the router among the set's resolvers | A resolver on the router, at any place in **Resolvers**, and the router's resolver when a resolver on the network uses it upstream, has to reach its own upstream over DoH or DoT, which b4 does not intercept. The router's own resolver does not need a place in **Resolvers**: a set without **Fail closed when no resolver is reachable** falls back to the resolver the device asked. |
 | A browser still uses ECH, with a resolver on the network that checks DNSSEC, such as BIND or Unbound | The resolver gets the original answer on a path b4 does not see: DoT or DoH to its upstream, an interface left out of **Capture Interfaces**, or TCP while **Intercept DNS over TCP** is off. With **Intercept DNS over TCP** on, plain DNS through a captured interface closes these paths, see [ECH keys](internals/dns.md#ech-keys). |
 

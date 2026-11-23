@@ -261,10 +261,10 @@ func TestEscalationDoesNotSendAResolverItsOwnQuery(t *testing.T) {
 		if w.answerViaSet(&verdictCtx{id: 62, q: newFakeQueue()}, IPv4, w.getConfig(), next, "www.example.com", query, client, 40000, server) {
 			t.Fatalf("%s: the escalated set answered the reply path through the resolver that asked", target)
 		}
-		if len(answeringServers(w.getConfig(), next, client)) != 0 {
+		if len(w.answeringServers(w.getConfig(), next, "www.example.com", client, nil)) != 0 {
 			t.Fatalf("%s: the resolver that asked is no answer source for its own query", target)
 		}
-		if len(answeringServers(w.getConfig(), next, net.ParseIP("192.0.2.101").To4())) != 1 {
+		if len(w.answeringServers(w.getConfig(), next, "www.example.com", net.ParseIP("192.0.2.101").To4(), nil)) != 1 {
 			t.Fatalf("%s: another client of the same set still gets the set's resolver", target)
 		}
 		noReply(t, replies, 30*time.Millisecond, "an escalated answer went to the resolver's own query")

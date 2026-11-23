@@ -86,6 +86,7 @@ const (
 	dnsActionPassthrough      = "dns-passthrough"
 	dnsActionBadTarget        = "dns-bad-target"
 	dnsActionFromTarget       = "dns-from-target"
+	dnsActionDoHHost          = "dns-doh-host"
 	dnsActionIPv6Disabled     = "dns-ipv6-disabled"
 	dnsActionIPv6Stripped     = "dns-ipv6-stripped"
 	dnsActionHealStripped     = "dns-heal+ipv6-stripped"
@@ -111,6 +112,7 @@ var dnsResolveInflight = make(chan struct{}, maxDNSResolveInflight)
 var (
 	errNoDNSTarget     = errors.New("set carries no usable DNS answer source")
 	errQueryFromTarget = errors.New("the query comes from the set's own resolver")
+	errDoHHost         = errors.New("the set's own resolver needs the name to be reached")
 )
 
 type dnsVerdict int
@@ -207,9 +209,9 @@ func redirectServers(cfg *config.Config, set *config.SetConfig) []dns.Server {
 	return servers
 }
 
-func answeringServers(cfg *config.Config, set *config.SetConfig, client net.IP) []dns.Server {
+func (w *Worker) answeringServers(cfg *config.Config, set *config.SetConfig, domain string, client net.IP, scope *ingressScope) []dns.Server {
 	servers := redirectServers(cfg, set)
-	if queryFromTarget(servers, client) {
+	if queryFromTarget(servers, client) || w.resolversNeed(cfg, set, domain, w.getMacByIp(client.String()), scope.filter()) {
 		return nil
 	}
 	return servers
@@ -340,7 +342,7 @@ func (w *Worker) answerViaSetInline(ipVersion byte, cfg *config.Config, set *con
 		return true
 	}
 
-	servers := answeringServers(cfg, set, clientIP)
+	servers := w.answeringServers(cfg, set, domain, clientIP, scope)
 	if len(servers) == 0 {
 		return false
 	}
@@ -365,7 +367,7 @@ func (w *Worker) answerViaSet(vc *verdictCtx, ipVersion byte, cfg *config.Config
 		return true
 	}
 
-	servers := answeringServers(cfg, set, clientIP)
+	servers := w.answeringServers(cfg, set, domain, clientIP, scope)
 	if len(servers) == 0 {
 		return false
 	}
@@ -522,6 +524,12 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 				if queryFromTarget(servers, clientIP) {
 					log.Tracef("DNS redirect: %s comes from %s, the set's own resolver passing a lookup upstream, forwarding it unchanged (set %s)", dns.SafeName(domain), clientIP, set.Name)
 					logDNSEvent("UDP", set, domain, clientIP, originalDst, clientPort, srcMac, dnsActionFromTarget)
+					return vc.accept()
+				}
+
+				if w.resolversNeed(cfg, set, domain, srcMac, keep) {
+					log.Tracef("DNS redirect: the resolvers of set %s are reached through %s, forwarding its lookup unchanged", set.Name, dns.SafeName(domain))
+					logDNSEvent("UDP", set, domain, clientIP, originalDst, clientPort, srcMac, dnsActionDoHHost)
 					return vc.accept()
 				}
 

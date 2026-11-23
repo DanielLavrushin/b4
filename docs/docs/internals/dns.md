@@ -122,6 +122,18 @@ A query that comes from the address of any of the set's resolvers is forwarded u
 
 Only the addresses the set names are compared: a query a resolver sends from another of its addresses, such as an IPv4 query from a resolver the set names by its IPv6 address, still goes to the set's resolvers. The comparison is not made for a resolver on the router itself, so that the set also answers the router's own lookups. Such a resolver, and the router's resolver whenever a resolver on the network uses it as its upstream, has to reach its own upstream over a transport b4 does not intercept, such as DNS over HTTPS or TLS. This holds for every entry of **Resolvers**, whatever its place.
 
+### Lookups of a DoH server's host name {#doh-host-names}
+
+b4 finds a DoH server given by host name through the router's own resolver. When that resolver is a forwarder on the router, such as dnsmasq on OpenWrt, its upstream query for the name reaches b4 like any other query. A set that covers the name would send it to the resolver that waits for it.
+
+b4 forwards such a query unchanged, unless it blocks the query or answers it from a pin, and logs it as `dns-doh-host`:
+
+- The name is the one the matching set's own resolvers wait for. They can wait for it directly, or through other sets: one set covers the host name of the other set's DoH server, and the other way round.
+- The query can come from any device, over UDP or TCP. **Fail closed when no resolver is reachable** does not change this.
+- Only the host name itself passes. A name below it, and the host name of another set's DoH server that no resolver of the matching set waits for, still go to the matching set's resolvers.
+
+A URL that names its server by IP address needs no lookup. A pin for the host name answers the router's forwarder as well. It does not reach b4's own lookup when the router asks a resolver outside the router, since b4's own lookups pass the sets.
+
 ### Pins {#pins}
 
 - The pin list is the whole address answer for the name. A and AAAA queries are answered with the pinned addresses of the matching family. An AAAA query for a name pinned to IPv4 only, and the CNAME, SVCB, HTTPS and ANY queries, get an empty answer rather than the resolver's, which would carry the site's CNAME past the pins.

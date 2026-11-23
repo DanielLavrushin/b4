@@ -4196,6 +4196,7 @@
         "servfail": "The set's resolver did not answer in time",
         "bad-target": "The set's DNS server field does not hold a valid IP address, query forwarded unchanged",
         "from-target": "The query came from the address of the set's own resolver, forwarded unchanged",
+        "doh-host": "The set's own resolver is reached through this name, query forwarded unchanged",
         "ipv6-stripped": "AAAA records removed from the answer so the client falls back to IPv4",
         "heal+ipv6-stripped": "DNS answer had unreachable addresses replaced and its AAAA records removed",
         "ech-stripped": "ECH key removed from the HTTPS answer, so the browser names the site in its ClientHello"

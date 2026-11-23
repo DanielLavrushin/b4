@@ -227,20 +227,12 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 	defer upstream.close()
 
 	var scope *ingressScope
-	relay := func(cfg *config.Config, set *config.SetConfig, domain string, query []byte) bool {
-		bansActive := s.worker.bans.any()
-		pinsActive := cfg.IPFamilyEnabled(v6) && cfg.HasDNSPins()
-		pinned := pinsActive && set != nil && len(set.DNS.PinnedAddresses(domain)) > 0
-		if qtype, _ := dns.QuestionType(query); cfg.Queue.IsDiscovery || !(cfg.HasECHStrip() || bansActive || pinsActive) || !standardQuery(query) || qtype == dnsTypeAXFR || qtype == dnsTypeIXFR {
-			upstream.close()
-			s.passthrough(client, origIP, origPort, origErr, query)
-			return false
-		}
+	relayOne := func(cfg *config.Config, set *config.SetConfig, domain string, query []byte) bool {
 		resp := upstream.exchange(cfg, query)
 		if resp == nil {
 			return false
 		}
-		if pinned {
+		if cfg.IPFamilyEnabled(v6) && set != nil && len(set.DNS.PinnedAddresses(domain)) > 0 {
 			if unaliased, actor := s.worker.unaliasPinnedAnswer(cfg, set, true, domain, srcMac, resp, true, scope); unaliased != nil {
 				s.logEvent(actor, domain, clientIP, origIP, clientPort, srcMac, dnsActionAliasStripped)
 				resp = unaliased
@@ -250,7 +242,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			s.logEvent(actor, domain, clientIP, origIP, clientPort, srcMac, dnsActionECHStripped)
 			resp = echless
 		}
-		if bansActive && set != nil {
+		if s.worker.bans.any() && set != nil {
 			if healed := s.worker.healDeadAddresses(cfg, set, domain, resp, true); healed != nil {
 				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionHeal)
 				s.worker.learnAnswerAddresses(cfg, set, clientIP, domain, addedAnswerIPs(resp, healed), scope.learns(domain), s.ctx.Done())
@@ -258,6 +250,15 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			}
 		}
 		return writeDNSTCPMessage(client, resp, cfg.DNSTCPIOTimeout()) == nil
+	}
+	relay := func(cfg *config.Config, set *config.SetConfig, domain string, query []byte) bool {
+		pinsActive := cfg.IPFamilyEnabled(v6) && cfg.HasDNSPins()
+		if qtype, _ := dns.QuestionType(query); cfg.Queue.IsDiscovery || !(cfg.HasECHStrip() || s.worker.bans.any() || pinsActive) || !standardQuery(query) || qtype == dnsTypeAXFR || qtype == dnsTypeIXFR {
+			upstream.close()
+			s.passthrough(client, origIP, origPort, origErr, query)
+			return false
+		}
+		return relayOne(cfg, set, domain, query)
 	}
 
 	for {
@@ -345,6 +346,15 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			log.Tracef("DNS TCP: %s comes from %s, the set's own resolver passing a lookup upstream, forwarding it unchanged (set %s)", dns.SafeName(domain), clientIP, set.Name)
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionFromTarget)
 			if relay(cfg, set, domain, query) {
+				continue
+			}
+			return
+		}
+
+		if s.worker.resolversNeed(cfg, set, domain, srcMac, keep) {
+			log.Tracef("DNS TCP: the resolvers of set %s are reached through %s, forwarding its lookup unchanged", set.Name, dns.SafeName(domain))
+			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionDoHHost)
+			if relayOne(cfg, set, domain, query) {
 				continue
 			}
 			return
@@ -458,6 +468,9 @@ func (s *dnsTCPServer) answerVia(set *config.SetConfig, cfg *config.Config, quer
 	}
 	if queryFromTarget(servers, clientIP) {
 		return nil, errQueryFromTarget
+	}
+	if s.worker.resolversNeed(cfg, set, domain, s.worker.getMacByIp(clientIP.String()), scopeFrom(from).filter()) {
+		return nil, errDoHHost
 	}
 
 	resp, _, err := s.resolve(set, query, servers)
