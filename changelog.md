@@ -6,17 +6,17 @@ All notable changes to b4 are recorded in this file.
 
 ### Added
 
-- **Add to a set's resolvers** in the DNS results of the **DPI Detector** adds a working encrypted resolver to the **Resolvers** of a set; in a set with **Enable DNS Redirect** off it comes first and the redirect is turned on.
+- **Add to a set's resolvers** in the DNS results of the **DPI Detector** adds a working encrypted resolver to the **Resolvers** of a set; in a set with **Enable DNS Redirect** off it comes first and the redirect is turned on. [#680](https://github.com/DanielLavrushin/b4/issues/680)
 
 ### Changed
 
-- **Recommended DNS Servers** leave out Mullvad, which announced the end of its public resolvers, and xbox-dns.ru, which its operator reports as not working, and 94.140.14.140 is called **AdGuard No Filter** in place of AdGuard Family, as it blocks neither ads nor adult sites.
-- A lookup of the host name of a set's own `https://` resolver goes unchanged to the resolver the device asked, also with **Fail closed when no resolver is reachable**; **Traffic** marks it `doh host`.
+- **Recommended DNS Servers** leave out Mullvad, which announced the end of its public resolvers, and xbox-dns.ru, which its operator reports as not working, and 94.140.14.140 is called **AdGuard No Filter** in place of AdGuard Family, as it blocks neither ads nor adult sites. [#680](https://github.com/DanielLavrushin/b4/issues/680)
+- A lookup of the host name of a set's own `https://` resolver goes unchanged to the resolver the device asked, also with **Fail closed when no resolver is reachable**; **Traffic** marks it `doh host`. [#680](https://github.com/DanielLavrushin/b4/issues/680)
 
 ### Fixed
 
-- A set whose domains include the host name of its own `https://` resolver, such as a set for every name, resolved with 5-second pauses on a router with its own DNS forwarder, such as OpenWrt, and not at all with **Fail closed when no resolver is reachable**.
-- After the router's WAN address changed, a set with a single `https://` resolver could go on for minutes without it: its names went to the device's resolver, or stopped resolving with **Fail closed when no resolver is reachable**.
+- A set whose domains include the host name of its own `https://` resolver, such as a set for every name, resolved with 5-second pauses on a router with its own DNS forwarder, such as OpenWrt, and not at all with **Fail closed when no resolver is reachable**. [#680](https://github.com/DanielLavrushin/b4/issues/680)
+- After the router's WAN address changed, a set with a single `https://` resolver could go on for minutes without it: its names went to the device's resolver, or stopped resolving with **Fail closed when no resolver is reachable**. [#680](https://github.com/DanielLavrushin/b4/issues/680)
 
 ## [1.93.0] - 2026-11-21
 
