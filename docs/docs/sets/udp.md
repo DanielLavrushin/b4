@@ -10,7 +10,7 @@ The **UDP** tab decides which UDP traffic the set matches, QUIC above all, and w
 
 | Field | What it does | Default |
 | --- | --- | --- |
-| **Block QUIC (force TCP)** | Matches every QUIC packet to the set's targets and answers it with ICMP port unreachable. It sets **QUIC Matching** to **By SNI or matched destination** and **Action Mode** to **Reject**. | Off |
+| **Block QUIC (force TCP)** | Answers QUIC to the set's targets and to addresses learned for its domains with ICMP port unreachable. It sets **QUIC Matching** to **By SNI or matched destination** and **Action Mode** to **Reject**. | Off |
 
 QUIC carries HTTP/3 for YouTube, Google, Discord and other sites. Its packets are encrypted end to end, so b4 cannot desync the handshake the way it does with TLS over TCP: only decoys and a fragmented Initial packet are left, and both are weak. When a provider silently drops UDP to port 443, a video stalls without an error, and nothing tells the browser to stop trying QUIC. Browsers also remember that a host offered HTTP/3 and keep trying QUIC with it. A refusal from the router makes the browser switch to TCP at once.
 
@@ -20,7 +20,7 @@ On a set sent through an [Upstream SOCKS5 proxy](./routing.md#upstream-socks5-pr
 
 | Field | What it does | Default |
 | --- | --- | --- |
-| **QUIC Matching** | **By SNI** matches QUIC whose ClientHello carries a server name the set targets, which is also how b4 learns the addresses of those domains. **By SNI or matched destination** also matches any QUIC packet to a destination the set already matches by IP or port, with no server name needed. | **By SNI** |
+| **QUIC Matching** | **By SNI** takes QUIC whose ClientHello names one of the set's domains, which is also how b4 learns the addresses of those domains. **By SNI or matched destination** also takes QUIC to an address learned for those domains, when it carries no server name or a name no set lists. With either choice, the set takes QUIC to its IP targets as well, see [QUIC](../internals/matching.md#quic). | **By SNI** |
 | **Port Filter** | UDP ports to match, such as `5000-6000,8000`, for VoIP, games and other UDP applications. It also limits the rest of the set: a set with `8443` here does not act on UDP port 443. Empty matches any port, except the ports that only a [set for calls](#protocol-selection) lists. On a set that routes [UDP by port](./routing.md#udp-by-port), these are the ports that go through the proxy. | Empty |
 | **Calls** | How the set treats calls, see the table below. | **Pass call setup** |
 | **Which calls** | Shown with **Handle only calls**: the calls the set takes, see [Sets for calls](#protocol-selection). | **Discord app and browsers** |
@@ -31,7 +31,7 @@ On a set sent through an [Upstream SOCKS5 proxy](./routing.md#upstream-socks5-pr
 | **Handle only calls** | The set takes no targets and acts only on calls, see [Sets for calls](#protocol-selection). A set with targets cannot choose it. |
 | **Handle like other UDP** | STUN requests and the Discord app's voice packets get the set's action like the rest of its UDP. With **Drop** or **Reject**, the set blocks calls too. |
 
-With **By SNI** and no domains or GeoSite categories on the [Targets](./targets.md) tab, no QUIC ClientHello can match, and the tab shows a warning. UDP to port 53 is DNS and goes to b4's [DNS handling](../dns.md) instead.
+A set with only a **Port Filter** takes QUIC on its ports that no other set's addresses cover. As a [block set](./blocking.md), it blocks that QUIC only with **By SNI or matched destination**. With **By SNI** and no domains, GeoSite categories, IP targets or **Port Filter**, the set takes no QUIC by itself, and the tab shows a warning unless **Action Mode** is **Off**. UDP to port 53 is DNS and goes to b4's [DNS handling](../dns.md) instead.
 
 A set that routes [UDP by port](./routing.md#udp-by-port) through an upstream proxy shows only **Port Filter** on this tab: the other settings do not apply to UDP that goes through the proxy. A [set for calls](#protocol-selection) does not route by port.
 

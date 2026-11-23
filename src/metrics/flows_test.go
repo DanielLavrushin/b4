@@ -1,6 +1,8 @@
 package metrics
 
 import (
+	"net/netip"
+	"slices"
 	"testing"
 	"time"
 )
@@ -283,6 +285,150 @@ func TestPerSetRingSumsTheLastSixtyMinutes(t *testing.T) {
 	minuteIn, _ := sumBuckets(fr.Activity.Minute[1:])
 	if minuteIn != inSets {
 		t.Fatalf("per-set sums %d must match the 60 most recent minute buckets %d", inSets, minuteIn)
+	}
+}
+
+func TestAFlowMovesToTheSetThatTookItsName(t *testing.T) {
+	r := newRig(t, rigStart, 0)
+	m := r.m
+	withSetsProvider(t, []SetMeta{{ID: "by-ip"}, {ID: "by-name"}, {ID: "backup"}}, 0)
+	k := flowKey(1)
+
+	m.ObserveFlow(k, "by-ip")
+	m.ObserveFlow(k, "by-name")
+	if a, b := setActivity(t, m.Hello(), "by-ip"), setActivity(t, m.Hello(), "by-name"); a.Conns60m != 1 || b.Conns60m != 0 {
+		t.Fatalf("a packet without a name does not move the flow: by-ip %+v by-name %+v", a, b)
+	}
+
+	m.ObserveFlowTo(k, netip.Addr{}, "by-name", "video.example", Device{})
+	m.ObserveFlowTo(k, netip.Addr{}, "backup", "video.example", Device{})
+	m.ObserveFlow(k, "by-ip")
+
+	fr := m.Hello()
+	for id, want := range map[string]uint64{"by-ip": 0, "by-name": 1, "backup": 0} {
+		if got := setActivity(t, fr, id).Conns60m; got != want {
+			t.Errorf("set %s: %d connections, want %d", id, got, want)
+		}
+	}
+	if s := setActivity(t, fr, "by-name"); s.LastMatch == 0 {
+		t.Errorf("the set that took the name matched: %+v", s)
+	}
+	if fr.Totals.Conns != 1 || fr.Totals.ConnsInSets != 1 {
+		t.Errorf("moving a flow does not count it again: %+v", fr.Totals)
+	}
+	if b := fr.Activity.Minute[len(fr.Activity.Minute)-1]; b.InSets != 1 || b.NotInSet != 0 {
+		t.Errorf("the activity bucket counts the flow once: %+v", b)
+	}
+	if d := topDomain(t, fr, "video.example"); d.Count != 1 || !slices.Equal(d.Sets, []string{"by-name"}) {
+		t.Errorf("the domain carries the set that took it: %+v", d)
+	}
+}
+
+func TestAFlowMovesOutOfTheMinuteItWasCountedIn(t *testing.T) {
+	r := newRig(t, time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC), 0)
+	m := r.m
+	withSetsProvider(t, []SetMeta{{ID: "by-ip"}, {ID: "by-name"}}, 0)
+	m.ObserveFlow(flowKey(1), "by-ip")
+	m.ObserveFlow(flowKey(2), "by-ip")
+	r.step(time.Minute)
+	m.ObserveFlow(flowKey(3), "by-ip")
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "by-name", "video.example", Device{})
+
+	fr := m.Hello()
+	if a, b := setActivity(t, fr, "by-ip"), setActivity(t, fr, "by-name"); a.Conns60m != 2 || b.Conns60m != 1 {
+		t.Fatalf("only the named flow moves: by-ip %+v by-name %+v", a, b)
+	}
+	r.step(59 * time.Minute)
+	fr = m.Hello()
+	if a, b := setActivity(t, fr, "by-ip"), setActivity(t, fr, "by-name"); a.Conns60m != 1 || b.Conns60m != 1 {
+		t.Fatalf("the first minute leaves the hour with the flow that stayed in it: by-ip %+v by-name %+v", a, b)
+	}
+}
+
+func TestAFlowClassifiedInItsFirstMinuteMovesWithItsCount(t *testing.T) {
+	r := newRig(t, rigStart, 0)
+	m := r.m
+	withSetsProvider(t, []SetMeta{{ID: "by-ip"}, {ID: "by-name"}}, 0)
+	m.ObserveFlow(flowKey(1), "")
+	m.ObserveFlow(flowKey(1), "by-ip")
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "by-name", "video.example", Device{})
+	fr := m.Hello()
+	if a, b := setActivity(t, fr, "by-ip"), setActivity(t, fr, "by-name"); a.Conns60m != 0 || b.Conns60m != 1 {
+		t.Fatalf("the flow counts in the set of its name: by-ip %+v by-name %+v", a, b)
+	}
+}
+
+func TestANameForTheSetAFlowIsInDoesNotCountItAgain(t *testing.T) {
+	r := newRig(t, time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC), 0)
+	m := r.m
+	withSetsProvider(t, []SetMeta{{ID: "by-name"}}, 0)
+	m.ObserveFlow(flowKey(1), "by-name")
+	r.step(time.Minute)
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "by-name", "video.example", Device{})
+	r.step(59 * time.Minute)
+	if s := setActivity(t, m.Hello(), "by-name"); s.Conns60m != 0 {
+		t.Fatalf("the flow was counted an hour ago: %+v", s)
+	}
+}
+
+func TestAFlowCountedBeforeAResetStillMovesBetweenSets(t *testing.T) {
+	r := newRig(t, rigStart, 0)
+	m := r.m
+	withSetsProvider(t, []SetMeta{{ID: "by-ip"}, {ID: "by-name"}}, 0)
+	m.ObserveFlow(flowKey(1), "by-ip")
+	m.ResetCounters()
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "by-name", "video.example", Device{})
+	fr := m.Hello()
+	if a, b := setActivity(t, fr, "by-ip"), setActivity(t, fr, "by-name"); a.Conns60m != 0 || b.Conns60m != 1 {
+		t.Fatalf("the per-set activity outlives the reset: by-ip %+v by-name %+v", a, b)
+	}
+	if fr.Totals.Conns != 0 || fr.Totals.ConnsInSets != 0 {
+		t.Fatalf("a flow counted before the reset adds nothing to the new totals: %+v", fr.Totals)
+	}
+}
+
+func TestAMoveAnHourLaterLeavesTheReusedMinuteAlone(t *testing.T) {
+	r := newRig(t, time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC), 0)
+	m := r.m
+	withSetsProvider(t, []SetMeta{{ID: "by-ip"}, {ID: "by-name"}}, 0)
+	m.ObserveFlow(flowKey(1), "by-ip")
+	for range setRingSlots {
+		r.step(time.Minute)
+		m.ObserveFlow(flowKey(1), "by-ip")
+	}
+	m.ObserveFlow(flowKey(2), "by-ip")
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "by-name", "video.example", Device{})
+	if s := setActivity(t, m.Hello(), "by-ip"); s.Conns60m != 1 {
+		t.Fatalf("the flow of this minute stays counted: %+v", s)
+	}
+}
+
+func TestAFlowThatJoinedItsFirstSetLaterIsCountedOnce(t *testing.T) {
+	r := newRig(t, time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC), 0)
+	m := r.m
+	withSetsProvider(t, []SetMeta{{ID: "by-ip"}, {ID: "by-name"}}, 0)
+	m.ObserveFlow(flowKey(1), "")
+	r.step(time.Minute)
+	m.ObserveFlow(flowKey(1), "by-ip")
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "by-name", "video.example", Device{})
+
+	fr := m.Hello()
+	if a, b := setActivity(t, fr, "by-ip"), setActivity(t, fr, "by-name"); a.Conns60m != 0 || b.Conns60m != 1 || b.LastMatch == 0 {
+		t.Fatalf("the flow counts in the set that took its name: by-ip %+v by-name %+v", a, b)
+	}
+	if d := topDomain(t, fr, "video.example"); !slices.Equal(d.Sets, []string{"by-name"}) {
+		t.Fatalf("the domain carries the set that took it: %+v", d)
+	}
+}
+
+func TestANamedFlowNoSetTakesKeepsTheSetItWasCountedIn(t *testing.T) {
+	r := newRig(t, rigStart, 0)
+	m := r.m
+	withSetsProvider(t, []SetMeta{{ID: "by-ip"}}, 0)
+	m.ObserveFlow(flowKey(1), "by-ip")
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "cdn.example", Device{})
+	if s := setActivity(t, m.Hello(), "by-ip"); s.Conns60m != 1 {
+		t.Fatalf("a later match of no set moves nothing: %+v", s)
 	}
 }
 

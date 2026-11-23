@@ -59,10 +59,10 @@ A device is identified by its MAC address. When the MAC is unknown, as for a dev
 | --- | --- |
 | **Time** | The time of the packet |
 | **Protocol** | `TCP` or `UDP` and the [labels](#labels) |
-| **Set** | The set matched by IP, or by domain when no set matched by IP |
+| **Set** | The set that took the packet |
 | **Domain** | The TLS version and the domain. A domain outside every set has a **+** button |
 | **Source** | The device name, or the source IP address and port |
-| **Destination** | The destination address and port, the [ASN](#asn), and a **+** button for an address outside every set |
+| **Destination** | The destination address and port, the [ASN](#asn), and a **+** button when no set took the packet or a set took it by the domain |
 
 ## Labels
 
@@ -89,7 +89,7 @@ The switch in the control bar applies to both modes.
 | Mode | Shows |
 | --- | --- |
 | **Domains only** | Packets with a recognised domain. The default |
-| **All packets** | Every inspected packet, also the TCP handshake before the ClientHello, connections without SNI and traffic to addresses that have no name |
+| **All packets** | Every inspected packet, also the TCP handshake before the ClientHello, connections without SNI and traffic to addresses that have no name. The first packet of a ClientHello that [waits for the server name](internals/matching.md#split-hello) shows no set |
 
 ## Filter
 

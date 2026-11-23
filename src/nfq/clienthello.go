@@ -88,6 +88,11 @@ func helloRecordLen(payload []byte) uint32 {
 	return 0
 }
 
+func wholeClientHello(record []byte) bool {
+	n := helloRecordLen(record)
+	return n != 0 && int(n) <= len(record)
+}
+
 var changeCipherSpecRecord = []byte{0x14, TLSVersionMajor, 0x03, 0x00, 0x01, 0x01}
 
 func startedHello(payload []byte) (uint32, bool) {

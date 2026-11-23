@@ -138,6 +138,64 @@ func pruneCandidates(candidates []hostHintCandidate, now time.Time) []hostHintCa
 	return live
 }
 
+func (c *hostHintCache) Rematch(setFor func(client, dest string, hint hostHintCandidate) string) {
+	if c == nil {
+		return
+	}
+
+	type hintRef struct {
+		key         hostHintKey
+		setId, host string
+	}
+	now := time.Now()
+	hints := make(map[hintRef]hostHintCandidate)
+	c.mu.RLock()
+	for key, entry := range c.keys {
+		for _, candidate := range entry.candidates {
+			if now.Before(candidate.expires) {
+				hints[hintRef{key, candidate.setId, candidate.host}] = candidate
+			}
+		}
+	}
+	c.mu.RUnlock()
+
+	moved := make(map[hintRef]string, len(hints))
+	for ref, hint := range hints {
+		moved[ref] = setFor(ref.key.client, ref.key.dest, hint)
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for key, entry := range c.keys {
+		var kept []hostHintCandidate
+		for _, candidate := range entry.candidates {
+			if setId, seen := moved[hintRef{key, candidate.setId, candidate.host}]; seen {
+				candidate.setId = setId
+			}
+			if candidate.setId != "" && now.Before(candidate.expires) {
+				kept = appendHint(kept, candidate)
+			}
+		}
+		if len(kept) == 0 {
+			delete(c.keys, key)
+			continue
+		}
+		entry.candidates = kept
+	}
+}
+
+func appendHint(candidates []hostHintCandidate, hint hostHintCandidate) []hostHintCandidate {
+	for i := range candidates {
+		if candidates[i].setId == hint.setId && candidates[i].host == hint.host {
+			if hint.expires.After(candidates[i].expires) {
+				candidates[i] = hint
+			}
+			return candidates
+		}
+	}
+	return append(candidates, hint)
+}
+
 func (c *hostHintCache) evictLocked(now time.Time) {
 	if len(c.keys) < maxHostHintEntries {
 		return
@@ -238,6 +296,46 @@ func (w *Worker) hintSetFor(clientIP net.IP, set *config.SetConfig, host string,
 		return set
 	}
 	return fitting
+}
+
+func (w *Worker) rematchHostHints(matcher *sni.SuffixSet) {
+	if w == nil || matcher == nil {
+		return
+	}
+
+	type name struct {
+		client, host string
+		tlsVersion   uint16
+		family       uint8
+	}
+	type owner struct {
+		set, backup string
+	}
+	found := make(map[name]owner)
+	cfg := w.getConfig()
+	w.hostHints.Rematch(func(client, dest string, hint hostHintCandidate) string {
+		destIP := net.ParseIP(dest)
+		if destIP == nil {
+			return ""
+		}
+		key := name{client, hint.host, hint.tlsVersion, addressFamily(destIP)}
+		now, known := found[key]
+		if !known {
+			mac := w.getMacByIp(client)
+			keep := clientScopeIn(matcher, net.ParseIP(client), mac).filter()
+			if matched, set := matcher.MatchSNIWithSourceTLS(hint.host, mac, hint.tlsVersion, key.family, keep); matched && set.Enabled {
+				now.set = set.Id
+				if backup := w.escalatedSetFor(cfg, set, hint.host, mac, keep); backup != nil {
+					now.backup = backup.Id
+				}
+			}
+			found[key] = now
+		}
+		if hint.setId == now.backup {
+			return now.backup
+		}
+		return now.set
+	})
 }
 
 func (w *Worker) lookupHostHint(cfg *config.Config, clientIP, destIP, srcMac string, keep ...sni.SetFilter) (*config.SetConfig, string, uint16, uint8) {

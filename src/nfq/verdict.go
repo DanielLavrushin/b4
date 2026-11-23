@@ -41,6 +41,7 @@ type verdictCtx struct {
 	keep           sni.SetFilter
 	telegramSet    *config.SetConfig
 	selfDial       bool
+	warmFlow       bool
 	tunEntry       bool
 	hellos         *pendingHelloCache
 	helloKey       string
