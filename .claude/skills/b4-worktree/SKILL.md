@@ -35,6 +35,10 @@ The directory is `.claude/worktrees/<name>` in the repository. A path the user g
 
 ## Fill it
 
+For a PR, run nothing here until the read in `/b4-pr` section 1 is done: `pnpm install` can run
+the PR's own scripts, and they run as you, within reach of the box files (`make boxes`), MCP
+tokens, SSH keys and the `gh` sign-in.
+
 - `pnpm install --frozen-lockfile --prefer-offline` at the worktree root: `node_modules` is
   never copied, and pnpm links from its store in seconds. `docs/` is its own workspace and
   needs its own `pnpm -C docs install --frozen-lockfile` before a docs build.
