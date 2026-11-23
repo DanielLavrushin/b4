@@ -4,6 +4,10 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- After the router's WAN address changed, a set with a single `https://` resolver could go on for minutes without it: its names went to the device's resolver, or stopped resolving with **Fail closed when no resolver is reachable**.
+
 ## [1.93.0] - 2026-11-21
 
 ### Added

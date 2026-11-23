@@ -115,7 +115,7 @@ func (s Server) exchange(ctx context.Context, name string, qtype uint16) ([]net.
 	if s.DoHURL != "" {
 		qctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		resp, err = ResolveDoH(qctx, lookupDoHClient(s.Mark, timeout), s.DoHURL, BuildQuery(name, txid, qtype))
+		resp, err = ResolveSetDoH(qctx, lookupDoHClient(s.Mark, timeout), s.DoHURL, BuildQuery(name, txid, qtype))
 	} else {
 		if deadline, ok := ctx.Deadline(); ok {
 			left := time.Until(deadline)

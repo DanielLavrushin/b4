@@ -840,5 +840,5 @@ func (w *Worker) resolveDoHRedirect(ctx context.Context, serverURL string, mark 
 	timeout := w.getConfig().DNSQueryTimeout()
 	dctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	return dns.ResolveDoH(dctx, getDoHClient(mark, timeout), serverURL, query)
+	return dns.ResolveSetDoH(dctx, getDoHClient(mark, timeout), serverURL, query)
 }
