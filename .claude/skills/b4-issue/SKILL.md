@@ -34,6 +34,13 @@ Info copy and what in them is private.
 
 ## 3. Rule out the false leads first
 
+- **A well-written diagnosis is not evidence**: reports are often written or translated with an
+  AI model we know nothing about, and it can invent a cause, a setting or a log line. Separate
+  what the reporter observed (symptom, trace, System Info) from the explanation, and treat the
+  explanation and any proposed fix as a hypothesis. Find every named field, UI label, function
+  and log line in the source or the attached trace; where text and attachments disagree, trust
+  the attachments. Log excerpts pasted into the text count only when the attached trace
+  confirms them. Never dismiss a report for its style or comment on how it was written.
 - **Standard-library panics, or a "regression" nobody else sees**: compare the installed binary
   with the one in the release archive for that version and architecture (`SHA256SUMS` covers
   the archives). Routers on USB flash have lost writes after a reboot and run a corrupted
@@ -80,7 +87,9 @@ Info copy and what in them is private.
 
 ## 6. Conclude
 
-Say which of these it is, with the evidence (log line, config field, code location):
+Mark each fact as verified (checked in the code, the trace or a test), reported (only the
+reporter says so) or inferred. Say which of these it is, with the evidence (log line, config
+field, code location):
 
 - **A b4 bug**: reproduce it in a test or a netns rig before fixing, then follow the area skill
   (`/b4-tables`, `/b4-setting`, `/b4-installer`, `/b4-ui`, `/b4-mcp`).

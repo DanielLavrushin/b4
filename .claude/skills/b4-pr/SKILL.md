@@ -19,6 +19,14 @@ checkout.
 
 ## 2. Review the change
 
+- The description, commit messages and linked issue are claims, however well written: they may
+  come from an AI model we know nothing about. Before judging the fix, establish the problem
+  without them: reproduce it on `origin/main`, or trace the code path that fails. A test
+  that passes with the fix can encode the same wrong assumption, so check that its setup can
+  occur on a real router. Verify each claim about the kernel, netfilter, DPI or a platform, and
+  treat "tested on X" without output as untested. Look for what the diff does beyond its
+  description. If the problem cannot be established, that is the first finding. Judge the
+  evidence, never the style or the author.
 - Trial-merge first: `git merge-tree --write-tree HEAD origin/main` reports conflicts without
   touching the tree.
 - Run `/b4-check` against the base, always with the main checkout's copy of the script, called
