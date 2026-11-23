@@ -1,6 +1,6 @@
 ---
 name: b4-mcp
-description: Add or change a tool, description, schema, topic text or write guard in b4's own MCP server (src/http/handler/mcp.go and mcp_write.go, the corpus in src/ai/topics.json) - within the tools/list byte budget, the limits real AI clients enforce (LM Studio, OpenAI and Azure, Gemini CLI, VS Code), the write guards, and the switch texts. Use before touching any MCP tool, its input or output struct, its annotations, an MCP-facing message, or the writable paths.
+description: Add or change a tool, description, schema, topic text or write guard in b4's own MCP server (src/http/handler/mcp.go and mcp_write.go, the corpus in src/ai/topics.json) - within the tools/list byte budget, the limits real AI clients enforce (LM Studio, OpenAI and Azure, Gemini CLI, VS Code), the write guards, and the switch texts. Also how a session connects to the MCP server of a local b4 or a test box with toolkit/b4-mcp.mjs. Use before touching any MCP tool, its input or output struct, its annotations, an MCP-facing message, or the writable paths, and when a running b4 should be inspected or driven over MCP.
 ---
 
 # b4's MCP server
@@ -77,13 +77,39 @@ an ad-block set listing `ads.youtube.com` would make `youtube.com` read as cover
 costs entries times name length on big sets, so names over 253 bytes are ignored and each set
 entry is parsed once.
 
+## Connect to a running b4
+
+`toolkit/b4-mcp.mjs call <server> <tool> '<json>'` needs no MCP client set up beforehand, and it
+reaches a tool a deploy just added, which an AI app's open session sees only after it reconnects.
+`<server>` is one of:
+
+- **A box**, by its name in `make boxes`. `yes` in its MCP column means its file sets
+  `B4_MCP_ENDPOINT` (the full address, `/api/mcp` included) and `B4_MCP_TOKEN`, so the session may
+  connect. The script reads the token itself: never print it or put it on a command line. A
+  box's b4 can be shared, so treat it as someone else's.
+- **An `http(s)` address**, with the token in the `B4_MCP_TOKEN` environment variable. This suits
+  a local b4: run the b4-ui skill's recipe for a b4 without a router, with
+  `"mcp":{"enabled":true,"token":"..."}` under `web_server`. It processes no traffic, so it shows
+  tools and configuration, not whether a strategy works.
+- **A name from `.mcp.json`** at the repository root, or from `--config <file>`.
+
+MCP is switched on, and its token replaced, without a restart: `POST /api/mcp/generate-token`
+returns a fresh token, and `PUT /api/config` saves it under `system.web_server.mcp`. Send back
+the whole `GET /api/config` answer with only that block changed and its `revision` kept: the
+blank web password in it means unchanged, and b4 refuses a stale revision instead of overwriting
+a newer change. On a box this is a one-time setup, done when asked.
+
+- The token never crosses a public network over plain HTTP. A box's endpoint is HTTPS, or
+  `http://127.0.0.1:<port>/api/mcp` through an SSH tunnel
+  (`ssh -N -L <port>:127.0.0.1:<web port> ...`) with a local port no other box uses: `restore`
+  knows a server only by its address. The script refuses a box's plain `http://` address unless
+  it is loopback or private.
+- `allow_writes` and `allow_active_probes` stay off. When a task needs one, switch it on for the
+  test and off again afterwards.
+- Around a write test, `snap <server> <file>` before and `restore <server> <file>` after put the
+  configuration back through `b4_revert_last_change` and list each change undone.
+
 ## Verify
 
-`go -C src test ./http/handler -count=1` covers the guards above. Then call the changed tool
-on a real b4 with `toolkit/b4-mcp.mjs call <server> <tool> '<json>'`. It takes the server's
-address and token from the repository's `.mcp.json`, so it also reaches a tool a deploy just
-added, which an AI app's open session sees only after it reconnects. A local b4 without a
-router (the b4-ui skill's recipe, plus `"mcp":{"enabled":true,"token":"..."}` under
-`web_server`) serves MCP too. Around a write test, `snap <server> <file>` before and
-`restore <server> <file>` after put the configuration back through `b4_revert_last_change`
-and list each change undone. `--help` has the rest; `/b4-check` for everything else.
+`go -C src test ./http/handler -count=1` covers the guards above. Then call the changed tool on
+a running b4. `toolkit/b4-mcp.mjs --help` has the rest; `/b4-check` for everything else.

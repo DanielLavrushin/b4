@@ -54,7 +54,7 @@ go -C src test ./...               # CI runs exactly this, with working-director
 go -C src test ./tables/ -run TestX
 toolkit/labs/lab up debian8        # QEMU guest with kernel 3.16 (debian9: 4.9). The first start downloads its image into ~/.cache/b4-lab.
 toolkit/labs/lab ab debian8 TestX  # the netns tests in that guest, this checkout against origin/main. For changes to ip rules, routes or rule order.
-toolkit/b4-mcp.mjs tools <server>  # a b4 MCP server from .mcp.json: its tools and their sizes; also call, snap, restore (--help). Needs Node; its tests: node --test toolkit/b4-mcp.test.mjs.
+toolkit/b4-mcp.mjs tools <server>  # a box with MCP set up (make boxes), an address or a name from .mcp.json: its tools and their sizes; also call, snap, restore (--help). Needs Node; its tests: node --test toolkit/b4-mcp.test.mjs.
 make hub-build HUB_VERSION=1.0.0   # hub-build-ui (pnpm build in hub/ui), then the b4hub binary into out/. HUB_VERSION defaults to dev; the hub has its own version.
 make hub-test                      # go -C hub test ./... (compiles even with an unbuilt console, dist/.gitkeep)
 make hub-run                       # local hub on 0.0.0.0:7100; console at /admin, password from B4HUB_ADMIN_PASSWORD

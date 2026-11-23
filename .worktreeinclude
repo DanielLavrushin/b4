@@ -1,4 +1,4 @@
-.env
+src/http/ui/.env
 .mcp.json
 .claude/settings.json
 .claude/settings.local.json

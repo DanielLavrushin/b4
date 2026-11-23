@@ -149,3 +149,126 @@ test("a result larger than a pipe's buffer reaches the reader whole", async (t) 
   assert.ok(r.out.length > 200000, `got ${r.out.length} bytes`);
   assert.equal(JSON.parse(r.out).lines.length, lines.length);
 });
+
+function boxEnv(t, files, config) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "b4-mcp-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  for (const [name, lines] of Object.entries(files)) fs.writeFileSync(path.join(dir, `${name}.env`), `${lines.join("\n")}\n`);
+  const env = { ...process.env, BOXES_DIR: dir };
+  delete env.B4_MCP_CONFIG;
+  delete env.B4_MCP_TOKEN;
+  if (!config) return { dir, env };
+  const file = path.join(dir, "mcp.json");
+  fs.writeFileSync(file, JSON.stringify({ mcpServers: config }));
+  return { dir, env, file };
+}
+
+async function tokenSeen(t) {
+  const seen = [];
+  const url = await standIn(t, (req, res, msg) => {
+    seen.push(req.headers.authorization);
+    answerJSON(res, msg.id, { tools: [] });
+  });
+  return { url, seen };
+}
+
+test("a box name takes its address and token from the box file", async (t) => {
+  const { url, seen } = await tokenSeen(t);
+  const forms = {
+    plain: [`B4_MCP_ENDPOINT=${url}`, "B4_MCP_TOKEN=box-secret"],
+    spaced: [`B4_MCP_ENDPOINT = ${url} `, "B4_MCP_TOKEN := box-secret"],
+    commented: ["#B4_MCP_TOKEN=old", `B4_MCP_ENDPOINT=${url} # tunnel`, "B4_MCP_TOKEN ?= box-secret"],
+    last: ["B4_MCP_TOKEN=old", `B4_MCP_ENDPOINT=${url}`, "B4_MCP_TOKEN=box-secret", "B4_MCP_TOKEN_OLD=older"],
+  };
+  const { env } = boxEnv(t, forms);
+  for (const name of Object.keys(forms)) {
+    const r = await run(["tools", name], 10000, { ...env, B4_MCP_TOKEN: "from-the-environment" });
+    assert.equal(r.code, 0, `${name}: ${r.err}`);
+    assert.equal(seen.pop(), "Bearer box-secret", name);
+    assert.doesNotMatch(r.out + r.err, /box-secret/);
+  }
+});
+
+test("make reads a box's values the way b4-mcp.mjs does", async (t) => {
+  const { url, seen } = await tokenSeen(t);
+  const { dir, env } = boxEnv(t, { odd: [`B4_MCP_ENDPOINT = ${url} # note`, "B4_MCP_TOKEN = a$$b\\#c # note"] });
+  const mk = path.join(dir, "show.mk");
+  fs.writeFileSync(mk, `include ${path.join(dir, "odd.env")}\n$(info [$(strip $(B4_MCP_ENDPOINT))][$(strip $(B4_MCP_TOKEN))])\nall: ;\n`);
+  const made = await new Promise((resolve) => {
+    const child = spawn("make", ["-s", "-f", mk], { stdio: ["ignore", "pipe", "pipe"] });
+    let out = "";
+    child.stdout.on("data", (c) => (out += c));
+    child.on("error", () => resolve(null));
+    child.on("close", () => resolve(out.split("\n")[0]));
+  });
+  if (made === null) return t.skip("make is not installed");
+  const r = await run(["tools", "odd"], 10000, env);
+  assert.equal(r.code, 0, r.err);
+  assert.equal(`[${url}][${seen.pop().replace("Bearer ", "")}]`, made);
+});
+
+test("a box without both variables is refused by the name of the missing one", async (t) => {
+  const { env } = boxEnv(t, {
+    none: ["ARCH=arm64"],
+    endpoint: ["B4_MCP_ENDPOINT=http://127.0.0.1:1/api/mcp"],
+    token: ["B4_MCP_TOKEN=box-secret"],
+  });
+  for (const [name, missing] of [
+    ["none", /does not set B4_MCP_ENDPOINT and B4_MCP_TOKEN/],
+    ["endpoint", /does not set B4_MCP_TOKEN/],
+    ["token", /does not set B4_MCP_ENDPOINT/],
+  ]) {
+    const r = await run(["tools", name], 10000, env);
+    assert.equal(r.code, 2, r.err);
+    assert.match(r.err, missing);
+    assert.doesNotMatch(r.err, /box-secret/);
+  }
+});
+
+test("a box's token is never sent over plain http to a public address or a host name", async (t) => {
+  const refused = ["http://router.example/api/mcp", "http://203.0.113.5:7000/api/mcp", "http://[2001:db8::1]/api/mcp", "http://127.0.0.1.example/api/mcp", "http://172.32.0.1/api/mcp"];
+  const boxes = Object.fromEntries(refused.map((u, i) => [`r${i}`, [`B4_MCP_ENDPOINT=${u}`, "B4_MCP_TOKEN=box-secret"]]));
+  const allowed = ["https://router.example/api/mcp", "http://192.168.1.1:7000/api/mcp", "http://10.0.0.1/api/mcp", "http://172.16.0.1/api/mcp", "http://[::1]:7000/api/mcp", "http://[fd00::1]/api/mcp", "http://localhost:7000/api/mcp"];
+  allowed.forEach((u, i) => (boxes[`a${i}`] = [`B4_MCP_ENDPOINT=${u}`, "B4_MCP_TOKEN=box-secret"]));
+  const { env } = boxEnv(t, boxes);
+  for (const i of refused.keys()) {
+    const r = await run(["tools", `r${i}`], 10000, env);
+    assert.equal(r.code, 2, `${refused[i]}: ${r.err}`);
+    assert.match(r.err, /would send the token unencrypted/);
+  }
+  const r = await run(["servers"], 10000, env);
+  const notes = Object.fromEntries(JSON.parse(r.out).map((s) => [s.name, s.note]));
+  for (const i of allowed.keys()) assert.equal(notes[`a${i}`], undefined, allowed[i]);
+  for (const i of refused.keys()) assert.match(notes[`r${i}`], /unencrypted/);
+});
+
+test("an explicit config file leaves the boxes out, and a name is never a path", async (t) => {
+  const { url, seen } = await tokenSeen(t);
+  const { dir, env, file } = boxEnv(
+    t,
+    { same: [`B4_MCP_ENDPOINT=${url}`, "B4_MCP_TOKEN=box-secret"] },
+    { same: { type: "http", url, headers: { Authorization: "Bearer config-secret" } } },
+  );
+  assert.equal((await run(["tools", "same"], 10000, env)).code, 0);
+  assert.equal(seen.pop(), "Bearer box-secret");
+  assert.equal((await run(["--config", file, "tools", "same"], 10000, env)).code, 0);
+  assert.equal(seen.pop(), "Bearer config-secret");
+  assert.equal((await run(["tools", "same"], 10000, { ...env, B4_MCP_CONFIG: file })).code, 0);
+  assert.equal(seen.pop(), "Bearer config-secret");
+  const r = await run(["tools", `../${path.basename(dir)}/same`], 10000, env);
+  assert.equal(r.code, 2, r.err);
+  assert.equal(seen.length, 0);
+});
+
+test("servers lists boxes with MCP and their addresses, never a token", async (t) => {
+  const { env } = boxEnv(t, {
+    on: ["B4_MCP_ENDPOINT=https://on.example/api/mcp?token=query-secret", "B4_MCP_TOKEN=box-secret"],
+    off: ["ARCH=arm64", "SFTP_PASS=ssh-secret"],
+  });
+  const r = await run(["servers"], 10000, env);
+  assert.equal(r.code, 0, r.err);
+  const listed = JSON.parse(r.out);
+  assert.deepEqual(listed.find((s) => s.name === "on"), { name: "on", type: "box", url: "https://on.example/api/mcp" });
+  assert.equal(listed.find((s) => s.name === "off"), undefined);
+  assert.doesNotMatch(r.out, /secret/);
+});
