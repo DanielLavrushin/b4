@@ -3,6 +3,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import https from "node:https";
+import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -12,7 +14,8 @@ const historyLimit = 20;
 const usage = `usage: node toolkit/b4-mcp.mjs [options] <command> ...
 
 commands:
-  servers                        the servers in the config file and their addresses
+  servers                        the boxes with MCP and the servers in the config file, with their
+                                 addresses
   tools <server>                 the tools a server lists, with the size of each in bytes as Go's
                                  json.Marshal writes it, which the tools/list budget test counts
   call <server> <tool> [json]    call a tool with JSON arguments and print its result as JSON
@@ -20,8 +23,12 @@ commands:
   restore <server> <file>        undo b4's MCP changes one at a time until the configuration
                                  matches the fingerprint in file, listing each change undone
 
-<server> is a name from the config file, or the http(s) address of a b4's /api/mcp; an
-address takes its token from B4_MCP_TOKEN. Results are compact JSON: pipe them to jq.
+<server> is a deploy box (make boxes), a name from the config file, or the http(s) address of a
+b4's /api/mcp. A box takes its address and token from B4_MCP_ENDPOINT and B4_MCP_TOKEN in its
+file, BOXES_DIR/<box>.env (default ~/.config/b4/boxes); plain http:// is accepted there only for
+a loopback or private IP address. An http(s) address takes its token from B4_MCP_TOKEN in the
+environment. A box comes before a server of the same name, and --config or B4_MCP_CONFIG leaves
+the boxes out. Results are compact JSON: pipe them to jq.
 
 options:
   --config <file>  MCP client configuration with an mcpServers map, as Claude Code writes it;
@@ -129,8 +136,113 @@ function listedServer(name, entry, file) {
   return listed;
 }
 
-function targetOf(raw) {
-  return crypto.createHash("sha256").update(new URL(raw).href).digest("hex").slice(0, 16);
+function boxesDir() {
+  return process.env.BOXES_DIR || path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "b4", "boxes");
+}
+
+function boxesUsed(opt) {
+  return !opt.config && !process.env.B4_MCP_CONFIG;
+}
+
+function boxNames() {
+  try {
+    return fs
+      .readdirSync(boxesDir())
+      .filter((f) => f.endsWith(".env"))
+      .map((f) => f.slice(0, -".env".length))
+      .sort();
+  } catch (e) {
+    if (e.code === "ENOENT") return [];
+    throw new UsageError(`cannot read ${boxesDir()} (${e.code || e.message})`);
+  }
+}
+
+function boxValue(raw) {
+  return raw
+    .replace(/(^|[^\\])#.*$/, "$1")
+    .replaceAll("\\#", "#")
+    .replaceAll("$$", () => "$")
+    .trim();
+}
+
+function readBox(name) {
+  const file = path.join(boxesDir(), `${name}.env`);
+  let raw;
+  try {
+    raw = fs.readFileSync(file, "utf8");
+  } catch (e) {
+    throw new UsageError(`cannot read ${file} (${e.code || e.message})`);
+  }
+  const box = { file, url: "", token: "" };
+  for (const line of raw.split(/\r?\n/)) {
+    const m = /^\s*(?:export\s+)?(B4_MCP_ENDPOINT|B4_MCP_TOKEN)\s*(?:\?|::?)?=(.*)$/.exec(line);
+    if (m) box[m[1] === "B4_MCP_TOKEN" ? "token" : "url"] = boxValue(m[2]);
+  }
+  return box;
+}
+
+const privateAddresses = new net.BlockList();
+privateAddresses.addSubnet("127.0.0.0", 8, "ipv4");
+privateAddresses.addSubnet("10.0.0.0", 8, "ipv4");
+privateAddresses.addSubnet("172.16.0.0", 12, "ipv4");
+privateAddresses.addSubnet("192.168.0.0", 16, "ipv4");
+privateAddresses.addAddress("::1", "ipv6");
+privateAddresses.addSubnet("fc00::", 7, "ipv6");
+
+function tokenStaysPrivate(url) {
+  if (url.protocol === "https:") return true;
+  const host = url.hostname.replace(/^\[|\]$/g, "");
+  if (host === "localhost") return true;
+  const family = net.isIP(host);
+  return family !== 0 && privateAddresses.check(host, family === 6 ? "ipv6" : "ipv4");
+}
+
+function boxProblem(box) {
+  if (!box.url || !box.token) {
+    const missing = [!box.url && "B4_MCP_ENDPOINT", !box.token && "B4_MCP_TOKEN"].filter(Boolean);
+    return `${box.file} does not set ${missing.join(" and ")}`;
+  }
+  let url;
+  try {
+    url = new URL(box.url);
+  } catch {
+    url = null;
+  }
+  if (!url || !/^https?:$/.test(url.protocol)) return `B4_MCP_ENDPOINT in ${box.file} is not an http(s) address`;
+  if (!tokenStaysPrivate(url)) {
+    return `B4_MCP_ENDPOINT in ${box.file} would send the token unencrypted to ${url.hostname}; use https, or http://127.0.0.1:<port> through an SSH tunnel`;
+  }
+  return "";
+}
+
+function listedBoxes() {
+  const listed = [];
+  for (const name of boxNames()) {
+    const box = readBox(name);
+    if (!box.url && !box.token) continue;
+    const problem = boxProblem(box);
+    const entry = { name, type: "box", url: box.url ? shownAddress(box.url) : null };
+    if (problem) entry.note = problem;
+    listed.push(entry);
+  }
+  return listed;
+}
+
+function listedServers(opt) {
+  const boxes = boxesUsed(opt) ? listedBoxes() : [];
+  const file = configFile(opt);
+  if (boxesUsed(opt) && !fs.existsSync(file)) return boxes;
+  const taken = new Set(boxes.map((b) => b.name));
+  const servers = Object.entries(readServers(file)).filter(([name]) => !taken.has(name));
+  return [...boxes, ...servers.map(([name, entry]) => listedServer(name, entry, file))];
+}
+
+function resolveBox(name) {
+  const box = readBox(name);
+  if (!box.url && !box.token) return null;
+  const problem = boxProblem(box);
+  if (problem) throw new UsageError(problem);
+  return { name, url: box.url, headers: { Authorization: `Bearer ${box.token}` } };
 }
 
 function resolveServer(name, opt) {
@@ -138,10 +250,27 @@ function resolveServer(name, opt) {
     const token = process.env.B4_MCP_TOKEN;
     return { name: shownAddress(name), url: name, headers: token ? { Authorization: `Bearer ${token}` } : {} };
   }
+  const isBox = boxesUsed(opt) && boxNames().includes(name);
+  if (isBox) {
+    const server = resolveBox(name);
+    if (server) return server;
+  }
+  return configuredServer(name, opt, isBox);
+}
+
+function targetOf(raw) {
+  return crypto.createHash("sha256").update(new URL(raw).href).digest("hex").slice(0, 16);
+}
+
+function configuredServer(name, opt, isBox) {
   const file = configFile(opt);
-  const servers = readServers(file);
-  const entry = servers[name];
-  if (!entry) throw new UsageError(`no server ${name} in ${file}; it has: ${Object.keys(servers).join(", ") || "none"}`);
+  const servers = boxesUsed(opt) && !fs.existsSync(file) ? {} : readServers(file);
+  const entry = Object.hasOwn(servers, name) ? servers[name] : undefined;
+  if (!entry && isBox) throw new UsageError(`the box ${name} has no MCP: ${boxProblem(readBox(name))}`);
+  if (!entry) {
+    const box = boxesUsed(opt) ? `no box ${name} in ${boxesDir()} and ` : "";
+    throw new UsageError(`${box}no server ${name} in ${file}; it has: ${Object.keys(servers).join(", ") || "none"}`);
+  }
   if (!entry.url) throw new UsageError(`server ${name} in ${file} has no url: only HTTP servers can be called`);
   const where = `server ${name} in ${file}`;
   const headers = {};
@@ -364,9 +493,7 @@ async function main(argv) {
       return 0;
     case "servers": {
       need(rest, 0, "servers");
-      const file = configFile(opt);
-      const servers = readServers(file);
-      print(Object.entries(servers).map(([name, entry]) => listedServer(name, entry, file)));
+      print(listedServers(opt));
       return 0;
     }
     case "tools": {

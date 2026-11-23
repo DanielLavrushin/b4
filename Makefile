@@ -334,7 +334,7 @@ hub-mirror: hub-build
 
 BOXES_DIR ?= $(or $(XDG_CONFIG_HOME),$(HOME)/.config)/b4/boxes
 BOXES := $(filter-out $(LINUX_ARCHS),$(sort $(basename $(notdir $(wildcard $(BOXES_DIR)/*.env)))))
-BOX_VARS := ARCH SFTP_HOST SFTP_USER SFTP_PORT SFTP_PATH SFTP_PASS B4_RESTART_CMD
+BOX_VARS := ARCH SFTP_HOST SFTP_USER SFTP_PORT SFTP_PATH SFTP_PASS B4_RESTART_CMD B4_MCP_ENDPOINT B4_MCP_TOKEN
 
 ifneq ($(BOX),)
 BOX_FILE := $(BOXES_DIR)/$(BOX).env
@@ -344,6 +344,7 @@ endif
 $(foreach v,$(BOX_VARS),$(eval undefine $(v)))
 include $(BOX_FILE)
 endif
+unexport B4_MCP_ENDPOINT B4_MCP_TOKEN
 
 SSH_OPTS ?= -o StrictHostKeyChecking=accept-new -o IPQoS=none
 B4_RESTART_CMD ?= /opt/etc/init.d/S99b4
@@ -357,13 +358,13 @@ ifeq ($(BOXES),)
 	@printf "  %s\n" ARCH=arm64 SFTP_HOST=192.168.1.1 SFTP_USER=admin SFTP_PORT=22 SFTP_PATH=/opt/sbin SFTP_PASS= B4_RESTART_CMD=/opt/etc/init.d/S99b4
 else
 	@echo "Deploy boxes in $(BOXES_DIR):"
-	@printf "  %-14s %-8s %-34s %-6s %-16s %-9s %s\n" BOX ARCH HOST PORT PATH AUTH RESTART
+	@printf "  %-14s %-8s %-34s %-6s %-16s %-9s %-4s %s\n" BOX ARCH HOST PORT PATH AUTH MCP RESTART
 	@for box in $(BOXES); do $(MAKE) --no-print-directory box-info BOX=$$box; done
 endif
 
 .PHONY: box-info
 box-info:
-	@printf "  %-14s %-8s %-34s %-6s %-16s %-9s %s\n" "$(BOX)" "$(ARCH)" "$(DEPLOY_DEST)" "$(or $(SFTP_PORT),-)" "$(SFTP_PATH)" "$(if $(SFTP_PASS),password,key)" "$(B4_RESTART_CMD)"
+	@printf "  %-14s %-8s %-34s %-6s %-16s %-9s %-4s %s\n" "$(BOX)" "$(ARCH)" "$(DEPLOY_DEST)" "$(or $(SFTP_PORT),-)" "$(SFTP_PATH)" "$(if $(SFTP_PASS),password,key)" "$(if $(and $(B4_MCP_ENDPOINT),$(B4_MCP_TOKEN)),yes,-)" "$(B4_RESTART_CMD)"
 
 ifneq ($(BOXES),)
 .PHONY: $(addprefix deploy-,$(BOXES))

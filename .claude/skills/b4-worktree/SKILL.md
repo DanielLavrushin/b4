@@ -23,8 +23,8 @@ The directory is `.claude/worktrees/<name>` in the repository. A path the user g
    the checkout of step 4 again to get its current head.
 2. Otherwise create it with Claude Code's `EnterWorktree` (`name: "wt-<name>"`), not
    `git worktree add`. Only Claude Code's own creation copies the gitignored files listed in
-   `.worktreeinclude`: `src/http/ui/.env`, `.mcp.json`,
-   `.claude/settings*.json` and the built UI in `src/http/ui/dist/`, which `go build` embeds.
+   `.worktreeinclude`: `src/http/ui/.env`, `.mcp.json`, `.claude/settings*.json` and the built
+   UI in `src/http/ui/dist/`, which `go build` embeds.
    The new worktree starts from `origin/main`, on a branch named `worktree-wt-<name>`.
 3. Rename that branch before anything else: `git branch -m wt-<name>`. The `wt-` prefix already
    says worktree.
