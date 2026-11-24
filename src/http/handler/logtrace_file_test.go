@@ -262,6 +262,7 @@ func TestAvailableMemoryOnOldAndNewKernels(t *testing.T) {
 		{"MemAvailable", "MemTotal: 1000 kB\nMemFree: 100 kB\nMemAvailable:  400 kB\nActive(file): 50 kB\n", 400, true},
 		{"no memory left", "MemFree: 100 kB\nMemAvailable:  0 kB\nInactive(file): 300 kB\n", 0, true},
 		{"before 3.14", "MemFree: 100 kB\nBuffers: 50 kB\nCached: 900 kB\nActive(file): 40 kB\nInactive(file): 60 kB\nShmem: 200 kB\n", 200, true},
+		{"a value no machine has", "MemFree: 100 kB\nMemAvailable: 18446744073709551615 kB\nActive(file): 50 kB\n", 150, true},
 		{"nothing known", "", 0, false},
 	}
 	for _, tc := range cases {

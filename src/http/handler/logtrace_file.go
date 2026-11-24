@@ -29,6 +29,7 @@ const (
 	traceGapLine     = "=== lines left out here: the trace reached its size limit, so it keeps its first and its newest lines ===\n"
 	traceCutMark     = " [cut]\n"
 	traceDirAttempts = 3
+	maxMemInfoKB     = 1 << 40
 )
 
 var (
@@ -383,7 +384,9 @@ func parseAvailableMemory(meminfo io.Reader) (int64, bool) {
 	scanner := bufio.NewScanner(meminfo)
 	for scanner.Scan() {
 		name, _, _ := strings.Cut(scanner.Text(), ":")
-		kb[name] = int64(parseMemInfoKB(scanner.Text()))
+		if value := parseMemInfoKB(scanner.Text()); value <= maxMemInfoKB {
+			kb[name] = int64(value)
+		}
 	}
 	if available, ok := kb["MemAvailable"]; ok {
 		return available * 1024, true
