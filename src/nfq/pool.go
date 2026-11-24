@@ -484,10 +484,6 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 		p.state.tlsCache.ForgetDecisions(matcher)
 	}
 
-	if !reuse && len(p.Workers) > 0 {
-		p.Workers[0].rematchHostHints(matcher)
-	}
-
 	if p.state != nil {
 		p.state.bans.applyConfig(newCfg)
 	}
@@ -500,6 +496,10 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 		if n := p.state.destState.ResetBlocked(); n > 0 {
 			log.Infof("IPBlockDetect: the sets changed, %d address(es) cached as blocked are tested again", n)
 		}
+	}
+
+	if !reuse && len(p.Workers) > 0 {
+		p.Workers[0].rematchHostHints(matcher)
 	}
 
 	if p.Dhcp != nil {

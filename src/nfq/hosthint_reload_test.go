@@ -247,6 +247,38 @@ func TestAReloadKeepsTheHintOfTheBackupThatAnswers(t *testing.T) {
 	})
 }
 
+func TestAReloadMovesTheHintOfABackupThatNowHandlesOnlyCalls(t *testing.T) {
+	const host = "www.shared.example"
+	sets := func(calls bool) []*config.SetConfig {
+		primary, backup := newSharedNameSet("primary", "shared.example"), newSharedNameSet("backup")
+		primary.Escalate.To = "backup"
+		backup.DNS.Pins = map[string][]string{host: {"1.2.3.4"}}
+		backup.TCP.SynFake = true
+		if calls {
+			primary.Escalate.To = ""
+			backup.UDP.FilterL7, backup.UDP.DPortFilter = []string{config.UDPL7STUN}, "50000-50100"
+		}
+		return []*config.SetConfig{&primary, &backup}
+	}
+	w, reload := hintReloadPool(t, sets(false)...)
+	w.sock = &sock.Sender{}
+	w.destState.SetEscalation(host, "backup", escalateReasonStall, time.Minute)
+	w.ProcessPacket(makeV4UDPPacket(dns.BuildQuery(host, 7, dnsTypeA), net.ParseIP("10.0.0.1"), net.ParseIP("8.8.8.8"), 5353, 53))
+	if got := storedHint(w, "10.0.0.1", "1.2.3.4"); got != "backup" {
+		t.Fatalf("before the change the hint names %q, the backup answered", got)
+	}
+	reload(sets(true)...)
+	if _, _, live := w.destState.GetEscalation(host); live {
+		t.Fatal("a set that handles only calls is no backup, the escalation is over")
+	}
+	if got := storedHint(w, "10.0.0.1", "1.2.3.4"); got != "primary" {
+		t.Errorf("the name is no longer switched, the hint names %q", got)
+	}
+	if v := w.ProcessPacket(makeV4TCPPacketFlags(nil, 999, 0x02)); v != engine.VerdictAccept {
+		t.Errorf("the SYN left with the fake SYN of a set that handles only calls, got %v", v)
+	}
+}
+
 func TestAReloadKeepsTheHintsOfTwoDevicesApart(t *testing.T) {
 	const phone, laptop = "aa:bb:cc:dd:ee:01", "aa:bb:cc:dd:ee:02"
 	first := newSharedNameSet("first", "shared.example")
