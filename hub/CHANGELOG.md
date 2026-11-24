@@ -7,6 +7,7 @@ All notable changes to the b4hub community hub service are recorded in this file
 ### Security
 
 - A set's resolver address with a personal path, a query or a login in it was stored and published whole. A version stored before this one with such an address is never listed and cannot be approved: run **Check** on a pending one and save; a rejected one, or one hidden from the catalogue, has to be published again by its author.
+- The address of a custom geodata source in a set that b4 1.93.0 or earlier shared, with any login or token in it, was stored and published whole. Published addresses of both kinds leave the catalogue with the next build, within a day or at once with **Build now** on the **Catalogue** page.
 
 ## [1.10.0] - 2026-11-20
 

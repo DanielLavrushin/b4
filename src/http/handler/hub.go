@@ -16,7 +16,6 @@ import (
 
 	"github.com/daniellavrushin/b4/capture"
 	"github.com/daniellavrushin/b4/config"
-	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/hub"
 	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4/log"
@@ -100,17 +99,10 @@ func hubBuildOptions(cfg *config.Config) hubwire.BuildOptions {
 	return hubwire.BuildOptions{
 		B4Version:   Version,
 		Engine:      cfg.Queue.Mode,
-		GeoSiteURL:  builtInGeoURL(cfg.System.Geo.GeoSiteURL),
-		GeoIPURL:    builtInGeoURL(cfg.System.Geo.GeoIpURL),
+		GeoSiteURL:  cfg.System.Geo.GeoSiteURL,
+		GeoIPURL:    cfg.System.Geo.GeoIpURL,
 		ReadPayload: cfg.ReadCapturePayload,
 	}
-}
-
-func builtInGeoURL(raw string) string {
-	if geodat.IsSourceURL(raw) {
-		return raw
-	}
-	return ""
 }
 
 // @Summary Build a shareable envelope from a set
