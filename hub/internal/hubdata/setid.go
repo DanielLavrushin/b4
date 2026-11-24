@@ -13,7 +13,7 @@ var setIDPattern = regexp.MustCompile(`^[0-9A-HJKMNP-TV-Z]{26}$`)
 
 func NewSetID(now time.Time) (string, error) {
 	raw := make([]byte, 16)
-	ms := uint64(now.UnixMilli())
+	ms := uint64(now.UTC().Truncate(24 * time.Hour).UnixMilli())
 	for i := 5; i >= 0; i-- {
 		raw[i] = byte(ms)
 		ms >>= 8
