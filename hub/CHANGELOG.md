@@ -2,6 +2,22 @@
 
 All notable changes to the b4hub community hub service are recorded in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Releases are published from the `b4hub` repository; the router changelog is `changelog.md` at the repository root.
 
+## [1.11.0] - 2026-11-24
+
+### Changed
+
+- Votes are deleted a year after they arrive, so the device counts in the catalogue and the console's vote lists cover the last year.
+
+### Fixed
+
+- A router on a network that two providers announce could count for either of them, because the lookup took whichever answer came first.
+- Deleted rows stayed readable in the database file until their space was used again.
+
+### Security
+
+- The lookup of a router's provider sends Team Cymru only the /24 or /48 network instead of the full address.
+- The public catalogue listed provider and country scores that came from a single device, though no router shows a score below two devices.
+
 ## [1.10.0] - 2026-11-20
 
 ### Changed
@@ -100,6 +116,7 @@ All notable changes to the b4hub community hub service are recorded in this file
 
 - b4hub is versioned and released on its own from the `b4hub` repository, and the binary reports the b4 source tree it was built from.
 
+[1.11.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.7.0...v1.8.0

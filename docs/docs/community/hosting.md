@@ -85,7 +85,7 @@ A database that has never published refuses to publish over an existing catalogu
 
 ### The network a contribution is attributed to {#the-network-a-contribution-is-attributed-to}
 
-A record counts for the ASN and country of the address it comes from. The hub looks them up over DNS, so it needs working outbound DNS.
+A record counts for the ASN and country of the address it comes from. The hub looks up the /24 or /48 network of that address over DNS with Team Cymru, so it needs working outbound DNS.
 
 Behind a reverse proxy, the hub sees the proxy's address, unless the proxy is on loopback or listed in `--trusted-proxies` as an address or a CIDR. With an untrusted proxy, every record counts for the proxy, and all routers share the per-network limits.
 
@@ -138,6 +138,8 @@ They are separate processes and deployments: nothing merges two catalogues, and 
 ## Keeping the data {#keeping-the-data}
 
 The data directory moves as a unit: `hub.key`, `hub.db`, `secret`, `blobs/` and `public/` belong together.
+
+Votes are deleted a year after they arrive. The id, key and time of their records stay, and the hub answers a record it has already seen as a duplicate. The two newest copies made before a schema update, `hub.db.v<n>.bak`, keep the votes of that moment.
 
 :::danger
 `secret` keys the HMAC that stands for every contributor's key in the database, and it is created silently when it is missing. A database restored without its original `secret` recognises nobody: bans, trust marks, the authorship of sets and the de-duplication of reports all come apart.

@@ -43,9 +43,11 @@ Reports count per strategy, not per set. Two sets with the same strategy share o
 | Sync | A request for the catalogue. The hub sees the router's public address and b4 version, and answers with the network it sees the router on: ASN, country and ISP. |
 | **Works** or **Broken** | The set and version, the kind of report, the domain the list was filtered by, if any, the router's ASN and country, its capture engine and b4 version. |
 | Complaint | The set and version, and the reason typed in. |
-| Publication | The [shared set](../sets/sharing.md). |
+| Publication | The [shared set](../sets/sharing.md), the router's ASN and country, its capture engine and b4 version. |
 
 The names and targets of other sets, and the devices behind the router, are never sent. Every record is signed with the router's [author key](./publishing.md#author-identity). The hub knows a router by this key, not by an account.
+
+The hub deletes a **Works** or **Broken** report after a year. Only the id, the key and the time of its record stay. The catalogue carries only totals: worldwide, and per ISP or country once at least two routers count there. A publication counts as a **Works** report by its author. The hub finds the ISP by the /24 (IPv4) or /48 (IPv6) network of the address, with the public IP-to-ASN service of Team Cymru.
 
 ## Status line
 
