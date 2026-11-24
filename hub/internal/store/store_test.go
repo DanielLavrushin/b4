@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -203,6 +204,38 @@ func TestTheAuthorOfAVoteIsFoundWithoutASearchPerVote(t *testing.T) {
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestTheAuthorsAreNotReadThroughForEveryVote(t *testing.T) {
+	st := openTestStore(t)
+	rows, err := st.db.QueryContext(context.Background(), `EXPLAIN SELECT `+voteColumns+` FROM votes v LEFT JOIN keys k ON k.key_hmac = v.key_hmac`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	lists := map[int]bool{}
+	for rows.Next() {
+		var addr, p1, p2, p3, p5 int
+		var op string
+		var p4, comment sql.NullString
+		if err := rows.Scan(&addr, &op, &p1, &p2, &p3, &p4, &p5, &comment); err != nil {
+			t.Fatal(err)
+		}
+		switch op {
+		case "OpenEphemeral":
+			lists[p1] = true
+		case "Next":
+			if lists[p1] {
+				t.Error("a vote that no author cast must not cost a walk over every author")
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(lists) != 1 {
+		t.Fatalf("the authors must be collected once, got %d lists", len(lists))
 	}
 }
 
