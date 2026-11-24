@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -147,9 +149,15 @@ func http2DoHClient(t *testing.T, pingIdle, pingTimeout, timeout time.Duration) 
 }
 
 func TestADeadDoHConnectionIsReplaced(t *testing.T) {
-	proxy, ask := http2DoH(t, 100*time.Millisecond, 400*time.Millisecond, 400*time.Millisecond)
+	proxy, client, url := http2DoHClient(t, 100*time.Millisecond, 2*time.Second, 10*time.Second)
+	ask := func(timeout time.Duration) error {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		_, err := ResolveSetDoH(ctx, client, url, BuildQuery("www.example.com", 7, rrTypeA))
+		return err
+	}
 
-	if err := ask(); err != nil {
+	if err := ask(10 * time.Second); err != nil {
 		t.Fatalf("the resolver must answer before its connection dies: %v", err)
 	}
 	if n := proxy.connections(); n != 1 {
@@ -157,19 +165,11 @@ func TestADeadDoHConnectionIsReplaced(t *testing.T) {
 	}
 
 	proxy.freeze()
-	if err := ask(); err == nil {
+	if err := ask(200 * time.Millisecond); err == nil {
 		t.Fatal("a query over the dead connection was answered")
 	}
-
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		err := ask()
-		if err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the resolver is reachable, yet every query still goes to the dead connection: %v", err)
-		}
+	if err := ask(10 * time.Second); err != nil {
+		t.Fatalf("the resolver is reachable, yet a query goes to the dead connection: %v", err)
 	}
 	if n := proxy.connections(); n != 2 {
 		t.Fatalf("%d connections, want one new connection in place of the dead one", n)
@@ -191,25 +191,16 @@ func TestALiveDoHConnectionOutlastsItsPings(t *testing.T) {
 }
 
 func TestAQueryWaitingOnADeadDoHConnectionIsAskedAgain(t *testing.T) {
-	proxy, ask := http2DoH(t, 200*time.Millisecond, 800*time.Millisecond, 800*time.Millisecond)
-
-	if err := ask(); err != nil {
-		t.Fatal(err)
-	}
-	proxy.freeze()
-	time.Sleep(700 * time.Millisecond)
-	if err := ask(); err != nil {
-		t.Fatalf("the resolver is reachable, yet the query failed with the connection it waited on: %v", err)
-	}
-	if n := proxy.connections(); n != 2 {
-		t.Fatalf("%d connections, want one new connection in place of the dead one", n)
-	}
-}
-
-func TestOnlyTheLookupsOfASetAreAskedAgain(t *testing.T) {
-	proxy, client, url := http2DoHClient(t, 200*time.Millisecond, 800*time.Millisecond, 800*time.Millisecond)
+	proxy, client, url := http2DoHClient(t, 100*time.Millisecond, 2*time.Second, 10*time.Second)
+	var mu sync.Mutex
+	var reused []bool
+	ctx := httptrace.WithClientTrace(context.Background(), &httptrace.ClientTrace{GotConn: func(got httptrace.GotConnInfo) {
+		mu.Lock()
+		defer mu.Unlock()
+		reused = append(reused, got.Reused)
+	}})
 	ask := func() error {
-		_, err := ResolveDoH(context.Background(), client, url, BuildQuery("www.example.com", 7, rrTypeA))
+		_, err := ResolveSetDoH(ctx, client, url, BuildQuery("www.example.com", 7, rrTypeA))
 		return err
 	}
 
@@ -217,9 +208,45 @@ func TestOnlyTheLookupsOfASetAreAskedAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	proxy.freeze()
-	time.Sleep(700 * time.Millisecond)
+	if err := ask(); err != nil {
+		t.Fatalf("the resolver is reachable, yet the query failed with the connection it waited on: %v", err)
+	}
+	if want := []bool{false, true, false}; !slices.Equal(reused, want) {
+		t.Fatalf("connections reused %v, want %v: the old one, then one new in its place", reused, want)
+	}
+	if n := proxy.connections(); n != 2 {
+		t.Fatalf("%d connections, want one new connection in place of the dead one", n)
+	}
+}
+
+func TestOnlyTheLookupsOfASetAreAskedAgain(t *testing.T) {
+	var asked atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query, _ := io.ReadAll(r.Body)
+		if asked.Add(1) == 2 {
+			if conn, _, err := w.(http.Hijacker).Hijack(); err == nil {
+				conn.Close()
+			}
+			return
+		}
+		_, _ = w.Write(BuildAnswerFromIPs(query, 60, []net.IP{net.IPv4(203, 0, 113, 9)}))
+	}))
+	t.Cleanup(ts.Close)
+	client := MarkedDoHClient(0, 10*time.Second)
+	t.Cleanup(client.CloseIdleConnections)
+	ask := func() error {
+		_, err := ResolveDoH(context.Background(), client, ts.URL+"/dns-query", BuildQuery("www.example.com", 7, rrTypeA))
+		return err
+	}
+
+	if err := ask(); err != nil {
+		t.Fatal(err)
+	}
 	if err := ask(); err == nil {
 		t.Fatal("a measurement over a connection that died was repeated on another one")
+	}
+	if n := asked.Load(); n != 2 {
+		t.Fatalf("%d queries reached the server, want the lost one asked once", n)
 	}
 }
 
