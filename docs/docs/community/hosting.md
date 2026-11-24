@@ -139,7 +139,7 @@ They are separate processes and deployments: nothing merges two catalogues, and 
 
 The data directory moves as a unit: `hub.key`, `hub.db`, `secret`, `blobs/` and `public/` belong together.
 
-Votes are deleted a year after they arrive. The id, type, key and time of their records stay, and the hub answers a record it has already seen as a duplicate. Set versions and complaints have no such limit and keep the network they came from. The two newest copies made before a schema update, `hub.db.v<n>.bak`, keep the votes of that moment.
+Votes are deleted a year after they arrive. The id, type, key and time of their records stay, and the hub answers a record it has already seen as a duplicate. Set versions and complaints have no such limit and stay in full, with the network they came from. The two newest copies made before a schema update, `hub.db.v<n>.bak`, keep the votes of that moment.
 
 :::danger
 `secret` keys the HMAC that stands for every contributor's key in the database, and it is created silently when it is missing. A database restored without its original `secret` recognises nobody: bans, trust marks, the authorship of sets and the de-duplication of reports all come apart.

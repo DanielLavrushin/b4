@@ -21,7 +21,7 @@ The pressed button stays marked, and its tooltip shows the date of the report. C
 
 ## Works and broken {#works-and-broken}
 
-The hub keeps one current report per router, strategy and network each week. A report counts for the network the hub sees the router on, so it shapes the score that routers on the same ISP and in the same country see first, see [Reading the score](./browsing.md#reading-the-score).
+The hub keeps one current report per router, strategy and network each week. A report counts for the network the hub sees the router on, so it shapes the score that routers on the same ISP and in the same country see first, see [Reading the score](./browsing.md#reading-the-score). A report on a strategy that the same router has published counts only worldwide.
 
 On an edited set the buttons are disabled, because a report would not describe the published strategy. **Reapply** restores the published strategy and enables them again, see [Updating and reapplying](./applying.md#updating-and-reapplying).
 
