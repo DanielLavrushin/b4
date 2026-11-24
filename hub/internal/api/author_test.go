@@ -9,6 +9,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4hub/internal/asn"
+	"github.com/daniellavrushin/b4hub/internal/store"
 	"github.com/daniellavrushin/b4hub/internal/testkit"
 )
 
@@ -145,5 +146,34 @@ func TestTheAuthorOfARejectedSetCountsLikeAnyOtherDevice(t *testing.T) {
 	}
 	if s := h.published()[listed]; s.Global.Devices != 3 || s.ASN["64500"].Devices != 2 || s.CC["RU"].Devices != 2 {
 		t.Fatalf("the author of a rejected set has nothing listed to hide: %+v", s)
+	}
+}
+
+func TestTheAuthorOfAHiddenOrWithdrawnSetStaysOutOfTheScores(t *testing.T) {
+	ctx := context.Background()
+	for name, takeDown := range map[string]func(h *hub, setID string) error{
+		"hidden": func(h *hub, setID string) error { return h.store.Hide(ctx, setID, 1, "checking", h.clock) },
+		"withdrawn": func(h *hub, setID string) error {
+			return h.store.Update(ctx, func(tx *store.Tx) error { return tx.WithdrawSet(ctx, setID, "asked", h.clock) })
+		},
+	} {
+		h := startHubWithNeighbours(t)
+		listed, fp := h.publish(testkit.Identity(t), youtube(), foreignPeer)
+		own, other := h.publish(testkit.Identity(t), discord(), authorPeer)
+		if fp != other {
+			t.Fatal("the two sets must share a strategy")
+		}
+		h.works(testkit.Identity(t), listed, fp, neighbourPeer)
+		h.published()
+		if err := takeDown(h, own); err != nil {
+			t.Fatal(err)
+		}
+		scores := h.published()
+		if _, there := scores[own]; there {
+			t.Fatalf("the %s set must leave the catalogue", name)
+		}
+		if s := scores[listed]; s.Global.Devices != 3 || s.ASN != nil || s.CC != nil {
+			t.Errorf("the label of the %s set's author was public, their network must stay out: %+v", name, s)
+		}
 	}
 }

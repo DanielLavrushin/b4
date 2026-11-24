@@ -62,7 +62,7 @@ func TestCheckpointGivesUpSoonOnABusyDatabase(t *testing.T) {
 		if err := st.Checkpoint(ctx); err == nil {
 			t.Errorf("%s: a checkpoint that another process blocks must not pass for done", name)
 		}
-		if waited := time.Since(start); waited > 2*time.Second {
+		if waited := time.Since(start); waited > time.Second {
 			t.Errorf("%s: the only connection must not wait for another process, it waited %v", name, waited)
 		}
 		var wait int
@@ -162,5 +162,42 @@ func TestPruneVotesDropsOldVotesAndKeepsRecordIDs(t *testing.T) {
 	}
 	if removed, err := st.PruneVotes(ctx, testNow, keep); err != nil || removed != 0 {
 		t.Errorf("a second run has nothing to do, got %d %v", removed, err)
+	}
+}
+
+func TestCheckpointLeavesTheWaitOfOtherRequestsAlone(t *testing.T) {
+	ctx := context.Background()
+	st := openTestStore(t)
+	type seen struct{ requests, shortest int }
+	done, result := make(chan struct{}), make(chan seen)
+	go func() {
+		s := seen{shortest: 5000}
+		for {
+			select {
+			case <-done:
+				result <- s
+				return
+			default:
+			}
+			var wait int
+			if err := st.db.QueryRowContext(ctx, `PRAGMA busy_timeout`).Scan(&wait); err != nil {
+				t.Error(err)
+			}
+			s.requests++
+			s.shortest = min(s.shortest, wait)
+		}
+	}()
+	for range 200 {
+		if err := st.Checkpoint(ctx); err != nil {
+			t.Error(err)
+		}
+	}
+	close(done)
+	s := <-result
+	if s.requests == 0 {
+		t.Fatal("no request ran next to the checkpoints")
+	}
+	if s.shortest != 5000 {
+		t.Errorf("a request next to a checkpoint waits 5 seconds for a lock, got %d ms", s.shortest)
 	}
 }
