@@ -123,7 +123,7 @@ func evidenceOf(pool []store.Vote, setID, author string, at time.Time) EvidenceV
 	for _, v := range pool {
 		side := &ev.Independent
 		devices := independent
-		if v.KeyHMAC == author {
+		if v.ByAuthor || v.KeyHMAC == author {
 			side = &ev.Author
 			devices = authors
 		}

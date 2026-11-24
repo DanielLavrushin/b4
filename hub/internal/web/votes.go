@@ -124,7 +124,7 @@ func (s *Server) voteRows(ctx context.Context, votes []store.Vote) ([]VoteRowVie
 			row.Title = h.Title
 			row.SetStatus = h.Status
 		}
-		row.AuthorVote = sets[v.SetID].AuthorHMAC == v.KeyHMAC
+		row.AuthorVote = v.ByAuthor || sets[v.SetID].AuthorHMAC == v.KeyHMAC
 		when := at
 		if when.IsZero() {
 			when = s.now().UTC()

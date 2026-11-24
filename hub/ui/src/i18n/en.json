@@ -650,7 +650,7 @@
     "noMatch": "No vote matches the filters.",
     "unverified": "network unknown",
     "claims": "claims {{asn}} {{cc}}",
-    "authorVote": "The set's author voted on their own set.",
+    "authorVote": "An author of this strategy: counts only worldwide unless their set was rejected.",
     "authorShort": "author",
     "applied": {
       "now": "now",
@@ -679,8 +679,8 @@
       "works": "Works",
       "broken": "Broken",
       "anyone": "Anyone",
-      "notAuthor": "Not the author",
-      "onlyAuthor": "Only the author",
+      "notAuthor": "Not an author",
+      "onlyAuthor": "Only authors",
       "anyOrigin": "Any network",
       "verified": "Known network",
       "unverified": "Unknown network",
@@ -1091,7 +1091,7 @@
   },
   "evidence": {
     "independentTip": "Independent: +{{works}} / -{{broken}} from {{devices}} devices, weighted {{positive}} / {{negative}}",
-    "authorTip": "The author's own: +{{works}} / -{{broken}}, counted worldwide like any other device, not per network",
+    "authorTip": "By authors of this strategy: +{{works}} / -{{broken}}, counted only worldwide unless their set was rejected",
     "pooledTip": "The score pools votes by strategy fingerprint; {{count}} other sets share it"
   },
   "technique": {
