@@ -28,31 +28,6 @@ func (s *Store) Badges(ctx context.Context) (Badges, error) {
 	return b, err
 }
 
-type VersionCounts struct {
-	Pending    int
-	Active     int
-	Eligible   int
-	Listed     int
-	Withheld   int
-	Hidden     int
-	Rejected   int
-	Superseded int
-}
-
-func (s *Store) VersionCounts(ctx context.Context) (VersionCounts, error) {
-	var c VersionCounts
-	err := s.db.QueryRowContext(ctx, `SELECT
-		(SELECT COUNT(*) FROM set_versions WHERE status = 'pending'),
-		(SELECT COUNT(*) FROM set_versions WHERE status = 'active'),
-		(SELECT COUNT(DISTINCT set_id) FROM set_versions WHERE status = 'active'),
-		(SELECT COUNT(DISTINCT set_id) FROM set_versions WHERE status = 'active' AND set_id NOT IN (`+withheldSets+`)),
-		(SELECT COUNT(DISTINCT set_id) FROM set_versions WHERE status = 'active' AND set_id IN (`+withheldSets+`)),
-		(SELECT COUNT(*) FROM set_versions WHERE status = 'hidden'),
-		(SELECT COUNT(*) FROM set_versions WHERE status = 'rejected')`).Scan(&c.Pending, &c.Active, &c.Eligible, &c.Listed, &c.Withheld, &c.Hidden, &c.Rejected)
-	c.Superseded = c.Active - c.Eligible
-	return c, err
-}
-
 func (s *Store) OpenReportCounts(ctx context.Context) (map[string]map[int]int, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT set_id, version, COUNT(*) FROM reports WHERE state = 'open' GROUP BY set_id, version`)
 	if err != nil {

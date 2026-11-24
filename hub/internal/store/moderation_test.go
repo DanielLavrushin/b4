@@ -289,13 +289,6 @@ func TestCatalogueVersionsWithholdWithdrawnSetsAndBannedAuthors(t *testing.T) {
 	if got := setIDs(versions); len(got) != 3 || got[withdrawn] != 1 || got[quarantined] != 1 || got[both] != 1 {
 		t.Fatalf("a withheld set is represented by its listed version and a set with nothing active is not withheld: %v", got)
 	}
-	counts, err := st.VersionCounts(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if counts.Withheld != 3 || counts.Listed != 1 {
-		t.Fatalf("version counts must agree with the groups: %+v", counts)
-	}
 
 	if err := st.Update(ctx, func(tx *Tx) error { return tx.ReinstateSet(ctx, withdrawn) }); err != nil {
 		t.Fatal(err)
@@ -389,6 +382,92 @@ func TestKeyImpactNamesWhatABanWouldTouch(t *testing.T) {
 	empty, err := st.KeyImpact(ctx, keyNamed(9))
 	if err != nil || len(empty.Listed) != 0 || len(empty.Pending) != 0 || empty.Votes != 0 || len(empty.Mirrors) != 0 {
 		t.Errorf("an unknown key touches nothing: %+v %v", empty, err)
+	}
+}
+
+func TestEveryListingReaderSkipsAPersonalResolver(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	author := keyNamed(1)
+	personal := map[string]interface{}{"dns": map[string]interface{}{"enabled": true, "doh_url": "https://dns.nextdns.io/canaryid"}}
+	plain := map[string]interface{}{"dns": map[string]interface{}{"enabled": true, "doh_url": "https://dns.example/dns-query"}}
+	at := testNow
+	add := func(id string, projections ...map[string]interface{}) {
+		for i, p := range projections {
+			at = at.Add(time.Minute)
+			v := sampleVersion(fmt.Sprintf("fp-%s-%d", id, i+1), "targets-"+id)
+			v.Title, v.Projection, v.UploaderHMAC = fmt.Sprintf("%s v%d", id, i+1), p, author
+			var err error
+			if i == 0 {
+				err = st.CreateSet(ctx, Set{ID: id, AuthorHMAC: author, CreatedAt: testNow, UpdatedAt: testNow}, v)
+			} else {
+				v.SetID = id
+				err = st.AddVersion(ctx, v)
+			}
+			if err == nil {
+				err = st.Approve(ctx, id, i+1, at)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	older, only, newer := "01ARZ3NDEKTSV4RRFFQ69G5FA1", "01ARZ3NDEKTSV4RRFFQ69G5FA2", "01ARZ3NDEKTSV4RRFFQ69G5FA3"
+	add(older, plain, personal)
+	add(only, personal)
+	add(newer, personal, plain)
+	want := map[string]int{older: 1, newer: 2}
+	expect := func(what string, got map[string]int) {
+		t.Helper()
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Errorf("%s: got %v want %v", what, got, want)
+		}
+	}
+
+	listed, err := st.ListedVersions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect("listed", setIDs(listed))
+	catalogue, err := st.CatalogueVersions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect("catalogue", setIDs(catalogue))
+
+	impact, err := st.KeyImpact(ctx, author)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs := map[string]int{}
+	for _, ref := range impact.Listed {
+		refs[ref.SetID] = ref.Version
+	}
+	expect("a ban takes off the catalogue", refs)
+	if impact.Listed[0].SetID != older || impact.Listed[0].Title != older+" v1" {
+		t.Errorf("the ban preview goes by title: %+v", impact.Listed)
+	}
+
+	if err := st.BanKey(ctx, author, "spam", testNow); err != nil {
+		t.Fatal(err)
+	}
+	withheld, err := st.WithheldVersions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect("withheld", setIDs(withheld))
+	if len(withheld) != 2 || withheld[0].SetID != newer {
+		t.Errorf("the set changed last comes first: %v", withheld)
+	}
+	if catalogue, err = st.CatalogueVersions(ctx); err != nil || len(catalogue) != 0 {
+		t.Errorf("a banned author has nothing in the catalogue: %v %v", catalogue, err)
+	}
+	row, err := st.KeyRowOf(ctx, author)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.Sets != 3 || row.ListedSets != 2 {
+		t.Errorf("sets of the author: %d listed of %d, want 2 of 3", row.ListedSets, row.Sets)
 	}
 }
 

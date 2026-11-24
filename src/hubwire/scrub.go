@@ -191,10 +191,14 @@ func DoHHost(rawURL string) (string, bool) {
 
 const ReasonPersonalResolver = "personal_resolver"
 
-func scrubResolver(m map[string]interface{}, r *Report) {
-	raw, _ := lookupPath(m, "dns.doh_url")
+func HasPersonalResolver(projection map[string]interface{}) bool {
+	raw, _ := lookupPath(projection, "dns.doh_url")
 	doh, _ := raw.(string)
-	if doh == "" || !config.PersonalResolverURL(doh) {
+	return doh != "" && config.PersonalResolverURL(doh)
+}
+
+func scrubResolver(m map[string]interface{}, r *Report) {
+	if !HasPersonalResolver(m) {
 		return
 	}
 	r.strip("dns.doh_url", ReasonPersonalResolver)

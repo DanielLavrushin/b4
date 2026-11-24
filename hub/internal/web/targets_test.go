@@ -367,6 +367,102 @@ func TestEditNamesADroppedResolverOnce(t *testing.T) {
 	}
 }
 
+func TestAStoredPersonalResolverReachesNoCatalogue(t *testing.T) {
+	f := newFixture(t, password)
+	shared, _ := f.shareAs(testkit.Identity(t), testkit.SampleSet("Resolver", "resolver.example"), authorAddress)
+	like := f.versionOf(shared, 1)
+	projection := withTargets(t, like.Projection, map[string]interface{}{"sni_domains": []string{"stored.example"}})
+	projection["dns"] = map[string]interface{}{"enabled": true, "doh_url": "https://dns.nextdns.io/canaryid"}
+	id := f.insertVersion("Stored", projection, like)
+
+	item := []ModerationItemRequest{{SetID: id, Version: 1}}
+	_, view := f.moderate(ModerationRequest{Action: ActionApprove, Items: item, DryRun: true})
+	if len(view.Items) != 1 || view.Items[0].OK || view.Items[0].Code != hubwire.ReasonPersonalResolver || view.Items[0].Params["version"] != float64(1) {
+		t.Fatalf("the preview must name the refusal: %+v", view.Items)
+	}
+	f.expectError(f.admin(http.MethodPost, setPath(id, 1, ActionApprove), nil), http.StatusConflict, hubwire.ReasonPersonalResolver)
+	f.build()
+	if cs := f.published(id); cs != nil {
+		t.Fatalf("a refused approval publishes nothing: %+v", cs)
+	}
+
+	approved := f.insertVersion("Approved by an earlier hub", withTargets(t, projection, map[string]interface{}{"sni_domains": []string{"approved.example"}}), like)
+	if err := f.store.Approve(context.Background(), approved, 1, f.clock); err != nil {
+		t.Fatal(err)
+	}
+	f.build()
+	if cs := f.published(approved); cs != nil {
+		t.Fatalf("a version with such an address is never listed: %+v", cs)
+	}
+	var detail SetDetailView
+	f.admin(http.MethodGet, PathAPI+"/sets/"+approved, nil).decode(t, &detail)
+	if detail.ListedVersion != 0 || len(detail.Versions) != 1 {
+		t.Fatalf("the console must not call it listed: %+v", detail)
+	}
+	if got := f.setsView(); entryOf(got.Listed, approved, 1) != nil || entryOf(got.Superseded, approved, 1) == nil {
+		t.Fatalf("the console must show it among the versions that are not listed: %+v", got)
+	}
+
+	f.expectOK(f.admin(http.MethodPost, setPath(id, 1, "edit"), EditRequest{Title: "Stored", Projection: projection, Approve: true}))
+	f.build()
+	cs := f.published(id)
+	if cs == nil {
+		t.Fatal("an edit that only runs the check is saved and approved")
+	}
+	if _, ok := lookupPath(cs.Set, "dns.doh_url"); ok {
+		t.Fatalf("the published set names the resolver: %v", cs.Set)
+	}
+}
+
+func TestAWithheldSetIsGroupedByItsListableVersion(t *testing.T) {
+	f := newFixture(t, password)
+	id, _ := f.share("Withdrawn", authorAddress, "withdrawn.example")
+	f.approve(id)
+	newer := f.versionOf(id, 1)
+	newer.Projection = withTargets(t, newer.Projection, map[string]interface{}{"sni_domains": []string{"newer.example"}})
+	newer.Projection["dns"] = map[string]interface{}{"enabled": true, "doh_url": "https://dns.nextdns.io/canaryid"}
+	newer.FP, newer.TargetsKey, newer.Status = "fp-newer", "tk-newer", hubwire.SetStatusPending
+	if err := f.store.AddVersion(context.Background(), newer); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.Approve(context.Background(), id, 2, f.clock); err != nil {
+		t.Fatal(err)
+	}
+	rowsOf := func(group string) map[int]SetRowView {
+		t.Helper()
+		var view SetRowsView
+		f.admin(http.MethodGet, PathAPI+"/sets/rows?group="+group, nil).decode(t, &view)
+		out := map[int]SetRowView{}
+		for _, row := range view.Rows {
+			if row.SetID == id {
+				out[row.Version] = row
+			}
+		}
+		return out
+	}
+	check := func(group string) {
+		t.Helper()
+		view := f.setsView()
+		current := map[string][]EntryView{GroupListed: view.Listed, GroupWithheld: view.Withheld}[group]
+		entry := entryOf(view.Superseded, id, 2)
+		if entryOf(current, id, 1) == nil || entryOf(current, id, 2) != nil || entryOf(view.Superseded, id, 1) != nil || entry == nil {
+			t.Fatalf("%s holds the plain version and superseded the other: %+v", group, view)
+		}
+		if entry.SupersededBy != 0 || entry.SupersededAt != nil {
+			t.Fatalf("an older version does not supersede a newer one: %+v", entry)
+		}
+		if rows := rowsOf(group); len(rows) != 1 || rows[1].Version != 1 {
+			t.Fatalf("rows of %s: %+v", group, rows)
+		}
+		if rows := rowsOf(GroupSuperseded); len(rows) != 1 || rows[2].Version != 2 || rows[2].SupersededBy != 0 || rows[2].SupersededAt != nil {
+			t.Fatalf("superseded rows: %+v", rows)
+		}
+	}
+	check(GroupListed)
+	f.expectOK(f.admin(http.MethodPost, PathAPI+"/sets/"+id+"/withdraw", map[string]string{"reason": "author asked"}))
+	check(GroupWithheld)
+}
+
 func TestEditTargetCollisionIsADuplicate(t *testing.T) {
 	f := newFixture(t, password)
 	first, _ := f.share("First", authorAddress, "first.example")

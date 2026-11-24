@@ -156,6 +156,7 @@ var moderationStatus = map[string]int{
 	moderation.CodeStale:             http.StatusConflict,
 	moderation.CodeAuthorBanned:      http.StatusConflict,
 	moderation.CodeSetWithdrawn:      http.StatusConflict,
+	moderation.CodePersonalResolver:  http.StatusConflict,
 	moderation.CodeNotWithdrawn:      http.StatusConflict,
 	moderation.CodeBatchInvalid:      http.StatusConflict,
 	moderation.CodeNotPending:        http.StatusConflict,
@@ -236,12 +237,20 @@ func (s *Server) groups(ctx context.Context) (*versionGroups, error) {
 	g.versions = make(map[string][]int, len(eligible))
 	for _, v := range active {
 		g.versions[v.SetID] = append(g.versions[v.SetID], v.Version)
-		if v.Version < g.newest[v.SetID].Version {
+		if v.Version != g.newest[v.SetID].Version {
 			g.superseded = append(g.superseded, v)
 		}
 	}
 	sort.SliceStable(g.listed, func(i, j int) bool { return g.listed[i].UpdatedAt.After(g.listed[j].UpdatedAt) })
 	return g, nil
+}
+
+func (g *versionGroups) supersededBy(v store.Version) (int, *time.Time) {
+	current := g.newest[v.SetID]
+	if current.Version < v.Version {
+		return 0, nil
+	}
+	return current.Version, optionalTime(current.UpdatedAt)
 }
 
 func lineage(v store.Version, newest map[string]store.Version) *LineageView {
@@ -296,9 +305,7 @@ func (s *Server) sets(w http.ResponseWriter, r *http.Request) {
 		view.Listed[i].Versions = g.versions[view.Listed[i].SetID]
 	}
 	for i := range view.Superseded {
-		current := g.newest[view.Superseded[i].SetID]
-		view.Superseded[i].SupersededBy = current.Version
-		view.Superseded[i].SupersededAt = optionalTime(current.UpdatedAt)
+		view.Superseded[i].SupersededBy, view.Superseded[i].SupersededAt = g.supersededBy(g.superseded[i])
 	}
 	writeJSON(w, http.StatusOK, view)
 }
@@ -338,7 +345,7 @@ func (s *Server) setDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	if view.Withheld == "" {
 		for _, v := range versions {
-			if v.Status == hubwire.SetStatusActive && v.Version > view.ListedVersion {
+			if v.Listable() && v.Version > view.ListedVersion {
 				view.ListedVersion = v.Version
 			}
 		}

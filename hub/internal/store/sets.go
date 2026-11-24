@@ -59,6 +59,10 @@ type Version struct {
 	HiddenFrom          string
 }
 
+func (v *Version) Listable() bool {
+	return v.Status == hubwire.SetStatusActive && !hubwire.HasPersonalResolver(v.Projection)
+}
+
 var (
 	ErrNotPending = errors.New("only a pending version can be edited")
 	ErrStale      = errors.New("the version changed since it was loaded")
@@ -449,17 +453,29 @@ func (s *Store) ActiveVersions(ctx context.Context) ([]Version, error) {
 	return s.queryVersions(ctx, `SELECT `+versionColumns+` FROM set_versions WHERE status = ? ORDER BY set_id, version`, hubwire.SetStatusActive)
 }
 
-const listedFilter = `v.status = 'active' AND v.version = (SELECT MAX(o.version) FROM set_versions o WHERE o.set_id = v.set_id AND o.status = 'active')`
-
 const withheldSets = `SELECT s.id FROM sets s LEFT JOIN keys k ON k.key_hmac = s.author_hmac WHERE s.withdrawn_at <> '' OR COALESCE(k.banned, 0) = 1`
 
 func (s *Store) ListedVersions(ctx context.Context) ([]Version, error) {
-	return s.queryVersions(ctx, `SELECT `+versionColumns+` FROM set_versions v WHERE `+listedFilter+` ORDER BY v.set_id`)
+	return s.newestListable(ctx, "")
 }
 
 func (s *Store) CatalogueVersions(ctx context.Context) ([]Version, error) {
-	return s.queryVersions(ctx, `SELECT `+versionColumns+` FROM set_versions v WHERE `+listedFilter+`
-		AND v.set_id NOT IN (`+withheldSets+`) ORDER BY v.set_id`)
+	return s.newestListable(ctx, ` AND set_id NOT IN (`+withheldSets+`)`)
+}
+
+func (s *Store) newestListable(ctx context.Context, filter string, args ...interface{}) ([]Version, error) {
+	active, err := s.queryVersions(ctx, `SELECT `+versionColumns+` FROM set_versions WHERE status = ?`+filter+` ORDER BY set_id, version DESC`,
+		append([]interface{}{hubwire.SetStatusActive}, args...)...)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Version, 0, len(active))
+	for _, v := range active {
+		if v.Listable() && (len(out) == 0 || out[len(out)-1].SetID != v.SetID) {
+			out = append(out, v)
+		}
+	}
+	return out, nil
 }
 
 const (
@@ -491,9 +507,12 @@ func (s *Store) Withheld(ctx context.Context) (map[string]string, error) {
 }
 
 func (s *Store) WithheldVersions(ctx context.Context) ([]Version, error) {
-	return s.queryVersions(ctx, `SELECT `+versionColumns+` FROM set_versions v
-		WHERE `+listedFilter+` AND v.set_id IN (`+withheldSets+`)
-		ORDER BY v.updated_at DESC`)
+	versions, err := s.newestListable(ctx, ` AND set_id IN (`+withheldSets+`)`)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(versions, func(i, j int) bool { return versions[i].UpdatedAt.After(versions[j].UpdatedAt) })
+	return versions, nil
 }
 
 type VersionHead struct {

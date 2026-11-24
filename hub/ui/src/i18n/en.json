@@ -871,6 +871,7 @@
     "stale": "The version changed since the page was loaded. Refresh and try again.",
     "author_banned": "The author is banned. The version would stay out of the catalogue.",
     "set_withdrawn": "The set is withdrawn. The version would stay out of the catalogue.",
+    "personal_resolver": "The resolver address of version {{version}} holds a personal path, a query or a login. A pending version can be approved after Check and Save; a rejected one, or one hidden from the catalogue, has to be published again by its author.",
     "reason_required": "A reason is required.",
     "confirm_mismatch": "The confirmation does not match.",
     "own_key": "This is the key this hub signs with. Revoking it would make every router reject this hub.",

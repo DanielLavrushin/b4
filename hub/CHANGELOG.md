@@ -6,7 +6,7 @@ All notable changes to the b4hub community hub service are recorded in this file
 
 ### Security
 
-- A set's resolver address with a personal path, a query or a login in it was stored and published whole. A set waiting in the queue from an earlier version keeps the address until it is edited: run **Check** on it and save before approving it.
+- A set's resolver address with a personal path, a query or a login in it was stored and published whole. A version stored before this one with such an address is never listed and cannot be approved: run **Check** on a pending one and save; a rejected one, or one hidden from the catalogue, has to be published again by its author.
 
 ## [1.10.0] - 2026-11-20
 

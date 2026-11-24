@@ -393,7 +393,7 @@ func (s *Server) fillKeySets(ctx context.Context, key string, view *KeyDetailVie
 		set := &view.Sets[i]
 		set.Title = v.Title
 		set.Versions = append(set.Versions, KeySetVersionView{Version: v.Version, Status: v.Status})
-		if v.Status == hubwire.SetStatusActive && v.Version > set.ListedVersion && set.Withheld == "" {
+		if v.Listable() && v.Version > set.ListedVersion && set.Withheld == "" {
 			set.ListedVersion = v.Version
 		}
 	}
