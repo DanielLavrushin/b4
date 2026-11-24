@@ -9,6 +9,7 @@ All notable changes to the b4hub community hub service are recorded in this file
 - Votes are deleted a year after they arrive, so the device counts in the catalogue and the console's vote lists cover the last year.
 - An author's votes on their own strategy count only in its worldwide score, not per provider or country. The console shows them as author votes in every set with that strategy.
 - The ids of new sets no longer contain the time of the upload.
+- **Last network** on the **Keys** page is the network of the newest vote, publication or complaint.
 
 ### Fixed
 
