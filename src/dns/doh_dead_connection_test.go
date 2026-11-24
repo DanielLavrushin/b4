@@ -102,9 +102,9 @@ func (p *freezingProxy) connections() int {
 	return p.accepted
 }
 
-func http2DoH(t *testing.T, pingIdle, timeout time.Duration) (*freezingProxy, func() error) {
+func http2DoH(t *testing.T, pingIdle, pingTimeout, timeout time.Duration) (*freezingProxy, func() error) {
 	t.Helper()
-	proxy, client, url := http2DoHClient(t, pingIdle, timeout)
+	proxy, client, url := http2DoHClient(t, pingIdle, pingTimeout, timeout)
 	return proxy, func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
@@ -116,11 +116,11 @@ func http2DoH(t *testing.T, pingIdle, timeout time.Duration) (*freezingProxy, fu
 	}
 }
 
-func http2DoHClient(t *testing.T, pingIdle, timeout time.Duration) (*freezingProxy, *http.Client, string) {
+func http2DoHClient(t *testing.T, pingIdle, pingTimeout, timeout time.Duration) (*freezingProxy, *http.Client, string) {
 	t.Helper()
-	previous := dohPingIdle
-	dohPingIdle = pingIdle
-	t.Cleanup(func() { dohPingIdle = previous })
+	previousIdle, previousTimeout := dohPingIdle, dohPingTimeout
+	dohPingIdle, dohPingTimeout = pingIdle, pingTimeout
+	t.Cleanup(func() { dohPingIdle, dohPingTimeout = previousIdle, previousTimeout })
 
 	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.ProtoMajor != 2 {
@@ -147,7 +147,7 @@ func http2DoHClient(t *testing.T, pingIdle, timeout time.Duration) (*freezingPro
 }
 
 func TestADeadDoHConnectionIsReplaced(t *testing.T) {
-	proxy, ask := http2DoH(t, 100*time.Millisecond, 400*time.Millisecond)
+	proxy, ask := http2DoH(t, 100*time.Millisecond, 400*time.Millisecond, 400*time.Millisecond)
 
 	if err := ask(); err != nil {
 		t.Fatalf("the resolver must answer before its connection dies: %v", err)
@@ -177,7 +177,7 @@ func TestADeadDoHConnectionIsReplaced(t *testing.T) {
 }
 
 func TestALiveDoHConnectionOutlastsItsPings(t *testing.T) {
-	proxy, ask := http2DoH(t, 50*time.Millisecond, 2*time.Second)
+	proxy, ask := http2DoH(t, 50*time.Millisecond, 2*time.Second, 2*time.Second)
 
 	for i := 0; i < 3; i++ {
 		if err := ask(); err != nil {
@@ -191,7 +191,7 @@ func TestALiveDoHConnectionOutlastsItsPings(t *testing.T) {
 }
 
 func TestAQueryWaitingOnADeadDoHConnectionIsAskedAgain(t *testing.T) {
-	proxy, ask := http2DoH(t, 200*time.Millisecond, 800*time.Millisecond)
+	proxy, ask := http2DoH(t, 200*time.Millisecond, 800*time.Millisecond, 800*time.Millisecond)
 
 	if err := ask(); err != nil {
 		t.Fatal(err)
@@ -207,7 +207,7 @@ func TestAQueryWaitingOnADeadDoHConnectionIsAskedAgain(t *testing.T) {
 }
 
 func TestOnlyTheLookupsOfASetAreAskedAgain(t *testing.T) {
-	proxy, client, url := http2DoHClient(t, 200*time.Millisecond, 800*time.Millisecond)
+	proxy, client, url := http2DoHClient(t, 200*time.Millisecond, 800*time.Millisecond, 800*time.Millisecond)
 	ask := func() error {
 		_, err := ResolveDoH(context.Background(), client, url, BuildQuery("www.example.com", 7, rrTypeA))
 		return err
@@ -223,8 +223,35 @@ func TestOnlyTheLookupsOfASetAreAskedAgain(t *testing.T) {
 	}
 }
 
+func TestADeadDoHConnectionIsGivenUpBeforeTheQueryIs(t *testing.T) {
+	proxy, ask := http2DoH(t, 100*time.Millisecond, 300*time.Millisecond, 5*time.Second)
+
+	if err := ask(); err != nil {
+		t.Fatal(err)
+	}
+	proxy.freeze()
+	if err := ask(); err != nil {
+		t.Fatalf("the query ran out of time together with its connection: %v", err)
+	}
+}
+
+func TestAShortQueryTimeoutEndsADeadDoHConnectionSooner(t *testing.T) {
+	proxy, ask := http2DoH(t, 100*time.Millisecond, time.Minute, 400*time.Millisecond)
+
+	if err := ask(); err != nil {
+		t.Fatal(err)
+	}
+	proxy.freeze()
+	for start := time.Now(); time.Since(start) < 5*time.Second; {
+		if ask() == nil {
+			return
+		}
+	}
+	t.Fatal("the resolver is reachable, yet queries still go to the dead connection")
+}
+
 func TestAQueryThatTimedOutIsNotAskedAgain(t *testing.T) {
-	proxy, client, url := http2DoHClient(t, time.Minute, time.Second)
+	proxy, client, url := http2DoHClient(t, time.Minute, time.Second, time.Second)
 	ask := func() error {
 		_, err := ResolveSetDoH(context.Background(), client, url, BuildQuery("www.example.com", 7, rrTypeA))
 		return err

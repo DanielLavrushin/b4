@@ -99,7 +99,7 @@ When no resolver answered "no error" or "no such name", the result depends on th
 
 Three failures in a row leave a resolver out of the lookups for 30 seconds. An answer with an error code is not a failure. After the 30 seconds one lookup tries the resolver again, and an answer clears the count. b4 logs `DNS: ... failed 3 times in a row` as a warning when it starts leaving a resolver out, and `DNS: ... is answering again` when the resolver is back.
 
-b4 keeps its HTTPS connection to a DoH server open for the queries that follow, and closes it after 30 seconds without one. A connection that has been silent for 5 seconds is checked with an HTTP/2 ping, and one that does not answer within **Query timeout** is closed, as after a change of the router's WAN address. The queries that waited on it are asked once more over a new connection.
+b4 keeps its HTTPS connection to a DoH server open for the queries that follow, and closes it after 30 seconds without one. A connection that has been silent for 5 seconds is checked with an HTTP/2 ping, and one that does not answer within 5 seconds, or within **Query timeout** when that is shorter, is closed, as after a change of the router's WAN address. The queries still waiting on it are asked once more over a new connection.
 
 The count belongs to the resolver, not to the set. Sets that name the same resolver share it, and so do the queries of devices and the [lookups b4 makes itself](#lookups-b4-makes-itself). The lookups of the [DPI Detector](../detector.md) do not count and ignore the 30 seconds.
 

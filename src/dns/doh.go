@@ -22,7 +22,10 @@ const DoHContentType = "application/dns-message"
 
 var ErrDoHMethodNotAllowed = errors.New("doh method not allowed")
 
-var dohPingIdle = 5 * time.Second
+var (
+	dohPingIdle    = 5 * time.Second
+	dohPingTimeout = 5 * time.Second
+)
 
 func MarkedDoHClient(mark int, timeout time.Duration) *http.Client {
 	tr := &http.Transport{
@@ -31,7 +34,7 @@ func MarkedDoHClient(mark int, timeout time.Duration) *http.Client {
 		ResponseHeaderTimeout: timeout,
 		MaxIdleConns:          100,
 		IdleConnTimeout:       30 * time.Second,
-		HTTP2:                 &http.HTTP2Config{SendPingTimeout: dohPingIdle, PingTimeout: timeout},
+		HTTP2:                 &http.HTTP2Config{SendPingTimeout: dohPingIdle, PingTimeout: min(timeout, dohPingTimeout)},
 	}
 	var control func(string, string, syscall.RawConn) error
 	if mark != 0 {
