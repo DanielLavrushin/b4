@@ -67,7 +67,7 @@ func (s *Store) UpsertVote(ctx context.Context, v Vote) error {
 
 const voteColumns = `v.id, v.record_id, v.set_id, v.version, v.fp, v.key_hmac, v.kind, v.weight, v.asn_observed, v.country_observed, v.asn_hint, v.country_hint,
 	v.origin_verified, v.domain, v.b4_version, v.engine, v.bucket, v.received_at, COALESCE(k.first_seen, ''),
-	EXISTS(SELECT 1 FROM set_versions sv JOIN sets s ON s.id = sv.set_id WHERE sv.fp = v.fp AND s.author_hmac = v.key_hmac)`
+	(v.fp, v.key_hmac) IN (SELECT sv.fp, s.author_hmac FROM set_versions sv JOIN sets s ON s.id = sv.set_id WHERE sv.status <> '` + hubwire.SetStatusRejected + `')`
 
 func (s *Store) queryVotes(ctx context.Context, query string, args ...interface{}) ([]Vote, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)

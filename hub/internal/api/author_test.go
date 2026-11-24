@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4hub/internal/asn"
 	"github.com/daniellavrushin/b4hub/internal/testkit"
@@ -28,19 +29,23 @@ func startHubWithNeighbours(t *testing.T) *hub {
 	return h
 }
 
-func (h *hub) publish(author *hubwire.Identity, title, domain, from string) (setID, fp string) {
+func (h *hub) submit(author *hubwire.Identity, set config.SetConfig, from string) (setID, fp string) {
 	h.t.Helper()
-	set := testkit.SampleSet(title, domain)
 	env := testkit.BuildEnvelope(h.t, &set)
 	status, body := h.post(testkit.SignShare(h.t, author, env, h.clock), from)
 	if status != http.StatusAccepted {
 		h.t.Fatalf("share: %d %v", status, body)
 	}
-	setID = body["set_id"].(string)
+	return body["set_id"].(string), env.Fingerprint
+}
+
+func (h *hub) publish(author *hubwire.Identity, set config.SetConfig, from string) (setID, fp string) {
+	h.t.Helper()
+	setID, fp = h.submit(author, set, from)
 	if err := h.store.Approve(context.Background(), setID, 1, h.clock); err != nil {
 		h.t.Fatal(err)
 	}
-	return setID, env.Fingerprint
+	return setID, fp
 }
 
 func (h *hub) works(voter *hubwire.Identity, setID, fp, from string) {
@@ -65,9 +70,17 @@ func (h *hub) published() map[string]hubwire.Scores {
 	return out
 }
 
+func youtube() config.SetConfig {
+	return testkit.SampleSet("YouTube", "youtube.com")
+}
+
+func discord() config.SetConfig {
+	return testkit.SampleSet("Discord", "discord.com")
+}
+
 func TestTheAuthorsNetworkStaysOutOfProviderAndCountryScores(t *testing.T) {
 	h := startHubWithNeighbours(t)
-	setID, fp := h.publish(testkit.Identity(t), "YouTube", "youtube.com", authorPeer)
+	setID, fp := h.publish(testkit.Identity(t), youtube(), authorPeer)
 	h.works(testkit.Identity(t), setID, fp, neighbourPeer)
 	if s := h.published()[setID]; s.Global.Devices != 2 || s.ASN != nil || s.CC != nil {
 		t.Fatalf("one vote beside the author must not list the author's network: %+v", s)
@@ -81,8 +94,8 @@ func TestTheAuthorsNetworkStaysOutOfProviderAndCountryScores(t *testing.T) {
 func TestAnAuthorStaysOutOfTheScoresOfEverySetWithTheSameStrategy(t *testing.T) {
 	h := startHubWithNeighbours(t)
 	author := testkit.Identity(t)
-	first, fp := h.publish(testkit.Identity(t), "YouTube", "youtube.com", authorPeer)
-	second, other := h.publish(author, "Discord", "discord.com", foreignPeer)
+	first, fp := h.publish(testkit.Identity(t), youtube(), authorPeer)
+	second, other := h.publish(author, discord(), foreignPeer)
 	if fp != other {
 		t.Fatal("the two sets must share a strategy")
 	}
@@ -90,9 +103,47 @@ func TestAnAuthorStaysOutOfTheScoresOfEverySetWithTheSameStrategy(t *testing.T) 
 	h.works(testkit.Identity(t), second, fp, foreignPeer)
 	h.works(author, first, fp, foreignPeer)
 	scores := h.published()
+	if len(scores) != 2 {
+		t.Fatalf("both sets must be listed, got %d", len(scores))
+	}
 	for _, id := range []string{first, second} {
 		if s := scores[id]; s.Global.Devices != 4 || s.ASN != nil || s.CC != nil {
 			t.Errorf("set %s must list the network of neither author: %+v", id, s)
 		}
+	}
+}
+
+func TestAnAuthorOfAnotherStrategyCountsLikeAnyOtherDevice(t *testing.T) {
+	h := startHubWithNeighbours(t)
+	author := testkit.Identity(t)
+	tuned := discord()
+	tuned.Faking.TTL = 9
+	listed, fp := h.publish(testkit.Identity(t), youtube(), foreignPeer)
+	if _, other := h.publish(author, tuned, authorPeer); fp == other {
+		t.Fatal("the two sets must differ in their strategy")
+	}
+	h.works(author, listed, fp, authorPeer)
+	h.works(testkit.Identity(t), listed, fp, neighbourPeer)
+	if s := h.published()[listed]; s.Global.Devices != 3 || s.ASN["64500"].Devices != 2 || s.CC["RU"].Devices != 2 {
+		t.Fatalf("an author is left out only where the strategy is their own: %+v", s)
+	}
+}
+
+func TestTheAuthorOfARejectedSetCountsLikeAnyOtherDevice(t *testing.T) {
+	h := startHubWithNeighbours(t)
+	listed, fp := h.publish(testkit.Identity(t), youtube(), foreignPeer)
+	pending, other := h.submit(testkit.Identity(t), discord(), authorPeer)
+	if fp != other {
+		t.Fatal("the two sets must share a strategy")
+	}
+	h.works(testkit.Identity(t), listed, fp, neighbourPeer)
+	if s := h.published()[listed]; s.Global.Devices != 3 || s.ASN != nil || s.CC != nil {
+		t.Fatalf("the author of a set that may still be listed stays out: %+v", s)
+	}
+	if err := h.store.Reject(context.Background(), pending, 1, "duplicate", h.clock); err != nil {
+		t.Fatal(err)
+	}
+	if s := h.published()[listed]; s.Global.Devices != 3 || s.ASN["64500"].Devices != 2 || s.CC["RU"].Devices != 2 {
+		t.Fatalf("the author of a rejected set has nothing listed to hide: %+v", s)
 	}
 }

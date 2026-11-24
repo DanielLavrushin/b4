@@ -47,7 +47,7 @@ Reports count per strategy, not per set. Two sets with the same strategy share o
 
 The names and targets of other sets, and the devices behind the router, are never sent. Every record is signed with the router's [author key](./publishing.md#author-identity). The hub knows a router by this key, not by an account.
 
-The hub deletes a **Works** or **Broken** report after a year. Only the fact that the key sent a report stays, with the id and the time of its record. Publications and complaints stay, with the network they came from. The catalogue carries only totals: worldwide, and per ISP or country once at least two routers count there. A publication counts as a **Works** report by its author, and an author's reports count only worldwide. The hub finds the ISP by the /24 (IPv4) or /48 (IPv6) network of the address, with the public IP-to-ASN service of Team Cymru.
+The hub deletes a **Works** or **Broken** report after a year. Only the fact that the key sent a report stays, with the id and the time of its record. Publications and complaints stay, with the network they came from. The catalogue carries only totals: worldwide, and per ISP or country once at least two routers count there. A publication counts as a **Works** report by its author, and the author's reports on that strategy count only worldwide. The hub finds the ISP by the /24 (IPv4) or /48 (IPv6) network of the address, with the public IP-to-ASN service of Team Cymru.
 
 ## Status line
 

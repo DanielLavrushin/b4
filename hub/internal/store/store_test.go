@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -180,6 +181,28 @@ func TestPendingQueueAndListing(t *testing.T) {
 	}
 	if dirty, _ = st.Dirty(ctx); dirty {
 		t.Errorf("a build must clear the dirty flag")
+	}
+}
+
+func TestTheAuthorOfAVoteIsFoundWithoutASearchPerVote(t *testing.T) {
+	st := openTestStore(t)
+	rows, err := st.db.QueryContext(context.Background(), `EXPLAIN QUERY PLAN SELECT `+voteColumns+` FROM votes v LEFT JOIN keys k ON k.key_hmac = v.key_hmac`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(detail, "CORRELATED") {
+			t.Errorf("the cost must not grow with votes times versions: %s", detail)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
 	}
 }
 
