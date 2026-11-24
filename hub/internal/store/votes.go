@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4hub/internal/score"
 )
 
@@ -160,6 +161,29 @@ func (s *Store) VoteTotals(ctx context.Context) (map[string]map[int]VoteTotals, 
 		out[setID][version] = totals
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) PruneVotes(ctx context.Context, now time.Time, maxAge time.Duration) (int, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	cutoff := formatTime(now.Add(-maxAge))
+	res, err := tx.ExecContext(ctx, `DELETE FROM votes WHERE received_at < ?`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	removed, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE records SET set_id = '', version = 0 WHERE received_at < ? AND set_id <> ''
+		AND (kind = ? OR (kind = ? AND id NOT IN (SELECT record_id FROM set_versions)))`,
+		cutoff, hubwire.RecordVote, hubwire.RecordShare); err != nil {
+		return 0, err
+	}
+	return int(removed), tx.Commit()
 }
 
 func (s *Store) CountVotes(ctx context.Context) (int, error) {

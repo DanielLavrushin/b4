@@ -418,7 +418,7 @@
     "derived": "Derived from {{id}} v{{version}}",
     "versions": "Versions",
     "votes": "Votes ({{count}})",
-    "noVotes": "No vote has been recorded for this set.",
+    "noVotes": "This set has no votes.",
     "voteColumns": {
       "when": "When",
       "kind": "Kind",
@@ -457,7 +457,7 @@
     "ban": "Ban",
     "unban": "Unban",
     "banTitle": "Ban {{key}}",
-    "banText": "New records from this key are refused. At the next build its sets leave the catalogue and its votes and reports stop counting. Nothing is deleted: unbanning restores everything.",
+    "banText": "New records from this key are refused. At the next build its sets leave the catalogue and its votes and reports stop counting. The ban deletes nothing: unbanning restores its sets, reports and remaining votes.",
     "showBanned": "Banned only",
     "trusted": "trusted {{when}}",
     "trust": "Trust",
@@ -539,7 +539,7 @@
       "reports": "Reports filed ({{count}})",
       "noReports": "This key has not reported anything.",
       "origins": "Networks",
-      "noOrigins": "No network has been observed for this key.",
+      "noOrigins": "No network is known for this key.",
       "clients": "b4 versions",
       "mirrors": "Mirrors it announced"
     },
@@ -619,7 +619,7 @@
   "feedback": {
     "votes": "Votes",
     "reports": "Reports",
-    "emptyVotes": "No vote has been received.",
+    "emptyVotes": "There are no votes.",
     "emptyReports": "No report has been received.",
     "limit": "Show last",
     "columns": {

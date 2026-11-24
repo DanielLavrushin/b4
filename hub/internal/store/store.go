@@ -41,7 +41,7 @@ type Store struct {
 
 func Open(path string) (*Store, error) {
 	dsn := "file:" + path + "?" + url.Values{
-		"_pragma": []string{"journal_mode(WAL)", "busy_timeout(5000)", "foreign_keys(1)", "synchronous(NORMAL)"},
+		"_pragma": []string{"journal_mode(WAL)", "busy_timeout(5000)", "foreign_keys(1)", "synchronous(NORMAL)", "secure_delete(1)"},
 		"_txlock": []string{"immediate"},
 	}.Encode()
 	db, err := sql.Open("sqlite", dsn)
