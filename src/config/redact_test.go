@@ -483,14 +483,14 @@ func TestMaskGeoURLKeepsTheBuiltInSources(t *testing.T) {
 	}
 	for _, s := range sources {
 		for _, u := range []string{s.GeositeURL, s.GeoipURL} {
-			if u != "" && maskGeoURL(u) != u {
-				t.Errorf("the built-in source %s was masked: %q", s.Name, maskGeoURL(u))
+			if u != "" && GeoURLLabel(u) != u {
+				t.Errorf("the built-in source %s was masked: %q", s.Name, GeoURLLabel(u))
 			}
 		}
 	}
 	custom := "https://files.example.com/9f8e7d6c5b4a/geosite.dat?sig=abc"
-	if got, want := maskGeoURL(custom), "https://files.example.com/[redacted]?sig=[redacted]"; got != want {
-		t.Errorf("maskGeoURL(%q) = %q, want %q", custom, got, want)
+	if got, want := GeoURLLabel(custom), "https://files.example.com/[redacted]?sig=[redacted]"; got != want {
+		t.Errorf("GeoURLLabel(%q) = %q, want %q", custom, got, want)
 	}
 }
 

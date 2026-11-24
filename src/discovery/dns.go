@@ -324,7 +324,7 @@ func (ds *DiscoverySuite) applyBestDNSConfig() {
 			switch {
 			case wantDoH && r.BestDoHURL != "":
 				ds.discoveredDNS = config.DNSConfig{Enabled: true, DoHURL: r.BestDoHURL}
-				log.DiscoveryLogf("  Applied DNS bypass: DoH=%s", r.BestDoHURL)
+				log.DiscoveryLogf("  Applied DNS bypass: DoH=%s", config.UpstreamLabel(r.BestDoHURL))
 				return
 			case !wantDoH && r.BestServer != "":
 				ds.discoveredDNS = config.DNSConfig{Enabled: true, TargetDNS: r.BestServer, FragmentQuery: r.NeedsFragment}
@@ -557,10 +557,10 @@ func (p *DNSProber) findDNSBypass(ctx context.Context, result *DNSDiscoveryResul
 	switch {
 	case fix.Enabled:
 		result.BestDoHURL, result.BestServer = fix.DoHURL, fix.TargetDNS
-		log.DiscoveryLogf("  DNS: the trusted DNS server %s answers %s honestly and becomes the set's DNS", p.trusted.String(), p.domain)
+		log.DiscoveryLogf("  DNS: the trusted DNS server %s answers %s honestly and becomes the set's DNS", trustedServerLabel(p.trusted), p.domain)
 		return
 	case refusal != "":
-		log.DiscoveryLogf("  DNS: the trusted DNS server %s answers %s honestly, but it cannot be a set's DNS: %s; looking for a server a set can use", p.trusted.String(), p.domain, refusal)
+		log.DiscoveryLogf("  DNS: the trusted DNS server %s answers %s honestly, but it cannot be a set's DNS: %s; looking for a server a set can use", trustedServerLabel(p.trusted), p.domain, refusal)
 	}
 
 	if url := p.findDoHBypass(ctx, result, references); url != "" {
@@ -785,7 +785,7 @@ func (p *DNSProber) reference(ctx context.Context) referenceAnswer {
 	r := &netprobe.Resolver{Mark: int(p.flowMark), Timeout: p.timeout}
 
 	if !p.trusted.IsZero() {
-		ref := referenceAnswer{source: p.trusted.String(), trusted: true}
+		ref := referenceAnswer{source: trustedServerLabel(p.trusted), trusted: true}
 		ans, err := r.ResolveEndpoint(ctx, p.trusted, p.domain, p.dnsRecordType())
 		ref.overUDP = ans.OverUDP
 		var nx *netprobe.NXDomainError

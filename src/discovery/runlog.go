@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -16,6 +17,14 @@ func runLogPath(configPath string) string {
 		return ""
 	}
 	return filepath.Join(filepath.Dir(configPath), discoveryLogFile)
+}
+
+func RestrictSavedRuns(configPath string) {
+	for _, path := range []string{historyFilePath(configPath), runLogPath(configPath)} {
+		if path != "" {
+			config.RestrictFile(path)
+		}
+	}
 }
 
 func (ds *DiscoverySuite) saveRunLog() {
@@ -34,7 +43,8 @@ func SaveLastRunLog(configPath string) {
 	if len(lines) == 0 {
 		return
 	}
-	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0644); err != nil {
+	config.RestrictFile(path)
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), config.ConfigFileMode); err != nil {
 		log.Errorf("Failed to save the discovery log: %v", err)
 	}
 }

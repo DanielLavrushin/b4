@@ -12,6 +12,11 @@ All notable changes to b4 are recorded in this file.
 
 - A log trace being recorded was lost when b4 crashed or restarted, and a long one could fill a router's memory.
 
+### Security
+
+- The login or token in a custom geodata address was written to the log and shown under **Geo Databases** when a download failed, and a set published with **Publish to hub** or prepared with **Prepare shared set** carried the whole address. Replace a login or token that was in a set you shared or in a log you sent to someone.
+- The path of an `https://` resolver address, which can hold an account ID, was written to the log and log traces, and to the saved log and history of **Discovery**, which every account on the router could read. Replace an ID or login that was in a log or trace you sent to someone.
+
 ## [1.93.0] - 2026-11-21
 
 ### Added

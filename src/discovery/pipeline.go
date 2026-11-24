@@ -75,7 +75,7 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	ds.collectPins()
 	ds.trusted = ds.trustedServer()
 	if !ds.skipDNS && !ds.trusted.IsZero() {
-		log.DiscoveryLogf("Trusted DNS server: %s", ds.trusted.String())
+		log.DiscoveryLogf("Trusted DNS server: %s", trustedServerLabel(ds.trusted))
 		if err := ds.checkTrustedServer(); err != nil {
 			if ds.interrupted() {
 				ds.setStatus(CheckStatusCanceled)
@@ -83,7 +83,7 @@ func (ds *DiscoverySuite) RunDiscovery() {
 				ds.logDiscoverySummary()
 				return
 			}
-			log.DiscoveryLogf("Discovery could not start: the trusted DNS server %s gave no usable answer: %v", ds.trusted.String(), err)
+			log.DiscoveryLogf("Discovery could not start: the trusted DNS server %s gave no usable answer: %v", trustedServerLabel(ds.trusted), err)
 			ds.setStatus(CheckStatusFailed)
 			ds.finalize()
 			return
@@ -442,7 +442,7 @@ func (ds *DiscoverySuite) logDiscoverySummary() {
 			case dnsResult.SystemServesWithStrategy:
 				log.DiscoveryLogf("  ✓ [%s] the system resolver's addresses load the site through the strategy, no DNS fix", di.Domain)
 			case dnsResult.IsPoisoned && dnsResult.BestDoHURL != "":
-				log.DiscoveryLogf("  ⚡ [%s] DNS poisoned, bypassed via %s", di.Domain, dnsResult.BestDoHURL)
+				log.DiscoveryLogf("  ⚡ [%s] DNS poisoned, bypassed via %s", di.Domain, config.UpstreamLabel(dnsResult.BestDoHURL))
 			case dnsResult.IsPoisoned && dnsResult.BestServer != "":
 				log.DiscoveryLogf("  ⚡ [%s] DNS poisoned, bypassed via %s", di.Domain, dnsResult.BestServer)
 			case dnsResult.IsPoisoned && dnsResult.NeedsFragment:

@@ -34,7 +34,7 @@ type LookupFunc func(ctx context.Context, srv Server, name string, v4, v6 bool) 
 
 func (s Server) String() string {
 	if s.DoHURL != "" {
-		return s.DoHURL
+		return SourceLabel(s.DoHURL)
 	}
 	return s.UDP.String()
 }

@@ -309,6 +309,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	}
 
 	log.Infof("Starting B4 packet processor")
+	discovery.RestrictSavedRuns(cfg.ConfigPath)
 
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {

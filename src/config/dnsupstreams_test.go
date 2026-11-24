@@ -367,3 +367,62 @@ func TestAURLInTheAddressFieldIsNotAResolver(t *testing.T) {
 		t.Errorf("an address with blanks around it gave %v, want the address", list)
 	}
 }
+
+func TestUpstreamLabelHidesWhatItCannotSplit(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"https://canaryuser:canary/pass@dns.example/canarypath", "https://[redacted]"},
+		{"https://canaryuser:canary^pass@dns.example/canarypath", "https://[redacted]"},
+		{"https://dns.example/canary%zz", "https://[redacted]"},
+		{"HTTPS://canaryuser:canarypass@dns.example/canarypath", "HTTPS://dns.example"},
+		{"  https://dns.example/canarypath  ", "https://dns.example"},
+	} {
+		if got := UpstreamLabel(tc.in); got != tc.want {
+			t.Errorf("UpstreamLabel(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestARefusedResolverIsNotRepeatedInTheError(t *testing.T) {
+	for _, entry := range []string{
+		"https://canaryuser:canarypass@10.0.0.256/canarypath",
+		"https://dns.example:0/canarypath",
+		"https://canaryuser:canary^pass@dns.example/",
+	} {
+		cfg := NewConfig()
+		set := NewSetConfig()
+		set.Id, set.Name, set.Enabled = "dns1", "dns", true
+		set.DNS.Enabled = true
+		set.DNS.Upstreams = []string{entry}
+		cfg.Sets = []*SetConfig{&set}
+		err := cfg.Validate()
+		ve := mustValidationErr(t, err)
+		if findField(ve, "sets[0].dns.upstreams", "invalid_dns_upstream") == nil {
+			t.Fatalf("%q: validation = %v, want invalid_dns_upstream", entry, err)
+		}
+		if strings.Contains(err.Error(), "canary") {
+			t.Errorf("%q is repeated in the error that reaches errors.log: %v", entry, err)
+		}
+	}
+}
+
+func TestARefusedTrustedServerIsNotRepeatedInTheLog(t *testing.T) {
+	for _, server := range []string{
+		"https://canaryuser:canarypass@dns.example/canarypath",
+		"tls://canaryid.dns.example",
+		"canaryuser:canarypass@dns.example/canarypath",
+		"canaryuser:canarypass@https://dns.example/canarypath",
+	} {
+		logs := captureValidationWarnings(t)
+		cfg := NewConfig()
+		cfg.System.Checker.DNSServer = server
+		if err := cfg.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		if cfg.System.Checker.DNSServer != "" || !strings.Contains(logs.String(), "ignoring the trusted DNS server") {
+			t.Errorf("%q must be dropped with a warning, got %q:\n%s", server, cfg.System.Checker.DNSServer, logs)
+		}
+		if strings.Contains(logs.String(), "canary") {
+			t.Errorf("the warning repeats the server:\n%s", logs)
+		}
+	}
+}

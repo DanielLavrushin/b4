@@ -766,7 +766,7 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 
 	w.answerClient(direct, query, ipVersion, originalDst, clientIP, clientPort, resp)
 
-	log.Tracef("DNS redirect: %s -> %s answered for %s with %d IPs (set: %s)", originalDst, source, clientIP, len(dns.ParseResponseIPs(resp)), set.Name)
+	log.Tracef("DNS redirect: %s -> %s answered for %s with %d IPs (set: %s)", originalDst, dnsUpstreamLabel(source), clientIP, len(dns.ParseResponseIPs(resp)), set.Name)
 }
 
 var dnsReplyObserver func(resp []byte)

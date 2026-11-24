@@ -3,7 +3,9 @@ package handler
 import (
 	"fmt"
 	"net"
+	"net/netip"
 	"strconv"
+	"strings"
 
 	"github.com/daniellavrushin/b4/config"
 )
@@ -148,7 +150,7 @@ func collectTraceSets(cfg *config.Config) []traceSet {
 		if set.DNS.Enabled || len(set.DNS.Pins) > 0 || set.DNS.StripECH {
 			ts.DNS = &traceSetDNS{
 				Enabled:       set.DNS.Enabled,
-				TargetDNS:     set.DNS.TargetDNS,
+				TargetDNS:     traceTargetDNS(set.DNS.TargetDNS),
 				DoHURL:        config.UpstreamLabel(set.DNS.DoHURL),
 				Upstreams:     traceUpstreams(set.DNS.Upstreams),
 				FragmentQuery: set.DNS.FragmentQuery,
@@ -181,6 +183,16 @@ func collectTraceSets(cfg *config.Config) []traceSet {
 	}
 
 	return sets
+}
+
+func traceTargetDNS(target string) string {
+	if label := config.UpstreamLabel(target); label != "" || strings.TrimSpace(target) == "" {
+		return label
+	}
+	if _, err := netip.ParseAddrPort(target); err == nil {
+		return target
+	}
+	return config.RedactedMarker
 }
 
 func traceUpstreams(entries []string) []string {

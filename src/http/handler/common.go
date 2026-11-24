@@ -9,8 +9,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptrace"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -270,6 +272,7 @@ var (
 	downloadMaxDuration  = time.Hour
 	errDownloadStalled   = errors.New("download stalled")
 	errDownloadTooLong   = errors.New("download took too long")
+	errDownloadAddress   = errors.New("the address must start with http:// or https:// and name a host")
 )
 
 type stallReader struct {
@@ -285,17 +288,38 @@ func (s *stallReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func downloadError(ctx context.Context, format string, err error, args ...any) error {
+func downloadError(ctx context.Context, rawURL, format string, err error, args ...any) error {
 	switch cause := context.Cause(ctx); {
 	case errors.Is(cause, errDownloadStalled):
 		err = fmt.Errorf("%w: no data received for %s", cause, downloadStallTimeout)
 	case errors.Is(cause, errDownloadTooLong):
 		err = fmt.Errorf("%w: gave up after %s", cause, downloadMaxDuration)
 	}
-	return fmt.Errorf(format+": %w", append(args, err)...)
+	if host := utils.RedirectedHost(rawURL, err); host != "" {
+		format += ": redirected to %s"
+		args = append(args, host)
+	}
+	return fmt.Errorf(format+": %w", append(args, utils.URLErrorCause(rawURL, err))...)
 }
 
-func downloadFile(parent context.Context, url, destPath string, verify func(path string) error) (int64, error) {
+func downloadLabel(raw string) string {
+	if isMirrorable(raw) && !strings.ContainsAny(raw, "?#") {
+		return raw
+	}
+	return config.GeoURLLabel(raw)
+}
+
+func validDownloadURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && u.Hostname() != "" && (u.Scheme == "http" || u.Scheme == "https") && utils.ValidURLPort(u)
+}
+
+func downloadFile(parent context.Context, rawURL, destPath string, verify func(path string) error) (int64, error) {
+	if !validDownloadURL(rawURL) {
+		return 0, errDownloadAddress
+	}
+	label := downloadLabel(rawURL)
+
 	ctx, cancel := context.WithCancelCause(parent)
 	defer cancel(nil)
 	ctx, cancelTimeout := context.WithTimeoutCause(ctx, downloadMaxDuration, errDownloadTooLong)
@@ -309,19 +333,19 @@ func downloadFile(parent context.Context, url, destPath string, verify func(path
 		GotFirstResponseByte: progress,
 	})
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return 0, fmt.Errorf("failed to fetch %s: %w", url, err)
+		return 0, downloadError(ctx, rawURL, "failed to fetch %s", err, label)
 	}
 	resp, err := downloadClient.Do(req)
 	if err != nil {
-		return 0, downloadError(ctx, "failed to fetch %s", err, url)
+		return 0, downloadError(ctx, rawURL, "failed to fetch %s", err, label)
 	}
 	defer resp.Body.Close()
 	progress()
 
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("remote server returned %s for %s", resp.Status, url)
+		return 0, fmt.Errorf("remote server returned %d %s for %s", resp.StatusCode, http.StatusText(resp.StatusCode), label)
 	}
 
 	dir := filepath.Dir(destPath)
@@ -346,7 +370,7 @@ func downloadFile(parent context.Context, url, destPath string, verify func(path
 	size, err := io.Copy(tmpFile, &stallReader{r: resp.Body, timer: stall})
 	if err != nil {
 		cleanup()
-		return 0, downloadError(ctx, "failed to download %s (%d bytes written)", err, url, size)
+		return 0, downloadError(ctx, rawURL, "failed to download %s (%d bytes written)", err, label, size)
 	}
 
 	if err := tmpFile.Sync(); err != nil {
@@ -362,7 +386,7 @@ func downloadFile(parent context.Context, url, destPath string, verify func(path
 	if verify != nil {
 		if err := verify(tmpPath); err != nil {
 			os.Remove(tmpPath)
-			return 0, fmt.Errorf("the file downloaded from %s (%d bytes) was rejected: %w", url, size, err)
+			return 0, fmt.Errorf("the file downloaded from %s (%d bytes) was rejected: %w", label, size, err)
 		}
 	}
 

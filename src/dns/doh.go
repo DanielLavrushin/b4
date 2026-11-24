@@ -57,7 +57,7 @@ func ResolveDoH(ctx context.Context, client *http.Client, serverURL string, quer
 	if errors.Is(err, ErrDoHMethodNotAllowed) {
 		body, err = dohGET(ctx, client, serverURL, query)
 	}
-	return body, err
+	return body, withoutResolverPath(serverURL, err)
 }
 
 func dohPOST(ctx context.Context, client *http.Client, serverURL string, query []byte) ([]byte, error) {
