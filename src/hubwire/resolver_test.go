@@ -92,10 +92,72 @@ func TestAPersonalResolverIsLeftOutOfASharedSet(t *testing.T) {
 				t.Errorf("%s: nothing is dropped on import any more: %+v", doh, imp.Warnings)
 			}
 		}
+		if got := countWarnings(imp.Warnings, "dns_no_resolver"); got != 1 {
+			t.Errorf("%s: the importer must learn once that the redirect has no resolver: %+v", doh, imp.Warnings)
+		}
 		live, err := LiveFingerprint(&set, nil)
 		if err != nil || live != env.Fingerprint {
 			t.Errorf("%s: the shared set reads as edited on its own router: %q against %q, %v", doh, live, env.Fingerprint, err)
 		}
+	}
+}
+
+func countWarnings(warnings []Warning, code string) int {
+	n := 0
+	for _, w := range warnings {
+		if w.Code == code {
+			n++
+		}
+	}
+	return n
+}
+
+func TestAnImportedRedirectWithoutAResolverSaysSo(t *testing.T) {
+	for name, tc := range map[string]struct {
+		change func(*config.DNSConfig)
+		want   int
+	}{
+		"plain IP":               {func(d *config.DNSConfig) { d.DoHURL, d.TargetDNS = "", "9.9.9.9" }, 1},
+		"backups only":           {func(d *config.DNSConfig) { d.DoHURL, d.Upstreams = "", []string{"https://dns.google/dns-query"} }, 1},
+		"no resolver at all":     {func(d *config.DNSConfig) { d.DoHURL = "" }, 1},
+		"pins only":              {func(d *config.DNSConfig) { d.DoHURL, d.Enabled = "", false }, 0},
+		"personal":               {func(d *config.DNSConfig) { d.DoHURL = "https://dns.nextdns.io/canaryid" }, 1},
+		"public":                 {func(d *config.DNSConfig) { d.DoHURL = "https://dns.google/dns-query" }, 0},
+		"public with a backup":   {func(d *config.DNSConfig) { d.Upstreams = []string{"9.9.9.9"} }, 0},
+		"redirect off":           {func(d *config.DNSConfig) { d.Enabled = false }, 0},
+		"unknown, drops it all":  {func(d *config.DNSConfig) { d.DoHURL = "https://unknown.example/dns-query" }, 0},
+		"unknown, personal path": {func(d *config.DNSConfig) { d.DoHURL = "https://unknown.example/canaryid" }, 1},
+	} {
+		set := resolverSet("https://dns.google/dns-query")
+		tc.change(&set.DNS)
+		env, _, err := Build(&set, BuildOptions{})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		imp, err := Open(env, OpenOptions{})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got := countWarnings(imp.Warnings, "dns_no_resolver"); got != tc.want {
+			t.Errorf("%s: warned %d times, want %d: %+v", name, got, tc.want, imp.Warnings)
+		}
+		if says := imp.Set.DNS.Enabled && !imp.Set.DNS.HasUpstream(); says != (tc.want == 1) {
+			t.Errorf("%s: the imported set itself says otherwise: %+v", name, imp.Set.DNS)
+		}
+	}
+}
+
+func TestAResolverOnlyInForeignFieldsDoesNotCount(t *testing.T) {
+	set := map[string]interface{}{
+		"targets": map[string]interface{}{"sni_domains": []interface{}{"example.com"}},
+		"dns":     map[string]interface{}{"enabled": true, "target_dns": "9.9.9.9", "upstreams": []interface{}{"9.9.9.9"}},
+	}
+	imp, err := Open(&Envelope{Format: Format, Title: "hand made", Set: set}, OpenOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if imp.Set.DNS.HasUpstream() || countWarnings(imp.Warnings, "dns_no_resolver") != 1 {
+		t.Errorf("the import drops these fields, so the redirect has no resolver: %+v %+v", imp.Set.DNS, imp.Warnings)
 	}
 }
 
@@ -167,8 +229,10 @@ func TestAnOlderSharedSetLosesAPersonalResolverOnImport(t *testing.T) {
 		if !found || warning.Params["path"] != "dns.doh_url" || warning.Params["host"] != host || host == "" {
 			t.Errorf("%s: the importer must learn which resolver went: %+v", doh, imp.Warnings)
 		}
-		if _, mismatch := warned(imp.Warnings, "fingerprint_mismatch"); mismatch {
-			t.Errorf("%s: nobody edited the set: %+v", doh, imp.Warnings)
+		for _, code := range []string{"fingerprint_mismatch", "dns_no_resolver"} {
+			if _, found := warned(imp.Warnings, code); found {
+				t.Errorf("%s: %s says nothing that is new or true: %+v", doh, code, imp.Warnings)
+			}
 		}
 		if raw := resolverJSON(t, imp); strings.Contains(raw, "canary") {
 			t.Errorf("%s: the imported set holds a private part: %s", doh, raw)

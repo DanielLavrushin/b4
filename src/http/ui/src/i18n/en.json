@@ -2814,6 +2814,7 @@
         "pin_private_address": "The pin for {{domain}} was dropped: it pointed at a private address.",
         "dns_dropped": "The DNS redirect was dropped: {{host}} is not a known public DoH resolver. Set a resolver in the DNS tab if the set needs one.",
         "personal_resolver": "The resolver at {{host}} was dropped: its address holds a personal path, a query or a login. Set a resolver in the DNS tab if the set needs one.",
+        "dns_no_resolver": "The DNS redirect is on but has no resolver, so it redirects nothing until one is set in the DNS tab.",
         "private_addresses": "Addresses that look private to the author's network: {{addresses}}.",
         "block_regexp": "This block set matches by pattern ({{entry}}), so it may block far more than intended.",
         "foreign_hub_link": "The pasted set was linked to community set {{pasted}}; this set stays linked to {{kept}} and publishing it creates its next version.",

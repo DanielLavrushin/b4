@@ -358,11 +358,13 @@ func Open(env *Envelope, opts OpenOptions) (*Imported, error) {
 	if err != nil {
 		return nil, err
 	}
+	resolverDropped := false
 	for _, s := range report.Stripped {
 		switch {
 		case strings.HasPrefix(s.Path, "dns.pins."):
 			warn(s.Reason, map[string]interface{}{"path": s.Path, "domain": strings.TrimPrefix(s.Path, "dns.pins.")})
 		case s.Reason == ReasonPersonalResolver:
+			resolverDropped = true
 			host, _ := DoHHost(set.DNS.DoHURL)
 			warn(s.Reason, map[string]interface{}{"path": s.Path, "host": host})
 		}
@@ -391,6 +393,9 @@ func Open(env *Envelope, opts OpenOptions) (*Imported, error) {
 	set, err = decodeSet(projection, set.Name)
 	if err != nil {
 		return nil, err
+	}
+	if set.DNS.Enabled && !set.DNS.HasUpstream() && !resolverDropped {
+		warn("dns_no_resolver", nil)
 	}
 
 	imp.Fingerprint = Fingerprint(projection)

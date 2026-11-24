@@ -8,6 +8,7 @@ All notable changes to b4 are recorded in this file.
 
 - **Start trace** on the **Logs** page records every log line down to debug at any **Log Level**, and the log itself keeps its level. A trace takes at most 8 MB, less when free memory or disk space is short, and a longer one keeps its first and its newest lines.
 - The note under **Settings, Integrations, Community Hub** lists what the hub receives with a sync and with a report.
+- Importing a shared set, or applying one on the **Community** page, tells when its DNS redirect is on but has no resolver.
 
 ### Fixed
 

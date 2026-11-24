@@ -190,6 +190,7 @@
       "dns_dropped": "The DNS redirect was dropped: the DoH host is not a known public resolver",
       "doh_unknown": "The DoH host is not a known public resolver",
       "personal_resolver": "The resolver was dropped: its address holds a personal path, a query or a login",
+      "dns_no_resolver": "The DNS redirect is on but has no resolver",
       "private_domains": "Some domains look private",
       "invalid_domains": "One domain per line: an entry with a space, comma or semicolon matches nothing",
       "private_addresses": "Some addresses look private",
