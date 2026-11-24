@@ -41,6 +41,7 @@ Reports count per strategy, not per set. Two sets with the same strategy share o
 | Action | What the hub receives |
 | --- | --- |
 | Sync | A request for the catalogue. The hub sees the router's public address and b4 version, and answers with the network it sees the router on: ASN, country and ISP. |
+| Applying a set marked **needs payload**, or testing it in [Discovery](../discovery.md) | A request for the payload file by its hash, which can point to the set. The hub or mirror sees the router's public address and b4 version. |
 | **Works** or **Broken** | The set and version, the kind of report, the domain the list was filtered by, if any, the router's ASN and country, its capture engine and b4 version. |
 | Complaint | The set and version, and the reason typed in. |
 | Publication | The [shared set](../sets/sharing.md), the router's ASN and country, its capture engine and b4 version. |

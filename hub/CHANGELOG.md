@@ -21,7 +21,7 @@ All notable changes to the b4hub community hub service are recorded in this file
 ### Security
 
 - The lookup of a router's provider sends Team Cymru only the /24 or /48 network instead of the full address.
-- The public catalogue listed provider and country scores that came from a single device, though no router shows a score below two devices. They leave it with the next build, within a day or at once with **Build now** on the **Catalogue** page.
+- The public catalogue listed provider and country scores that came from a single device, though no router shows a score below two devices. They leave it with the next build, within a day or at once with **Build now** on the **Catalogue** page, and the older files kept next to it go with the two builds after that.
 
 ## [1.10.0] - 2026-11-20
 

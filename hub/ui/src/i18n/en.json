@@ -457,7 +457,7 @@
     "ban": "Ban",
     "unban": "Unban",
     "banTitle": "Ban {{key}}",
-    "banText": "New records from this key are refused. At the next build its sets leave the catalogue and its votes and reports stop counting. The ban deletes nothing: unbanning restores its sets, reports and remaining votes.",
+    "banText": "New records from this key are refused, and its reports stop counting. At the next build its sets leave the catalogue and its votes stop counting. The ban deletes nothing: unbanning restores its sets, reports and remaining votes.",
     "showBanned": "Banned only",
     "trusted": "trusted {{when}}",
     "trust": "Trust",
