@@ -65,11 +65,18 @@ func CymruName(ip net.IP) string {
 	return strings.Join(parts, ".") + ".origin6.asn.cymru.com"
 }
 
-func CacheKey(ip net.IP) string {
+func Network(ip net.IP) net.IP {
 	if v4 := ip.To4(); v4 != nil {
-		return v4.Mask(net.CIDRMask(24, 32)).String() + "/24"
+		return v4.Mask(net.CIDRMask(24, 32))
 	}
-	return ip.Mask(net.CIDRMask(48, 128)).String() + "/48"
+	return ip.Mask(net.CIDRMask(48, 128))
+}
+
+func CacheKey(ip net.IP) string {
+	if ip.To4() != nil {
+		return Network(ip).String() + "/24"
+	}
+	return Network(ip).String() + "/48"
 }
 
 func Routable(ip net.IP) bool {
@@ -92,7 +99,7 @@ func (r *Resolver) Lookup(ctx context.Context, ip net.IP) Info {
 	}
 	r.mu.Unlock()
 
-	info := r.resolve(ctx, ip)
+	info := r.resolve(ctx, Network(ip))
 	if info.ASN == "" {
 		return info
 	}
@@ -105,33 +112,68 @@ func (r *Resolver) Lookup(ctx context.Context, ip net.IP) Info {
 	return info
 }
 
-func (r *Resolver) txt(ctx context.Context, name string) (string, error) {
+func (r *Resolver) txt(ctx context.Context, name string) ([]string, error) {
 	qctx, cancel := context.WithTimeout(ctx, lookupTimeout)
 	defer cancel()
 	txts, err := r.lookup(qctx, name)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if len(txts) == 0 {
-		return "", fmt.Errorf("no TXT answer for %s", name)
+		return nil, fmt.Errorf("no TXT answer for %s", name)
 	}
-	return txts[0], nil
+	return txts, nil
 }
 
-func (r *Resolver) resolve(ctx context.Context, ip net.IP) Info {
+func (r *Resolver) resolve(ctx context.Context, network net.IP) Info {
 	info := Info{}
-	origin, err := r.txt(ctx, CymruName(ip))
+	origins, err := r.txt(ctx, CymruName(network))
 	if err != nil {
 		return info
 	}
-	info.ASN, info.Country = ParseOrigin(origin)
+	info.ASN, info.Country = PickOrigin(origins)
 	if info.ASN == "" {
 		return info
 	}
 	if desc, err := r.txt(ctx, "AS"+info.ASN+".asn.cymru.com"); err == nil {
-		info.Name = ParseDescription(desc)
+		info.Name = ParseDescription(desc[0])
 	}
 	return info
+}
+
+func PickOrigin(txts []string) (asn, country string) {
+	longest := 0
+	for _, txt := range txts {
+		candidate, cc := ParseOrigin(txt)
+		if candidate == "" {
+			continue
+		}
+		bits := originPrefix(txt)
+		if asn == "" || bits > longest || (bits == longest && lowerASN(candidate, asn)) {
+			asn, country, longest = candidate, cc, bits
+		}
+	}
+	return asn, country
+}
+
+func originPrefix(txt string) int {
+	fields := strings.Split(txt, "|")
+	if len(fields) < 2 {
+		return 0
+	}
+	_, n, err := net.ParseCIDR(strings.TrimSpace(fields[1]))
+	if err != nil {
+		return 0
+	}
+	bits, _ := n.Mask.Size()
+	return bits
+}
+
+func lowerASN(a, b string) bool {
+	if len(a) != len(b) {
+		return len(a) < len(b)
+	}
+	return a < b
 }
 
 func ParseOrigin(txt string) (asn, country string) {
@@ -139,11 +181,15 @@ func ParseOrigin(txt string) (asn, country string) {
 	if len(fields) < 3 {
 		return "", ""
 	}
-	asnFields := strings.Fields(fields[0])
-	if len(asnFields) == 0 {
+	for _, candidate := range strings.Fields(fields[0]) {
+		if asn == "" || lowerASN(candidate, asn) {
+			asn = candidate
+		}
+	}
+	if asn == "" {
 		return "", ""
 	}
-	return asnFields[0], strings.ToUpper(strings.TrimSpace(fields[2]))
+	return asn, strings.ToUpper(strings.TrimSpace(fields[2]))
 }
 
 func ParseDescription(txt string) string {
