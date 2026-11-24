@@ -1091,7 +1091,7 @@
   },
   "evidence": {
     "independentTip": "Independent: +{{works}} / -{{broken}} from {{devices}} devices, weighted {{positive}} / {{negative}}",
-    "authorTip": "The author's own: +{{works}} / -{{broken}}, counted like any other device",
+    "authorTip": "The author's own: +{{works}} / -{{broken}}, counted worldwide like any other device, not per network",
     "pooledTip": "The score pools votes by strategy fingerprint; {{count}} other sets share it"
   },
   "technique": {

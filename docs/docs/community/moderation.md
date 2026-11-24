@@ -141,7 +141,7 @@ Votes count per strategy, in three cells: the ASN and the country the hub saw th
 | A vote without a known network, such as one relayed by an approved mirror | a quarter of the above |
 | A vote from a key first seen less than a week ago | a quarter of the above |
 
-The two reductions multiply. Every vote loses half its weight every two weeks. The score is `(works + 1) / (all + 2)`. A router uses a cell once at least two devices voted in it with a total weight of at least one. The catalogue lists network and country cells from two devices up. Votes are deleted a year after they arrive. The hub also defines capped weights for automated votes from the DPI detector, the watchdog and Discovery, which b4 does not send yet.
+The two reductions multiply. Every vote loses half its weight every two weeks. The score is `(works + 1) / (all + 2)`. A router uses a cell once at least two devices voted in it with a total weight of at least one. The catalogue lists network and country cells from two devices up, and the author's votes count only in the worldwide cell. Votes are deleted a year after they arrive. The hub also defines capped weights for automated votes from the DPI detector, the watchdog and Discovery, which b4 does not send yet.
 
 ### Reports
 

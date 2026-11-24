@@ -28,6 +28,7 @@ type Vote struct {
 	Bucket          int64
 	ReceivedAt      time.Time
 	KeyFirstSeen    time.Time
+	ByAuthor        bool
 }
 
 func (v Vote) ScoreVote() score.Vote {
@@ -38,6 +39,7 @@ func (v Vote) ScoreVote() score.Vote {
 		ASN:            v.ASNObserved,
 		Country:        v.CountryObserved,
 		OriginVerified: v.OriginVerified,
+		ByAuthor:       v.ByAuthor,
 		KeyFirstSeen:   v.KeyFirstSeen,
 		ReceivedAt:     v.ReceivedAt,
 	}
@@ -64,7 +66,8 @@ func (s *Store) UpsertVote(ctx context.Context, v Vote) error {
 }
 
 const voteColumns = `v.id, v.record_id, v.set_id, v.version, v.fp, v.key_hmac, v.kind, v.weight, v.asn_observed, v.country_observed, v.asn_hint, v.country_hint,
-	v.origin_verified, v.domain, v.b4_version, v.engine, v.bucket, v.received_at, COALESCE(k.first_seen, '')`
+	v.origin_verified, v.domain, v.b4_version, v.engine, v.bucket, v.received_at, COALESCE(k.first_seen, ''),
+	EXISTS(SELECT 1 FROM set_versions sv JOIN sets s ON s.id = sv.set_id WHERE sv.fp = v.fp AND s.author_hmac = v.key_hmac)`
 
 func (s *Store) queryVotes(ctx context.Context, query string, args ...interface{}) ([]Vote, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -75,13 +78,14 @@ func (s *Store) queryVotes(ctx context.Context, query string, args ...interface{
 	out := make([]Vote, 0)
 	for rows.Next() {
 		var v Vote
-		var verified int
+		var verified, byAuthor int
 		var receivedAt, firstSeen string
 		if err := rows.Scan(&v.ID, &v.RecordID, &v.SetID, &v.Version, &v.FP, &v.KeyHMAC, &v.Kind, &v.Weight, &v.ASNObserved, &v.CountryObserved, &v.ASNHint, &v.CountryHint,
-			&verified, &v.Domain, &v.B4Version, &v.Engine, &v.Bucket, &receivedAt, &firstSeen); err != nil {
+			&verified, &v.Domain, &v.B4Version, &v.Engine, &v.Bucket, &receivedAt, &firstSeen, &byAuthor); err != nil {
 			return nil, err
 		}
 		v.OriginVerified = verified != 0
+		v.ByAuthor = byAuthor != 0
 		v.ReceivedAt = parseTime(receivedAt)
 		v.KeyFirstSeen = parseTime(firstSeen)
 		out = append(out, v)

@@ -57,6 +57,7 @@ type Vote struct {
 	ASN            string
 	Country        string
 	OriginVerified bool
+	ByAuthor       bool
 	KeyFirstSeen   time.Time
 	ReceivedAt     time.Time
 }
@@ -196,7 +197,7 @@ func Aggregate(votes []Vote, now time.Time) hubwire.Scores {
 	byCC := make(map[string]*cell)
 	for _, v := range votes {
 		global.votes = append(global.votes, v)
-		if !v.OriginVerified {
+		if !v.OriginVerified || v.ByAuthor {
 			continue
 		}
 		if v.ASN != "" {
