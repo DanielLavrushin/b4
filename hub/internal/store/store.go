@@ -31,7 +31,12 @@ var ErrNotFound = errors.New("not found")
 
 var errNoRows = sql.ErrNoRows
 
-const keptBackups = 2
+const (
+	keptBackups = 2
+
+	busyWait       = 5 * time.Second
+	checkpointWait = 200 * time.Millisecond
+)
 
 type Store struct {
 	db       *sql.DB
@@ -41,7 +46,7 @@ type Store struct {
 
 func Open(path string) (*Store, error) {
 	dsn := "file:" + path + "?" + url.Values{
-		"_pragma": []string{"journal_mode(WAL)", "busy_timeout(5000)", "foreign_keys(1)", "synchronous(NORMAL)", "secure_delete(1)"},
+		"_pragma": []string{"journal_mode(WAL)", "busy_timeout(" + milliseconds(busyWait) + ")", "foreign_keys(1)", "synchronous(NORMAL)", "secure_delete(1)"},
 		"_txlock": []string{"immediate"},
 	}.Encode()
 	db, err := sql.Open("sqlite", dsn)
@@ -61,9 +66,25 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-func (s *Store) Checkpoint(ctx context.Context) error {
+func milliseconds(d time.Duration) string {
+	return strconv.FormatInt(d.Milliseconds(), 10)
+}
+
+func (s *Store) Checkpoint(ctx context.Context) (err error) {
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	defer func() {
+		_, restored := conn.ExecContext(context.WithoutCancel(ctx), `PRAGMA busy_timeout = `+milliseconds(busyWait))
+		err = errors.Join(err, restored)
+	}()
+	if _, err := conn.ExecContext(ctx, `PRAGMA busy_timeout = `+milliseconds(checkpointWait)); err != nil {
+		return err
+	}
 	var busy, frames, moved int
-	if err := s.db.QueryRowContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`).Scan(&busy, &frames, &moved); err != nil {
+	if err := conn.QueryRowContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`).Scan(&busy, &frames, &moved); err != nil {
 		return err
 	}
 	if busy != 0 {

@@ -43,7 +43,7 @@ func TestADeletedVoteLeavesTheDatabaseFile(t *testing.T) {
 	st.Close()
 }
 
-func TestCheckpointReportsABusyDatabase(t *testing.T) {
+func TestCheckpointGivesUpSoonOnABusyDatabase(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "hub.db")
 	st, err := Open(path)
@@ -51,26 +51,47 @@ func TestCheckpointReportsABusyDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	if _, err := st.db.ExecContext(ctx, `PRAGMA busy_timeout = 10`); err != nil {
-		t.Fatal(err)
-	}
 	other, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer other.Close()
-	tx, err := other.db.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
+	blocked := func(ctx context.Context, name string) {
+		t.Helper()
+		start := time.Now()
+		if err := st.Checkpoint(ctx); err == nil {
+			t.Errorf("%s: a checkpoint that another process blocks must not pass for done", name)
+		}
+		if waited := time.Since(start); waited > 2*time.Second {
+			t.Errorf("%s: the only connection must not wait for another process, it waited %v", name, waited)
+		}
+		var wait int
+		if err := st.db.QueryRowContext(context.Background(), `PRAGMA busy_timeout`).Scan(&wait); err != nil {
+			t.Fatal(err)
+		}
+		if wait != 5000 {
+			t.Errorf("%s: everything else waits 5 seconds for a lock, got %d ms", name, wait)
+		}
 	}
-	if err := st.Checkpoint(ctx); err == nil {
-		t.Error("a checkpoint that another process blocks must not pass for done")
-	}
-	if err := tx.Rollback(); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Checkpoint(ctx); err != nil {
-		t.Errorf("the next checkpoint must go through, got %v", err)
+	for _, begin := range []string{"BEGIN IMMEDIATE", "BEGIN"} {
+		for _, statement := range []string{begin, "SELECT COUNT(*) FROM meta"} {
+			if _, err := other.db.ExecContext(ctx, statement); err != nil {
+				t.Fatal(err)
+			}
+		}
+		blocked(ctx, begin)
+		short, cancel := context.WithTimeout(ctx, checkpointWait/4)
+		blocked(short, begin+" and a stop of the hub")
+		cancel()
+		if _, err := other.db.ExecContext(ctx, "ROLLBACK"); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.Checkpoint(ctx); err != nil {
+			t.Errorf("%s: the next checkpoint must go through, got %v", begin, err)
+		}
+		if err := st.MarkDirty(ctx); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
