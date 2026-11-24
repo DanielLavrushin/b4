@@ -59,14 +59,17 @@ func parseDay(raw string) time.Time {
 	return t
 }
 
+func lastActivity(cs *hubwire.CatalogueSet) time.Time {
+	if newest := parseDay(cs.Scores.Global.Newest); !newest.IsZero() {
+		return newest
+	}
+	return parseDay(cs.CreatedAt)
+}
+
 func attentionOf(cs *hubwire.CatalogueSet, openReports int, now time.Time) []string {
 	out := []string{}
 	if cs != nil {
-		last := parseDay(cs.Scores.Global.Newest)
-		if last.IsZero() {
-			last = parseDay(cs.UpdatedAt)
-		}
-		if reason, ok := score.Demotion(cs.Scores.Global, last, now); ok {
+		if reason, ok := score.Demotion(cs.Scores.Global, lastActivity(cs), now); ok {
 			out = append(out, reason)
 		} else if cs.Scores.Global.N >= 1 && cs.Scores.Global.Devices >= hubwire.MinDevices && cs.Scores.Global.Score < weakScore {
 			out = append(out, AttentionWeak)

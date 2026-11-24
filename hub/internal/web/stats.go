@@ -229,11 +229,7 @@ func (s *Server) scoreStats(now time.Time) ScoreStatsView {
 		} else {
 			out.Bins[bin].LowN++
 		}
-		last := parseDay(g.Newest)
-		if last.IsZero() {
-			last = parseDay(cs.UpdatedAt)
-		}
-		switch reason, ok := score.Demotion(g, last, now); {
+		switch reason, ok := score.Demotion(g, lastActivity(cs), now); {
 		case ok && reason == score.ReasonLowScore:
 			out.LowScore++
 		case ok && reason == score.ReasonStale:
