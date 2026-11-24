@@ -131,7 +131,7 @@ Images: `lavrushin/b4` and `ghcr.io/daniellavrushin/b4`.
 
 A set is a list of targets plus what to do with traffic matching them. A set can target any combination of domains, IPs and CIDRs, GeoSite and GeoIP categories, destination ports, LAN devices by MAC, and TLS or IP version.
 
-Sets are evaluated top-down and the first match wins, so specific sets go above general ones. Two sets listing the same domain is a silent conflict - only the first applies.
+When several sets match the same traffic, B4 picks the most specific match, not the first set in the list: `www.example.com` before `example.com`, a narrow address range before a wide one and, as a rule, a domain before an address. Among sets with the same domain entry, or sets that cover the same address, a set limited to source devices comes first. The list order decides between equal matches, for sets with IP priority on, and for routing, where a specific set goes above a general one. When two enabled sets list the same domain by hand, B4 writes a warning to the log.
 
 Docs: [Sets](https://docs.b4core.app/docs/sets/) · [Targets](https://docs.b4core.app/docs/sets/targets)
 
