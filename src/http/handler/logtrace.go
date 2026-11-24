@@ -283,7 +283,7 @@ func (api *API) handleTraceDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	name, parts, err := openLastTrace()
+	trace, parts, err := openLastTrace()
 	if err != nil {
 		writeJsonError(w, http.StatusNotFound, "No trace file available")
 		return
@@ -291,20 +291,31 @@ func (api *API) handleTraceDownload(w http.ResponseWriter, r *http.Request) {
 	defer closeTrace(parts)
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, trace.name))
 	for _, part := range parts {
 		if _, err := io.Copy(w, part); err != nil {
 			return
 		}
 	}
+	if r.Context().Err() == nil {
+		markTraceSaved(trace)
+	}
 }
 
-func openLastTrace() (string, []io.ReadCloser, error) {
+func openLastTrace() (*finishedTrace, []io.ReadCloser, error) {
 	traceMu.Lock()
 	defer traceMu.Unlock()
 	if lastTrace == nil {
-		return "", nil, os.ErrNotExist
+		return nil, nil, os.ErrNotExist
 	}
 	parts, err := lastTrace.dir.open()
-	return lastTrace.name, parts, err
+	return lastTrace, parts, err
+}
+
+func markTraceSaved(trace *finishedTrace) {
+	traceMu.Lock()
+	defer traceMu.Unlock()
+	if lastTrace == trace {
+		trace.dir.markSaved()
+	}
 }

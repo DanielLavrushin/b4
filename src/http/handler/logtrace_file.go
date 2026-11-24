@@ -24,6 +24,7 @@ const (
 	traceStampLayout = "20060102-150405"
 	tracePartSuffix  = ".log"
 	traceEndName     = "end"
+	traceSavedName   = "saved"
 	traceFooterStart = "=== b4 trace ended: "
 	traceFooterStop  = " ==="
 	traceGapLine     = "=== lines left out here: the trace reached its size limit, so it keeps its first and its newest lines ===\n"
@@ -137,8 +138,20 @@ func (d *traceDir) remove() {
 		_ = d.root.Remove(tracePartName(part))
 	}
 	_ = d.root.Remove(traceEndName)
+	_ = d.root.Remove(traceSavedName)
 	_ = os.Remove(d.path)
 	d.close()
+}
+
+func (d *traceDir) markSaved() {
+	if f, err := d.root.OpenFile(traceSavedName, os.O_CREATE|os.O_WRONLY, 0600); err == nil {
+		_ = f.Close()
+	}
+}
+
+func (d *traceDir) saved() bool {
+	_, err := d.root.Lstat(traceSavedName)
+	return err == nil
 }
 
 func tracePartName(part int) string {
@@ -474,7 +487,7 @@ func leftoverTrace() *finishedTrace {
 		}
 		last, ok := dir.lastPart()
 		found := &finishedTrace{dir: dir, name: traceDownloadName(path), end: last.end}
-		if !ok || found.end == traceEndUser || (newest != nil && !last.written.After(newestPart.written)) {
+		if !ok || (found.end == traceEndUser && dir.saved()) || (newest != nil && !last.written.After(newestPart.written)) {
 			found.remove()
 			continue
 		}

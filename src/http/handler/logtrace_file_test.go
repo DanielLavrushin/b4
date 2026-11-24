@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -609,20 +612,116 @@ func TestAnOrderlyStopEndsTheTraceWithItsReason(t *testing.T) {
 	wantLines(t, "the trace", downloadedTrace(t, mux), []string{"a line", traceEndText[traceEndShutdown], "lines: "}, []string{traceEndText[traceEndInterrupted]})
 }
 
-func TestATraceTheUserStoppedIsDroppedAtTheNextStart(t *testing.T) {
+type brokenDownload struct {
+	http.ResponseWriter
+	room int
+}
+
+func (b *brokenDownload) Write(p []byte) (int, error) {
+	if len(p) > b.room {
+		return 0, errors.New("broken pipe")
+	}
+	b.room -= len(p)
+	return b.ResponseWriter.Write(p)
+}
+
+func TestATraceTheUserStoppedIsKeptUntilItWasDownloaded(t *testing.T) {
+	gone, leave := context.WithCancel(context.Background())
+	leave()
+	for name, download := range map[string]func(t *testing.T, mux *http.ServeMux){
+		"never downloaded": func(*testing.T, *http.ServeMux) {},
+		"the download breaks off": func(_ *testing.T, mux *http.ServeMux) {
+			mux.ServeHTTP(&brokenDownload{httptest.NewRecorder(), 0}, httptest.NewRequest(http.MethodGet, "/api/logs/trace/download", nil))
+		},
+		"the last lines do not arrive": func(t *testing.T, mux *http.ServeMux) {
+			mux.ServeHTTP(&brokenDownload{httptest.NewRecorder(), int(traceBytesOnDisk(t)) - 10}, httptest.NewRequest(http.MethodGet, "/api/logs/trace/download", nil))
+		},
+		"the client is gone": func(_ *testing.T, mux *http.ServeMux) {
+			mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/logs/trace/download", nil).WithContext(gone))
+		},
+		"another method": func(_ *testing.T, mux *http.ServeMux) {
+			mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodHead, "/api/logs/trace/download", nil))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, mux := newTraceTestAPI(t)
+			traceConsole(t, log.LevelInfo)
+			startTrace(t, mux)
+			log.Debugf("a line")
+			stopTrace(t, mux)
+			download(t, mux)
+			mux = restartTraceAPI(t, true)
+
+			if _, resp := doTrace(t, mux, http.MethodGet, "/api/logs/trace/status", ""); !resp.DownloadReady || resp.EndReason != string(traceEndUser) {
+				t.Fatalf("status after the restart: %+v", resp)
+			}
+			wantLines(t, "the trace", downloadedTrace(t, mux), []string{"a line", traceEndText[traceEndUser]}, nil)
+			mux = restartTraceAPI(t, true)
+			if _, resp := doTrace(t, mux, http.MethodGet, "/api/logs/trace/status", ""); resp.DownloadReady {
+				t.Errorf("status after the download and a restart: %+v", resp)
+			}
+		})
+	}
+}
+
+func TestANewTraceIsNotMarkedByADownloadOfTheLastOne(t *testing.T) {
 	_, mux := newTraceTestAPI(t)
 	traceConsole(t, log.LevelInfo)
-
 	startTrace(t, mux)
-	log.Debugf("a line")
 	stopTrace(t, mux)
-	mux = restartTraceAPI(t, true)
-
-	if _, resp := doTrace(t, mux, http.MethodGet, "/api/logs/trace/status", ""); resp.DownloadReady {
-		t.Errorf("status: %+v", resp)
+	last, parts, err := openLastTrace()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if dirs, _ := filepath.Glob(filepath.Join(os.TempDir(), traceNamePrefix+"*")); len(dirs) != 0 {
-		t.Errorf("a trace that was already saved keeps its memory: %v", dirs)
+	closeTrace(parts)
+	startTrace(t, mux)
+	log.Debugf("from the new trace")
+	stopTrace(t, mux)
+	markTraceSaved(last)
+	if dirs, _ := filepath.Glob(filepath.Join(os.TempDir(), traceNamePrefix+"*")); len(dirs) != 1 {
+		t.Errorf("only the new trace is kept, found %v", dirs)
+	}
+	mux = restartTraceAPI(t, true)
+	wantLines(t, "the trace", downloadedTrace(t, mux), []string{"from the new trace"}, nil)
+}
+
+func TestATraceTheUserSavedIsDroppedAtTheNextStart(t *testing.T) {
+	for protocol, start := range map[string]func(*httptest.Server){
+		"HTTP/1.1": (*httptest.Server).Start,
+		"HTTP/2.0": func(srv *httptest.Server) {
+			srv.EnableHTTP2 = true
+			srv.StartTLS()
+		},
+	} {
+		t.Run(protocol, func(t *testing.T) {
+			_, mux := newTraceTestAPI(t)
+			traceConsole(t, log.LevelInfo)
+			startTrace(t, mux)
+			log.Debugf("a line")
+			stopTrace(t, mux)
+
+			srv := httptest.NewUnstartedServer(mux)
+			start(srv)
+			resp, err := srv.Client().Get(srv.URL + "/api/logs/trace/download")
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, err := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			srv.Close()
+			if err != nil || resp.Proto != protocol {
+				t.Fatalf("download over %s: %v", resp.Proto, err)
+			}
+			wantLines(t, "the trace", string(body), []string{"a line", traceEndText[traceEndUser]}, nil)
+
+			mux = restartTraceAPI(t, true)
+			if _, resp := doTrace(t, mux, http.MethodGet, "/api/logs/trace/status", ""); resp.DownloadReady {
+				t.Errorf("status: %+v", resp)
+			}
+			if dirs, _ := filepath.Glob(filepath.Join(os.TempDir(), traceNamePrefix+"*")); len(dirs) != 0 {
+				t.Errorf("a trace that was already saved keeps its memory: %v", dirs)
+			}
+		})
 	}
 }
 
