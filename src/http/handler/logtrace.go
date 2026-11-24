@@ -3,47 +3,37 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
+	"slices"
 	"sync"
-	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/daniellavrushin/b4/log"
 )
 
+const (
+	traceLevel        = log.LevelDebug
+	traceRequestLimit = 64 << 10
+)
+
 var traceMaxDuration = 15 * time.Minute
 
-type traceWriter struct {
-	f     *os.File
-	lines atomic.Int64
-}
-
-var traceNewline = []byte{'\n'}
-
-func (t *traceWriter) Write(p []byte) (int, error) {
-	t.lines.Add(int64(bytes.Count(p, traceNewline)))
-	return t.f.Write(p)
-}
-
 type traceSession struct {
-	file         *os.File
-	path         string
-	downloadName string
-	startedAt    time.Time
-	note         string
-	writer       *traceWriter
-	timer        *time.Timer
+	startedAt time.Time
+	note      string
+	writer    *traceWriter
+	timer     *time.Timer
 }
 
 var (
-	traceMu       sync.Mutex
-	activeTrace   *traceSession
-	lastTracePath string
-	lastTraceName string
+	traceMu     sync.Mutex
+	activeTrace *traceSession
+	lastTrace   *finishedTrace
 )
 
 type TraceStartRequest struct {
@@ -58,6 +48,7 @@ type TraceStatusResponse struct {
 	Level         string `json:"level"`
 	DownloadReady bool   `json:"downloadReady"`
 	DownloadName  string `json:"downloadName,omitempty"`
+	EndReason     string `json:"endReason,omitempty"`
 	MaxSeconds    int    `json:"maxSeconds"`
 }
 
@@ -66,31 +57,33 @@ func (api *API) RegisterLogTraceApi() {
 	api.mux.HandleFunc("/api/logs/trace/stop", api.handleTraceStop)
 	api.mux.HandleFunc("/api/logs/trace/status", api.handleTraceStatus)
 	api.mux.HandleFunc("/api/logs/trace/download", api.handleTraceDownload)
-	removeOrphanedTraces()
 }
 
-func removeOrphanedTraces() {
-	matches, err := filepath.Glob(filepath.Join(os.TempDir(), "b4-trace-*.log"))
-	if err != nil {
+func RestoreTrace() {
+	traceMu.Lock()
+	defer traceMu.Unlock()
+	if activeTrace == nil && lastTrace == nil {
+		lastTrace = leftoverTrace()
+	}
+}
+
+func FinishActiveTrace() {
+	if !traceMu.TryLock() {
 		return
 	}
-	for _, path := range matches {
-		if err := os.Remove(path); err != nil {
-			log.Tracef("Could not remove orphaned trace file %s: %v", path, err)
-		}
-	}
-}
-
-func currentLevelName() string {
-	return log.Level(log.CurLevel.Load()).String()
+	defer traceMu.Unlock()
+	finishTraceLocked(traceEndShutdown)
 }
 
 func traceStatusResponse() TraceStatusResponse {
 	resp := TraceStatusResponse{
-		Level:         currentLevelName(),
-		DownloadReady: lastTracePath != "",
-		DownloadName:  lastTraceName,
-		MaxSeconds:    int(traceMaxDuration.Seconds()),
+		Level:      traceLevel.String(),
+		MaxSeconds: int(traceMaxDuration.Seconds()),
+	}
+	if lastTrace.size() > 0 {
+		resp.DownloadReady = true
+		resp.DownloadName = lastTrace.name
+		resp.EndReason = string(lastTrace.end)
 	}
 	if activeTrace != nil {
 		resp.Active = true
@@ -102,13 +95,14 @@ func traceStatusResponse() TraceStatusResponse {
 }
 
 // @Summary Start a log trace session
-// @Description Captures all log output to a file until stopped or the max duration elapses. The file is prefixed with build info and a full system diagnostics snapshot. Only one session may run at a time.
+// @Description Records every log line, down to debug, to a file until stopped or the max duration elapses; the log level setting and the other log outputs stay as they are. The file is prefixed with build info and a system diagnostics snapshot, cut when it would take more than a quarter of the trace. A trace that reaches its size limit (8 MB, less when free memory or disk space is short) keeps its first and its newest lines. Only one session may run at a time.
 // @Tags Logs
 // @Accept json
 // @Produce json
 // @Param body body TraceStartRequest false "Optional note describing the session"
 // @Success 200 {object} TraceStatusResponse
 // @Failure 409 {object} map[string]string "A trace session is already running"
+// @Failure 507 {object} map[string]string "Not enough free memory or disk space for a trace"
 // @Security BearerAuth
 // @Router /logs/trace/start [post]
 func (api *API) handleTraceStart(w http.ResponseWriter, r *http.Request) {
@@ -119,7 +113,7 @@ func (api *API) handleTraceStart(w http.ResponseWriter, r *http.Request) {
 
 	var req TraceStartRequest
 	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, traceRequestLimit)).Decode(&req)
 	}
 
 	traceMu.Lock()
@@ -130,63 +124,83 @@ func (api *API) handleTraceStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	limit := traceSizeLimit(os.TempDir(), lastTrace.size())
+	if limit < traceMinBytes {
+		writeJsonError(w, http.StatusInsufficientStorage, "Not enough free memory or disk space for a trace in "+os.TempDir())
+		return
+	}
 	diag := api.buildDiagnostics()
 	sets := collectTraceSets(api.getCfg())
+	startedAt := time.Now()
+	header := traceHeader(startedAt, req.Note, diag, sets, limit/4)
 
-	if lastTracePath != "" {
-		_ = os.Remove(lastTracePath)
-		lastTracePath = ""
-		lastTraceName = ""
+	dir, err := newTraceDir(startedAt)
+	if errors.Is(err, syscall.ENOSPC) && lastTrace != nil {
+		lastTrace.remove()
+		lastTrace = nil
+		dir, err = newTraceDir(startedAt)
 	}
-
-	f, err := os.CreateTemp("", "b4-trace-*.log")
 	if err != nil {
-		writeJsonError(w, http.StatusInternalServerError, "Failed to create trace file: "+err.Error())
+		writeTraceStartError(w, err)
+		return
+	}
+	lastTrace.remove()
+	lastTrace = nil
+	writer, err := newTraceWriter(dir, header, limit)
+	if err != nil {
+		writeTraceStartError(w, err)
 		return
 	}
 
-	startedAt := time.Now()
-	fmt.Fprintf(f, "=== b4 trace session ===\n")
-	fmt.Fprintf(f, "version: %s (%s)\n", Version, Commit)
-	fmt.Fprintf(f, "started: %s\n", startedAt.UTC().Format(time.RFC3339))
-	fmt.Fprintf(f, "level: %s\n", currentLevelName())
-	if req.Note != "" {
-		fmt.Fprintf(f, "note: %s\n", req.Note)
+	session := &traceSession{startedAt: startedAt, note: req.Note, writer: writer}
+	writer.failed = func(err error) {
+		if finishTrace(session, traceEndWriteFailed) {
+			log.Warnf("Log trace session stopped, the trace could not be written: %v", err)
+		}
 	}
-	if data, err := json.MarshalIndent(diag, "", "  "); err == nil {
-		fmt.Fprintf(f, "--- system diagnostics ---\n")
-		_, _ = f.Write(data)
-		fmt.Fprintf(f, "\n")
-	}
-	if data, err := json.MarshalIndent(sets, "", "  "); err == nil {
-		fmt.Fprintf(f, "--- enabled sets (%d) ---\n", len(sets))
-		_, _ = f.Write(data)
-		fmt.Fprintf(f, "\n")
-	}
-	fmt.Fprintf(f, "=========================\n")
-
-	tw := &traceWriter{f: f}
-	log.StartCapture(tw)
-
-	session := &traceSession{
-		file:         f,
-		path:         f.Name(),
-		downloadName: fmt.Sprintf("b4-trace-%s.log", startedAt.Format("20060102-150405")),
-		startedAt:    startedAt,
-		note:         req.Note,
-		writer:       tw,
-	}
-	session.timer = time.AfterFunc(traceMaxDuration, func() {
-		traceMu.Lock()
-		defer traceMu.Unlock()
-		if activeTrace == session {
-			finishTraceLocked("auto-stopped (max duration reached)")
+	longest := traceMaxDuration
+	session.timer = time.AfterFunc(longest, func() {
+		if finishTrace(session, traceEndTimeLimit) {
+			log.Infof("Log trace session stopped after %s", longest)
 		}
 	})
 	activeTrace = session
+	log.StartRecording(writer, traceLevel)
 
 	log.Infof("Log trace session started")
 	sendResponse(w, traceStatusResponse())
+}
+
+func writeTraceStartError(w http.ResponseWriter, err error) {
+	status := http.StatusInternalServerError
+	if errors.Is(err, syscall.ENOSPC) {
+		status = http.StatusInsufficientStorage
+	}
+	writeJsonError(w, status, "Failed to create trace file: "+err.Error())
+}
+
+func traceHeader(startedAt time.Time, note string, diag Diagnostics, sets []traceSet, most int64) []byte {
+	var top, bottom bytes.Buffer
+	fmt.Fprintf(&top, "=== b4 trace session ===\n")
+	fmt.Fprintf(&top, "version: %s (%s)\n", Version, Commit)
+	fmt.Fprintf(&top, "started: %s\n", startedAt.UTC().Format(time.RFC3339))
+	fmt.Fprintf(&top, "level: %s\n", traceLevel)
+	fmt.Fprintf(&top, "log level setting: %s\n", log.ConfiguredLevel())
+	if note != "" {
+		fmt.Fprintf(&top, "note: %s\n", note)
+	}
+	fmt.Fprintf(&top, "--- system diagnostics ---\n")
+	if data, err := json.MarshalIndent(sets, "", "  "); err == nil {
+		fmt.Fprintf(&bottom, "\n--- enabled sets (%d) ---\n%s", len(sets), data)
+	}
+	fmt.Fprintf(&bottom, "\n=========================\n")
+
+	data, err := json.MarshalIndent(diag, "", "  ")
+	if err != nil {
+		data = []byte(err.Error())
+	}
+	data = cutTrace(data, max(0, most-int64(top.Len()+bottom.Len())))
+	return cutTrace(slices.Concat(top.Bytes(), data, bottom.Bytes()), most)
 }
 
 // @Summary Stop the active log trace session
@@ -211,35 +225,34 @@ func (api *API) handleTraceStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	finishTraceLocked("stopped by user")
+	finishTraceLocked(traceEndUser)
 	log.Infof("Log trace session stopped")
 	sendResponse(w, traceStatusResponse())
 }
 
-func finishTraceLocked(reason string) {
+func finishTrace(session *traceSession, end traceEnd) bool {
+	traceMu.Lock()
+	defer traceMu.Unlock()
+	if activeTrace != session {
+		return false
+	}
+	finishTraceLocked(end)
+	return true
+}
+
+func finishTraceLocked(end traceEnd) {
 	s := activeTrace
 	if s == nil {
 		return
 	}
-	if s.timer != nil {
-		s.timer.Stop()
-	}
-	log.StopCapture(s.writer)
-
-	endedAt := time.Now()
-	dur := endedAt.Sub(s.startedAt).Round(time.Millisecond)
-	fmt.Fprintf(s.file, "=== b4 trace ended: %s  duration: %s  lines: %d  reason: %s ===\n",
-		endedAt.UTC().Format(time.RFC3339), dur, s.writer.lines.Load(), reason)
-	_ = s.file.Sync()
-	_ = s.file.Close()
-
-	lastTracePath = s.path
-	lastTraceName = s.downloadName
+	s.timer.Stop()
+	log.StopRecording(s.writer)
+	lastTrace = s.writer.finish(s.startedAt, time.Now(), end)
 	activeTrace = nil
 }
 
 // @Summary Get log trace session status
-// @Description Reports whether a trace is active, its captured line count and start time, and whether a finished trace is available to download.
+// @Description Reports whether a trace is active, its captured line count and start time, whether a finished trace is available to download and, in endReason, how it ended: user, time_limit, write_failed, shutdown or interrupted.
 // @Tags Logs
 // @Produce json
 // @Success 200 {object} TraceStatusResponse
@@ -270,24 +283,28 @@ func (api *API) handleTraceDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	traceMu.Lock()
-	path := lastTracePath
-	name := lastTraceName
-	traceMu.Unlock()
-
-	if path == "" {
+	name, parts, err := openLastTrace()
+	if err != nil {
 		writeJsonError(w, http.StatusNotFound, "No trace file available")
 		return
 	}
-
-	f, err := os.Open(path)
-	if err != nil {
-		writeJsonError(w, http.StatusNotFound, "Trace file no longer available")
-		return
-	}
-	defer f.Close()
+	defer closeTrace(parts)
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
-	_, _ = io.Copy(w, f)
+	for _, part := range parts {
+		if _, err := io.Copy(w, part); err != nil {
+			return
+		}
+	}
+}
+
+func openLastTrace() (string, []io.ReadCloser, error) {
+	traceMu.Lock()
+	defer traceMu.Unlock()
+	if lastTrace == nil {
+		return "", nil, os.ErrNotExist
+	}
+	parts, err := lastTrace.dir.open()
+	return lastTrace.name, parts, err
 }

@@ -1,5 +1,12 @@
 import { apiGet, apiPost } from "./apiClient";
 
+export type TraceEndReason =
+  | "user"
+  | "time_limit"
+  | "write_failed"
+  | "shutdown"
+  | "interrupted";
+
 export interface TraceStatus {
   active: boolean;
   startedAt?: string;
@@ -8,6 +15,7 @@ export interface TraceStatus {
   level: string;
   downloadReady: boolean;
   downloadName?: string;
+  endReason?: TraceEndReason;
   maxSeconds: number;
 }
 

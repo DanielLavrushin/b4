@@ -417,7 +417,7 @@ func logDNSEvent(proto string, set *config.SetConfig, domain string, clientIP, s
 	if set != nil {
 		setName = set.Name
 	}
-	log.LogConnection(proto, setName, dns.SafeName(domain), clientIP.String(), clientPort, "", serverIP.String(), 53, srcMac, "", action)
+	log.LogInfoConnection(proto, setName, dns.SafeName(domain), clientIP.String(), clientPort, "", serverIP.String(), 53, srcMac, "", action)
 }
 
 func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dport uint16, payload []byte) int {

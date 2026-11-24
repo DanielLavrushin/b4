@@ -419,6 +419,7 @@ func TestCollectTraceSetsNilConfig(t *testing.T) {
 }
 
 func TestTraceHeaderCarriesEnabledSets(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
 	cfg := config.NewConfig()
 	cfg.ConfigPath = "/etc/b4/b4.json"
 	routed := routedTestSet()

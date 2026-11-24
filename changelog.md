@@ -4,6 +4,14 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Start trace** on the **Logs** page records every log line down to debug at any **Log Level**, and the log itself keeps its level. A trace takes at most 8 MB, less when free memory or disk space is short, and a longer one keeps its first and its newest lines.
+
+### Fixed
+
+- A log trace being recorded was lost when b4 crashed or restarted, and a long one could fill a router's memory.
+
 ## [1.93.0] - 2026-11-21
 
 ### Added

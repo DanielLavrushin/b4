@@ -4214,13 +4214,19 @@
     "noMatch": "No logs match your filter",
     "trace": {
       "start": "Start trace",
-      "startHint": "Record all logs to a file until you stop",
+      "startHint": "Record every log line to a file until you stop, at any log level",
       "stop": "Stop & save",
       "recording": "REC",
       "downloadLast": "Download last trace",
       "started": "Trace started — reproduce the issue, then stop",
       "saved": "Trace saved",
+      "endedTimeLimit": "The trace stopped after {{minutes}} min",
+      "endedWriteFailed": "The trace stopped, it could not be written",
+      "endedRestart": "The trace ended when b4 stopped or restarted",
+      "endedInterrupted": "The trace was cut off when b4 ended unexpectedly",
+      "endedLost": "The trace ended and its file is gone",
       "startFailed": "Failed to start trace",
+      "noSpace": "Not enough free memory or disk space for a trace",
       "stopFailed": "Failed to stop trace",
       "downloadFailed": "Failed to download trace"
     }

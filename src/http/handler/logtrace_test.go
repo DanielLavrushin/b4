@@ -16,6 +16,7 @@ import (
 
 func newTraceTestAPI(t *testing.T) (*API, *http.ServeMux) {
 	t.Helper()
+	t.Setenv("TMPDIR", t.TempDir())
 
 	cfg := config.NewConfig()
 	cfg.ConfigPath = "/etc/b4/b4.json"
@@ -28,7 +29,7 @@ func newTraceTestAPI(t *testing.T) (*API, *http.ServeMux) {
 	api.mux = mux
 	api.RegisterLogTraceApi()
 
-	t.Cleanup(func() { resetTraceState() })
+	t.Cleanup(resetTraceState)
 	resetTraceState()
 	return api, mux
 }
@@ -38,19 +39,16 @@ func resetTraceState() {
 	defer traceMu.Unlock()
 
 	if activeTrace != nil {
-		if activeTrace.timer != nil {
-			activeTrace.timer.Stop()
-		}
-		log.StopCapture(activeTrace.writer)
-		_ = activeTrace.file.Close()
-		_ = os.Remove(activeTrace.path)
+		activeTrace.timer.Stop()
+		log.StopRecording(activeTrace.writer)
+		_ = activeTrace.writer.file.Close()
+		_ = activeTrace.writer.endFile.Close()
+		activeTrace.writer.dir.close()
+		_ = os.RemoveAll(activeTrace.writer.dir.path)
 		activeTrace = nil
 	}
-	if lastTracePath != "" {
-		_ = os.Remove(lastTracePath)
-	}
-	lastTracePath = ""
-	lastTraceName = ""
+	lastTrace.remove()
+	lastTrace = nil
 }
 
 func doTrace(t *testing.T, mux *http.ServeMux, method, path, body string) (*httptest.ResponseRecorder, TraceStatusResponse) {

@@ -574,6 +574,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 		tables.ShrinkExposure(ports)
 	})
 
+	handler.RestoreTrace()
+
 	// Start internal web server if configured
 	httpServer, apiHandler, err := b4http.StartServer(&cfgPtr, pool)
 	if err != nil {
@@ -693,6 +695,15 @@ func runB4(cmd *cobra.Command, args []string) error {
 				log.Errorf("Shutdown exceeded %s, forcing exit", shutdownHardLimit)
 				log.Flush()
 			}()
+			traceFinished := make(chan struct{})
+			go func() {
+				handler.FinishActiveTrace()
+				close(traceFinished)
+			}()
+			select {
+			case <-traceFinished:
+			case <-time.After(time.Second):
+			}
 			time.Sleep(100 * time.Millisecond)
 			os.Exit(1)
 		}
@@ -908,6 +919,7 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engin
 	case <-shutdownCtx.Done():
 		log.Errorf("Shutdown timeout reached, forcing exit")
 
+		handler.FinishActiveTrace()
 		log.Flush()
 		time.Sleep(100 * time.Millisecond)
 
@@ -916,6 +928,7 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engin
 
 	nfq.ShutdownDNSRouteRuntime()
 
+	handler.FinishActiveTrace()
 	log.CloseErrorFile()
 	log.Flush()
 	return nil

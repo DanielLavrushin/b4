@@ -1,8 +1,9 @@
-import { Box, Button, Stack } from "@mui/material";
+import { Box, Button, Stack, Typography } from "@mui/material";
 import { StartIcon, StopIcon, DownloadIcon } from "@b4.icons";
 import { B4TooltipButton } from "@b4.elements";
 import { colors, fonts } from "@design";
 import { useTranslation } from "react-i18next";
+import type { TraceEndReason } from "@api/trace";
 
 function formatElapsed(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -15,25 +16,39 @@ function formatElapsed(seconds: number): string {
 interface TraceControlsProps {
   tracing: boolean;
   traceBusy: boolean;
+  traceKnown: boolean;
   traceLines: number;
   traceElapsed: number;
+  traceMaxMinutes: number;
   downloadReady: boolean;
+  traceEndReason?: TraceEndReason;
   onStart: () => void;
   onStop: () => void;
   onDownload: () => void;
 }
 
+const END_KEYS: Partial<Record<TraceEndReason, string>> = {
+  time_limit: "logs.trace.endedTimeLimit",
+  write_failed: "logs.trace.endedWriteFailed",
+  shutdown: "logs.trace.endedRestart",
+  interrupted: "logs.trace.endedInterrupted",
+};
+
 export function TraceControls({
   tracing,
   traceBusy,
+  traceKnown,
   traceLines,
   traceElapsed,
+  traceMaxMinutes,
   downloadReady,
+  traceEndReason,
   onStart,
   onStop,
   onDownload,
 }: TraceControlsProps) {
   const { t } = useTranslation();
+  const endKey = traceEndReason && END_KEYS[traceEndReason];
 
   if (tracing) {
     return (
@@ -90,11 +105,25 @@ export function TraceControls({
   }
 
   return (
-    <Stack direction="row" spacing={0.5} alignItems="center">
+    <Stack
+      direction="row"
+      spacing={0.5}
+      alignItems="center"
+      flexWrap="wrap"
+      useFlexGap
+    >
+      {downloadReady && endKey && (
+        <Typography
+          variant="caption"
+          sx={{ color: colors.text.secondary, mr: 1 }}
+        >
+          {t(endKey, { minutes: traceMaxMinutes })}
+        </Typography>
+      )}
       <Button
         size="small"
         variant="contained"
-        disabled={traceBusy}
+        disabled={traceBusy || !traceKnown}
         startIcon={<StartIcon />}
         onClick={onStart}
         title={t("logs.trace.startHint")}
