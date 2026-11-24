@@ -465,7 +465,7 @@
     "trustTitle": "Trust {{key}}",
     "trustText": "A trusted key is exempt from the per-key daily limits on shares, votes, reports and mirror announcements. Its records still go through moderation.",
     "unbanTitle": "Unban {{key}}",
-    "unbanText": "The key can send records again. At the next build its sets return and its votes count again.",
+    "unbanText": "The key can send records again. At the next build its sets return and its remaining votes count again.",
     "untrustTitle": "Stop trusting {{key}}",
     "untrustText": "The key falls back under the per-key daily limits.",
     "impact": {
