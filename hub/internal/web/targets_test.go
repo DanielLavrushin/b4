@@ -123,7 +123,7 @@ func writeGeoFile(t *testing.T, path string, tags ...string) {
 
 func (f *fixture) insertVersion(title string, projection map[string]interface{}, like *store.Version) string {
 	f.t.Helper()
-	id, err := hubdata.NewSetID(f.clock)
+	id, err := hubdata.NewSetID()
 	if err != nil {
 		f.t.Fatal(err)
 	}

@@ -4,10 +4,26 @@ All notable changes to the b4hub community hub service are recorded in this file
 
 ## [1.11.0] - 2026-11-24
 
+### Changed
+
+- Votes are deleted a year after they arrive, so the device counts in the catalogue and the console's vote lists cover the last year.
+- An author's votes on their own strategy count only in its worldwide score, not per provider or country. The console shows them as author votes in every set with that strategy.
+- The ids of new sets no longer contain the time of the upload.
+- **Last network** on the **Keys** page is the network of the newest vote, publication or complaint.
+
+### Fixed
+
+- A router on a network that two providers announce could count for either of them, because the lookup took whichever answer came first.
+- A router behind a 6to4 or Teredo tunnel counted for the operator of the tunnel's relay.
+- Hiding and restoring a set without counted votes removed its **stale** mark in the console for 60 days.
+- Deleted rows stayed readable in the database file until their space was used again. Rows deleted before the update still do.
+
 ### Security
 
+- The lookup of a router's provider sends Team Cymru only the /24 or /48 network instead of the full address.
 - A set's resolver address with a personal path, a query or a login in it was stored and published whole. A version stored before this one with such an address is never listed and cannot be approved: run **Check** on a pending one and save; a rejected one, or one hidden from the catalogue, has to be published again by its author.
-- The address of a custom geodata source in a set that b4 1.93.0 or earlier shared, with any login or token in it, was stored and published whole. Published addresses of both kinds leave the catalogue with the next build, within a day or at once with **Build now** on the **Catalogue** page.
+- The address of a custom geodata source in a set that b4 1.93.0 or earlier shared, with any login or token in it, was stored and published whole.
+- The public catalogue listed provider and country scores that came from a single device, though no router shows a score below two devices. These scores and the addresses above leave it with the next build, within a day or at once with **Build now** on the **Catalogue** page, and the older files kept next to it go with the two builds after that.
 
 ## [1.10.0] - 2026-11-20
 

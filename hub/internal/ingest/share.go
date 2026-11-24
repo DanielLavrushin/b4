@@ -133,7 +133,7 @@ func (s *Service) share(ctx context.Context, entry record) Response {
 		}
 		return s.accepted(ctx, entry, version, body)
 	}
-	id, err := hubdata.NewSetID(entry.now)
+	id, err := hubdata.NewSetID()
 	if err != nil {
 		return internalError(err)
 	}

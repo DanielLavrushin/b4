@@ -128,6 +128,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 const (
 	unchangedBuildsKept = 14 * 24 * time.Hour
 	buildsKept          = 365 * 24 * time.Hour
+	votesKept           = 365 * 24 * time.Hour
 )
 
 func maintain(ctx context.Context, svc *services, interval time.Duration) {
@@ -139,21 +140,33 @@ func maintain(ctx context.Context, svc *services, interval time.Duration) {
 			return
 		case <-ticker.C:
 		}
-		referenced, err := svc.store.ReferencedBlobs(ctx)
-		if err != nil {
-			log.Printf("blobs: sweep skipped: %v", err)
-			continue
-		}
-		removed, err := svc.layout.Blobs().Sweep(referenced, hubdata.SweepMinAge, time.Now())
-		if err != nil {
-			log.Printf("blobs: sweep: %v", err)
-		}
-		if len(removed) > 0 {
-			log.Printf("blobs: removed %d unreferenced payload(s)", len(removed))
-		}
-		if err := svc.store.PruneBuilds(ctx, time.Now(), unchangedBuildsKept, buildsKept); err != nil {
-			log.Printf("builds: prune: %v", err)
-		}
+		cleanUp(ctx, svc, time.Now())
+	}
+}
+
+func cleanUp(ctx context.Context, svc *services, now time.Time) {
+	if expired, err := svc.store.PruneVotes(ctx, now, votesKept); err != nil {
+		log.Printf("votes: prune: %v", err)
+	} else if expired > 0 {
+		log.Printf("votes: removed %d older than %d days", expired, int(votesKept.Hours()/24))
+	}
+	if err := svc.store.PruneBuilds(ctx, now, unchangedBuildsKept, buildsKept); err != nil {
+		log.Printf("builds: prune: %v", err)
+	}
+	if err := svc.store.Checkpoint(ctx); err != nil {
+		log.Printf("database: checkpoint: %v", err)
+	}
+	referenced, err := svc.store.ReferencedBlobs(ctx)
+	if err != nil {
+		log.Printf("blobs: sweep skipped: %v", err)
+		return
+	}
+	removed, err := svc.layout.Blobs().Sweep(referenced, hubdata.SweepMinAge, now)
+	if err != nil {
+		log.Printf("blobs: sweep: %v", err)
+	}
+	if len(removed) > 0 {
+		log.Printf("blobs: removed %d unreferenced payload(s)", len(removed))
 	}
 }
 

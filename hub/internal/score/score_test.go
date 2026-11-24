@@ -65,9 +65,8 @@ func TestAggregateCellsAndPrior(t *testing.T) {
 	if ru.Devices != 2 {
 		t.Errorf("country codes must be merged case-insensitively, got %+v", scores.CC)
 	}
-	de := scores.CC["DE"]
-	if !near(de.Score, 1.0/3.0) {
-		t.Errorf("one broken vote must score 1/3, got %v", de.Score)
+	if one := Aggregate(votes[2:3], now).Global; !near(one.Score, 1.0/3.0) {
+		t.Errorf("one broken vote must score 1/3, got %v", one.Score)
 	}
 	if scores.Global.Newest != "2026-09-12T00:00:00Z" {
 		t.Errorf("newest must be published at day granularity, got %q", scores.Global.Newest)
@@ -90,11 +89,62 @@ func TestAutomatedVotesCappedAtHalf(t *testing.T) {
 	}
 }
 
+func TestACellOfOneDeviceIsNotPublished(t *testing.T) {
+	vote := func(key, asn, cc string, age time.Duration) Vote {
+		return Vote{KeyHMAC: key, Kind: KindManualWorks, Weight: 1, ASN: asn, Country: cc, OriginVerified: true, KeyFirstSeen: oldKey(), ReceivedAt: now.Add(-age)}
+	}
+	week := 7 * 24 * time.Hour
+	scores := Aggregate([]Vote{
+		vote("alone", "100", "RU", 0),
+		vote("alone", "100", "RU", week),
+		vote("alone", "100", "RU", 2*week),
+		vote("a", "200", "RU", 0),
+		vote("b", "200", "RU", 0),
+		vote("c", "300", "KZ", 0),
+	}, now)
+	if _, ok := scores.ASN["100"]; ok {
+		t.Errorf("several votes of one device are still one device, got %+v", scores.ASN)
+	}
+	if _, ok := scores.ASN["300"]; ok {
+		t.Errorf("a provider with one device must not be listed, got %+v", scores.ASN)
+	}
+	if scores.ASN["200"].Devices != 2 {
+		t.Errorf("a provider with two devices must be listed, got %+v", scores.ASN)
+	}
+	if _, ok := scores.CC["KZ"]; ok || scores.CC["RU"].Devices != 3 {
+		t.Errorf("a country with one device must not be listed, got %+v", scores.CC)
+	}
+	if scores.Global.Devices != 4 {
+		t.Errorf("the overall score counts every device, got %+v", scores.Global)
+	}
+	if one := Aggregate([]Vote{vote("c", "300", "KZ", 0)}, now); one.ASN != nil || one.CC != nil || one.Global.Devices != 1 {
+		t.Errorf("a set with one device has only its overall score, got %+v", one)
+	}
+}
+
+func TestOneDeviceCellsDoNotPushOutListedOnes(t *testing.T) {
+	votes := make([]Vote, 0, 80)
+	for i := 0; i < 40; i++ {
+		asn := "1" + string(rune('A'+i))
+		for week := 0; week < 4; week++ {
+			votes = append(votes, Vote{KeyHMAC: asn, Kind: KindManualWorks, Weight: 1, ASN: asn, OriginVerified: true, KeyFirstSeen: oldKey(), ReceivedAt: now.Add(-time.Duration(week) * Bucket)})
+		}
+	}
+	for _, key := range []string{"a", "b"} {
+		votes = append(votes, Vote{KeyHMAC: key, Kind: KindManualWorks, Weight: 1, ASN: "200", OriginVerified: true, KeyFirstSeen: oldKey(), ReceivedAt: now.Add(-HalfLife)})
+	}
+	if scores := Aggregate(votes, now); len(scores.ASN) != 1 || scores.ASN["200"].Devices != 2 {
+		t.Errorf("the cap must count only cells that can be listed, got %+v", scores.ASN)
+	}
+}
+
 func TestTopByMassKeepsThirtyTwo(t *testing.T) {
-	votes := make([]Vote, 0, 40)
+	votes := make([]Vote, 0, 80)
 	for i := 0; i < 40; i++ {
 		asn := string(rune('A' + i))
-		votes = append(votes, Vote{KeyHMAC: asn, Kind: KindManualWorks, Weight: 1, ASN: asn, OriginVerified: true, KeyFirstSeen: oldKey(), ReceivedAt: now.Add(-time.Duration(i) * 24 * time.Hour)})
+		for _, key := range []string{asn, asn + "2"} {
+			votes = append(votes, Vote{KeyHMAC: key, Kind: KindManualWorks, Weight: 1, ASN: asn, OriginVerified: true, KeyFirstSeen: oldKey(), ReceivedAt: now.Add(-time.Duration(i) * 24 * time.Hour)})
+		}
 	}
 	scores := Aggregate(votes, now)
 	if len(scores.ASN) != MaxASNCells {

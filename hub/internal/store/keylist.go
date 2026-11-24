@@ -184,9 +184,14 @@ func (s *Store) keyRows(ctx context.Context, where string, args ...interface{}) 
 	}); err != nil {
 		return nil, err
 	}
-	origins, err := s.db.QueryContext(ctx, `SELECT key_hmac, asn_observed, country_observed FROM (
-		SELECT key_hmac, asn_observed, country_observed, ROW_NUMBER() OVER (PARTITION BY key_hmac ORDER BY received_at DESC, id DESC) AS rn
-		FROM votes WHERE asn_observed <> '') WHERE rn = 1`)
+	origins, err := s.db.QueryContext(ctx, `SELECT key_hmac, asn, known FROM (
+		SELECT key_hmac, asn, FIRST_VALUE(country) OVER (PARTITION BY key_hmac, asn ORDER BY country = '', at DESC, id DESC) AS known,
+			ROW_NUMBER() OVER (PARTITION BY key_hmac ORDER BY at DESC, id DESC) AS rn
+		FROM (
+			SELECT id, key_hmac, asn_observed AS asn, country_observed AS country, received_at AS at FROM votes
+			UNION ALL SELECT id, uploader_hmac, asn_observed, country_observed, created_at FROM set_versions
+			UNION ALL SELECT id, key_hmac, asn_observed, '', received_at FROM reports
+		) WHERE asn <> '') WHERE rn = 1`)
 	if err != nil {
 		return nil, err
 	}
