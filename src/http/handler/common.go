@@ -324,9 +324,10 @@ func downloadFile(parent context.Context, rawURL, destPath string, verify func(p
 	defer cancel(nil)
 	ctx, cancelTimeout := context.WithTimeoutCause(ctx, downloadMaxDuration, errDownloadTooLong)
 	defer cancelTimeout()
-	stall := time.AfterFunc(downloadStallTimeout, func() { cancel(errDownloadStalled) })
+	stallTimeout := downloadStallTimeout
+	stall := time.AfterFunc(stallTimeout, func() { cancel(errDownloadStalled) })
 	defer stall.Stop()
-	progress := func() { stall.Reset(downloadStallTimeout) }
+	progress := func() { stall.Reset(stallTimeout) }
 	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
 		ConnectDone:          func(string, string, error) { progress() },
 		TLSHandshakeDone:     func(tls.ConnectionState, error) { progress() },
