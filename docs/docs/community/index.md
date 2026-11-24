@@ -99,7 +99,7 @@ A link to a set that is not in the local catalogue, such as one still waiting fo
 
 The connection to the hub is set under **Settings > Integrations > Community Hub**.
 
-![The Community Hub card on the Integrations tab](/img/community/20260914230300.png)
+![The Community Hub card on the Integrations tab](/img/community/20261124193100.png)
 
 | Field | What it does | Default |
 | --- | --- | --- |
