@@ -1321,7 +1321,7 @@
     },
     "sets": {
       "title": "Sets",
-      "subtitle": "Connections each enabled set took",
+      "subtitle": "Connections in each enabled set",
       "kind": {
         "bypass": "Bypass",
         "route": "Route",
@@ -1329,7 +1329,7 @@
         "block": "Block"
       },
       "lastHour": "{{value}} in the last hour",
-      "countHint": "Connections this set took in the last 60 minutes, each counted once.",
+      "countHint": "Connections in this set over the last 60 minutes, each counted once.",
       "countWatchedHint": "The count includes the watchdog's own checks of this set.",
       "lastMatch": "last match {{ago}}",
       "noMatch": "no match since b4 started",
