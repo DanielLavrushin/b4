@@ -2,10 +2,17 @@ package detector
 
 import (
 	"context"
+	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"reflect"
+	"strconv"
+	"sync/atomic"
 	"testing"
 
+	"github.com/daniellavrushin/b4/dns"
 	"golang.org/x/net/dns/dnsmessage"
 )
 
@@ -188,5 +195,33 @@ func TestBrandMatchSurvivesAnEmptyBrand(t *testing.T) {
 	}
 	if !knownResolverOrg("CDNEXT, GB") {
 		t.Fatal("ControlD answers from CDNEXT (Datacamp); it is a known resolver network, not a hijack")
+	}
+}
+
+func TestADoHServerOnAnotherPortIsReportedByTheURLProbed(t *testing.T) {
+	var asked atomic.Value
+	ts := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		asked.Store("http://" + r.Host + r.URL.Path)
+		query, _ := io.ReadAll(r.Body)
+		_, _ = rw.Write(dns.BuildAnswerFromIPs(query, 60, []net.IP{net.ParseIP("203.0.113.9")}))
+	}))
+	t.Cleanup(ts.Close)
+	u, err := url.Parse(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, _ := strconv.Atoi(u.Port())
+
+	for _, srv := range []DNSServer{
+		{Brand: "apart", Address: "http://127.0.0.1/dns-query", Kind: "doh", Port: port},
+		{Brand: "in the URL", Address: ts.URL + "/dns-query", Kind: "doh"},
+		{Brand: "in both, the URL wins", Address: ts.URL + "/dns-query", Kind: "doh", Port: 8443},
+	} {
+		r := &serverRun{server: srv}
+		s := &Suite{ctx: context.Background()}
+		s.probeResolver(r, TargetLists{DNSTrustedDomains: []string{"vk.ru"}}, 1)
+		if r.probe.Status != DNSProbeOk || r.probe.Address != asked.Load() || r.server.Address != asked.Load() {
+			t.Errorf("port %s: status %s, reported %s and %s, the server was asked at %s", srv.Brand, r.probe.Status, r.probe.Address, r.server.Address, asked.Load())
+		}
 	}
 }
