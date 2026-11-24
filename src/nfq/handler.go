@@ -1067,6 +1067,9 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		var flowSet *config.SetConfig
 		if matched && !waitsForName {
 			flowSet = set
+			if foreignEgress {
+				flowSet = vc.carrier(set, hold.set, stageSet)
+			}
 		}
 		observeFlow(cfg, pkt, sport, dport, flowSet, host)
 	}
@@ -1513,7 +1516,11 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	if !udpViaTProxy(set) {
-		observeFlow(cfg, pkt, sport, dport, set, host)
+		flowSet := set
+		if udpForeignEgress {
+			flowSet = vc.carrier(set, hold.set, nil)
+		}
+		observeFlow(cfg, pkt, sport, dport, flowSet, host)
 	}
 
 	quicFlow := (isQUIC || matchedFlow) && !isVoiceMedia
