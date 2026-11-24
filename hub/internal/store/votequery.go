@@ -66,9 +66,9 @@ func (s *Store) QueryVotes(ctx context.Context, f VoteFilter) ([]Vote, int, stri
 	}
 	switch f.Author {
 	case "only":
-		add("(v.key_hmac = (SELECT author_hmac FROM sets WHERE id = v.set_id) OR " + votedByAuthor + " = 1)")
+		add(votedByAuthor + " = 1")
 	case "exclude":
-		add("v.key_hmac <> COALESCE((SELECT author_hmac FROM sets WHERE id = v.set_id), '') AND " + votedByAuthor + " = 0")
+		add(votedByAuthor + " = 0")
 	}
 	if !f.Since.IsZero() {
 		add("v.received_at >= ?", formatTime(f.Since))

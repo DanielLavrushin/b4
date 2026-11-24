@@ -650,7 +650,7 @@
     "noMatch": "No vote matches the filters.",
     "unverified": "network unknown",
     "claims": "claims {{asn}} {{cc}}",
-    "authorVote": "An author of this strategy: counts only worldwide unless their set was rejected.",
+    "authorVote": "A vote by an author of this strategy: it can count only worldwide.",
     "authorShort": "author",
     "applied": {
       "now": "now",
@@ -1074,7 +1074,7 @@
     },
     "weak": {
       "label": "under 50%",
-      "hint": "Enough independent votes to show a score, and the score is under 50%."
+      "hint": "Enough votes to show a score, and the score is under 50%."
     },
     "reports": {
       "label": "open reports",
@@ -1091,7 +1091,7 @@
   },
   "evidence": {
     "independentTip": "Independent: +{{works}} / -{{broken}} from {{devices}} devices, weighted {{positive}} / {{negative}}",
-    "authorTip": "By authors of this strategy: +{{works}} / -{{broken}}, counted only worldwide unless their set was rejected",
+    "authorTip": "By authors of this strategy: +{{works}} / -{{broken}}, counted in this score like any other device",
     "pooledTip": "The score pools votes by strategy fingerprint; {{count}} other sets share it"
   },
   "technique": {
