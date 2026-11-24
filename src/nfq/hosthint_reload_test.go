@@ -2,6 +2,7 @@ package nfq
 
 import (
 	"net"
+	"slices"
 	"testing"
 	"time"
 
@@ -347,7 +348,7 @@ func TestAReloadGivesAHintToAScopedBlockSetOnlyOnItsInterface(t *testing.T) {
 	}
 }
 
-func TestAReloadDropsAHintOfNoSetAndLeavesItsNeighbourUsable(t *testing.T) {
+func TestAReloadSetsAHintOfNoSetAsideAndLeavesItsNeighbourUsable(t *testing.T) {
 	one, two := newSharedNameSet("one", "one.example"), newSharedNameSet("two", "two.example")
 	w, reload := hintReloadPool(t, &one, &two)
 	resolvesTo(w, "www.one.example")
@@ -359,8 +360,196 @@ func TestAReloadDropsAHintOfNoSetAndLeavesItsNeighbourUsable(t *testing.T) {
 	}
 	other := newSharedNameSet("other", "other.example")
 	reload(&other)
-	if n := w.hostHints.Len(); n != 0 {
-		t.Errorf("no set lists either name, %d hints are left", n)
+	if got := hintedSet(w); got != "" {
+		t.Errorf("no set lists either name, the hint names %q", got)
+	}
+	next := newSharedNameSet("two", "two.example")
+	reload(&next)
+	if got := hintedSet(w); got != "two" {
+		t.Errorf("only the other name is listed again, the hint names %q, want two", got)
+	}
+	back, both := newSharedNameSet("one", "one.example"), newSharedNameSet("two", "two.example")
+	reload(&back, &both)
+	if got := hintedSet(w); got != "" {
+		t.Errorf("both names are in a set again, two sets claim the address, got %q", got)
+	}
+}
+
+func TestAHostHintComesBackWithItsSet(t *testing.T) {
+	const host = "www.shared.example"
+	set := func(id, domain string, enabled bool) *config.SetConfig {
+		s := newSharedNameSet(id, domain)
+		s.Enabled, s.TCP.SynFake = enabled, true
+		return &s
+	}
+	listed := func() *config.SetConfig { return set("first", "shared.example", true) }
+	for _, tc := range []struct {
+		name  string
+		steps [][]*config.SetConfig
+		want  string
+	}{
+		{"the set is turned off and on", [][]*config.SetConfig{{set("first", "shared.example", false)}, {listed()}}, "first"},
+		{"the name is removed and added again", [][]*config.SetConfig{{set("first", "else.example", true)}, {listed()}}, "first"},
+		{"the set is deleted and restored", [][]*config.SetConfig{{}, {listed()}}, "first"},
+		{"another change comes in between", [][]*config.SetConfig{
+			{set("first", "shared.example", false)},
+			{set("first", "shared.example", false), set("other", "other.example", true)},
+			{listed(), set("other", "other.example", true)},
+		}, "first"},
+		{"another set takes the name", [][]*config.SetConfig{{set("first", "shared.example", false)}, {set("second", "shared.example", true)}}, "second"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w, reload := hintReloadPool(t, listed())
+			w.sock = &sock.Sender{}
+			resolvesTo(w, host)
+			key := hostHintKey{client: "10.0.0.1", dest: "1.2.3.4"}
+			expires := w.hostHints.keys[key].candidates[0].expires
+			for _, sets := range tc.steps[:len(tc.steps)-1] {
+				reload(sets...)
+				if got := hintedSet(w); got != "" {
+					t.Errorf("no set lists the name, the hint names %q", got)
+				}
+				if v := w.ProcessPacket(makeV4TCPPacketFlags(nil, 999, 0x02)); v != engine.VerdictAccept {
+					t.Errorf("no set lists the name, the SYN got %v", v)
+				}
+			}
+			reload(tc.steps[len(tc.steps)-1]...)
+			if got := hintedSet(w); got != tc.want {
+				t.Errorf("the hint names %q, want %q", got, tc.want)
+			}
+			if v := w.ProcessPacket(makeV4TCPPacketFlags(nil, 999, 0x02)); v != engine.VerdictDrop {
+				t.Errorf("the SYN left without the fake SYN of the set, got %v", v)
+			}
+			if entry := w.hostHints.keys[key]; entry == nil || len(entry.candidates) != 1 || !entry.candidates[0].expires.Equal(expires) {
+				t.Errorf("want one hint with its first lifetime, got %+v", entry)
+			}
+		})
+	}
+}
+
+func TestTheHintOfABackupComesBackWithThePrimary(t *testing.T) {
+	const host = "www.shared.example"
+	for _, domainOnly := range []bool{false, true} {
+		for name, without := range map[string]func(primary *config.SetConfig){
+			"the primary is turned off and on":    func(primary *config.SetConfig) { primary.Enabled = false },
+			"the name is removed and added again": func(primary *config.SetConfig) { primary.Targets.DomainsToMatch = []string{"else.example"} },
+		} {
+			if domainOnly {
+				name += ", domain only"
+			}
+			t.Run(name, func(t *testing.T) {
+				sets := func(listed bool) []*config.SetConfig {
+					primary, backup := newSharedNameSet("primary", "shared.example"), newSharedNameSet("backup", "backup.example")
+					primary.Targets.DomainOnly, primary.Escalate.To, backup.TCP.SynFake = domainOnly, "backup", true
+					backup.DNS.Pins = map[string][]string{host: {"1.2.3.4"}}
+					if !listed {
+						without(&primary)
+					}
+					return []*config.SetConfig{&primary, &backup}
+				}
+				w, reload := hintReloadPool(t, sets(true)...)
+				w.sock = &sock.Sender{}
+				w.destState.SetEscalation(host, "backup", escalateReasonStall, time.Minute)
+				resolve := func() {
+					t.Helper()
+					w.ProcessPacket(makeV4UDPPacket(dns.BuildQuery(host, 7, dnsTypeA), net.ParseIP("10.0.0.1"), net.ParseIP("8.8.8.8"), 5353, 53))
+				}
+				check := func(when string) {
+					t.Helper()
+					if got := storedHint(w, "10.0.0.1", "1.2.3.4"); got != "backup" {
+						t.Errorf("%s: the hint names %q, the name is switched to the backup", when, got)
+					}
+					if v := w.ProcessPacket(makeV4TCPPacketFlags(nil, 999, 0x02)); v != engine.VerdictDrop {
+						t.Errorf("%s: the SYN left without the backup's fake SYN, got %v", when, v)
+					}
+				}
+				resolve()
+				check("before the change")
+				reload(sets(false)...)
+				if got := storedHint(w, "10.0.0.1", "1.2.3.4"); got != "" {
+					t.Errorf("no set lists the name, the hint names %q", got)
+				}
+				reload(sets(true)...)
+				check("after the change")
+				resolve()
+				check("after the device resolved the name again")
+			})
+		}
+	}
+}
+
+func TestAHintOfNoSetDoesNotOutliveItsLifetime(t *testing.T) {
+	c := newHostHintCache()
+	key := hostHintKey{client: "10.0.0.1", dest: "1.2.3.4"}
+	c.Store(key.client, key.dest, "first", "www.shared.example")
+	aside := func() *hostHintEntry {
+		t.Helper()
+		c.Rematch(func(client, dest string, hint hostHintCandidate) string { return "" })
+		entry := c.keys[key]
+		if entry == nil || len(entry.candidates) != 1 {
+			t.Fatalf("the hint of no set is not kept: %+v", entry)
+		}
+		if id, _, ok := c.Lookup(key.client, key.dest); ok {
+			t.Fatalf("the hint of no set names %q", id)
+		}
+		return entry
+	}
+	aside()
+	c.Store(key.client, key.dest, "first", "www.shared.example")
+	if id, _, _ := c.Lookup(key.client, key.dest); id != "first" {
+		t.Errorf("the set answered for the name again, the hint names %q", id)
+	}
+	aside().candidates[0].expires = time.Now().Add(-time.Second)
+	c.Rematch(func(client, dest string, hint hostHintCandidate) string { return "first" })
+	if n := c.Len(); n != 0 {
+		t.Errorf("the lifetime is over, %d hints are left", n)
+	}
+}
+
+func TestAFullKeyLosesAHintOfNoSetFirst(t *testing.T) {
+	c := newHostHintCache()
+	c.Store("10.0.0.1", "1.2.3.4", "kept", "kept.example")
+	for _, host := range []string{"a.example", "b.example", "c.example"} {
+		c.Store("10.0.0.1", "1.2.3.4", "off", host)
+	}
+	c.Rematch(func(client, dest string, hint hostHintCandidate) string {
+		if hint.setId == "off" {
+			return ""
+		}
+		return hint.setId
+	})
+	c.Store("10.0.0.1", "1.2.3.4", "kept", "new.example")
+	if id, _, ok := c.Lookup("10.0.0.1", "1.2.3.4"); !ok || id != "kept" {
+		t.Errorf("the set of two names is on, the hint names %q, %v", id, ok)
+	}
+	var hosts []string
+	for _, hint := range c.keys[hostHintKey{client: "10.0.0.1", dest: "1.2.3.4"}].candidates {
+		hosts = append(hosts, hint.host)
+	}
+	if want := []string{"kept.example", "b.example", "c.example", "new.example"}; !slices.Equal(hosts, want) {
+		t.Errorf("the key holds %v, want %v", hosts, want)
+	}
+}
+
+func TestAHintWithASetWinsOverOneWithoutItInTheSameSet(t *testing.T) {
+	now := time.Now()
+	aside := hostHintCandidate{setId: "merged", host: "www.shared.example", tlsVersion: 0x0304, expires: now.Add(90 * time.Second)}
+	live := hostHintCandidate{setId: "other", host: "www.shared.example", expires: now.Add(30 * time.Second)}
+	for name, order := range map[string][]hostHintCandidate{"first": {live, aside}, "last": {aside, live}} {
+		t.Run(name, func(t *testing.T) {
+			c := newHostHintCache()
+			key := hostHintKey{client: "10.0.0.1", dest: "1.2.3.4"}
+			c.keys[key] = &hostHintEntry{candidates: slices.Clone(order)}
+			c.Rematch(func(client, dest string, hint hostHintCandidate) string {
+				if hint.tlsVersion == 0x0304 {
+					return ""
+				}
+				return "merged"
+			})
+			if id, _, ok := c.Lookup(key.client, key.dest); !ok || id != "merged" {
+				t.Errorf("the hint names %q, %v, want the set that lists the name", id, ok)
+			}
+		})
 	}
 }
 

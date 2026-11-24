@@ -2,6 +2,7 @@ package nfq
 
 import (
 	"net"
+	"slices"
 	"sync"
 	"time"
 
@@ -22,6 +23,7 @@ type hostHintCandidate struct {
 	tlsVersion uint16
 	ipVersion  uint8
 	expires    time.Time
+	aside      bool
 }
 
 type hostHintEntry struct {
@@ -69,7 +71,7 @@ func (c *hostHintCache) StoreTLS(clientIP, destIP, setId, host string, tlsVersio
 	for i := range entry.candidates {
 		if entry.candidates[i].setId == setId && entry.candidates[i].host == host {
 			entry.candidates[i].tlsVersion, entry.candidates[i].ipVersion = tlsVersion, ipVersion
-			entry.candidates[i].expires = now.Add(hostHintTTL)
+			entry.candidates[i].expires, entry.candidates[i].aside = now.Add(hostHintTTL), false
 			return
 		}
 	}
@@ -82,7 +84,8 @@ func (c *hostHintCache) StoreTLS(clientIP, destIP, setId, host string, tlsVersio
 		expires:    now.Add(hostHintTTL),
 	})
 	if len(entry.candidates) > maxHostHintCandidates {
-		entry.candidates = entry.candidates[len(entry.candidates)-maxHostHintCandidates:]
+		drop := max(0, slices.IndexFunc(entry.candidates, func(hint hostHintCandidate) bool { return hint.aside }))
+		entry.candidates = slices.Delete(entry.candidates, drop, drop+1)
 	}
 }
 
@@ -107,7 +110,7 @@ func (c *hostHintCache) LookupTLS(clientIP, destIP string) (hostHintCandidate, b
 
 	var hint hostHintCandidate
 	for _, candidate := range entry.candidates {
-		if !now.Before(candidate.expires) {
+		if candidate.aside || !now.Before(candidate.expires) {
 			continue
 		}
 		if hint.setId == "" {
@@ -170,9 +173,12 @@ func (c *hostHintCache) Rematch(setFor func(client, dest string, hint hostHintCa
 		var kept []hostHintCandidate
 		for _, candidate := range entry.candidates {
 			if setId, seen := moved[hintRef{key, candidate.setId, candidate.host}]; seen {
-				candidate.setId = setId
+				candidate.aside = setId == ""
+				if setId != "" {
+					candidate.setId = setId
+				}
 			}
-			if candidate.setId != "" && now.Before(candidate.expires) {
+			if now.Before(candidate.expires) {
 				kept = appendHint(kept, candidate)
 			}
 		}
@@ -187,7 +193,7 @@ func (c *hostHintCache) Rematch(setFor func(client, dest string, hint hostHintCa
 func appendHint(candidates []hostHintCandidate, hint hostHintCandidate) []hostHintCandidate {
 	for i := range candidates {
 		if candidates[i].setId == hint.setId && candidates[i].host == hint.host {
-			if hint.expires.After(candidates[i].expires) {
+			if candidates[i].aside && !hint.aside || candidates[i].aside == hint.aside && hint.expires.After(candidates[i].expires) {
 				candidates[i] = hint
 			}
 			return candidates
