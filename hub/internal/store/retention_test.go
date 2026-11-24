@@ -22,7 +22,7 @@ func TestADeletedVoteLeavesTheDatabaseFile(t *testing.T) {
 	}
 	holds := func() bool {
 		t.Helper()
-		if _, err := st.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+		if err := st.Checkpoint(ctx); err != nil {
 			t.Fatal(err)
 		}
 		raw, err := os.ReadFile(path)
@@ -41,6 +41,37 @@ func TestADeletedVoteLeavesTheDatabaseFile(t *testing.T) {
 		t.Error("the deleted vote must not stay readable in the database file")
 	}
 	st.Close()
+}
+
+func TestCheckpointReportsABusyDatabase(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "hub.db")
+	st, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if _, err := st.db.ExecContext(ctx, `PRAGMA busy_timeout = 10`); err != nil {
+		t.Fatal(err)
+	}
+	other, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	tx, err := other.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Checkpoint(ctx); err == nil {
+		t.Error("a checkpoint that another process blocks must not pass for done")
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Checkpoint(ctx); err != nil {
+		t.Errorf("the next checkpoint must go through, got %v", err)
+	}
 }
 
 func TestPruneVotesDropsOldVotesAndKeepsRecordIDs(t *testing.T) {

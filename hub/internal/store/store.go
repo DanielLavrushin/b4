@@ -61,6 +61,17 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+func (s *Store) Checkpoint(ctx context.Context) error {
+	var busy, frames, moved int
+	if err := s.db.QueryRowContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`).Scan(&busy, &frames, &moved); err != nil {
+		return err
+	}
+	if busy != 0 {
+		return errors.New("another process holds the database")
+	}
+	return nil
+}
+
 func (s *Store) migrate(ctx context.Context) error {
 	var hasMeta int
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'meta'`).Scan(&hasMeta); err != nil {

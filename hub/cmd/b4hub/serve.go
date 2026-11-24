@@ -153,6 +153,9 @@ func cleanUp(ctx context.Context, svc *services, now time.Time) {
 	if err := svc.store.PruneBuilds(ctx, now, unchangedBuildsKept, buildsKept); err != nil {
 		log.Printf("builds: prune: %v", err)
 	}
+	if err := svc.store.Checkpoint(ctx); err != nil {
+		log.Printf("database: checkpoint: %v", err)
+	}
 	referenced, err := svc.store.ReferencedBlobs(ctx)
 	if err != nil {
 		log.Printf("blobs: sweep skipped: %v", err)
