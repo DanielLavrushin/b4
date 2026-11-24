@@ -228,18 +228,23 @@ func TestATraceIsRefusedWithoutFreeSpace(t *testing.T) {
 	}
 }
 
+func mountForTest(t *testing.T, kind, options string) string {
+	t.Helper()
+	if os.Getenv("B4_NETNS_TEST") != "1" {
+		t.Skip("set B4_NETNS_TEST=1 and run inside a private mount namespace (make test-netns)")
+	}
+	mount := t.TempDir()
+	if err := unix.Mount(kind, mount, kind, 0, options); err != nil {
+		t.Skipf("needs the right to mount a %s: %v", kind, err)
+	}
+	t.Cleanup(func() { _ = unix.Unmount(mount, unix.MNT_DETACH) })
+	return mount
+}
+
 func TestNetnsMemoryLimitsATraceOnAFileSystemInMemory(t *testing.T) {
-	for _, kind := range []string{"tmpfs", "ramfs"} {
+	for kind, options := range map[string]string{"tmpfs": "size=64g", "ramfs": ""} {
 		t.Run(kind, func(t *testing.T) {
-			mount := t.TempDir()
-			options := ""
-			if kind == "tmpfs" {
-				options = "size=64g"
-			}
-			if err := unix.Mount(kind, mount, kind, 0, options); err != nil {
-				t.Skipf("needs the right to mount a %s: %v", kind, err)
-			}
-			t.Cleanup(func() { _ = unix.Unmount(mount, unix.MNT_DETACH) })
+			mount := mountForTest(t, kind, options)
 			mem, ok := availableMemory()
 			if !ok || mem >= 64<<30 {
 				t.Skipf("this machine has %d bytes of available memory", mem)
@@ -386,11 +391,7 @@ func TestAStartThatFailsToCreateItsFolderKeepsTheLastTrace(t *testing.T) {
 }
 
 func TestNetnsAFullInodeTableDoesNotKeepTheLastTraceForever(t *testing.T) {
-	mount := t.TempDir()
-	if err := unix.Mount("tmpfs", mount, "tmpfs", 0, "size=64m,nr_inodes=4"); err != nil {
-		t.Skipf("needs the right to mount a tmpfs: %v", err)
-	}
-	t.Cleanup(func() { _ = unix.Unmount(mount, unix.MNT_DETACH) })
+	mount := mountForTest(t, "tmpfs", "size=64m,nr_inodes=4")
 	_, mux := newTraceTestAPI(t)
 	t.Setenv("TMPDIR", mount)
 	traceConsole(t, log.LevelInfo)
@@ -406,11 +407,7 @@ func TestNetnsAFullInodeTableDoesNotKeepTheLastTraceForever(t *testing.T) {
 }
 
 func TestNetnsAFullDiskLeavesRoomForTheReason(t *testing.T) {
-	mount := t.TempDir()
-	if err := unix.Mount("tmpfs", mount, "tmpfs", 0, "size=1m"); err != nil {
-		t.Skipf("needs the right to mount a tmpfs: %v", err)
-	}
-	t.Cleanup(func() { _ = unix.Unmount(mount, unix.MNT_DETACH) })
+	mount := mountForTest(t, "tmpfs", "size=1m")
 	_, mux := newTraceTestAPI(t)
 	t.Setenv("TMPDIR", mount)
 	traceConsole(t, log.LevelInfo)
