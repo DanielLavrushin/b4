@@ -1648,7 +1648,7 @@
       "noSets": "No configuration sets",
       "noSetsHint": "Create your first set to start configuring bypass rules",
       "importFromTool": "Import",
-      "orderInfo": "The most specific match is a set restricted to source devices, then the longest matching domain or IP range.\n\nFor a set with IP priority on, connections to its addresses stay with it even when a set lower in the list matches the domain.",
+      "orderInfo": "Among sets that list the domain, the longest matching entry wins, then a set restricted to source devices. Among sets that cover the address, a set restricted to source devices wins, then the narrowest range.\n\nBetween a set with the domain and a set with the address, the packet with the server name goes to the set with the domain, whatever the order. The rest of a TCP connection follows it, unless that set has Domain-only matching on. QUIC packets without a server name go to the set with the address.\n\nFor a set with IP priority on, connections to its addresses stay with it even when a set lower in the list matches the domain.\n\nRouting goes by address alone and ignores how narrow the range is: sets restricted to devices or source interfaces come first, then the list order.",
       "orderTitle": "Order of sets"
     },
     "templateDialog": {
@@ -1947,7 +1947,7 @@
       "ipOverlapTitle": "When sets overlap",
       "catchAllDomainsInfo": "For DPI matching, a domain listed literally in any other set is handled there first, whatever position either set holds in the list, so this set picks up only what nothing else claims.",
       "domainOnlyInfo": "Use it on shared CDN addresses, where a neighbouring domain on the same IP would otherwise be pulled into this set and given its strategy.\n\nRouting selects traffic by IP address, so a set with this on routes only the addresses you list explicitly.",
-      "deviceInfo": "With no device selected, the set applies to traffic from every device. A set restricted to devices takes priority over sets without devices.\n\nSource devices narrow who this set applies to; they do not select traffic on their own.\n\nDevices found in the router's ARP table are matched by their MAC address. A manually added device has no MAC address on the network, so it is matched by the IP address entered for it.",
+      "deviceInfo": "With no device selected, the set applies to traffic from every device. A set restricted to devices takes priority over sets without devices that have the same domain entry or cover the same address.\n\nSource devices narrow who this set applies to; they do not select traffic on their own.\n\nDevices found in the router's ARP table are matched by their MAC address. A manually added device has no MAC address on the network, so it is matched by the IP address entered for it.",
       "manualDomainsDesc": "Domains you add yourself.",
       "manualIpsDesc": "Addresses and CIDR ranges you add yourself.",
       "tlsHelperVersion": "With a domain in several sets, this one is used for {{version}}. By address: {{version}} over TCP, any QUIC.",

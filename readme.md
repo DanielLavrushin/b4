@@ -306,7 +306,7 @@ Common causes when bypass appears to do nothing:
 - **Flow offloading** (OpenWrt and most router firmware). Established flows skip B4's hooks. Disable it, or guard it with `ct original packets ge 40 flow offload @ft` in `/usr/share/firewall4/templates/ruleset.uc` followed by `fw4 restart`.
 - **Client-side DoH/DoT.** A device resolving names itself bypasses every DNS feature.
 - **Missing kernel modules.** B4 names the module and package it needs. If NFQUEUE cannot be made to work at all, fall back to [TUN mode](#tun-mode) and its limitations.
-- **Set order.** First match wins. The **Traffic** page shows which set actually matched.
+- **Set order.** The most specific match wins, not the first set in the list, and a set with the domain comes before a set with the address. The **Traffic** page shows which set actually matched.
 
 For bug reports: on the **Logs** page click **Start trace**, reproduce the problem, then stop and download. The bundle has the build version, system diagnostics and a redacted summary of the enabled sets.
 

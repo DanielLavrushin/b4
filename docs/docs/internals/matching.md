@@ -96,7 +96,7 @@ When a server name matches a set, b4 remembers the destination address with the 
 
 When a DNS answer for a set's domain passes through b4, it notes the answered addresses for the device that asked. For two minutes, a connection from that device to one of those addresses takes the set when no address target matches. When several sets list the domain, each address goes to the set that [Choosing between sets](#choosing-between-sets) picks for the IP version of that address.
 
-A set with **Domain-only matching** on neither learns addresses nor uses DNS answers. It matches its domains by the server name alone.
+A set with **Domain-only matching** on neither learns addresses nor uses DNS answers. It matches its domains by the server name alone. When another set has the address match, as in step 1, the TCP packets after the ClientHello go to that set.
 
 ## IP priority {#ip-priority}
 

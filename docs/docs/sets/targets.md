@@ -84,7 +84,7 @@ The **Source Devices** sub-tab limits the set to traffic from selected devices. 
 | Device table | The devices with their MAC address, IP address and name. **offline** marks a device not on the network now. The set applies to the traffic of the selected ones. | None selected |
 | **All devices except selected** | Applies the set to every device except the selected ones. | Off |
 
-With no device selected, the set applies to all traffic. A set limited to devices takes priority over a set without devices that targets the same site.
+With no device selected, the set applies to all traffic. A set limited to devices takes priority over a set without devices that has the same domain entry or covers the same address.
 
 A device that has left the network for good is removed from this set by clearing its checkbox, or from every set by [forgetting it](../settings/core.md#device-table) under **Settings > Core > Devices**.
 
