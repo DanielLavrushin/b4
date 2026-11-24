@@ -1246,7 +1246,10 @@ func (api *API) addMCPPrompts(srv *mcp.Server, caps mcpCapabilities) {
 				"A result marked truncated has lost its older lines, so narrow it by the device's address. " +
 				"No line from the device in a result that is not truncated means b4 saw none of its traffic in that window: ask the user to retry once more and read again right away. " +
 				"If there is still none, its traffic does not reach b4: stop and say so before giving any strategy advice. " +
-				"A line with no set means no set took that packet, which is normal for the packets before the server name and for the data after it: judge a connection by the line of its ClientHello, the first one with both the domain and the tls version. No set, or another set, on that line is a targeting finding.",
+				"A line with no set means no set took that packet, which is normal for the packets before the server name and for the data after it: judge a connection by the line of its ClientHello, the first one with both the domain and the tls version. No set, or another set, on that line is a targeting finding. " +
+				"A set can also take or refuse a connection before b4 reads its ClientHello, which leaves only lines without a tls version, with the action tcp-dup, block, proxy, ipblock-ban or ipblock-syn: the set on them is the one that acted. " +
+				"They seldom name the domain, so look for them with the device's address in contains, even when another line names the domain, and count only those to the site's own address, which the user can look up on the device. " +
+				"Over QUIC, also name a set on the connection's other lines that drops or rejects QUIC, or whose line has the action block; leave out lines whose action starts with tunnel-> or reroute->.",
 			"5. Name the installed version that b4_status reports. If you can read the web, check b4's release notes for a later fix of this symptom; otherwise ask the user whether b4's web interface offers a newer version.",
 			loadStep,
 			"",
