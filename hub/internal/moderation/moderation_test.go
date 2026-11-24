@@ -65,7 +65,7 @@ func keyOf(n int) string {
 
 func (e *env) set(author string, statuses ...string) string {
 	e.t.Helper()
-	id, err := hubdata.NewSetID(testNow)
+	id, err := hubdata.NewSetID()
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -549,7 +549,7 @@ func TestWithdrawAndReinstate(t *testing.T) {
 		t.Fatalf("withdraw and reinstate each request a build: %s", got)
 	}
 
-	unknown, _ := hubdata.NewSetID(testNow)
+	unknown, _ := hubdata.NewSetID()
 	_, err = e.svc.Withdraw(e.ctx, console, unknown, "x")
 	codeOf(t, err, CodeNotFound)
 	_, err = e.svc.Reinstate(e.ctx, console, unknown)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -90,6 +91,14 @@ type Origin struct {
 }
 
 func CymruLookup(byIP map[string]Origin) asn.LookupTXT {
+	byNetwork := make(map[string]Origin, len(byIP))
+	for ip, o := range byIP {
+		network := asn.Network(net.ParseIP(ip)).String()
+		if other, ok := byNetwork[network]; ok && other != o {
+			panic("the hub asks only about " + network + ", which has two origins here")
+		}
+		byNetwork[network] = o
+	}
 	return func(_ context.Context, name string) ([]string, error) {
 		switch {
 		case strings.HasSuffix(name, ".origin.asn.cymru.com"):
@@ -97,12 +106,12 @@ func CymruLookup(byIP map[string]Origin) asn.LookupTXT {
 			if len(labels) != 4 {
 				return nil, fmt.Errorf("unexpected name %s", name)
 			}
-			ip := labels[3] + "." + labels[2] + "." + labels[1] + "." + labels[0]
-			o, ok := byIP[ip]
+			network := labels[3] + "." + labels[2] + "." + labels[1] + "." + labels[0]
+			o, ok := byNetwork[network]
 			if !ok {
-				return nil, fmt.Errorf("no origin for %s", ip)
+				return nil, fmt.Errorf("no origin for %s", network)
 			}
-			return []string{fmt.Sprintf("%s | %s/24 | %s | ripencc | 2020-01-01", o.ASN, ip, o.Country)}, nil
+			return []string{fmt.Sprintf("%s | %s/24 | %s | ripencc | 2020-01-01", o.ASN, network, o.Country)}, nil
 		case strings.HasPrefix(name, "AS") && strings.HasSuffix(name, ".asn.cymru.com"):
 			number := strings.TrimSuffix(strings.TrimPrefix(name, "AS"), ".asn.cymru.com")
 			for _, o := range byIP {

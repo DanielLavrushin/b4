@@ -4,6 +4,10 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- The note under **Settings, Integrations, Community Hub** lists what the hub receives with a sync and with a report.
+
 ## [1.93.0] - 2026-11-21
 
 ### Added

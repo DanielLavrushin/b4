@@ -212,8 +212,8 @@ func TestEndToEnd(t *testing.T) {
 	if ref, _ := cs.Set["faking"].(map[string]interface{})["payload_file"].(string); ref != hubwire.RefPrefix+cs.Payloads[0].SHA256 {
 		t.Fatalf("projection must reference the blob, got %q", ref)
 	}
-	if cs.Scores.Global.Devices != 1 || cs.Scores.ASN["64500"].Devices != 1 || cat.ASNNames["64500"] != "EXAMPLE-A ISP A" {
-		t.Fatalf("the upload vote must land in the author's asn cell: %+v %v", cs.Scores, cat.ASNNames)
+	if cs.Scores.Global.Devices != 1 || cs.Scores.ASN != nil || cs.Scores.CC != nil || cat.ASNNames != nil {
+		t.Fatalf("the author's own network must not be published: %+v %v", cs.Scores, cat.ASNNames)
 	}
 	if cs.B4Min != hubwire.BaselineVersion || cs.Engine != "nfqueue" || cs.Author == "" || len(cs.Author) > hubdata.AuthorLabelLength {
 		t.Fatalf("unexpected metadata %+v", cs)
@@ -260,16 +260,27 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatalf("rebuild after vote: %v %v", built, err)
 	}
 	scored := result.ByID[setID]
-	if scored.Scores.Global.Devices != 2 || scored.Scores.Global.N <= cs.Scores.Global.N || scored.Scores.ASN["64501"].Devices != 1 || scored.Scores.CC["DE"].Devices != 1 {
-		t.Fatalf("vote not reflected in scores: %+v", scored.Scores)
+	if scored.Scores.Global.Devices != 2 || scored.Scores.Global.N <= cs.Scores.Global.N || scored.Scores.ASN != nil || scored.Scores.CC != nil || result.Catalogue.ASNNames != nil {
+		t.Fatalf("two devices on two networks change only the overall score: %+v %v", scored.Scores, result.Catalogue.ASNNames)
 	}
-	if result.Catalogue.ASNNames["64501"] != "EXAMPLE-B ISP B" {
-		t.Fatalf("asn names must follow the scored cells, got %v", result.Catalogue.ASNNames)
+	status, body = h.post(testkit.Sign(t, testkit.Identity(t), hubwire.RecordVote, vote, h.clock), "198.51.100.7")
+	if status != http.StatusAccepted {
+		t.Fatalf("second vote: %d %v", status, body)
+	}
+	if result, built, err = h.builder.BuildIfNeeded(ctx); err != nil || !built {
+		t.Fatalf("rebuild after the second vote: %v %v", built, err)
+	}
+	scored = result.ByID[setID]
+	if scored.Scores.Global.Devices != 3 || len(scored.Scores.ASN) != 1 || scored.Scores.ASN["64501"].Devices != 2 || len(scored.Scores.CC) != 1 || scored.Scores.CC["DE"].Devices != 2 {
+		t.Fatalf("a second device on one network lists that network: %+v", scored.Scores)
+	}
+	if len(result.Catalogue.ASNNames) != 1 || result.Catalogue.ASNNames["64501"] != "EXAMPLE-B ISP B" {
+		t.Fatalf("asn names must follow the listed cells, got %v", result.Catalogue.ASNNames)
 	}
 	if _, _, err := h.builder.BuildIfNeeded(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if h.builder.Latest().Manifest.Seq != 3 {
+	if h.builder.Latest().Manifest.Seq != 4 {
 		t.Fatalf("a clean store must not rebuild, seq %d", h.builder.Latest().Manifest.Seq)
 	}
 
