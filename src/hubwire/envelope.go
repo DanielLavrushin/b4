@@ -343,8 +343,12 @@ func Open(env *Envelope, opts OpenOptions) (*Imported, error) {
 		return nil, err
 	}
 	for _, s := range report.Stripped {
-		if strings.HasPrefix(s.Path, "dns.pins.") {
+		switch {
+		case strings.HasPrefix(s.Path, "dns.pins."):
 			warn(s.Reason, map[string]interface{}{"path": s.Path, "domain": strings.TrimPrefix(s.Path, "dns.pins.")})
+		case s.Reason == ReasonPersonalResolver:
+			host, _ := DoHHost(set.DNS.DoHURL)
+			warn(s.Reason, map[string]interface{}{"path": s.Path, "host": host})
 		}
 	}
 	imp.Warnings = append(imp.Warnings, report.Warnings...)

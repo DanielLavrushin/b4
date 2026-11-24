@@ -343,6 +343,30 @@ func TestEditDropsAPinWithItsDomain(t *testing.T) {
 	}
 }
 
+func TestEditNamesADroppedResolverOnce(t *testing.T) {
+	f := newFixture(t, password)
+	id, _ := f.shareAs(testkit.Identity(t), testkit.SampleSet("Resolver", "resolver.example"), authorAddress)
+	v := f.versionOf(id, 1)
+	typed := withTargets(t, v.Projection, map[string]interface{}{"sni_domains": []string{"resolver.example"}})
+	typed["dns"] = map[string]interface{}{"enabled": true, "doh_url": "https://dns.nextdns.io/canaryid"}
+	preview := f.preview(id, EditRequest{Title: v.Title, Projection: typed})
+	if warning := warningOf(preview.Warnings, hubwire.ReasonPersonalResolver); warning == nil || warning.Params["host"] != "dns.nextdns.io" {
+		t.Fatalf("the dropped resolver must be reported: %+v", preview.Warnings)
+	}
+	for _, s := range preview.Stripped {
+		if s.Path == "dns.doh_url" {
+			t.Errorf("a resolver dropped for its address is reported by its warning, not as a stripped field: %+v", preview.Stripped)
+		}
+	}
+	if _, ok := lookupPath(preview.Projection, "dns.doh_url"); ok {
+		t.Errorf("the edit keeps the resolver: %v", preview.Projection)
+	}
+	f.expectOK(f.admin(http.MethodPost, setPath(id, 1, "edit"), EditRequest{Title: v.Title, Projection: typed}))
+	if _, ok := lookupPath(f.versionOf(id, 1).Projection, "dns.doh_url"); ok {
+		t.Error("the stored edit keeps the resolver")
+	}
+}
+
 func TestEditTargetCollisionIsADuplicate(t *testing.T) {
 	f := newFixture(t, password)
 	first, _ := f.share("First", authorAddress, "first.example")

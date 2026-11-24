@@ -189,6 +189,18 @@ func DoHHost(rawURL string) (string, bool) {
 	return host, config.KnownDoHHosts[host]
 }
 
+const ReasonPersonalResolver = "personal_resolver"
+
+func scrubResolver(m map[string]interface{}, r *Report) {
+	raw, _ := lookupPath(m, "dns.doh_url")
+	doh, _ := raw.(string)
+	if doh == "" || !config.PersonalResolverURL(doh) {
+		return
+	}
+	r.strip("dns.doh_url", ReasonPersonalResolver)
+	deletePath(m, "dns.doh_url")
+}
+
 func domainTargeted(domain string, entries []string) bool {
 	for _, entry := range entries {
 		rel, _ := sni.MatchDomainEntry(entry, domain)
@@ -428,6 +440,7 @@ func Scrub(set *config.SetConfig) (map[string]interface{}, *Report, error) {
 	}
 	resetDisabledBlocks(m, def)
 	scrubRouting(m, r)
+	scrubResolver(m, r)
 	scrubPins(m, r)
 	stripNever(m, def, r)
 	sparse, err := config.SparsifySetMap(m)

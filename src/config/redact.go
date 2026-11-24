@@ -343,6 +343,12 @@ func dohPath(path string) bool {
 	return plainPath(path) || path == "/dns-query"
 }
 
+func PersonalResolverURL(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	return err != nil || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" ||
+		!utils.ValidURLPort(u) || !dohPath(strings.TrimSuffix(u.EscapedPath(), "/"))
+}
+
 func redactURL(raw string, host func(*url.URL) string, keepPath func(string) bool) string {
 	if raw == "" {
 		return ""
