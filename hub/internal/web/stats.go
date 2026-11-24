@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4hub/internal/score"
 	"github.com/daniellavrushin/b4hub/internal/store"
 )
@@ -221,7 +222,7 @@ func (s *Server) scoreStats(now time.Time) ScoreStatsView {
 		out.Listed++
 		g := cs.Scores.Global
 		bin := int(math.Max(0, math.Min(9, math.Floor(g.Score*10))))
-		if g.N >= 1 && g.Devices >= 2 {
+		if g.N >= 1 && g.Devices >= hubwire.MinDevices {
 			out.Rated++
 			rated = append(rated, g.Score)
 			out.Bins[bin].Sets++

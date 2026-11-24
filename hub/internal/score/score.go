@@ -217,19 +217,24 @@ func Aggregate(votes []Vote, now time.Time) hubwire.Scores {
 			c.votes = append(c.votes, v)
 		}
 	}
-	out := hubwire.Scores{Global: global.fold(now)}
-	if len(byASN) > 0 {
-		out.ASN = make(map[string]hubwire.Score, len(byASN))
-		for asn, c := range byASN {
-			out.ASN[asn] = c.fold(now)
-		}
-		out.ASN = topByMass(out.ASN, MaxASNCells)
+	return hubwire.Scores{
+		Global: global.fold(now),
+		ASN:    topByMass(listed(byASN, now), MaxASNCells),
+		CC:     listed(byCC, now),
 	}
-	if len(byCC) > 0 {
-		out.CC = make(map[string]hubwire.Score, len(byCC))
-		for cc, c := range byCC {
-			out.CC[cc] = c.fold(now)
+}
+
+func listed(cells map[string]*cell, now time.Time) map[string]hubwire.Score {
+	var out map[string]hubwire.Score
+	for key, c := range cells {
+		s := c.fold(now)
+		if s.Devices < hubwire.MinDevices {
+			continue
 		}
+		if out == nil {
+			out = make(map[string]hubwire.Score)
+		}
+		out[key] = s
 	}
 	return out
 }
