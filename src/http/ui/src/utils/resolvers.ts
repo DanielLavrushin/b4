@@ -81,6 +81,9 @@ export const misplacedResolver = (dns?: ResolverSource | null): string => {
   return !text(dns?.doh_url) && URL_ENTRY.test(target) ? target : "";
 };
 
+const withoutMisplaced = (dns?: ResolverSource | null): string[] =>
+  resolverList(misplacedResolver(dns) ? { upstreams: dns?.upstreams } : dns);
+
 export const resolverFields = (list: string[]): ResolverFields => {
   const [first = "", ...rest] = list;
   const doh = isDohResolver(first);
@@ -105,7 +108,7 @@ export const withResolver = <T extends ResolverSource & { enabled: boolean }>(
   if (dns.enabled && askedResolvers(dns).some(same)) {
     return { outcome: "present", dns };
   }
-  const others = resolverList(dns).filter((e) => !same(e));
+  const others = withoutMisplaced(dns).filter((e) => !same(e));
   if (others.length >= MAX_SET_RESOLVERS) return { outcome: "full", dns };
   const list = dns.enabled ? [...others, value] : [value, ...others];
   return {
@@ -147,6 +150,4 @@ const askedEntry = (entry: string): boolean => {
 };
 
 export const askedResolvers = (dns?: ResolverSource | null): string[] =>
-  resolverList(misplacedResolver(dns) ? { upstreams: dns?.upstreams } : dns)
-    .filter(askedEntry)
-    .slice(0, MAX_SET_RESOLVERS);
+  withoutMisplaced(dns).filter(askedEntry).slice(0, MAX_SET_RESOLVERS);

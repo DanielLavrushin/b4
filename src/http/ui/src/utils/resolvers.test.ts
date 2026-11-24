@@ -74,6 +74,62 @@ void test("a URL kept in the address field is not a resolver the set asks", () =
   assert.deepEqual(resolverList(behind.dns), ["192.0.2.5", URL]);
 });
 
+const MISPLACED = [
+  { target_dns: "https://ignored.example/dns-query" },
+  { target_dns: " HTTPS://ignored.example/dns-query" },
+  { target_dns: "http://ignored.example/dns-query" },
+];
+
+void test("a URL kept in the address field is not carried over", () => {
+  for (const first of MISPLACED) {
+    const set = { ...first, upstreams: ["192.0.2.5"] };
+    assert.deepEqual(
+      withResolver(dns(set), URL).dns,
+      dns({ target_dns: "192.0.2.5", upstreams: [URL] }),
+    );
+    assert.deepEqual(
+      withResolver(dns({ ...set, enabled: false }), URL).dns,
+      dns({ doh_url: URL, upstreams: ["192.0.2.5"] }),
+    );
+    assert.deepEqual(withResolver(dns(first), URL).dns, dns({ doh_url: URL }));
+  }
+});
+
+void test("a URL kept in the address field takes none of the places", () => {
+  const seven = Array.from(
+    { length: MAX_SET_RESOLVERS - 1 },
+    (_, i) => `https://r${i + 1}.example/dns-query`,
+  );
+  for (const first of MISPLACED) {
+    const set = { ...first, upstreams: seven };
+    const added = withResolver(dns(set), URL);
+    assert.equal(added.outcome, "added");
+    assert.deepEqual(resolverList(added.dns), [...seven, URL]);
+    const turnedOn = withResolver(dns({ ...set, enabled: false }), URL);
+    assert.equal(turnedOn.outcome, "added");
+    assert.deepEqual(resolverList(turnedOn.dns), [URL, ...seven]);
+  }
+});
+
+void test("a DoH URL stays first whatever the address field holds", () => {
+  const own = "https://own.example/dns-query";
+  for (const { target_dns } of [...MISPLACED, { target_dns: "192.0.2.9" }]) {
+    assert.deepEqual(
+      withResolver(dns({ doh_url: own, target_dns }), URL).dns,
+      dns({ doh_url: own, upstreams: [URL] }),
+    );
+  }
+});
+
+void test("an entry the user has to correct stays in the list", () => {
+  const first = { target_dns: "resolver.local", upstreams: ["192.0.2.5"] };
+  assert.deepEqual(resolverList(withResolver(dns(first), URL).dns), [
+    "resolver.local",
+    "192.0.2.5",
+    URL,
+  ]);
+});
+
 void test("a full list takes no further resolver", () => {
   const full = dns({
     doh_url: "https://r0.example/dns-query",
@@ -100,7 +156,9 @@ void test("a list stored past the limit with the redirect off stays as it is", (
       (_, i) => `https://r${i + 1}.example/dns-query`,
     ),
   });
-  const refused = withResolver(stored, "https://r9.example/dns-query");
-  assert.equal(refused.outcome, "full");
-  assert.equal(refused.dns, stored);
+  for (const i of [3, 9]) {
+    const refused = withResolver(stored, `https://r${i}.example/dns-query`);
+    assert.equal(refused.outcome, "full");
+    assert.equal(refused.dns, stored);
+  }
 });
