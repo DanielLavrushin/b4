@@ -101,14 +101,16 @@ func TestAPersonalResolverIsLeftOutOfASharedSet(t *testing.T) {
 
 func TestAPublicResolverIsShared(t *testing.T) {
 	for doh, known := range map[string]bool{
-		"https://dns.google/dns-query":         true,
-		"https://dns.google/dns-query/":        true,
-		"https://cloudflare-dns.com":           true,
-		"https://1.1.1.1/":                     true,
-		"https://dns.google:8443/dns-query":    true,
-		"https://dns.alidns.com:443/dns-query": true,
-		"https://unknown.example/dns-query":    false,
-		"https://id.unknown.example/":          false,
+		"https://dns.google/dns-query":                      true,
+		"https://dns.google/dns-query/":                     true,
+		"https://cloudflare-dns.com":                        true,
+		"https://1.1.1.1/":                                  true,
+		"https://dns.google:8443/dns-query":                 true,
+		"https://dns.alidns.com:443/dns-query":              true,
+		"https://freedns.controld.com/p0":                   true,
+		"https://doh.cleanbrowsing.org/doh/security-filter": true,
+		"https://unknown.example/dns-query":                 false,
+		"https://id.unknown.example/":                       false,
 	} {
 		set := resolverSet(doh)
 		projection, report, err := Scrub(&set)

@@ -345,8 +345,11 @@ func dohPath(path string) bool {
 
 func PersonalResolverURL(raw string) bool {
 	u, err := url.Parse(strings.TrimSpace(raw))
-	return err != nil || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" ||
-		!utils.ValidURLPort(u) || !dohPath(strings.TrimSuffix(u.EscapedPath(), "/"))
+	if err != nil || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || !utils.ValidURLPort(u) {
+		return true
+	}
+	path := strings.TrimSuffix(u.EscapedPath(), "/")
+	return !dohPath(path) && !publicDoHPaths[strings.ToLower(u.Hostname())+path]
 }
 
 func redactURL(raw string, host func(*url.URL) string, keepPath func(string) bool) string {
