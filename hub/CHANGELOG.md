@@ -11,6 +11,7 @@ All notable changes to the b4hub community hub service are recorded in this file
 ### Fixed
 
 - A router on a network that two providers announce could count for either of them, because the lookup took whichever answer came first.
+- A router behind a 6to4 or Teredo tunnel counted for the operator of the tunnel's relay.
 - Deleted rows stayed readable in the database file until their space was used again.
 
 ### Security

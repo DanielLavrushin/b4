@@ -65,6 +65,24 @@ func TestLookupNeverSendsAFullAddress(t *testing.T) {
 	}
 }
 
+func TestLookupSkipsTunnelAddresses(t *testing.T) {
+	for _, ip := range []string{"2002:cb00:714d::1", "2001:0:4136:e378:8000:63bf:3fff:fdd2"} {
+		var asked []string
+		r := New(func(_ context.Context, name string) ([]string, error) {
+			asked = append(asked, name)
+			return []string{"6939 | 2002::/16 |  | other |"}, nil
+		}, nil, nil)
+		if info := r.Lookup(context.Background(), net.ParseIP(ip)); info != (Info{}) || len(asked) != 0 {
+			t.Errorf("%s is the address of a tunnel, not of a provider: asked %v, got %+v", ip, asked, info)
+		}
+	}
+	for _, ip := range []string{"2001:db8::1", "2003:1::1", "::ffff:203.0.113.77", "203.0.113.77"} {
+		if !Routable(net.ParseIP(ip)) {
+			t.Errorf("%s must still be looked up", ip)
+		}
+	}
+}
+
 func TestLookupTakesTheMostSpecificOriginInAnyOrder(t *testing.T) {
 	wide := "64501 | 203.0.0.0/16 | de | ripencc | 2005-01-24"
 	narrow := "64502 | 203.0.112.0/23 | ru | ripencc | 2005-01-24"

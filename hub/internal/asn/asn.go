@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -79,9 +80,17 @@ func CacheKey(ip net.IP) string {
 	return Network(ip).String() + "/48"
 }
 
+var tunnelRanges = []netip.Prefix{netip.MustParsePrefix("2002::/16"), netip.MustParsePrefix("2001::/32")}
+
 func Routable(ip net.IP) bool {
 	if ip == nil || ip.IsUnspecified() || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() {
 		return false
+	}
+	addr, _ := netip.AddrFromSlice(ip)
+	for _, p := range tunnelRanges {
+		if p.Contains(addr) {
+			return false
+		}
 	}
 	return true
 }
