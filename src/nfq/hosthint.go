@@ -141,7 +141,21 @@ func pruneCandidates(candidates []hostHintCandidate, now time.Time) []hostHintCa
 	return live
 }
 
-func (c *hostHintCache) Rematch(setFor func(client, dest string, hint hostHintCandidate) string) {
+func (c *hostHintCache) eachLocked(only []hostHintKey, visit func(key hostHintKey, entry *hostHintEntry)) {
+	if only == nil {
+		for key, entry := range c.keys {
+			visit(key, entry)
+		}
+		return
+	}
+	for _, key := range only {
+		if entry := c.keys[key]; entry != nil {
+			visit(key, entry)
+		}
+	}
+}
+
+func (c *hostHintCache) Rematch(only []hostHintKey, setFor func(client, dest string, hint hostHintCandidate) string) {
 	if c == nil {
 		return
 	}
@@ -153,13 +167,13 @@ func (c *hostHintCache) Rematch(setFor func(client, dest string, hint hostHintCa
 	now := time.Now()
 	hints := make(map[hintRef]hostHintCandidate)
 	c.mu.RLock()
-	for key, entry := range c.keys {
+	c.eachLocked(only, func(key hostHintKey, entry *hostHintEntry) {
 		for _, candidate := range entry.candidates {
 			if now.Before(candidate.expires) {
 				hints[hintRef{key, candidate.setId, candidate.host}] = candidate
 			}
 		}
-	}
+	})
 	c.mu.RUnlock()
 
 	moved := make(map[hintRef]string, len(hints))
@@ -169,7 +183,7 @@ func (c *hostHintCache) Rematch(setFor func(client, dest string, hint hostHintCa
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for key, entry := range c.keys {
+	c.eachLocked(only, func(key hostHintKey, entry *hostHintEntry) {
 		var kept []hostHintCandidate
 		for _, candidate := range entry.candidates {
 			if setId, seen := moved[hintRef{key, candidate.setId, candidate.host}]; seen {
@@ -184,10 +198,10 @@ func (c *hostHintCache) Rematch(setFor func(client, dest string, hint hostHintCa
 		}
 		if len(kept) == 0 {
 			delete(c.keys, key)
-			continue
+			return
 		}
 		entry.candidates = kept
-	}
+	})
 }
 
 func appendHint(candidates []hostHintCandidate, hint hostHintCandidate) []hostHintCandidate {
@@ -304,7 +318,26 @@ func (w *Worker) hintSetFor(clientIP net.IP, set *config.SetConfig, host string,
 	return fitting
 }
 
-func (w *Worker) rematchHostHints(matcher *sni.SuffixSet) {
+func (w *Worker) settleHostHints(asked *sni.SuffixSet, clientIP net.IP, ips []net.IP) {
+	var stored []hostHintKey
+	for matcher := w.getMatcher(); matcher != asked; matcher = w.getMatcher() {
+		asked = matcher
+		if stored == nil {
+			stored = hostHintKeys(clientIP, ips)
+		}
+		w.rematchHostHints(matcher, stored)
+	}
+}
+
+func hostHintKeys(clientIP net.IP, ips []net.IP) []hostHintKey {
+	keys := make([]hostHintKey, 0, len(ips))
+	for _, ip := range ips {
+		keys = append(keys, hostHintKey{client: clientIP.String(), dest: ip.String()})
+	}
+	return keys
+}
+
+func (w *Worker) rematchHostHints(matcher *sni.SuffixSet, only []hostHintKey) {
 	if w == nil || matcher == nil {
 		return
 	}
@@ -319,7 +352,7 @@ func (w *Worker) rematchHostHints(matcher *sni.SuffixSet) {
 	}
 	found := make(map[name]owner)
 	cfg := w.getConfig()
-	w.hostHints.Rematch(func(client, dest string, hint hostHintCandidate) string {
+	w.hostHints.Rematch(only, func(client, dest string, hint hostHintCandidate) string {
 		destIP := net.ParseIP(dest)
 		if destIP == nil {
 			return ""

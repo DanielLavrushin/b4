@@ -484,7 +484,7 @@ func TestAHintOfNoSetDoesNotOutliveItsLifetime(t *testing.T) {
 	c.Store(key.client, key.dest, "first", "www.shared.example")
 	aside := func() *hostHintEntry {
 		t.Helper()
-		c.Rematch(func(client, dest string, hint hostHintCandidate) string { return "" })
+		c.Rematch(nil, func(client, dest string, hint hostHintCandidate) string { return "" })
 		entry := c.keys[key]
 		if entry == nil || len(entry.candidates) != 1 {
 			t.Fatalf("the hint of no set is not kept: %+v", entry)
@@ -500,7 +500,7 @@ func TestAHintOfNoSetDoesNotOutliveItsLifetime(t *testing.T) {
 		t.Errorf("the set answered for the name again, the hint names %q", id)
 	}
 	aside().candidates[0].expires = time.Now().Add(-time.Second)
-	c.Rematch(func(client, dest string, hint hostHintCandidate) string { return "first" })
+	c.Rematch(nil, func(client, dest string, hint hostHintCandidate) string { return "first" })
 	if n := c.Len(); n != 0 {
 		t.Errorf("the lifetime is over, %d hints are left", n)
 	}
@@ -512,7 +512,7 @@ func TestAFullKeyLosesAHintOfNoSetFirst(t *testing.T) {
 	for _, host := range []string{"a.example", "b.example", "c.example"} {
 		c.Store("10.0.0.1", "1.2.3.4", "off", host)
 	}
-	c.Rematch(func(client, dest string, hint hostHintCandidate) string {
+	c.Rematch(nil, func(client, dest string, hint hostHintCandidate) string {
 		if hint.setId == "off" {
 			return ""
 		}
@@ -540,7 +540,7 @@ func TestAHintWithASetWinsOverOneWithoutItInTheSameSet(t *testing.T) {
 			c := newHostHintCache()
 			key := hostHintKey{client: "10.0.0.1", dest: "1.2.3.4"}
 			c.keys[key] = &hostHintEntry{candidates: slices.Clone(order)}
-			c.Rematch(func(client, dest string, hint hostHintCandidate) string {
+			c.Rematch(nil, func(client, dest string, hint hostHintCandidate) string {
 				if hint.tlsVersion == 0x0304 {
 					return ""
 				}
@@ -567,7 +567,7 @@ func TestASettingsOnlyReloadLeavesEveryHintAlone(t *testing.T) {
 func TestAHintStoredWhileOthersAreMatchedAgainStays(t *testing.T) {
 	c := newHostHintCache()
 	c.Store("10.0.0.1", "1.2.3.4", "first", "www.shared.example")
-	c.Rematch(func(client, dest string, hint hostHintCandidate) string {
+	c.Rematch(nil, func(client, dest string, hint hostHintCandidate) string {
 		c.Store("10.0.0.9", "1.2.3.9", "fresh", "www.fresh.example")
 		return "second"
 	})
@@ -592,7 +592,7 @@ func TestTwoHintsThatMeetInOneSetKeepTheLongerLife(t *testing.T) {
 				{setId: "first", host: "www.shared.example", expires: now.Add(lives[0])},
 				{setId: "second", host: "www.shared.example", expires: now.Add(lives[1])},
 			}}
-			c.Rematch(func(client, dest string, hint hostHintCandidate) string { return "merged" })
+			c.Rematch(nil, func(client, dest string, hint hostHintCandidate) string { return "merged" })
 			got := c.keys[key].candidates
 			if len(got) != 1 || got[0].setId != "merged" || !got[0].expires.Equal(now.Add(90*time.Second)) {
 				t.Errorf("want one hint with the longer life, got %+v", got)
@@ -605,7 +605,7 @@ func TestTwoHintsOfOneNameInTwoSetsStayAmbiguous(t *testing.T) {
 	c := newHostHintCache()
 	c.StoreTLS("10.0.0.1", "1.2.3.4", "tls12", "www.shared.example", 0, 0)
 	c.StoreTLS("10.0.0.1", "1.2.3.4", "tls13", "www.shared.example", 0x0304, IPv4)
-	c.Rematch(func(client, dest string, hint hostHintCandidate) string {
+	c.Rematch(nil, func(client, dest string, hint hostHintCandidate) string {
 		if hint.tlsVersion == 0x0304 {
 			return "new13"
 		}

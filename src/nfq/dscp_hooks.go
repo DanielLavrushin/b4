@@ -4,6 +4,7 @@ import (
 	"net"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/sni"
 )
 
 var DSCPLearnFunc func(cfg *config.Config, set *config.SetConfig, ips []net.IP, fromTLS bool) []<-chan struct{}
@@ -62,12 +63,13 @@ func learnAnswerAwait(cfg *config.Config, set *config.SetConfig, ips []net.IP) (
 	return joinWaits(waits, dscpLearnAwait(cfg, set, ips)), routed
 }
 
-func (w *Worker) learnAnswerAddresses(cfg *config.Config, set *config.SetConfig, clientIP net.IP, domain string, ips []net.IP, learn bool, cancel <-chan struct{}) {
+func (w *Worker) learnAnswerAddresses(cfg *config.Config, set *config.SetConfig, asked *sni.SuffixSet, clientIP net.IP, domain string, ips []net.IP, learn bool, cancel <-chan struct{}) {
 	if len(ips) == 0 || clientIP == nil {
 		return
 	}
 	observeDNSNames(clientIP, domain, ips)
 	w.storeHostHints(clientIP, set, domain, ips)
+	w.settleHostHints(asked, clientIP, ips)
 	if learn {
 		w.learnAnswerInline(cfg, set, ips, cancel)
 	}

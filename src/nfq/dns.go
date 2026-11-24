@@ -335,6 +335,7 @@ func (w *Worker) answerViaSetInline(ipVersion byte, cfg *config.Config, set *con
 
 	if pinned := w.pinnedAnswer(set, query, domain); pinned != nil {
 		_, routeWaits := w.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned, scope.learns(domain))
+		w.settleHostHints(w.matcherIn(scope), clientIP, dns.ParseResponseIPs(pinned))
 		w.waitRoutesInline(routeWaits, nil)
 		w.answerClient(direct, query, ipVersion, originalDst, clientIP, clientPort, pinned)
 		return true
@@ -618,6 +619,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 							healSet = set
 						}
 						w.storeHostHints(clientIP, set, domain, ips)
+						w.settleHostHints(nil, clientIP, ips)
 						if scope.learns(domain) && !set.Targets.DomainOnly && !config.RoutingIsBlock(set.Routing.Mode) && routingHandleDNSAvailable() && !cfg.Queue.IsDiscovery {
 							routeWaits = joinWaits(routeWaits, routingHandleDNSAwait(cfg, set, ips))
 						}
@@ -636,7 +638,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					query := dns.BuildQuery(domain, txid, qtype)
 					client := append(net.IP(nil), clientIP...)
 					server := append(net.IP(nil), dnsServerIP...)
-					if w.answerViaSet(vc, ipVersion, cfg, next, domain, query, client, dport, server, scope) {
+					if w.answerViaSet(vc, ipVersion, cfg, next, domain, query, client, dport, server, scope.orSnapshot(matcher)) {
 						if !vc.drop() {
 							return 0
 						}
@@ -712,6 +714,7 @@ func (w *Worker) releaseFilteredReply(vc *verdictCtx, raw []byte, ver byte, serv
 func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *config.Config, query []byte, clientIP net.IP, clientPort uint16, originalDst net.IP, servers []dns.Server, named string, delay int, direct bool, from ...*ingressScope) {
 	defer beginDNSRedirect(query)()
 	scope := scopeFrom(from)
+	asked := w.matcherIn(scope)
 	queryDomain, _ := dns.ParseQueryDomain(query)
 	queryDomain = strings.ToLower(queryDomain)
 
@@ -751,12 +754,12 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		return
 	}
 
-	w.learnAnswerAddresses(cfg, set, clientIP, queryDomain, dns.ParseResponseIPs(resp), scope.learns(queryDomain), nil)
+	w.learnAnswerAddresses(cfg, set, asked, clientIP, queryDomain, dns.ParseResponseIPs(resp), scope.learns(queryDomain), nil)
 
 	clientMac := w.getMacByIp(clientIP.String())
 	if filtered, action, actor := w.filterDNSAnswer(cfg, set, queryDomain, clientMac, resp, false, scope); filtered != nil {
 		logDNSEvent("UDP", actor, queryDomain, clientIP, originalDst, clientPort, clientMac, action)
-		w.learnAnswerAddresses(cfg, set, clientIP, queryDomain, addedAnswerIPs(resp, filtered), scope.learns(queryDomain), nil)
+		w.learnAnswerAddresses(cfg, set, asked, clientIP, queryDomain, addedAnswerIPs(resp, filtered), scope.learns(queryDomain), nil)
 		resp = filtered
 	}
 
