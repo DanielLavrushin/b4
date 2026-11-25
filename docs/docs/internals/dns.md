@@ -73,7 +73,7 @@ With [copied requests](#copied-requests), each answer in these steps takes the p
 
 A set's resolvers are the entries of **Resolvers**, at most eight, in the order of the field. To an IP address, b4 sends the query itself over plain DNS, as IP fragments when **Fragment DNS Queries** is on. To an `https://` URL, it sends the query as an HTTPS request, POST first and GET if the server rejects POST, and never fragments it. The [configuration file](../advanced/config.md#set-dns-resolvers) keeps the first resolver apart from the others.
 
-At most 64 UDP queries are resolved through the sets' resolvers at a time. A further query goes on to the client's resolver unchanged and is logged as `dns-overload`.
+At most 64 UDP queries are resolved through the sets' resolvers at a time. A further query goes on to the client's resolver unchanged and is logged as `dns-overload`. For a set with **Fail closed when no resolver is reachable** the query is dropped instead, and the device asks again.
 
 #### The order of asking {#resolver-order}
 
