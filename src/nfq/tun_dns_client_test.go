@@ -3,6 +3,7 @@ package nfq
 import (
 	"net"
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/dns"
@@ -169,6 +170,36 @@ func TestDNSRedirectFailsOpenWhenInflightFull(t *testing.T) {
 	if v := w.ProcessPacket(pkt); v != engine.VerdictAccept {
 		t.Fatalf("with the resolver pool saturated the query must be forwarded, got verdict %v", v)
 	}
+}
+
+func TestDNSRedirectFailClosedDropsWhenInflightFull(t *testing.T) {
+	for i := 0; i < maxDNSResolveInflight; i++ {
+		dnsResolveInflight <- struct{}{}
+	}
+	defer func() {
+		for len(dnsResolveInflight) > 0 {
+			<-dnsResolveInflight
+		}
+	}()
+
+	set := newTunDNSSet()
+	set.DNS.Enabled = true
+	set.DNS.TargetDNS = "1.1.1.1"
+	set.DNS.Strict = true
+
+	cfg := config.NewConfig()
+	cfg.Sets = []*config.SetConfig{&set}
+
+	w := newTestWorker(t, &cfg)
+	sent := captureSends(t)
+
+	query := dns.BuildQuery("i.ytimg.com", 0x1112, 1)
+	pkt := makeV4UDPPacket(query, net.ParseIP("192.168.1.100"), net.ParseIP("8.8.8.8"), 45201, 53)
+
+	if v := w.ProcessPacket(pkt); v != engine.VerdictDrop {
+		t.Fatalf("with the resolver pool saturated a fail-closed set must drop the query, got verdict %v", v)
+	}
+	sent.none(t, 200*time.Millisecond, "with the resolver pool saturated b4 must not answer a fail-closed query itself")
 }
 
 func TestDNSRedirectReleasesInflightSlot(t *testing.T) {
