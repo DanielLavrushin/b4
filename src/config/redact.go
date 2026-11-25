@@ -357,7 +357,7 @@ func redactURL(raw string, host func(*url.URL) string, keepPath func(string) boo
 		return ""
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme == "" || u.Host == "" {
+	if err != nil || u.Scheme == "" || u.Host == "" || !utils.ValidURLPort(u) {
 		return RedactedMarker
 	}
 

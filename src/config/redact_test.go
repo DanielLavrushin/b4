@@ -416,6 +416,12 @@ func TestMaskURL(t *testing.T) {
 		{"https://example.com/file?abc123", "https://example.com/[redacted]?[redacted]"},
 		{"not a url", RedactedMarker},
 		{"example.com/path", RedactedMarker},
+		{"https://user:123456789/path", RedactedMarker},
+		{"https://user:65536/path", RedactedMarker},
+		{"https://example.com:65535/path", "https://example.com:65535/[redacted]"},
+		{"https://example.com:/", "https://example.com:/"},
+		{"http://192.168.1.5:11434/v1", "http://192.168.1.5:11434/[redacted]"},
+		{"http://[2001:db8::1]:8080/", "http://[2001:db8::1]:8080/"},
 	}
 	for _, tc := range cases {
 		if got := maskURL(tc.in); got != tc.want {
@@ -453,6 +459,7 @@ func TestMaskDoHURL(t *testing.T) {
 		in   string
 		want string
 	}{
+		{"https://user:123456789/dns-query", RedactedMarker},
 		{"https://cloudflare-dns.com/dns-query", "https://cloudflare-dns.com/dns-query"},
 		{"https://dns.google", "https://dns.google"},
 		{"https://1.1.1.1/dns-query", "https://1.1.1.1/dns-query"},
