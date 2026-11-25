@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -393,6 +394,74 @@ func TestAStartThatFailsToCreateItsFolderKeepsTheLastTrace(t *testing.T) {
 	wantLines(t, "the trace", downloadedTrace(t, mux), []string{"from the last trace"}, nil)
 }
 
+func crashedTrace(t *testing.T) *http.ServeMux {
+	t.Helper()
+	_, mux := newTraceTestAPI(t)
+	traceConsole(t, log.LevelInfo)
+	startTrace(t, mux)
+	log.Debugf("from the last trace")
+	return restartTraceAPI(t, false)
+}
+
+func traceParts(t *testing.T, create func(*traceDir, int) (*os.File, error)) {
+	t.Helper()
+	orig := createTracePart
+	createTracePart = create
+	t.Cleanup(func() { createTracePart = orig })
+}
+
+func TestAStartThatFailsToCreateItsFilesKeepsTheLastTrace(t *testing.T) {
+	for name, create := range map[string]func(*traceDir, int) (*os.File, error){
+		"no file descriptor": func(*traceDir, int) (*os.File, error) { return nil, syscall.EMFILE },
+		"broken storage":     func(*traceDir, int) (*os.File, error) { return nil, syscall.EIO },
+		"read-only storage":  func(*traceDir, int) (*os.File, error) { return nil, syscall.EROFS },
+		"no end file": func(d *traceDir, part int) (*os.File, error) {
+			if err := os.Mkdir(filepath.Join(d.path, traceEndName), 0700); err != nil {
+				return nil, err
+			}
+			t.Cleanup(func() { _ = os.RemoveAll(d.path) })
+			return d.createPart(part)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			mux := crashedTrace(t)
+			traceParts(t, create)
+			if rec := serve(mux, http.MethodPost, "/api/logs/trace/start", ""); rec.Code != http.StatusInternalServerError {
+				t.Fatalf("got %d %s", rec.Code, rec.Body)
+			}
+			if _, resp := doTrace(t, mux, http.MethodGet, "/api/logs/trace/status", ""); resp.EndReason != string(traceEndInterrupted) {
+				t.Errorf("status after the failed start: %+v", resp)
+			}
+			wantLines(t, "the trace", downloadedTrace(t, mux), []string{"from the last trace"}, nil)
+		})
+	}
+}
+
+func TestAStartTakesTheSpaceOfTheLastTraceWhenItNeedsIt(t *testing.T) {
+	for name, full := range map[string]func() (*os.File, error){
+		"for its first part": func() (*os.File, error) { return nil, syscall.ENOSPC },
+		"for its header":     func() (*os.File, error) { return os.OpenFile("/dev/full", os.O_WRONLY, 0) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			mux := crashedTrace(t)
+			last := lastTrace.dir.path
+			traceParts(t, func(d *traceDir, part int) (*os.File, error) {
+				if _, err := os.Lstat(last); err == nil {
+					return full()
+				}
+				return d.createPart(part)
+			})
+			startTrace(t, mux)
+			log.Debugf("from the new trace")
+			stopTrace(t, mux)
+			wantLines(t, "the trace", downloadedTrace(t, mux), []string{"from the new trace"}, []string{"from the last trace"})
+			if dirs, _ := filepath.Glob(filepath.Join(os.TempDir(), traceNamePrefix+"*")); len(dirs) != 1 {
+				t.Errorf("only the new trace is kept, found %v", dirs)
+			}
+		})
+	}
+}
+
 func TestNetnsAFullInodeTableDoesNotKeepTheLastTraceForever(t *testing.T) {
 	mount := mountForTest(t, "tmpfs", "size=64m,nr_inodes=4")
 	_, mux := newTraceTestAPI(t)
@@ -499,7 +568,7 @@ func TestATraceThatCannotBeWrittenEnds(t *testing.T) {
 
 func TestAFailedWriterReportsOnceAndTakesNoMoreLines(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
-	w, err := newTraceWriter(startedTraceDir(t), []byte("header\n"), 40_000)
+	w, err := newTraceWriter(time.Now(), []byte("header\n"), 40_000)
 	if err != nil {
 		t.Fatal(err)
 	}

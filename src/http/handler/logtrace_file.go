@@ -269,7 +269,11 @@ type traceWriter struct {
 	failed       func(error)
 }
 
-func newTraceWriter(dir *traceDir, header []byte, limit int64) (*traceWriter, error) {
+func newTraceWriter(startedAt time.Time, header []byte, limit int64) (*traceWriter, error) {
+	dir, err := newTraceDir(startedAt)
+	if err != nil {
+		return nil, err
+	}
 	t := &traceWriter{dir: dir, partSize: limit / 4, room: limit/2 - int64(len(header))}
 	if err := t.begin(header); err != nil {
 		_ = t.file.Close()

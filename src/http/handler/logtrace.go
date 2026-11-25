@@ -134,11 +134,11 @@ func (api *API) handleTraceStart(w http.ResponseWriter, r *http.Request) {
 	startedAt := time.Now()
 	header := traceHeader(startedAt, req.Note, diag, sets, limit/4)
 
-	dir, err := newTraceDir(startedAt)
+	writer, err := newTraceWriter(startedAt, header, limit)
 	if errors.Is(err, syscall.ENOSPC) && lastTrace != nil {
 		lastTrace.remove()
 		lastTrace = nil
-		dir, err = newTraceDir(startedAt)
+		writer, err = newTraceWriter(startedAt, header, limit)
 	}
 	if err != nil {
 		writeTraceStartError(w, err)
@@ -146,11 +146,6 @@ func (api *API) handleTraceStart(w http.ResponseWriter, r *http.Request) {
 	}
 	lastTrace.remove()
 	lastTrace = nil
-	writer, err := newTraceWriter(dir, header, limit)
-	if err != nil {
-		writeTraceStartError(w, err)
-		return
-	}
 
 	session := &traceSession{startedAt: startedAt, note: req.Note, writer: writer}
 	writer.failed = func(err error) {
