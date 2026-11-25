@@ -209,9 +209,9 @@ func redirectServers(cfg *config.Config, set *config.SetConfig) []dns.Server {
 	return servers
 }
 
-func (w *Worker) answeringServers(cfg *config.Config, set *config.SetConfig, domain string, client net.IP, scope *ingressScope) []dns.Server {
+func (w *Worker) answeringServers(cfg *config.Config, set *config.SetConfig, domain string, query []byte, client net.IP, scope *ingressScope) []dns.Server {
 	servers := redirectServers(cfg, set)
-	if queryFromTarget(servers, client) || w.resolversNeed(cfg, set, domain, w.getMacByIp(client.String()), scope.filter()) {
+	if queryFromTarget(servers, client) || w.resolversNeed(cfg, set, domain, query, w.getMacByIp(client.String()), scope.filter()) {
 		return nil
 	}
 	return servers
@@ -342,7 +342,7 @@ func (w *Worker) answerViaSetInline(ipVersion byte, cfg *config.Config, set *con
 		return true
 	}
 
-	servers := w.answeringServers(cfg, set, domain, clientIP, scope)
+	servers := w.answeringServers(cfg, set, domain, query, clientIP, scope)
 	if len(servers) == 0 {
 		return false
 	}
@@ -367,7 +367,7 @@ func (w *Worker) answerViaSet(vc *verdictCtx, ipVersion byte, cfg *config.Config
 		return true
 	}
 
-	servers := w.answeringServers(cfg, set, domain, clientIP, scope)
+	servers := w.answeringServers(cfg, set, domain, query, clientIP, scope)
 	if len(servers) == 0 {
 		return false
 	}
@@ -527,7 +527,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					return vc.accept()
 				}
 
-				if servers = w.serversToAsk(cfg, set, servers, domain, srcMac, originalDst, keep); len(servers) == 0 {
+				if servers = w.serversToAsk(cfg, set, servers, domain, payload, srcMac, originalDst, keep); len(servers) == 0 {
 					log.Tracef("DNS redirect: the resolvers of set %s are reached through %s, forwarding its lookup unchanged", set.Name, dns.SafeName(domain))
 					logDNSEvent("UDP", set, domain, clientIP, originalDst, clientPort, srcMac, dnsActionDoHHost)
 					return vc.accept()

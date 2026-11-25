@@ -351,7 +351,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			return
 		}
 
-		if s.worker.resolversNeed(cfg, set, domain, srcMac, keep) {
+		if s.worker.resolversNeed(cfg, set, domain, query, srcMac, keep) {
 			log.Tracef("DNS TCP: the resolvers of set %s are reached through %s, forwarding its lookup unchanged", set.Name, dns.SafeName(domain))
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionDoHHost)
 			if relayOne(cfg, set, domain, query) {
@@ -469,7 +469,7 @@ func (s *dnsTCPServer) answerVia(set *config.SetConfig, cfg *config.Config, quer
 	if queryFromTarget(servers, clientIP) {
 		return nil, errQueryFromTarget
 	}
-	if s.worker.resolversNeed(cfg, set, domain, s.worker.getMacByIp(clientIP.String()), scopeFrom(from).filter()) {
+	if s.worker.resolversNeed(cfg, set, domain, query, s.worker.getMacByIp(clientIP.String()), scopeFrom(from).filter()) {
 		return nil, errDoHHost
 	}
 

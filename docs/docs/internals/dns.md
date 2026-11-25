@@ -135,7 +135,10 @@ b4 recognises the query by its name:
 
 - The name is the one the matching set's own resolvers wait for. They can wait for it directly, or through other sets: one set covers the host name of the other set's DoH server, and the other way round.
 - The query can come from any device, over UDP or TCP. **Fail closed when no resolver is reachable** does not change this.
+- The DS and DNSKEY queries for the zones above the name are forwarded unchanged. A forwarder that validates DNSSEC sends them before it accepts the answer.
 - A name below the host name, and the host name of another set's DoH server that no resolver of the matching set waits for, still go to the matching set's resolvers.
+
+Some resolvers on the router need more names than these, and those stay with the set's resolvers: Unbound, when it looks names up from the root servers or when the host name is an alias. Behind such a resolver, the set's DoH URL has to name the server by IP address.
 
 A URL that names its server by IP address needs no lookup. A pin for the host name answers the router's forwarder as well. It does not reach b4's own lookup when the router asks a resolver outside the router, since b4's own lookups pass the sets.
 

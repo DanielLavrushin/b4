@@ -158,10 +158,10 @@ func TestALookupOnlySomeResolversWaitForIsAskedOfTheOnesByAddress(t *testing.T) 
 			if want != nil && !askedListed {
 				want = append(want, dns.Server{Source: tc.asked.String(), UDP: tc.asked, Mark: mark, Timeout: timeout, Unlisted: true})
 			}
-			if got := w.serversToAsk(cfg, set, redirectServers(cfg, set), "dns.example", "", tc.asked); !reflect.DeepEqual(got, want) {
+			if got := w.serversToAsk(cfg, set, redirectServers(cfg, set), "dns.example", dns.BuildQuery("dns.example", 95, dnsTypeA), "", tc.asked); !reflect.DeepEqual(got, want) {
 				t.Fatalf("asked of %+v, want %+v", got, want)
 			}
-			if got := w.serversToAsk(cfg, set, redirectServers(cfg, set), "www.dns.example", "", tc.asked); len(got) != len(tc.list) {
+			if got := w.serversToAsk(cfg, set, redirectServers(cfg, set), "www.dns.example", dns.BuildQuery("www.dns.example", 95, dnsTypeA), "", tc.asked); len(got) != len(tc.list) {
 				t.Fatalf("a lookup no resolver waits for is asked of %+v, want the whole list", got)
 			}
 		})
@@ -253,6 +253,66 @@ func TestADoHHostLookupOverTCPIsForwardedUnchangedWhateverElseTheSetLists(t *tes
 	upstream := tcpDNSUpstream(t)
 	tcpFromTarget(t, w, "192.0.2.1", upstream, dns.BuildQuery("dns.example", 97, dnsTypeA))
 	dohHostLoggedOnce(t, lines, "TCP")
+}
+
+func TestTheKeysOfTheZonesADoHHostIsInAreForwardedUnchanged(t *testing.T) {
+	thisHost(t)
+	const ds, dnskey = 43, 48
+	set := func(upstreams ...string) []*config.SetConfig {
+		return []*config.SetConfig{strictSet(listed(dohByName("all", "https://dns.resolver.example/dns-query", "regexp:.*"), upstreams...))}
+	}
+	ring := []*config.SetConfig{
+		strictSet(dohByName("a", "https://dns.a.example/dns-query", "b.example")),
+		strictSet(dohByName("b", "https://dns.b.example/dns-query", "a.example")),
+	}
+	for _, tc := range []struct {
+		name  string
+		sets  []*config.SetConfig
+		asked string
+		qtype uint16
+		pass  bool
+	}{
+		{"DS of the top level", set(), "example", ds, true},
+		{"DNSKEY of the top level", set(), "Example", dnskey, true},
+		{"DS of the zone", set(), "resolver.example", ds, true},
+		{"DNSKEY of the zone", set(), "resolver.example", dnskey, true},
+		{"DS of the host", set(), "dns.resolver.example", ds, true},
+		{"DS of a zone in a ring of sets", ring, "b.example", ds, true},
+		{"DS of the zone, with a resolver by address", set("https://192.0.2.5/dns-query"), "resolver.example", ds, true},
+		{"DNSKEY of the zone, with a plain resolver", set("192.0.2.9"), "resolver.example", dnskey, true},
+		{"DS of the host, with a resolver by address", set("https://192.0.2.5/dns-query"), "dns.resolver.example", ds, false},
+		{"an address of the zone", set(), "resolver.example", dnsTypeA, false},
+		{"the HTTPS record of the zone", set(), "resolver.example", dnsTypeHTTPS, false},
+		{"DS of a name that only ends alike", set(), "olver.example", ds, false},
+		{"DS of a name in the middle of the host", set(), "resolver", ds, false},
+		{"DS of another zone", set(), "other.example", ds, false},
+		{"DS of a name below the host", set(), "www.dns.resolver.example", ds, false},
+		{"DS of another set's zone", append(set(), dohByName("geo", "https://geo.test/dns-query", "chat.example")), "test", ds, false},
+		{"an address of a DoH host's zone that is a DoH host itself", append(set(), dohByName("zone", "https://resolver.example/dns-query", "zone.test")), "resolver.example", dnsTypeA, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := redirectWorker(t, false, tc.sets...)
+			lines := connectionLines(t)
+			q := newFakeQueue()
+			w.processDnsPacket(&verdictCtx{id: 91, q: q}, lanQuery("192.0.2.1", "203.0.113.53"), 40000, 53, dns.BuildQuery(tc.asked, 91, tc.qtype))
+			want := nfqueue.NfDrop
+			if tc.pass {
+				want = nfqueue.NfAccept
+			}
+			if v := q.now(t); v != want {
+				t.Fatalf("verdict %d, want %d", v, want)
+			}
+			if n := countAction(drainLines(lines), dnsActionDoHHost); n == 1 != tc.pass {
+				t.Fatalf("%d %s rows, want %v", n, dnsActionDoHHost, tc.pass)
+			}
+			if !tc.pass {
+				return
+			}
+			upstream := tcpDNSUpstream(t)
+			tcpFromTarget(t, w, "192.0.2.1", upstream, dns.BuildQuery(tc.asked, 92, tc.qtype))
+			dohHostLoggedOnce(t, lines, "TCP")
+		})
+	}
 }
 
 func TestALookupNoResolverWaitsForIsStillRedirected(t *testing.T) {
@@ -370,7 +430,7 @@ func TestEscalationDoesNotSendAResolverItsOwnHostName(t *testing.T) {
 	if w.answerViaSet(&verdictCtx{id: 86, q: newFakeQueue()}, IPv4, w.getConfig(), next, "dns.example", query, client, 40000, server) {
 		t.Fatal("the escalated set answered the reply path through a resolver that waits for this very name")
 	}
-	if len(w.answeringServers(w.getConfig(), next, "other.example", client, nil)) != 2 {
+	if len(w.answeringServers(w.getConfig(), next, "other.example", query, client, nil)) != 2 {
 		t.Fatal("another name of the same set still gets the set's resolvers")
 	}
 	noReply(t, replies, 30*time.Millisecond, "an escalated answer was sent for the resolver's own host name")
@@ -379,6 +439,29 @@ func TestEscalationDoesNotSendAResolverItsOwnHostName(t *testing.T) {
 	t.Cleanup(s.cancel)
 	if resp, err := s.answerVia(next, w.getConfig(), query, "dns.example", client); err != errDoHHost || resp != nil {
 		t.Fatalf("a TCP escalation through a resolver that waits for this very name must be refused, got %d bytes and %v", len(resp), err)
+	}
+}
+
+func TestEscalationDoesNotSendAResolverTheKeysOfItsOwnZone(t *testing.T) {
+	thisHost(t)
+	next := dohByName("next", "https://dns.resolver.example/dns-query", "other.example")
+	w := redirectWorker(t, false, next)
+	replies := watchReplies(t)
+	query := dns.BuildQuery("resolver.example", 93, dnsTypeDS)
+	client, server := net.ParseIP("192.0.2.100").To4(), net.ParseIP("203.0.113.53").To4()
+
+	if w.answerViaSetInline(IPv4, w.getConfig(), next, "resolver.example", query, client, 40000, server, false) {
+		t.Fatal("the escalated set answered through a resolver that waits for these keys")
+	}
+	if w.answerViaSet(&verdictCtx{id: 93, q: newFakeQueue()}, IPv4, w.getConfig(), next, "resolver.example", query, client, 40000, server) {
+		t.Fatal("the escalated set answered the reply path through a resolver that waits for these keys")
+	}
+	noReply(t, replies, 30*time.Millisecond, "an escalated answer was sent for the keys of the resolver's own zone")
+
+	s := newDNSTCPServer(w, 0)
+	t.Cleanup(s.cancel)
+	if resp, err := s.answerVia(next, w.getConfig(), query, "resolver.example", client); err != errDoHHost || resp != nil {
+		t.Fatalf("a TCP escalation through a resolver that waits for these keys must be refused, got %d bytes and %v", len(resp), err)
 	}
 }
 
