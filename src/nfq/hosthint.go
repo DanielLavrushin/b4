@@ -2,6 +2,7 @@ package nfq
 
 import (
 	"net"
+	"slices"
 	"sync"
 	"time"
 
@@ -22,6 +23,7 @@ type hostHintCandidate struct {
 	tlsVersion uint16
 	ipVersion  uint8
 	expires    time.Time
+	aside      bool
 }
 
 type hostHintEntry struct {
@@ -69,7 +71,7 @@ func (c *hostHintCache) StoreTLS(clientIP, destIP, setId, host string, tlsVersio
 	for i := range entry.candidates {
 		if entry.candidates[i].setId == setId && entry.candidates[i].host == host {
 			entry.candidates[i].tlsVersion, entry.candidates[i].ipVersion = tlsVersion, ipVersion
-			entry.candidates[i].expires = now.Add(hostHintTTL)
+			entry.candidates[i].expires, entry.candidates[i].aside = now.Add(hostHintTTL), false
 			return
 		}
 	}
@@ -82,7 +84,8 @@ func (c *hostHintCache) StoreTLS(clientIP, destIP, setId, host string, tlsVersio
 		expires:    now.Add(hostHintTTL),
 	})
 	if len(entry.candidates) > maxHostHintCandidates {
-		entry.candidates = entry.candidates[len(entry.candidates)-maxHostHintCandidates:]
+		drop := max(0, slices.IndexFunc(entry.candidates, func(hint hostHintCandidate) bool { return hint.aside }))
+		entry.candidates = slices.Delete(entry.candidates, drop, drop+1)
 	}
 }
 
@@ -107,7 +110,7 @@ func (c *hostHintCache) LookupTLS(clientIP, destIP string) (hostHintCandidate, b
 
 	var hint hostHintCandidate
 	for _, candidate := range entry.candidates {
-		if !now.Before(candidate.expires) {
+		if candidate.aside || !now.Before(candidate.expires) {
 			continue
 		}
 		if hint.setId == "" {
@@ -136,6 +139,91 @@ func pruneCandidates(candidates []hostHintCandidate, now time.Time) []hostHintCa
 		}
 	}
 	return live
+}
+
+func (c *hostHintCache) eachLocked(only []hostHintKey, visit func(key hostHintKey, entry *hostHintEntry)) {
+	if only == nil {
+		for key, entry := range c.keys {
+			visit(key, entry)
+		}
+		return
+	}
+	for _, key := range only {
+		if entry := c.keys[key]; entry != nil {
+			visit(key, entry)
+		}
+	}
+}
+
+func (c *hostHintCache) Rematch(only []hostHintKey, setFor func(client, dest string, hint hostHintCandidate) string) {
+	if c == nil {
+		return
+	}
+	for changed := c.rematchOnce(only, setFor); len(changed) > 0; changed = c.rematchOnce(changed, setFor) {
+	}
+}
+
+func (c *hostHintCache) rematchOnce(only []hostHintKey, setFor func(client, dest string, hint hostHintCandidate) string) (changed []hostHintKey) {
+	type hintRef struct {
+		key         hostHintKey
+		setId, host string
+	}
+	now := time.Now()
+	hints := make(map[hintRef]hostHintCandidate)
+	c.mu.RLock()
+	c.eachLocked(only, func(key hostHintKey, entry *hostHintEntry) {
+		for _, candidate := range entry.candidates {
+			if now.Before(candidate.expires) {
+				hints[hintRef{key, candidate.setId, candidate.host}] = candidate
+			}
+		}
+	})
+	c.mu.RUnlock()
+
+	moved := make(map[hintRef]string, len(hints))
+	for ref, hint := range hints {
+		moved[ref] = setFor(ref.key.client, ref.key.dest, hint)
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.eachLocked(only, func(key hostHintKey, entry *hostHintEntry) {
+		var kept []hostHintCandidate
+		for _, candidate := range entry.candidates {
+			ref := hintRef{key, candidate.setId, candidate.host}
+			if setId, seen := moved[ref]; seen {
+				if hints[ref].tlsVersion != candidate.tlsVersion {
+					changed = append(changed, key)
+					return
+				}
+				candidate.aside = setId == ""
+				if setId != "" {
+					candidate.setId = setId
+				}
+			}
+			if now.Before(candidate.expires) {
+				kept = appendHint(kept, candidate)
+			}
+		}
+		if len(kept) == 0 {
+			delete(c.keys, key)
+			return
+		}
+		entry.candidates = kept
+	})
+	return changed
+}
+
+func appendHint(candidates []hostHintCandidate, hint hostHintCandidate) []hostHintCandidate {
+	for i := range candidates {
+		if candidates[i].setId == hint.setId && candidates[i].host == hint.host {
+			if candidates[i].aside && !hint.aside || candidates[i].aside == hint.aside && hint.expires.After(candidates[i].expires) {
+				candidates[i] = hint
+			}
+			return candidates
+		}
+	}
+	return append(candidates, hint)
 }
 
 func (c *hostHintCache) evictLocked(now time.Time) {
@@ -238,6 +326,70 @@ func (w *Worker) hintSetFor(clientIP net.IP, set *config.SetConfig, host string,
 		return set
 	}
 	return fitting
+}
+
+func (w *Worker) settleHostHints(asked *sni.SuffixSet, clientIP net.IP, ips []net.IP) {
+	var stored []hostHintKey
+	for matcher := w.getMatcher(); matcher != asked; matcher = w.getMatcher() {
+		asked = matcher
+		if stored == nil {
+			stored = hostHintKeys(clientIP, ips)
+		}
+		w.rematchHostHints(matcher, stored)
+	}
+}
+
+func hostHintKeys(clientIP net.IP, ips []net.IP) []hostHintKey {
+	client := clientIP.String()
+	keys := make([]hostHintKey, 0, len(ips))
+	listed := make(map[hostHintKey]bool, len(ips))
+	for _, ip := range ips {
+		if key := (hostHintKey{client: client, dest: ip.String()}); !listed[key] {
+			listed[key] = true
+			keys = append(keys, key)
+		}
+	}
+	return keys
+}
+
+func (w *Worker) rematchHostHints(matcher *sni.SuffixSet, only []hostHintKey) {
+	if w == nil || matcher == nil {
+		return
+	}
+
+	type name struct {
+		client, host string
+		tlsVersion   uint16
+		family       uint8
+	}
+	type owner struct {
+		set, backup string
+	}
+	found := make(map[name]owner)
+	cfg := w.getConfig()
+	w.hostHints.Rematch(only, func(client, dest string, hint hostHintCandidate) string {
+		destIP := net.ParseIP(dest)
+		if destIP == nil {
+			return ""
+		}
+		key := name{client, hint.host, hint.tlsVersion, addressFamily(destIP)}
+		now, known := found[key]
+		if !known {
+			mac := w.getMacByIp(client)
+			keep := clientScopeIn(matcher, net.ParseIP(client), mac).filter()
+			if matched, set := matcher.MatchSNIWithSourceTLS(hint.host, mac, hint.tlsVersion, key.family, keep); matched && set.Enabled {
+				now.set = set.Id
+				if backup := w.escalatedSetFor(cfg, set, hint.host, mac, keep); backup != nil {
+					now.backup = backup.Id
+				}
+			}
+			found[key] = now
+		}
+		if hint.setId == now.backup {
+			return now.backup
+		}
+		return now.set
+	})
 }
 
 func (w *Worker) lookupHostHint(cfg *config.Config, clientIP, destIP, srcMac string, keep ...sni.SetFilter) (*config.SetConfig, string, uint16, uint8) {

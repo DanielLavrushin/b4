@@ -498,6 +498,10 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 		}
 	}
 
+	if !reuse && len(p.Workers) > 0 {
+		p.Workers[0].rematchHostHints(matcher, nil)
+	}
+
 	if p.Dhcp != nil {
 		p.Dhcp.SetManualDevices(newCfg.Queue.Devices.ManualEntries())
 	}

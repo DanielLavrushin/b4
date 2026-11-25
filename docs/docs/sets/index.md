@@ -22,9 +22,13 @@ Guides that start here: [Unblocking a site](../guides/unblock.md), [Adding sites
 
 ## Set order
 
-The handle at the top left of a card drags the set to another position. When several sets could match the same traffic, b4 picks the most specific match, not the first set in the list, and prefers a set limited to source devices. The order decides only between matches that are equally specific. Routing is the exception: the length of the range plays no part there. Sets limited to selected devices or source interfaces come first, and among sets of the same kind the one higher in the list wins.
+The handle at the top left of a card drags the set to another position. When several sets could match the same traffic, b4 picks the most specific match, not the first set in the list. The order decides only between matches that are equally specific. Among sets with the same domain entry, a set limited to source devices comes first. Among sets that cover the same address, it comes first too, whatever the length of the range.
+
+Between a set with the domain and a set with the address, neither the order nor source devices give priority. The packet with the server name goes to the set with the domain. The rest of a TCP connection follows it, unless that set has [Domain-only matching](./targets.md#domains) on. QUIC packets without a server name go to the set with the address. A set with the address keeps its TCP connections when it has [Packet Duplication](./tcp/general.md#packet-duplication) on and b4 has not learned the address for the set with the domain.
 
 The order also matters for a set with [IP priority](./targets.md#ip-addresses) on. Connections to its addresses stay with it even when a set lower in the list matches the domain.
+
+Routing is the exception: it goes by address alone, and the length of the range plays no part there. Sets limited to selected devices or source interfaces come first, and among sets of the same kind the one higher in the list wins.
 
 [How sets match traffic](../internals/matching.md) describes the full order of checks.
 

@@ -253,7 +253,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		if bansActive && set != nil {
 			if healed := s.worker.healDeadAddresses(cfg, set, domain, resp, true); healed != nil {
 				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionHeal)
-				s.worker.learnAnswerAddresses(cfg, set, clientIP, domain, addedAnswerIPs(resp, healed), scope.learns(domain), s.ctx.Done())
+				s.worker.learnAnswerAddresses(cfg, set, s.worker.matcherIn(scope), clientIP, domain, addedAnswerIPs(resp, healed), scope.learns(domain), s.ctx.Done())
 				resp = healed
 			}
 		}
@@ -406,7 +406,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		if next := s.escalationTarget(cfg, set, domain, srcMac, qtype, resp, servedFallback, scope); next != nil {
 			if alt, aerr := s.answerVia(next, cfg, query, domain, clientIP, scope); aerr == nil && len(alt) > 0 {
 				s.logEvent(next, domain, clientIP, origIP, clientPort, srcMac, dnsActionEscalatePrefix+next.Name)
-				s.worker.learnAnswerAddresses(cfg, next, clientIP, domain, dns.ParseResponseIPs(alt), scope.learns(domain), s.ctx.Done())
+				s.worker.learnAnswerAddresses(cfg, next, matcher, clientIP, domain, dns.ParseResponseIPs(alt), scope.learns(domain), s.ctx.Done())
 				if writeDNSTCPMessage(client, alt, ioTimeout) != nil {
 					return
 				}
@@ -414,11 +414,11 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			}
 		}
 
-		s.worker.learnAnswerAddresses(cfg, set, clientIP, domain, dns.ParseResponseIPs(resp), scope.learns(domain), s.ctx.Done())
+		s.worker.learnAnswerAddresses(cfg, set, matcher, clientIP, domain, dns.ParseResponseIPs(resp), scope.learns(domain), s.ctx.Done())
 
 		if filtered, action, actor := s.worker.filterDNSAnswer(cfg, set, domain, srcMac, resp, true, scope); filtered != nil {
 			s.logEvent(actor, domain, clientIP, origIP, clientPort, srcMac, action)
-			s.worker.learnAnswerAddresses(cfg, set, clientIP, domain, addedAnswerIPs(resp, filtered), scope.learns(domain), s.ctx.Done())
+			s.worker.learnAnswerAddresses(cfg, set, matcher, clientIP, domain, addedAnswerIPs(resp, filtered), scope.learns(domain), s.ctx.Done())
 			resp = filtered
 		}
 

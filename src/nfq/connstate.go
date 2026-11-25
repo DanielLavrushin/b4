@@ -42,6 +42,7 @@ type tlsInfo struct {
 	set             *config.SetConfig
 	priorSet        string
 	heldBy          string
+	refused         string
 	laned           bool
 }
 
@@ -77,9 +78,15 @@ func (c *tlsInfoCache) Store(connKey string, host string, tlsVersion uint16, hel
 	}
 
 	now := time.Now()
-	namedAt := now
-	if prev, exists := c.conns[connKey]; exists && prev.helloSeq == helloSeq && prev.helloID == helloID {
-		namedAt = prev.namedAt
+	namedAt, refused := now, ""
+	if prev, exists := c.conns[connKey]; exists {
+		sameHello := prev.helloSeq == helloSeq && prev.helloID == helloID
+		if sameHello {
+			namedAt = prev.namedAt
+		}
+		if sameHello || prev.tlsVersion == tlsVersion {
+			refused = prev.refused
+		}
 	}
 
 	c.gen++
@@ -92,6 +99,7 @@ func (c *tlsInfoCache) Store(connKey string, host string, tlsVersion uint16, hel
 		helloID:    helloID,
 		namedAt:    namedAt,
 		gen:        c.gen,
+		refused:    refused,
 		lastSeen:   now,
 	}
 	return c.gen
@@ -227,6 +235,23 @@ func (c *tlsInfoCache) RecordPrior(connKey string, gen uint64, matcher *sni.Suff
 	}
 }
 
+func (c *tlsInfoCache) Refuse(connKey string, gen uint64, setID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if info, exists := c.conns[connKey]; exists && info.gen == gen {
+		info.refused = setID
+	}
+}
+
+func (c *tlsInfoCache) Refuses(connKey, setID string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	info, exists := c.conns[connKey]
+	return exists && info.refused != "" && info.refused == setID
+}
+
 func (c *tlsInfoCache) ForgetDecisions(current *sni.SuffixSet) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -238,6 +263,7 @@ func (c *tlsInfoCache) ForgetDecisions(current *sni.SuffixSet) {
 		info.collectedPinned = false
 		info.set = nil
 		info.priorSet = ""
+		info.refused = ""
 	}
 }
 
@@ -824,6 +850,14 @@ func (t *connStateTracker) RegisterOutgoing(connKey string, set *config.SetConfi
 			}
 		}
 		t.conns[connKey] = info
+	}
+}
+
+func (t *connStateTracker) Release(connKey, setID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if info, ok := t.conns[connKey]; ok && info.set != nil && info.set.Id == setID {
+		info.set = nil
 	}
 }
 

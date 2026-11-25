@@ -39,12 +39,35 @@ flowchart TD
 | 3 | No DNS match, and the address was learned from a server name match | Learned match. It replaces an address match, apart from one that [IP priority](#ip-priority) holds |
 | 4 | Still no match, and a set has a port filter and no destination targets at all | Port match |
 | 5 | The ClientHello names a server that a set targets | Name match. It replaces any match above, and b4 learns the address. An address match that [IP priority](#ip-priority) holds takes the connection instead, and b4 learns nothing |
-| 6 | A match from steps 1-4 whose [TLS version filter](../sets/targets.md#domains) does not fit the ClientHello | The match is dropped |
+| 6 | A match from steps 1-4 whose [TLS version filter](../sets/targets.md#domains) does not fit the ClientHello | The match is dropped, and the set takes no later packet of the connection once the version is certain: b4 read the whole ClientHello, or its first part already offers TLS 1.3. The set can take packets of the connection again after a change of the sets, after two minutes without a packet from the client, or when the filter of another set does not fit a resent ClientHello either. A ClientHello without a server name keeps the match, and the filter does not limit [packet duplication](../sets/tcp/general.md#packet-duplication) |
 | 7 | The host is escalated to a backup set | The backup set takes over, see [Escalation](../sets/escalation.md). A connection that [IP priority](#ip-priority) holds follows only a backup on its set's escalation chain or ranked above its set |
 
-QUIC is matched by the server name in its Initial packet, which b4 reads whatever the set's **QUIC Matching** setting is. UDP to port 53 is DNS and goes to b4's [DNS handling](../dns.md) instead. A set that routes [UDP by port](../sets/routing.md#udp-by-port) is never matched by its UDP ports here: the firewall hands that UDP to the set's proxy.
+UDP to port 53 is DNS and goes to b4's [DNS handling](../dns.md) instead. A set that routes [UDP by port](../sets/routing.md#udp-by-port) is never matched by its UDP ports here: the firewall hands that UDP to the set's proxy.
 
 b4 does not inspect TCP and UDP, apart from DNS, to private addresses: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, and IPv6 unique local (`fc00::/7`), link-local (`fe80::/10`) and loopback addresses. TCP to such an address is the exception when a set that applies to the device lists the address in its **Bypass IPs**, or a range inside these private ranges that holds it, and takes the port: b4 then handles the connection as usual. **Match any IP address** does not count as listing it. No set's strategy applies to any other such connection, and it does not show on the Traffic page. b4 does not learn its address from the server name either. Routing and the sets' own DSCP values still apply to these addresses and learn them from DNS answers. A connection from the internet to a server behind a port forward is one of these. A server on the local network with a public IPv4 or IPv6 address is not, and a set that matches its connections from the internet applies its strategy toward that server.
+
+### A ClientHello in two packets {#split-hello}
+
+A browser's ClientHello often does not fit into one packet, and the server name can be in the second one. In NFQUEUE mode b4 delays the first packet until the name arrives, so that the set of the name gets the whole ClientHello.
+
+| The set from steps 1-4 | The first packet |
+| --- | --- |
+| None | Waits for the name |
+| Leaves the ClientHello unchanged: no strategy for it, duplication, routing, blocking, [Escalation](../sets/escalation.md) or [IP Block Detection](../sets/tcp/general.md#ip-block-detection) | Waits for the name |
+| Acts on the ClientHello, or the connection leaves by [another route](./capture.md#tunnel-egress) | Goes to that set at once |
+
+b4 delays it only when the second packet can complete the ClientHello and some set with domains acts on it and takes the destination port. The wait is at most 100 ms, or 5 ms for the router's own connections. TUN mode delays nothing.
+
+### QUIC {#quic}
+
+b4 reads the server name in a QUIC Initial whatever the set's **QUIC Matching** setting is. The packet that completes the name goes to the set of that name, as in step 5. A packet without a readable name, such as the first of two Initial packets or any packet after the handshake, and a packet with a name that no set targets go to the first of:
+
+1. the set of the address match, as in step 1;
+2. the set of the connection's server name, when that set drops, rejects or blocks QUIC;
+3. the set that learned the address, with **QUIC Matching** on **By SNI or matched destination**;
+4. a set with a port filter and no destination targets at all.
+
+When there is none, the packet passes unchanged. A block set that takes a packet by its port alone passes it too, unless **QUIC Matching** is on **By SNI or matched destination**. Packets after the handshake of a connection whose start b4 did not see count as other UDP. A set's [TLS version filter](../sets/targets.md#domains) decides only between sets that list the same name, with QUIC counted as TLS 1.3, and does not limit the list above. A dropped or rejected QUIC connection can stay dropped as a whole, see [Dropped QUIC connections](./capture.md#dropped-quic-connections).
 
 ## Choosing between sets
 
@@ -73,7 +96,7 @@ When a server name matches a set, b4 remembers the destination address with the 
 
 When a DNS answer for a set's domain passes through b4, it notes the answered addresses for the device that asked. For two minutes, a connection from that device to one of those addresses takes the set when no address target matches. When several sets list the domain, each address goes to the set that [Choosing between sets](#choosing-between-sets) picks for the IP version of that address.
 
-A set with **Domain-only matching** on neither learns addresses nor uses DNS answers. It matches its domains by the server name alone.
+A set with **Domain-only matching** on neither learns addresses nor uses DNS answers. It matches its domains by the server name alone. When another set has the address match, as in step 1, the TCP packets after the ClientHello go to that set.
 
 ## IP priority {#ip-priority}
 
@@ -95,7 +118,7 @@ The set holds a connection when every condition below is met. Otherwise b4 match
 
 A held TCP connection goes to the set with every packet, from the SYN on, retransmitted ClientHellos included. A held QUIC flow keeps its Initial and its later datagrams on the set. On the [Traffic](../connections.md) page, a held connection shows its domain and no set matched by domain. A held QUIC flow shows its domain only on the Initial. The set matched by IP is the set that handles it: this set, or the backup it follows.
 
-Packets that carry no name yet are the exception when the address was learned for this set or for a set that ranks above it. The SYN and the first part of a ClientHello split before the server name then take that set, as without the switch. When the learned site is escalated, they take its backup. From the part that carries the name on, the hold applies.
+Packets that carry no name yet are the exception when the address was learned for this set or for a set that ranks above it. The SYN then takes that set, as without the switch. So does the first part of a ClientHello split before the server name, unless it [waits for the name](#split-hello). When the learned site is escalated, they take its backup. From the part that carries the name on, the hold applies.
 
 A [block set](../sets/blocking.md) lower in the list that matches the server name does not block a held connection. b4 still blocks the lookups of its names.
 

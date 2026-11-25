@@ -21,6 +21,15 @@ All notable changes to b4 are recorded in this file.
 - A set published with **Publish to hub** or prepared with **Prepare shared set** carried the whole address of a custom geodata source, and of its first resolver when that was an `https://` one. Replace a login, token or account ID that was in a set, log or trace you gave to someone.
 - The safe copy of **Download Configuration** kept the user name and the password of an address whose host was left out, when the password was a long number.
 
+### Fixed
+
+- The **Traffic** page and the **Dashboard** could put a connection under a set that matched its address, although the set of its domain handled it. [#673](https://github.com/DanielLavrushin/b4/issues/673), [#674](https://github.com/DanielLavrushin/b4/issues/674)
+- The **Dashboard** could count a connection to an IP target of a **Route** set for another set that lists its domain, although it went through the tunnel of the **Route** set. [#674](https://github.com/DanielLavrushin/b4/issues/674)
+- A site could stay blocked in browsers when another set without a TCP strategy matched its address, because the strategy of the site's own set started too late. [#675](https://github.com/DanielLavrushin/b4/issues/675)
+- A set matched by address whose **TLS Version Filter** did not fit a TCP connection left its start alone but handled the rest of it. [#676](https://github.com/DanielLavrushin/b4/issues/676)
+- For up to two minutes after sets were moved or edited, the start of connections to addresses a device had just resolved could still go to the old set. [#677](https://github.com/DanielLavrushin/b4/issues/677)
+- The help for **QUIC Matching** and **TLS Version Filter** read as if they could keep a set away from QUIC to its own IP targets, and **Order of sets** left out that a domain match comes before an address match. [#678](https://github.com/DanielLavrushin/b4/issues/678)
+
 ## [1.93.0] - 2026-11-21
 
 ### Added

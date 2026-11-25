@@ -376,6 +376,22 @@ func (vc *verdictCtx) handOffIface() string {
 	return vc.rerouted
 }
 
+func (vc *verdictCtx) carriedBy(set *config.SetConfig) bool {
+	return set != nil && set.RoutesAddressesToInterface() && set.Routing.EgressInterface == vc.handOffIface()
+}
+
+func (vc *verdictCtx) carrier(set, listed, early *config.SetConfig) *config.SetConfig {
+	switch {
+	case vc.carriedBy(set):
+		return set
+	case vc.carriedBy(listed):
+		return listed
+	case vc.carriedBy(early):
+		return early
+	}
+	return set
+}
+
 func handOffLabel(vc *verdictCtx, set *config.SetConfig, routed, foreign bool) string {
 	if foreign {
 		if iface := vc.handOffIface(); iface != "" && (!routed || iface != set.Routing.EgressInterface) {

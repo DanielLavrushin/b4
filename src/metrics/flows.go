@@ -236,6 +236,9 @@ func (f *flowState) update(e *flowEntry, setID string, now int64, tick uint32, b
 	if named && e.flags&flowNamed == 0 {
 		e.flags |= flowNamed
 		changed = true
+		if setID != "" {
+			f.moveTo(e, f.setIndex(setID, now), now)
+		}
 		if current {
 			seen.named = true
 			seen.set = e.set
@@ -280,6 +283,7 @@ func (f *flowState) classify(e *flowEntry, idx uint16, now int64) {
 	if e.tenSeq == f.tenSeq {
 		moveToSets(&f.openTen().notInSet, &f.openTen().inSets)
 	}
+	e.minSeq = f.minSeq
 }
 
 func moveToSets(notInSet, inSets *uint64) {
@@ -287,6 +291,15 @@ func moveToSets(notInSet, inSets *uint64) {
 		*notInSet--
 	}
 	*inSets++
+}
+
+func (f *flowState) moveTo(e *flowEntry, idx uint16, now int64) {
+	if e.set == idx {
+		return
+	}
+	f.setUnhit(e.set, e.minSeq)
+	f.setHit(idx, now)
+	e.set = idx
 }
 
 func (f *flowState) setHit(idx uint16, now int64) {
@@ -302,6 +315,15 @@ func (f *flowState) setHit(idx uint16, now int64) {
 	slot.n++
 	s.lastMatch = now
 	s.matched = true
+}
+
+func (f *flowState) setUnhit(idx uint16, minSeq uint32) {
+	if idx == 0 || idx == setUntracked {
+		return
+	}
+	if slot := &f.sets[idx-1].ring[minSeq%setRingSlots]; slot.seq == minSeq && slot.n > 0 {
+		slot.n--
+	}
 }
 
 func (f *flowState) setIndex(setID string, now int64) uint16 {

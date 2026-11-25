@@ -196,6 +196,7 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 			remote := netip.AddrPortFrom(remoteIP.Unmap(), binary.BigEndian.Uint16(raw[pkt.ihl+2:]))
 			if profile := w.warmFlows.Lookup(local, remote); profile != nil {
 				cfg, matcher = profile.Config, profile.Matcher
+				vc.warmFlow = true
 			}
 		}
 	}
@@ -544,6 +545,9 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			w.injector.detach(connKey)
 		}
 		w.pendingHello.ForgetHeld(connKey)
+		if h := w.pendingHello.TakeHold(connKey); h != nil {
+			h.settle(nfqueue.NfAccept, "released, a new connection opens on the tuple")
+		}
 	}
 
 	var connSet *config.SetConfig
@@ -602,6 +606,21 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 	}
 
+	if matched && tcp[13]&0x02 == 0 && !startsClientHello(payload) && w.tlsCache.Refuses(connKey, set.Id) {
+		hinted := matchedHint
+		matched, addressMatched, matchedHint, matchedLearned, matchedPort = false, false, false, false, false
+		set, st = nil, nil
+		hintHost, learnedHost = "", ""
+		if hinted && connSet == nil {
+			_, helloTLS, _ := w.tlsCache.Lookup(connKey)
+			if mLearned, learnedSet, learnedDomain := matcher.MatchLearnedIPWithSource(pkt.dst, pkt.srcMac, keep); mLearned && learnedSet.MatchesTCPDPort(dport) && learnedSet.MatchesTLSVersion(helloTLS) {
+				matched, matchedLearned = true, true
+				set, st = learnedSet, learnedSet
+				learnedHost = learnedDomain
+			}
+		}
+	}
+
 	matchedConn := false
 	takeOver := connSet != nil && (matchedHint || matchedLearned || matchedPort) && set != nil && set.Id != connSet.Id && !addressMatched &&
 		(fragmentsOrDesyncs(connSet) || duplicatesPackets(connSet)) && (needsPayloadlessInjection(connSet) || !needsPayloadlessInjection(set))
@@ -640,6 +659,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 	}
 
+	earlySet := set
 	routeTProxy := matched && set != nil && set.RoutingDivertsPackets() && config.RoutingUsesTProxy(set.Routing.Mode)
 	routeIfaceHandoff := matched && set != nil && !routeTProxy && set.RoutingHandsOffPackets()
 	foreignEgress := matched && set != nil && w.handsOffEgress(vc, pkt, cfg, set)
@@ -841,7 +861,8 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 
 		if host == "" {
-			fed := w.pendingHello.FeedHold(connKey, helloSeq, payload, w.helloHoldCandidate(vc, pkt, matcher, connKey, tcp, payload, dport, matched))
+			taken := matched && (vc.telegramSet != nil || vc.warmFlow || foreignEgress || !leavesTCPHelloAlone(set))
+			fed := w.pendingHello.FeedHold(connKey, helloSeq, payload, w.helloHoldCandidate(vc, pkt, matcher, connKey, tcp, payload, dport, taken))
 			vc.held, vc.own = fed.claimed, fed.held
 			if fed.ok {
 				if joinedHost, joinedTLS, _ := sni.ParseTLSClientHelloSNI(fed.joined); joinedHost != "" {
@@ -898,7 +919,25 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			w.tlsCache.DecideHeld(connKey, helloGen, matcher, pkt.srcMac, decided, heldHello, stageSet)
 		}
 
-		if matched && !matchedSNI && set != nil && !(hold.pinned && hold.keeps(set)) && !set.MatchesTLSVersion(tlsVersion) {
+		unfit := matched && !matchedSNI && set != nil && !(hold.pinned && hold.keeps(set)) && !set.MatchesTLSVersion(tlsVersion)
+		yielded := matchedSNI && stageSet != nil && stageSet.Id != set.Id &&
+			(!stageSet.MatchesTLSVersion(tlsVersion) || (earlySet.Id != set.Id && !earlySet.MatchesTLSVersion(tlsVersion)))
+		if helloGen != 0 && stageSet != nil && !hold.pinned && (tlsVersion == 0x0304 || wholeClientHello(helloRecord)) {
+			if unfit || yielded {
+				checked := []*config.SetConfig{stageSet, earlySet}
+				if unfit {
+					checked = checked[1:]
+				} else if earlySet.Id == set.Id {
+					checked = checked[:1]
+				}
+				w.refuseTLS(connKey, helloGen, stageSet, checked, tlsVersion)
+				w.connTracker.Release(connKey, stageSet.Id)
+				w.connTracker.Release(connKey, earlySet.Id)
+			} else if w.tlsCache.Refuses(connKey, stageSet.Id) {
+				w.tlsCache.Refuse(connKey, helloGen, "")
+			}
+		}
+		if unfit {
 			clearMatch()
 		}
 
@@ -942,7 +981,8 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	hostTLS, hostIP := tlsVersion, pkt.ver
-	if host == "" && hintHost != "" {
+	namedByHint := host == "" && hintHost != ""
+	if namedByHint {
 		host = hintHost
 		hostTLS, hostIP = hintTLS, hintIP
 	}
@@ -952,6 +992,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	if matchedSNI || matchedConn {
 		sniTarget = set.Name
+		ipTarget = ""
 	} else if matchedIP {
 		ipTarget = st.Name
 	}
@@ -1016,14 +1057,25 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 	}
 
+	waitsForName := vc.own != nil && matched
+	if waitsForName {
+		ipTarget, classifyReason = "", ""
+		if namedByHint {
+			host = ""
+		}
+	}
+
 	if !cfg.Queue.IsDiscovery {
 		log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), classifyReason)
 	}
 
 	if !routeTProxy {
 		var flowSet *config.SetConfig
-		if matched {
+		if matched && !waitsForName {
 			flowSet = set
+			if foreignEgress {
+				flowSet = vc.carrier(set, hold.set, stageSet)
+			}
 		}
 		observeFlow(cfg, pkt, sport, dport, flowSet, host)
 	}
@@ -1123,6 +1175,9 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			}
 		}
 
+		if waitsForName {
+			return 0
+		}
 		if routeHandsOff {
 			return vc.accept()
 		}
@@ -1211,6 +1266,21 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		return 0
 	}
 	return vc.accept()
+}
+
+func (w *Worker) refuseTLS(connKey string, gen uint64, stage *config.SetConfig, checked []*config.SetConfig, tlsVersion uint16) {
+	w.tlsCache.Refuse(connKey, gen, stage.Id)
+	cfg := w.getConfig()
+	for _, set := range checked {
+		now := cfg.GetSetById(set.Id)
+		if now == nil || !now.Enabled {
+			now = cfg.GetSetById(stage.Id)
+		}
+		if now != nil && !now.MatchesTLSVersion(tlsVersion) {
+			return
+		}
+	}
+	w.tlsCache.Refuse(connKey, gen, "")
 }
 
 func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, matcher *sni.SuffixSet, matched bool, set *config.SetConfig, st *config.SetConfig, stPrefix int) int {
@@ -1316,6 +1386,9 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 					quicHeld = true
 				} else {
 					matchedQUIC = true
+					if namedByHello || set == nil || set.Id != sniSet.Id {
+						ipTarget = ""
+					}
 					set = sniSet
 					sniTarget = sniSet.Name
 					matcher.LearnIPToDomain(pkt.dst, host, sniSet)
@@ -1464,7 +1537,11 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	if !udpViaTProxy(set) {
-		observeFlow(cfg, pkt, sport, dport, set, host)
+		flowSet := set
+		if udpForeignEgress {
+			flowSet = vc.carrier(set, hold.set, nil)
+		}
+		observeFlow(cfg, pkt, sport, dport, flowSet, host)
 	}
 
 	quicFlow := (isQUIC || matchedFlow) && !isVoiceMedia

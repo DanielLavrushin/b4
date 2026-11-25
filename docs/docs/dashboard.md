@@ -86,7 +86,7 @@ One row for each enabled set.
 
 ![Sets](/img/dashboard/20261003220040.png)
 
-A row shows the set's kind (**Bypass**, **Route**, **Proxy** or **Block**), how many connections it matched in the last hour, and when it last matched. Proxy sets also show their open connections, and **upstream down** while their proxy fails. Block sets show how many DNS lookups they blocked. A set's name opens it.
+A row shows the set's kind (**Bypass**, **Route**, **Proxy** or **Block**), how many connections counted for it in the last hour, and when it last matched. A connection counts for the first set it matches. When that match is by address or port, the connection moves to the set that takes its server name. A connection matched by a DNS answer stays with its set. A connection to an IP target of a **Route** set that goes through the set's tunnel does not move to a **Bypass** set. Proxy sets also show their open connections, and **upstream down** while their proxy fails. Block sets show how many DNS lookups they blocked. A set's name opens it.
 
 When a set shows no matches although its sites are in use, the [Traffic](connections.md) page shows which set, if any, their connections get.
 

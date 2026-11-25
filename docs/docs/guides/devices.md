@@ -35,7 +35,7 @@ The fields are described under [Devices](../settings/core.md#device-filtering).
 3. To apply the set to every device except the selected ones, turn on **All devices except selected**.
 4. Save the set.
 
-A set limited to source devices takes priority over a set without that limit. Source devices narrow whom a set applies to, but they do not select traffic. A routing set still needs a domain, IP or ASN target, and **Match any IP address** under **Bypass IPs** routes everything from those devices. See [Source devices](../sets/targets.md#source-devices).
+A set limited to source devices takes priority over a set without that limit that has the same domain entry or covers the same address. Source devices narrow whom a set applies to, but they do not select traffic. A routing set still needs a domain, IP or ASN target, and **Match any IP address** under **Bypass IPs** routes everything from those devices. See [Source devices](../sets/targets.md#source-devices).
 
 ## Checking the result
 

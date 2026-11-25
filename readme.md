@@ -131,7 +131,7 @@ Images: `lavrushin/b4` and `ghcr.io/daniellavrushin/b4`.
 
 A set is a list of targets plus what to do with traffic matching them. A set can target any combination of domains, IPs and CIDRs, GeoSite and GeoIP categories, destination ports, LAN devices by MAC, and TLS or IP version.
 
-Sets are evaluated top-down and the first match wins, so specific sets go above general ones. Two sets listing the same domain is a silent conflict - only the first applies.
+When several sets match the same traffic, B4 picks the most specific match, not the first set in the list: `www.example.com` before `example.com`, a narrow address range before a wide one and, as a rule, a domain before an address. Among sets with the same domain entry, or sets that cover the same address, a set limited to source devices comes first. The list order decides between equal matches, for sets with IP priority on, and for routing, where a specific set goes above a general one. When two enabled sets list the same domain by hand, B4 writes a warning to the log.
 
 Docs: [Sets](https://docs.b4core.app/docs/sets/) · [Targets](https://docs.b4core.app/docs/sets/targets)
 
@@ -306,7 +306,7 @@ Common causes when bypass appears to do nothing:
 - **Flow offloading** (OpenWrt and most router firmware). Established flows skip B4's hooks. Disable it, or guard it with `ct original packets ge 40 flow offload @ft` in `/usr/share/firewall4/templates/ruleset.uc` followed by `fw4 restart`.
 - **Client-side DoH/DoT.** A device resolving names itself bypasses every DNS feature.
 - **Missing kernel modules.** B4 names the module and package it needs. If NFQUEUE cannot be made to work at all, fall back to [TUN mode](#tun-mode) and its limitations.
-- **Set order.** First match wins. The **Traffic** page shows which set actually matched.
+- **Set order.** The most specific match wins, not the first set in the list, and a set with the domain comes before a set with the address. The **Traffic** page shows which set actually matched.
 
 For bug reports: on the **Logs** page click **Start trace**, reproduce the problem, then stop and download. The bundle has the build version, system diagnostics and a redacted summary of the enabled sets.
 

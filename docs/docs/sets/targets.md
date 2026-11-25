@@ -18,7 +18,7 @@ The **Bypass Domains** sub-tab holds domain names and GeoSite categories, and th
 | --- | --- | --- |
 | **Match any domain** | Adds `regexp:.*`, which matches every domain. A domain that another set lists is still handled by that set, so this set takes only what no other set claims. For routing, it covers only the addresses this set has resolved, not every address. | Off |
 | **Domain-only matching** | Matches the domains only by the server name in the handshake, never by their IP address. Useful on shared CDN addresses, where a neighbouring domain on the same IP would otherwise get this set's strategy. A routing set with this on routes only the addresses listed explicitly. | Off |
-| **TLS Version Filter** | **Any**, **TLS 1.2** or **TLS 1.3**, compared with the highest version the client offers. For a match by domain it is a preference: among the sets that list the domain, one whose filter fits comes first. For a match by address, a set whose filter does not fit does not take the connection. | **Any** |
+| **TLS Version Filter** | **Any**, **TLS 1.2** or **TLS 1.3**, compared with the highest version the client offers. For a match by domain it is a preference: among the sets that list the domain, one whose filter fits comes first. For a match by address, a set whose filter does not fit does not take a TCP connection. It takes QUIC by address whatever the filter; between sets that list the same domain, QUIC counts as TLS 1.3. | **Any** |
 | **IP Version Filter** | **Any**, **IPv4** or **IPv6**, a preference for matches by domain and by address alike: among the matching sets, one whose filter fits comes first. Shown while both IPv4 and IPv6 support are on under [Settings > Core](../settings/core.md#protocols). An ASN target then loads only the prefixes of the chosen family. | **Any** |
 | **Manual Bypass Domains** | Domain names, added with Enter. A domain covers its subdomains, so a leading `*.` is removed. Several domains can be pasted at once, separated by commas or new lines. A `regexp:` entry takes a regular expression. | Empty |
 | **Bypass GeoSite Categories** | Ready-made lists of a service's domains from the GeoSite database, such as `youtube` or `discord`. Needs the database loaded under [Settings > Geodat Settings](../settings/geodata.md). A click on a category shows its domains. | Empty |
@@ -84,7 +84,7 @@ The **Source Devices** sub-tab limits the set to traffic from selected devices. 
 | Device table | The devices with their MAC address, IP address and name. **offline** marks a device not on the network now. The set applies to the traffic of the selected ones. | None selected |
 | **All devices except selected** | Applies the set to every device except the selected ones. | Off |
 
-With no device selected, the set applies to all traffic. A set limited to devices takes priority over a set without devices that targets the same site.
+With no device selected, the set applies to all traffic. A set limited to devices takes priority over a set without devices that has the same domain entry or covers the same address.
 
 A device that has left the network for good is removed from this set by clearing its checkbox, or from every set by [forgetting it](../settings/core.md#device-table) under **Settings > Core > Devices**.
 

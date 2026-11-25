@@ -71,8 +71,12 @@ func actsOnTCPHello(set *config.SetConfig) bool {
 	return set.TCP.IPBlockDetect.Enabled || needsTCPInjection(set)
 }
 
-func (w *Worker) helloHoldCandidate(vc *verdictCtx, pkt *pktInfo, matcher *sni.SuffixSet, connKey string, tcp, payload []byte, dport uint16, matched bool) *helloHold {
-	if matched || vc.q == nil || vc.copy != nil || tcp[13]&0x07 != 0 || !truncatedClientHello(payload) {
+func leavesTCPHelloAlone(set *config.SetConfig) bool {
+	return !set.Routing.Enabled && !duplicatesPackets(set) && !actsOnTCPHello(set)
+}
+
+func (w *Worker) helloHoldCandidate(vc *verdictCtx, pkt *pktInfo, matcher *sni.SuffixSet, connKey string, tcp, payload []byte, dport uint16, taken bool) *helloHold {
+	if taken || vc.q == nil || vc.copy != nil || tcp[13]&0x07 != 0 || !truncatedClientHello(payload) {
 		return nil
 	}
 	record := 5 + (int(payload[3])<<8 | int(payload[4]))

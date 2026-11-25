@@ -56,7 +56,7 @@ For an address:
 
 - The set's card on the **Sets** page shows the new targets. An ASN whose prefixes are not fetched yet shows as **N ASN unresolved**.
 - On the Traffic page and the dashboard, the next connections to the site carry the set's badge.
-- The dashboard's **Sets** panel counts the connections the set matched.
+- The dashboard's **Sets** panel counts the set's connections.
 
 ## When it does not work
 
