@@ -1,6 +1,7 @@
 package nfq
 
 import (
+	"maps"
 	"net"
 	"slices"
 	"testing"
@@ -576,6 +577,135 @@ func TestAHintStoredWhileOthersAreMatchedAgainStays(t *testing.T) {
 	}
 	if id, _, _ := c.Lookup("10.0.0.1", "1.2.3.4"); id != "second" {
 		t.Errorf("the matched hint names %q", id)
+	}
+}
+
+func TestAHintRefreshedWhileItIsMatchedAgainGetsTheSetOfItsNewTLSVersion(t *testing.T) {
+	const host = "www.shared.example"
+	key, other := hostHintKey{client: "10.0.0.1", dest: "1.2.3.4"}, hostHintKey{client: "10.0.0.9", dest: "1.2.3.9"}
+	for _, tc := range []struct {
+		name   string
+		only   []hostHintKey
+		before uint16
+		after  []uint16
+		want   string
+	}{
+		{"by a QUIC ClientHello", nil, 0, []uint16{0x0304}, "tls13"},
+		{"by a QUIC ClientHello, one address", []hostHintKey{key}, 0, []uint16{0x0304}, "tls13"},
+		{"by a DNS answer", nil, 0x0304, []uint16{0}, "tls12"},
+		{"by the same answer again", nil, 0, []uint16{0}, "tls12"},
+		{"twice", nil, 0, []uint16{0x0304, 0}, "tls12"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newHostHintCache()
+			c.StoreTLS(key.client, key.dest, "first", host, tc.before, 0)
+			c.Store(other.client, other.dest, "first", host)
+			matched, last := 0, tc.after[len(tc.after)-1]
+			c.Rematch(tc.only, func(client, dest string, hint hostHintCandidate) string {
+				if (hostHintKey{client, dest}) == other {
+					matched++
+				} else if len(tc.after) > 0 {
+					c.StoreTLS(client, dest, "first", host, tc.after[0], 0)
+					tc.after = tc.after[1:]
+				}
+				if hint.tlsVersion == 0x0304 {
+					return "tls13"
+				}
+				return "tls12"
+			})
+			entry := c.keys[key]
+			if entry == nil || len(entry.candidates) != 1 || entry.candidates[0].setId != tc.want || entry.candidates[0].tlsVersion != last {
+				t.Errorf("want one hint of %s for version %#x, got %+v", tc.want, last, entry)
+			}
+			if len(tc.after) > 0 {
+				t.Errorf("the hint was matched before it was refreshed %d more time(s)", len(tc.after))
+			}
+			if tc.only == nil && matched != 1 {
+				t.Errorf("a hint that did not change was matched %d times", matched)
+			}
+		})
+	}
+}
+
+func TestAHintRefreshedWhileItIsMatchedAgainLeavesItsNeighbourItsSet(t *testing.T) {
+	c := newHostHintCache()
+	key := hostHintKey{client: "10.0.0.1", dest: "1.2.3.4"}
+	c.Store(key.client, key.dest, "old", "www.shared.example")
+	c.Store(key.client, key.dest, "tls12", "www.shared.example")
+	refreshed := false
+	c.Rematch(nil, func(client, dest string, hint hostHintCandidate) string {
+		if !refreshed {
+			refreshed = true
+			c.StoreTLS(client, dest, "tls12", "www.shared.example", 0x0304, 0)
+		}
+		if hint.tlsVersion == 0x0304 {
+			return "tls13"
+		}
+		return "tls12"
+	})
+	got := map[uint16]string{}
+	if entry := c.keys[key]; entry != nil {
+		for _, hint := range entry.candidates {
+			got[hint.tlsVersion] = hint.setId
+		}
+	}
+	if want := (map[uint16]string{0: "tls12", 0x0304: "tls13"}); !maps.Equal(got, want) {
+		t.Errorf("the hints are in %v, want %v", got, want)
+	}
+}
+
+func TestAnAddressWhoseHintsKeepChangingIsListedOnce(t *testing.T) {
+	c := newHostHintCache()
+	hosts := []string{"a.example", "b.example", "c.example", "d.example"}
+	store := func(version uint16) {
+		for _, host := range hosts {
+			c.StoreTLS("10.0.0.1", "1.2.3.4", "first", host, version, 0)
+		}
+	}
+	store(0)
+	var only []hostHintKey
+	for pass := range uint16(6) {
+		only = c.rematchOnce(only, func(client, dest string, hint hostHintCandidate) string {
+			store(pass%2*0x0304 + 0x0303)
+			return "first"
+		})
+		if len(only) != 1 {
+			t.Fatalf("pass %d lists the address %d time(s)", pass, len(only))
+		}
+	}
+	if only = c.rematchOnce(only, func(client, dest string, hint hostHintCandidate) string { return "second" }); len(only) != 0 {
+		t.Errorf("nothing changed, %d address(es) are matched again", len(only))
+	}
+	if id, _, _ := c.Lookup("10.0.0.1", "1.2.3.4"); id != "second" {
+		t.Errorf("the hint names %q, want second", id)
+	}
+}
+
+func TestAnAnswerThatListsAnAddressTwiceKeepsTheHintsOfBothTLSVersions(t *testing.T) {
+	sets := func(tls12, tls13 string) []*config.SetConfig {
+		a, b := newSharedNameSet(tls12, "shared.example"), newSharedNameSet(tls13, "shared.example")
+		a.Targets.TLSVersion, b.Targets.TLSVersion = "1.2", "1.3"
+		return []*config.SetConfig{&a, &b}
+	}
+	old := sets("a", "b")
+	w, reload := hintReloadPool(t, old...)
+	asked := w.getMatcher()
+	reload(sets("b", "c")...)
+	w.storeHostHint("10.0.0.1", "1.2.3.4", old[0], "www.shared.example", "dns", 0, 0)
+	w.storeHostHint("10.0.0.1", "1.2.3.4", old[1], "www.shared.example", "quic", 0x0304, IPv4)
+	twice := []net.IP{net.ParseIP("1.2.3.4"), net.ParseIP("1.2.3.4").To4()}
+	if keys := hostHintKeys(net.ParseIP("10.0.0.1"), twice); len(keys) != 1 {
+		t.Errorf("one address listed twice gives %d keys", len(keys))
+	}
+	w.settleHostHints(asked, net.ParseIP("10.0.0.1"), twice)
+	got := map[uint16]string{}
+	if entry := w.hostHints.keys[hostHintKey{client: "10.0.0.1", dest: "1.2.3.4"}]; entry != nil {
+		for _, hint := range entry.candidates {
+			got[hint.tlsVersion] = hint.setId
+		}
+	}
+	if want := (map[uint16]string{0: "b", 0x0304: "c"}); !maps.Equal(got, want) {
+		t.Errorf("the hints are in %v, want %v", got, want)
 	}
 }
 

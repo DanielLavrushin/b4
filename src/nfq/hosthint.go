@@ -159,7 +159,11 @@ func (c *hostHintCache) Rematch(only []hostHintKey, setFor func(client, dest str
 	if c == nil {
 		return
 	}
+	for changed := c.rematchOnce(only, setFor); len(changed) > 0; changed = c.rematchOnce(changed, setFor) {
+	}
+}
 
+func (c *hostHintCache) rematchOnce(only []hostHintKey, setFor func(client, dest string, hint hostHintCandidate) string) (changed []hostHintKey) {
 	type hintRef struct {
 		key         hostHintKey
 		setId, host string
@@ -186,7 +190,12 @@ func (c *hostHintCache) Rematch(only []hostHintKey, setFor func(client, dest str
 	c.eachLocked(only, func(key hostHintKey, entry *hostHintEntry) {
 		var kept []hostHintCandidate
 		for _, candidate := range entry.candidates {
-			if setId, seen := moved[hintRef{key, candidate.setId, candidate.host}]; seen {
+			ref := hintRef{key, candidate.setId, candidate.host}
+			if setId, seen := moved[ref]; seen {
+				if hints[ref].tlsVersion != candidate.tlsVersion {
+					changed = append(changed, key)
+					return
+				}
 				candidate.aside = setId == ""
 				if setId != "" {
 					candidate.setId = setId
@@ -202,6 +211,7 @@ func (c *hostHintCache) Rematch(only []hostHintKey, setFor func(client, dest str
 		}
 		entry.candidates = kept
 	})
+	return changed
 }
 
 func appendHint(candidates []hostHintCandidate, hint hostHintCandidate) []hostHintCandidate {
@@ -330,9 +340,14 @@ func (w *Worker) settleHostHints(asked *sni.SuffixSet, clientIP net.IP, ips []ne
 }
 
 func hostHintKeys(clientIP net.IP, ips []net.IP) []hostHintKey {
+	client := clientIP.String()
 	keys := make([]hostHintKey, 0, len(ips))
+	listed := make(map[hostHintKey]bool, len(ips))
 	for _, ip := range ips {
-		keys = append(keys, hostHintKey{client: clientIP.String(), dest: ip.String()})
+		if key := (hostHintKey{client: client, dest: ip.String()}); !listed[key] {
+			listed[key] = true
+			keys = append(keys, key)
+		}
 	}
 	return keys
 }
