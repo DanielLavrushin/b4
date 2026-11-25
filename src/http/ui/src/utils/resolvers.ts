@@ -103,7 +103,7 @@ export const withResolver = <T extends ResolverSource & { enabled: boolean }>(
   dns: T,
   entry: string,
 ): AddedResolver<T> => {
-  const value = resolverValue(entry);
+  const value = resolverKey(entry);
   const same = (e: string) => resolverKey(e) === resolverKey(value);
   if (dns.enabled && askedResolvers(dns).some(same)) {
     return { outcome: "present", dns };

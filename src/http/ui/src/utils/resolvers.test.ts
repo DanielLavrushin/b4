@@ -43,6 +43,21 @@ void test("a resolver the set already asks is not added twice", () => {
   assert.equal(again.dns, set);
 });
 
+void test("an address is stored with the path it was tested at", () => {
+  for (const [entry, stored] of [
+    ["https://dns.example", "https://dns.example"],
+    ["https://DNS.example:8443", "https://dns.example:8443"],
+    ["https://dns.example/", "https://dns.example/"],
+    ["https://dns.example?token=aBc", "https://dns.example?token=aBc"],
+    ["https://dns.example/Query?x=Y", "https://dns.example/Query?x=Y"],
+  ]) {
+    const added = withResolver(dns(), entry);
+    assert.deepEqual(added.dns, dns({ doh_url: stored }));
+    assert.equal(withResolver(added.dns, entry).outcome, "present");
+    assert.equal(withResolver(added.dns, URL).outcome, "added");
+  }
+});
+
 void test("adding a resolver turns the redirect on", () => {
   const off = withResolver(dns({ enabled: false }), URL);
   assert.equal(off.outcome, "added");
