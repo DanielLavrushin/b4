@@ -154,7 +154,8 @@ func downloadFileMirrored(ctx context.Context, url, destPath string, mirrors []s
 		return 0, err
 	}
 
-	log.Warnf("Direct download of %s failed: %v", url, err)
+	label := downloadLabel(url)
+	log.Warnf("Direct download of %s failed: %v", label, err)
 
 	for _, base := range mirrors {
 		if ctx.Err() != nil {
@@ -165,10 +166,10 @@ func downloadFileMirrored(ctx context.Context, url, destPath string, mirrors []s
 		}
 		size, mirrorErr := downloadFile(ctx, mirrorURL(base, url), destPath, verify)
 		if mirrorErr == nil {
-			log.Infof("Downloaded %s via mirror %s", url, base)
+			log.Infof("Downloaded %s via mirror %s", label, base)
 			return size, nil
 		}
-		log.Warnf("Mirror %s failed for %s: %v", base, url, mirrorErr)
+		log.Warnf("Mirror %s failed for %s: %v", base, label, mirrorErr)
 	}
 
 	return 0, err

@@ -34,6 +34,7 @@ const (
 	CodeStale             = "stale"
 	CodeAuthorBanned      = "author_banned"
 	CodeSetWithdrawn      = "set_withdrawn"
+	CodePersonalResolver  = hubwire.ReasonPersonalResolver
 	CodeReasonRequired    = "reason_required"
 	CodeConfirmMismatch   = "confirm_mismatch"
 	CodeOwnKey            = "own_key"

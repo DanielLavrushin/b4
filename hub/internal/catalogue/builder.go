@@ -226,7 +226,7 @@ func (b *Builder) catalogueSet(v *store.Version, set store.Set, votes []store.Vo
 		Status:      hubwire.SetStatusActive,
 		CreatedAt:   score.DayStamp(v.CreatedAt),
 		UpdatedAt:   score.DayStamp(v.UpdatedAt),
-		Geo:         v.Geo,
+		Geo:         hubwire.BuiltInGeo(v.Geo),
 		Set:         v.Projection,
 		Payloads:    v.Payloads,
 		Scores:      score.Aggregate(scoreVotes, now),

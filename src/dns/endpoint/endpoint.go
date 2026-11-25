@@ -20,6 +20,8 @@ const (
 
 const DefaultPort = 53
 
+var errInvalidPort = errors.New("the address has an invalid port")
+
 type Endpoint struct {
 	Transport Transport
 	Addr      netip.AddrPort
@@ -49,7 +51,7 @@ func Parse(raw string) (Endpoint, error) {
 	case "tls", "dot", "quic", "doq", "h3", "sdns":
 		return Endpoint{}, fmt.Errorf("%s:// is not supported; run a local DNS proxy for it and give the proxy's address", strings.ToLower(scheme))
 	}
-	return Endpoint{}, fmt.Errorf("unknown scheme %s://; use udp://, tcp://, tcp+udp:// or https://", scheme)
+	return Endpoint{}, errors.New("unknown scheme; use udp://, tcp://, tcp+udp:// or https://")
 }
 
 func plain(t Transport, s string) (Endpoint, error) {
@@ -66,15 +68,15 @@ func plain(t Transport, s string) (Endpoint, error) {
 		return checked(t, netip.AddrPortFrom(addr, DefaultPort))
 	}
 	if strings.HasPrefix(s, "[") || strings.Count(s, ":") > 1 {
-		return Endpoint{}, fmt.Errorf("%q is not an IP address with an optional port", s)
+		return Endpoint{}, errors.New("not an IP address with an optional port")
 	}
-	name, port, hasPort := strings.Cut(s, ":")
+	_, port, hasPort := strings.Cut(s, ":")
 	if hasPort {
 		if _, err := strconv.ParseUint(port, 10, 16); err != nil {
-			return Endpoint{}, fmt.Errorf("%q has an invalid port", s)
+			return Endpoint{}, errInvalidPort
 		}
 	}
-	return Endpoint{}, fmt.Errorf("%q is a host name; plain DNS needs an IP address, only an https:// URL takes a name", name)
+	return Endpoint{}, errors.New("a host name; plain DNS needs an IP address, only an https:// URL takes a name")
 }
 
 func checked(t Transport, ap netip.AddrPort) (Endpoint, error) {
@@ -93,14 +95,14 @@ func checked(t Transport, ap netip.AddrPort) (Endpoint, error) {
 func dohURL(s string) (Endpoint, error) {
 	u, err := url.Parse(s)
 	if err != nil || !validURLHost(u) {
-		return Endpoint{}, fmt.Errorf("%q is not a valid https:// URL", s)
+		return Endpoint{}, errors.New("not a valid https:// URL")
 	}
 	if u.User != nil {
 		return Endpoint{}, errors.New("a DNS over HTTPS URL cannot carry a user name or password")
 	}
 	if port := u.Port(); port != "" {
 		if n, err := strconv.ParseUint(port, 10, 16); err != nil || n == 0 {
-			return Endpoint{}, fmt.Errorf("%q has an invalid port", s)
+			return Endpoint{}, errInvalidPort
 		}
 	}
 	u.Scheme = "https"

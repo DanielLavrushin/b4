@@ -6,8 +6,10 @@ import (
 	"io"
 	"log"
 	"log/syslog"
+	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -39,10 +41,13 @@ func (l Level) String() string {
 	}
 }
 
+const levelAlways Level = math.MinInt32
+
 const maxErrorFileSize = 1 << 20
 
 var (
 	CurLevel         atomic.Int32
+	configuredLevel  atomic.Int32
 	errFile          *os.File
 	errLogger        *log.Logger
 	errMu            sync.Mutex
@@ -116,7 +121,8 @@ func Init(stderr io.Writer, level Level, instaflush bool) {
 	}
 	base.ws = []io.Writer{stderr}
 	insta = instaflush
-	CurLevel.Store(int32(level))
+	configuredLevel.Store(int32(level))
+	updateGateLocked()
 	rebuildLocked()
 }
 
@@ -139,7 +145,50 @@ func EnableSyslog(tag string) error {
 	return nil
 }
 
-func SetLevel(l Level) { CurLevel.Store(int32(l)) }
+func SetLevel(l Level) {
+	mu.Lock()
+	defer mu.Unlock()
+	configuredLevel.Store(int32(l))
+	updateGateLocked()
+}
+
+func ConfiguredLevel() Level { return Level(configuredLevel.Load()) }
+
+func updateGateLocked() {
+	gate := configuredLevel.Load()
+	for _, r := range recordings {
+		gate = max(gate, int32(r.level))
+	}
+	CurLevel.Store(gate)
+}
+
+type recording struct {
+	w      io.Writer
+	level  Level
+	logger *log.Logger
+}
+
+var recordings []recording
+
+func StartRecording(w io.Writer, level Level) {
+	if w == nil {
+		return
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	recordings = append(recordings, recording{w: w, level: level, logger: log.New(w, "", log.Ldate|log.Ltime|log.Lmicroseconds)})
+	updateGateLocked()
+}
+
+func StopRecording(w io.Writer) {
+	if w == nil {
+		return
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	recordings = slices.DeleteFunc(recordings, func(r recording) bool { return r.w == w })
+	updateGateLocked()
+}
 
 func SetInstaflush(v bool) {
 	mu.Lock()
@@ -319,7 +368,7 @@ func InitWarnf(format string, a ...any) {
 func Errorf(format string, a ...any) error {
 	err := fmt.Errorf(format, a...)
 	msg := "[ERROR] " + err.Error()
-	out("%s", msg)
+	out(levelAlways, "%s", msg)
 
 	errMu.Lock()
 	if errLogger != nil {
@@ -342,35 +391,42 @@ func Errorf(format string, a ...any) error {
 
 func Warnf(format string, a ...any) {
 	if Level(CurLevel.Load()) >= LevelError {
-		out("[WARN] "+format, a...)
+		out(LevelError, "[WARN] "+format, a...)
 	}
 }
 
 func Infof(format string, a ...any) {
 	if Level(CurLevel.Load()) >= LevelInfo {
-		out("[INFO] "+format, a...)
+		out(LevelInfo, "[INFO] "+format, a...)
 	}
 }
 
 func Tracef(format string, a ...any) {
 	if Level(CurLevel.Load()) >= LevelTrace {
-		out("[TRACE] "+format, a...)
+		out(LevelTrace, "[TRACE] "+format, a...)
 	}
 }
 
 func Debugf(format string, a ...any) {
 	if Level(CurLevel.Load()) >= LevelDebug {
-		out("[DEBUG] "+format, a...)
+		out(LevelDebug, "[DEBUG] "+format, a...)
 	}
 }
 
-func out(format string, a ...any) {
+func out(level Level, format string, a ...any) {
 	mu.Lock()
 	defer mu.Unlock()
 	if logger == nil {
 		rebuildLocked()
 	}
-	logger.Printf(format, a...)
+	if level <= ConfiguredLevel() {
+		logger.Printf(format, a...)
+	}
+	for _, r := range recordings {
+		if level <= r.level {
+			r.logger.Printf(format, a...)
+		}
+	}
 }
 
 func rebuildLocked() {

@@ -519,12 +519,16 @@ func (n *NFTablesManager) apply() error {
 		return err
 	}
 
-	if log.Level(log.CurLevel.Load()) >= log.LevelTrace {
-		out, _ := n.runNft("list", "table", "inet", nftTableName)
-		log.Tracef("Current nftables rules:\n%s", out)
-	}
-
+	traceNftRules()
 	return nil
+}
+
+func traceNftRules() {
+	if log.Level(log.CurLevel.Load()) < log.LevelTrace {
+		return
+	}
+	out, _ := listCaptureNftTable()
+	log.Tracef("Current nftables rules:\n%s", out)
 }
 
 func (n *NFTablesManager) addDuplicateQueueRules(tcpPortExpr string) error {

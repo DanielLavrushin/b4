@@ -30,7 +30,7 @@ func (s *Service) Edit(ctx context.Context, a Actor, r Ref, edit store.VersionEd
 			return err
 		}
 		if approve {
-			if _, _, err := s.plan(ctx, t, ActionApprove, r, Options{}); err != nil {
+			if _, _, err := s.plan(ctx, t, ActionApprove, r, Options{edited: true}); err != nil {
 				return err
 			}
 		}

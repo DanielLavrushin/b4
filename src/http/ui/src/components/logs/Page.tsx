@@ -208,9 +208,12 @@ export function LogsPage() {
             <TraceControls
               tracing={trace.tracing}
               traceBusy={trace.traceBusy}
+              traceKnown={trace.traceKnown}
               traceLines={trace.traceLines}
               traceElapsed={trace.traceElapsed}
+              traceMaxMinutes={trace.traceMaxMinutes}
               downloadReady={trace.downloadReady}
+              traceEndReason={trace.traceEndReason}
               onStart={trace.startTrace}
               onStop={trace.stopTrace}
               onDownload={trace.downloadTrace}

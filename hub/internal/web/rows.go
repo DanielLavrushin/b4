@@ -236,9 +236,7 @@ func (s *Server) setRows(w http.ResponseWriter, r *http.Request) {
 			row.Versions = g.versions[v.SetID]
 		}
 		if group == GroupSuperseded {
-			current := g.newest[v.SetID]
-			row.SupersededBy = current.Version
-			row.SupersededAt = optionalTime(current.UpdatedAt)
+			row.SupersededBy, row.SupersededAt = g.supersededBy(v)
 		}
 		if !rowMatches(row, v, needle) {
 			continue

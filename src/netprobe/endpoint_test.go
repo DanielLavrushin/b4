@@ -329,3 +329,26 @@ func TestExchangeKeepsAnUntruncatedUDPAnswer(t *testing.T) {
 		t.Fatalf("an untruncated UDP answer needs no TCP retry, TCP was asked %d times", tcpHits.Load())
 	}
 }
+
+func TestAnAnswerFromATrustedDoHServerNamesItsHostOnly(t *testing.T) {
+	for _, answer := range []stubAnswer{{rcode: 3}, {rcode: 2}, {rcode: 5}, {}} {
+		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			query, _ := io.ReadAll(r.Body)
+			w.Header().Set("Content-Type", "application/dns-message")
+			w.Write(stubReply(query, answer))
+		}))
+		defer srv.Close()
+		orig := endpointDoHClient
+		endpointDoHClient = func(int, time.Duration) *http.Client { return srv.Client() }
+		t.Cleanup(func() { endpointDoHClient = orig })
+
+		r := &Resolver{Timeout: 2 * time.Second}
+		_, err := r.ResolveEndpoint(context.Background(), mustEndpoint(t, srv.URL+"/canarypath?id=canaryquery"), "site.example", "A")
+		if err == nil || !strings.Contains(err.Error(), strings.TrimPrefix(srv.URL, "https://")) {
+			t.Fatalf("rcode %d: the failure must name the server, got %v", answer.rcode, err)
+		}
+		if strings.Contains(err.Error(), "canary") {
+			t.Errorf("rcode %d: the failure holds the server's path: %v", answer.rcode, err)
+		}
+	}
+}

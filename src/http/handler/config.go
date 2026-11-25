@@ -153,7 +153,7 @@ func (a *API) handleConfigReset(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) applyRuntimeChanges(newCfg, oldCfg *config.Config) {
-	if newCfg.System.Logging.Level != log.Level(log.CurLevel.Load()) {
+	if newCfg.System.Logging.Level != log.ConfiguredLevel() {
 		log.SetLevel(log.Level(newCfg.System.Logging.Level))
 		log.Infof("Log level changed to %s", newCfg.System.Logging.Level)
 	}
@@ -168,7 +168,7 @@ func (a *API) applyRuntimeChanges(newCfg, oldCfg *config.Config) {
 
 func (a *API) undoRuntimeChanges(applied, before *config.Config) {
 	live := a.getCfg()
-	if applied.System.Logging.Level != before.System.Logging.Level && log.Level(log.CurLevel.Load()) == applied.System.Logging.Level {
+	if applied.System.Logging.Level != before.System.Logging.Level && log.ConfiguredLevel() == applied.System.Logging.Level {
 		log.SetLevel(live.System.Logging.Level)
 	}
 	if applied.System.Timezone != before.System.Timezone {

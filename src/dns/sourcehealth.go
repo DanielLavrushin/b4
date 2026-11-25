@@ -1,9 +1,10 @@
 package dns
 
 import (
-	"net/url"
 	"sync"
 	"time"
+
+	"github.com/daniellavrushin/b4/config"
 )
 
 const (
@@ -47,8 +48,8 @@ func beginSourceAsk(source string, consult, capped bool) (done func(), ok bool) 
 }
 
 func SourceLabel(source string) string {
-	if u, err := url.Parse(source); err == nil && u.Host != "" {
-		return u.Host
+	if _, host, ok := config.SplitUpstreamURL(config.UpstreamLabel(source)); ok {
+		return host
 	}
 	return source
 }

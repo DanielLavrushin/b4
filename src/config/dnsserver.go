@@ -22,7 +22,7 @@ func (c *Config) sanitizeTrustedDNSServer() {
 		return
 	}
 	if _, err := endpoint.Parse(server); err != nil {
-		log.Warnf("Discovery: ignoring the trusted DNS server %q: %v", server, err)
+		log.Warnf("Discovery: ignoring the trusted DNS server from the settings: %v", err)
 		c.System.Checker.DNSServer = ""
 	}
 }

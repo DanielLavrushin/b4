@@ -37,6 +37,8 @@ type env struct {
 	hub     *hubwire.Identity
 	builtin *hubwire.Identity
 	n       int
+
+	projection map[string]interface{}
 }
 
 func newEnv(t *testing.T) *env {
@@ -54,7 +56,7 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := &env{t: t, ctx: context.Background(), st: st, builds: &buildLog{}, hub: hub, builtin: builtin}
+	e := &env{t: t, ctx: context.Background(), st: st, builds: &buildLog{}, hub: hub, builtin: builtin, projection: plainProjection()}
 	e.svc = &Service{Store: st, Builds: e.builds, HubKeyID: hub.KeyID(), BuiltinKeys: []string{builtin.KeyID()}, Now: func() time.Time { return testNow }}
 	return e
 }
@@ -75,7 +77,7 @@ func (e *env) set(author string, statuses ...string) string {
 			FP:           fmt.Sprintf("fp-%d", e.n),
 			TargetsKey:   fmt.Sprintf("tk-%d", e.n),
 			Title:        fmt.Sprintf("title %d", e.n),
-			Projection:   map[string]interface{}{"targets": map[string]interface{}{"sni_domains": []interface{}{"example.com"}}},
+			Projection:   e.projection,
 			Status:       hubwire.SetStatusPending,
 			UploaderHMAC: author,
 			CreatedAt:    testNow,

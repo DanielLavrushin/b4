@@ -25,7 +25,7 @@ var (
 	mssApplied      atomic.Pointer[config.Config]
 	mssLast         atomic.Pointer[config.Config]
 	mssAppliedRules atomic.Int64
-	mssNftVerbose   atomic.Bool
+	nftTableVerbose atomic.Bool
 
 	rulesRestoreCount atomic.Int64
 	rulesLastRestore  atomic.Pointer[time.Time]
@@ -116,7 +116,7 @@ func masqueradeActive(cfg *config.Config, backend string) bool {
 
 func mssClampRuleCount(cfg *config.Config, backend string) int {
 	if backend == backendNFTables {
-		out, err := listMSSNftTable()
+		out, err := listCaptureNftTable()
 		if err != nil {
 			return 0
 		}
@@ -135,13 +135,15 @@ func mssClampRuleCount(cfg *config.Config, backend string) int {
 	return count
 }
 
-func listMSSNftTable() (string, error) {
-	if !mssNftVerbose.Load() {
+func listCaptureNftTable() (string, error) {
+	if !nftTableVerbose.Load() {
 		out, err := run("nft", "-t", "list", "table", "inet", nftTableName)
 		if err == nil {
 			return out, nil
 		}
-		mssNftVerbose.Store(true)
+		if strings.Contains(out, "invalid option") || strings.Contains(out, "unrecognized option") {
+			nftTableVerbose.Store(true)
+		}
 	}
 	return run("nft", "list", "table", "inet", nftTableName)
 }
@@ -264,7 +266,7 @@ func clearNftMSSRules() {
 			_, _ = run("nft", "delete", "rule", "inet", nftTableName, chain, "handle", handle)
 		}
 	}
-	out, err := listMSSNftTable()
+	out, err := listCaptureNftTable()
 	if err != nil {
 		return
 	}

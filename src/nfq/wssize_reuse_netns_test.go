@@ -430,7 +430,7 @@ func startReuseB4(t *testing.T, binary, dir string, cfg *config.Config, apiPort 
 	}
 	defer output.Close()
 	cmd := exec.Command(binary, "--config", path)
-	cmd.Env = append(os.Environ(), "SSL_CERT_FILE="+ca, "SSL_CERT_DIR="+dir)
+	cmd.Env = append(os.Environ(), "SSL_CERT_FILE="+ca, "SSL_CERT_DIR="+dir, "TMPDIR="+dir)
 	cmd.Stdout, cmd.Stderr = output, output
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)

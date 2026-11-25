@@ -158,6 +158,15 @@ func pinsWarned(value interface{}, warnings []hubwire.Warning) bool {
 	return true
 }
 
+func resolverWarned(path string, warnings []hubwire.Warning) bool {
+	for _, w := range warnings {
+		if w.Code == hubwire.ReasonPersonalResolver && w.Params["path"] == path {
+			return true
+		}
+	}
+	return false
+}
+
 func strippedPaths(requested, result map[string]interface{}, warnings []hubwire.Warning) ([]hubwire.Stripped, error) {
 	defSet := config.NewSetConfig()
 	def, err := config.SetToMap(&defSet)
@@ -178,7 +187,7 @@ func strippedPaths(requested, result map[string]interface{}, warnings []hubwire.
 		if defValue, ok := lookupPath(def, path); ok && sameJSON(value, defValue) {
 			continue
 		}
-		if path == pinsPath && pinsWarned(value, warnings) {
+		if path == pinsPath && pinsWarned(value, warnings) || resolverWarned(path, warnings) {
 			continue
 		}
 		reason := strippedNotShareable

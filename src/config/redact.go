@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/daniellavrushin/b4/geodat"
+	"github.com/daniellavrushin/b4/utils"
 )
 
 const RedactedMarker = "[redacted]"
@@ -120,8 +121,8 @@ func (c *Config) RedactForSharing() {
 	mt.DCFallbackURL = maskCustomValue(mt.DCFallbackURL, TGDCFallbackURL)
 
 	c.System.AI.Endpoint = maskURL(c.System.AI.Endpoint)
-	c.System.Geo.GeoSiteURL = maskGeoURL(c.System.Geo.GeoSiteURL)
-	c.System.Geo.GeoIpURL = maskGeoURL(c.System.Geo.GeoIpURL)
+	c.System.Geo.GeoSiteURL = GeoURLLabel(c.System.Geo.GeoSiteURL)
+	c.System.Geo.GeoIpURL = GeoURLLabel(c.System.Geo.GeoIpURL)
 	c.System.Update.Mirrors = maskValues(c.System.Update.Mirrors)
 	c.System.Hub.URLs = maskURLs(c.System.Hub.URLs)
 	c.System.Checker.Watchdog.Domains = maskWatchdogEntries(c.System.Checker.Watchdog.Domains)
@@ -272,7 +273,7 @@ func maskURL(raw string) string {
 	return redactURL(raw, keepHost, plainPath)
 }
 
-func maskGeoURL(raw string) string {
+func GeoURLLabel(raw string) string {
 	if geodat.IsSourceURL(raw) {
 		return raw
 	}
@@ -322,6 +323,14 @@ func maskDNSServer(raw string) string {
 	return RedactedMarker
 }
 
+func resolverHost(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || !utils.ValidURLPort(u) {
+		return RedactedMarker
+	}
+	return u.Host
+}
+
 func keepHost(u *url.URL) string {
 	return u.Host
 }
@@ -334,12 +343,21 @@ func dohPath(path string) bool {
 	return plainPath(path) || path == "/dns-query"
 }
 
+func PersonalResolverURL(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || !utils.ValidURLPort(u) {
+		return true
+	}
+	path := strings.TrimSuffix(u.EscapedPath(), "/")
+	return !dohPath(path) && !publicDoHPaths[strings.ToLower(u.Hostname())+path]
+}
+
 func redactURL(raw string, host func(*url.URL) string, keepPath func(string) bool) string {
 	if raw == "" {
 		return ""
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme == "" || u.Host == "" {
+	if err != nil || u.Scheme == "" || u.Host == "" || !utils.ValidURLPort(u) {
 		return RedactedMarker
 	}
 
@@ -363,7 +381,7 @@ func redactURL(raw string, host func(*url.URL) string, keepPath func(string) boo
 	if u.RawQuery != "" {
 		parts := strings.Split(u.RawQuery, "&")
 		for i, part := range parts {
-			if key, _, ok := strings.Cut(part, "="); ok {
+			if key, value, _ := strings.Cut(part, "="); strings.Trim(value, "=") != "" {
 				parts[i] = key + "=" + RedactedMarker
 			} else {
 				parts[i] = RedactedMarker

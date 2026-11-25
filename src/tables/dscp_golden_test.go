@@ -329,7 +329,7 @@ func goldenIsolate(t *testing.T, h *goldenHost) {
 	origSys, origSnapshot := kmodSysRoot, sysctlSnapPath
 	origAdd, origClear := addRulesFn, clearRulesFn
 	origSteering, origStrict := activeSteering, conntrackStrictBites
-	origLevel := log.CurLevel.Load()
+	origLevel := log.ConfiguredLevel()
 	run, runStdin, runNftStdin = h.run, h.runStdin, h.runNftStdin
 	kmodSysRoot, sysctlSnapPath = sys, filepath.Join(h.dir, "sysctl.json")
 	addRulesFn, clearRulesFn = addRules, clearRules
@@ -340,7 +340,7 @@ func goldenIsolate(t *testing.T, h *goldenHost) {
 		kmodSysRoot, sysctlSnapPath = origSys, origSnapshot
 		addRulesFn, clearRulesFn = origAdd, origClear
 		activeSteering, conntrackStrictBites = origSteering, origStrict
-		log.CurLevel.Store(origLevel)
+		log.SetLevel(origLevel)
 	})
 
 	rulesMu.Lock()

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/sni"
 )
 
@@ -36,6 +37,23 @@ type Origin struct {
 type GeoSource struct {
 	SiteURL string `json:"site_url,omitempty"`
 	IPURL   string `json:"ip_url,omitempty"`
+}
+
+func BuiltInGeo(g *GeoSource) *GeoSource {
+	if g == nil {
+		return nil
+	}
+	var kept GeoSource
+	if geodat.IsSourceURL(g.SiteURL) {
+		kept.SiteURL = g.SiteURL
+	}
+	if geodat.IsSourceURL(g.IPURL) {
+		kept.IPURL = g.IPURL
+	}
+	if kept == (GeoSource{}) {
+		return nil
+	}
+	return &kept
 }
 
 type Payload struct {
@@ -115,9 +133,7 @@ func Build(set *config.SetConfig, opts BuildOptions) (*Envelope, *Report, error)
 		Engine:      opts.Engine,
 		Set:         projection,
 	}
-	if opts.GeoSiteURL != "" || opts.GeoIPURL != "" {
-		env.Geo = &GeoSource{SiteURL: opts.GeoSiteURL, IPURL: opts.GeoIPURL}
-	}
+	env.Geo = BuiltInGeo(&GeoSource{SiteURL: opts.GeoSiteURL, IPURL: opts.GeoIPURL})
 	effective := *set
 	config.ApplySetDefaults(&effective)
 	for _, slot := range payloadSlots {
@@ -342,9 +358,15 @@ func Open(env *Envelope, opts OpenOptions) (*Imported, error) {
 	if err != nil {
 		return nil, err
 	}
+	resolverDropped := false
 	for _, s := range report.Stripped {
-		if strings.HasPrefix(s.Path, "dns.pins.") {
+		switch {
+		case strings.HasPrefix(s.Path, "dns.pins."):
 			warn(s.Reason, map[string]interface{}{"path": s.Path, "domain": strings.TrimPrefix(s.Path, "dns.pins.")})
+		case s.Reason == ReasonPersonalResolver:
+			resolverDropped = true
+			host, _ := DoHHost(set.DNS.DoHURL)
+			warn(s.Reason, map[string]interface{}{"path": s.Path, "host": host})
 		}
 	}
 	imp.Warnings = append(imp.Warnings, report.Warnings...)
@@ -371,6 +393,9 @@ func Open(env *Envelope, opts OpenOptions) (*Imported, error) {
 	set, err = decodeSet(projection, set.Name)
 	if err != nil {
 		return nil, err
+	}
+	if set.DNS.Enabled && !set.DNS.HasUpstream() && !resolverDropped {
+		warn("dns_no_resolver", nil)
 	}
 
 	imp.Fingerprint = Fingerprint(projection)

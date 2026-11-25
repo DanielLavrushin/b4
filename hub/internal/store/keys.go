@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"sort"
 	"time"
 )
 
@@ -159,11 +160,14 @@ func versionRefs(ctx context.Context, q querier, query string, args ...interface
 }
 
 func (s *Store) KeyImpact(ctx context.Context, keyHMAC string) (*KeyImpact, error) {
-	var impact KeyImpact
-	var err error
-	if impact.Listed, err = versionRefs(ctx, s.db, `SELECT v.set_id, v.version, v.title FROM set_versions v
-		WHERE `+listedFilter+` AND v.set_id IN (SELECT id FROM sets WHERE author_hmac = ?) ORDER BY v.title, v.set_id`, keyHMAC); err != nil {
+	listed, err := s.newestListable(ctx, ` AND set_id IN (SELECT id FROM sets WHERE author_hmac = ?)`, keyHMAC)
+	if err != nil {
 		return nil, err
+	}
+	sort.SliceStable(listed, func(i, j int) bool { return listed[i].Title < listed[j].Title })
+	impact := KeyImpact{Listed: make([]VersionRef, 0, len(listed))}
+	for _, v := range listed {
+		impact.Listed = append(impact.Listed, VersionRef{SetID: v.SetID, Version: v.Version, Title: v.Title})
 	}
 	if impact.Pending, err = versionRefs(ctx, s.db, `SELECT v.set_id, v.version, v.title FROM set_versions v
 		WHERE v.status = 'pending' AND v.uploader_hmac = ? ORDER BY v.created_at`, keyHMAC); err != nil {

@@ -1,14 +1,21 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useAuth } from "@context/AuthProvider";
 import { useSnackbar } from "@context/SnackbarProvider";
-import { traceApi } from "@api/trace";
+import { ApiError } from "@api/apiClient";
+import { traceApi, type TraceEndReason, type TraceStatus } from "@api/trace";
+
+const POLL_MS = 2000;
 
 export interface TraceSession {
   tracing: boolean;
   traceBusy: boolean;
+  traceKnown: boolean;
   traceLines: number;
   traceElapsed: number;
+  traceMaxMinutes: number;
   downloadReady: boolean;
+  traceEndReason?: TraceEndReason;
   startTrace: () => void;
   stopTrace: () => void;
   downloadTrace: () => void;
@@ -16,112 +23,134 @@ export interface TraceSession {
 
 export function useTraceSession(): TraceSession {
   const { t } = useTranslation();
-  const { showSuccess, showError } = useSnackbar();
-  const [tracing, setTracing] = useState(false);
+  const { showSnackbar, showSuccess, showError } = useSnackbar();
+  const { hasSession } = useAuth();
+  const [status, setStatus] = useState<TraceStatus>();
   const [traceBusy, setTraceBusy] = useState(false);
-  const [traceLines, setTraceLines] = useState(0);
   const [traceElapsed, setTraceElapsed] = useState(0);
-  const [traceStartMs, setTraceStartMs] = useState<number | null>(null);
-  const [downloadReady, setDownloadReady] = useState(false);
+  const requests = useRef({ sent: 0, applied: 0 });
+  const wasTracing = useRef(false);
+  const tracing = status?.active ?? false;
+  const startedAt = status?.startedAt;
 
-  useEffect(() => {
-    let cancelled = false;
-    traceApi
-      .status()
-      .then((s) => {
-        if (cancelled) return;
-        setDownloadReady(s.downloadReady);
-        if (s.active) {
-          setTracing(true);
-          setTraceLines(s.lines);
-          setTraceStartMs(
-            s.startedAt ? new Date(s.startedAt).getTime() : Date.now(),
-          );
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
+  const readStatus = useCallback(async () => {
+    const order = requests.current;
+    order.sent += 1;
+    const mine = order.sent;
+    const answer = await traceApi.status();
+    if (mine > order.applied) {
+      order.applied = mine;
+      setStatus(answer);
+    }
   }, []);
 
+  const command = useCallback(async (send: () => Promise<TraceStatus>) => {
+    const answer = await send();
+    const order = requests.current;
+    order.sent += 1;
+    order.applied = order.sent;
+    setStatus(answer);
+    return answer;
+  }, []);
+
+  const refresh = useCallback(
+    () => readStatus().catch(() => undefined),
+    [readStatus],
+  );
+
   useEffect(() => {
-    if (!tracing || traceStartMs == null) return;
+    if (!hasSession) return;
     let cancelled = false;
-    const tick = () =>
-      setTraceElapsed(Math.floor((Date.now() - traceStartMs) / 1000));
-    tick();
-    const elapsedTimer = setInterval(tick, 1000);
-    const pollTimer = setInterval(() => {
-      traceApi
-        .status()
-        .then((s) => {
-          if (cancelled) return;
-          setTraceLines(s.lines);
-          if (!s.active) {
-            setTracing(false);
-            setTraceStartMs(null);
-            setDownloadReady(s.downloadReady);
-          }
-        })
-        .catch(() => undefined);
-    }, 2000);
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const read = () => {
+      readStatus().catch(() => {
+        if (!cancelled) retry = setTimeout(read, POLL_MS);
+      });
+    };
+    read();
     return () => {
       cancelled = true;
-      clearInterval(elapsedTimer);
-      clearInterval(pollTimer);
+      clearTimeout(retry);
     };
-  }, [tracing, traceStartMs]);
+  }, [hasSession, readStatus]);
+
+  useEffect(() => {
+    if (!tracing || traceBusy) return;
+    const poll = setInterval(() => void refresh(), POLL_MS);
+    return () => clearInterval(poll);
+  }, [tracing, traceBusy, refresh]);
+
+  useEffect(() => {
+    if (!tracing || !startedAt) return;
+    const started = new Date(startedAt).getTime();
+    const tick = () =>
+      setTraceElapsed(Math.floor((Date.now() - started) / 1000));
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [tracing, startedAt]);
+
+  useEffect(() => {
+    if (!status) return;
+    if (wasTracing.current && !status.active && !status.downloadReady) {
+      showSnackbar(t("logs.trace.endedLost"));
+    }
+    wasTracing.current = status.active;
+  }, [status, showSnackbar, t]);
 
   const startTrace = () => {
     setTraceBusy(true);
-    traceApi
-      .start()
-      .then((s) => {
-        setTracing(true);
-        setTraceLines(s.lines);
-        setTraceElapsed(0);
-        setTraceStartMs(
-          s.startedAt ? new Date(s.startedAt).getTime() : Date.now(),
+    command(() => traceApi.start())
+      .then(() => showSuccess(t("logs.trace.started")))
+      .catch((e: unknown) => {
+        showError(
+          e instanceof ApiError && e.status === 507
+            ? t("logs.trace.noSpace")
+            : t("logs.trace.startFailed"),
         );
-        showSuccess(t("logs.trace.started"));
+        return refresh();
       })
-      .catch(() => showError(t("logs.trace.startFailed")))
       .finally(() => setTraceBusy(false));
   };
+
+  const downloadTrace = () =>
+    traceApi
+      .download()
+      .then(() => true)
+      .catch(async () => {
+        showError(t("logs.trace.downloadFailed"));
+        await refresh();
+        return false;
+      });
 
   const stopTrace = () => {
     setTraceBusy(true);
-    traceApi
-      .stop()
+    command(traceApi.stop)
       .then(async (s) => {
-        setTracing(false);
-        setTraceStartMs(null);
-        setTraceLines(s.lines);
-        setDownloadReady(true);
-        try {
-          await traceApi.download();
+        if (s.downloadReady && (await downloadTrace())) {
           showSuccess(t("logs.trace.saved"));
-        } catch {
-          showError(t("logs.trace.downloadFailed"));
         }
       })
-      .catch(() => showError(t("logs.trace.stopFailed")))
+      .catch((e: unknown) => {
+        if (!(e instanceof ApiError && e.status === 400)) {
+          showError(t("logs.trace.stopFailed"));
+        }
+        return refresh();
+      })
       .finally(() => setTraceBusy(false));
-  };
-
-  const downloadTrace = () => {
-    traceApi.download().catch(() => showError(t("logs.trace.downloadFailed")));
   };
 
   return {
     tracing,
     traceBusy,
-    traceLines,
+    traceKnown: status !== undefined,
+    traceLines: status?.lines ?? 0,
     traceElapsed,
-    downloadReady,
+    traceMaxMinutes: Math.round((status?.maxSeconds ?? 0) / 60),
+    downloadReady: status?.downloadReady ?? false,
+    traceEndReason: status?.endReason,
     startTrace,
     stopTrace,
-    downloadTrace,
+    downloadTrace: () => void downloadTrace(),
   };
 }

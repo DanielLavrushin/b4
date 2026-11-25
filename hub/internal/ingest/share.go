@@ -90,7 +90,7 @@ func (s *Service) share(ctx context.Context, entry record) Response {
 		Projection:      projection,
 		Payloads:        payloads,
 		Flags:           Flags(projection, payloads),
-		Geo:             body.Envelope.Geo,
+		Geo:             hubwire.BuiltInGeo(body.Envelope.Geo),
 		B4Min:           hubwire.MinVersion(projection),
 		B4Version:       clip(b4Version, MaxHintRunes),
 		Engine:          clip(engine, MaxHintRunes),

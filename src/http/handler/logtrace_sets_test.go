@@ -419,6 +419,7 @@ func TestCollectTraceSetsNilConfig(t *testing.T) {
 }
 
 func TestTraceHeaderCarriesEnabledSets(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
 	cfg := config.NewConfig()
 	cfg.ConfigPath = "/etc/b4/b4.json"
 	routed := routedTestSet()
@@ -459,5 +460,27 @@ func TestTraceHeaderCarriesEnabledSets(t *testing.T) {
 	}
 	if strings.Contains(body, "hunter2") || strings.Contains(body, "socksuser") {
 		t.Error("trace file should not carry upstream credentials")
+	}
+}
+
+func TestCollectTraceSetsMasksAResolverURLInTheAddressField(t *testing.T) {
+	for target, want := range map[string]string{
+		"https://canaryuser:canarypass@dns.example/canarypath?id=canaryquery": "https://dns.example",
+		"https://canaryuser:canary^pass@dns.example/":                         "https://[redacted]",
+		"dns.example/canarypath?id=canaryquery":                               "[redacted]",
+		"192.0.2.1:53":                                                        "192.0.2.1:53",
+		"quic://canaryuser:canarypass@dns.example":                            "[redacted]",
+		"192.0.2.1": "192.0.2.1",
+		"":          "",
+	} {
+		cfg := config.NewConfig()
+		set := config.DefaultSetConfig
+		set.Id, set.Name, set.Enabled = "cdcd8888", "Misplaced", true
+		set.DNS = config.DNSConfig{Enabled: true, TargetDNS: target}
+		cfg.Sets = []*config.SetConfig{&set}
+		got := collectTraceSets(&cfg)
+		if len(got) != 1 || got[0].DNS == nil || got[0].DNS.TargetDNS != want {
+			t.Errorf("target_dns %q is in the trace as %+v, want %q", target, got[0].DNS, want)
+		}
 	}
 }

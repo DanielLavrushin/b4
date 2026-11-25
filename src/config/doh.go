@@ -16,3 +16,9 @@ var KnownDoHHosts = map[string]bool{
 	"freedns.controld.com": true, "doh.tiarap.org": true, "doh.tiar.app": true, "dns.switch.ch": true,
 	"dns.brahma.world": true, "doh.applied-privacy.net": true, "basic.rethinkdns.com": true,
 }
+
+var publicDoHPaths = map[string]bool{
+	"doh.applied-privacy.net/query":             true,
+	"doh.cleanbrowsing.org/doh/security-filter": true,
+	"freedns.controld.com/p0":                   true,
+}

@@ -131,9 +131,9 @@ binary: `go -C src list -deps . | grep goleak` prints nothing.
   MTProto, MSS, SOCKS5, NFQUEUE stay in English.
 - **Terminology**: b4 is a "service" ("сервис"), not a "program". Docs tone is factual and
   explanatory, never promotional, and makes no unverifiable DPI-bypass claims.
-- **Changelogs.** Keep a Changelog format. Router changes: `changelog.md` and `changelog_ru.md`,
-  under `## [Unreleased]` until a release renames it. Anything under
-  `hub/`: `hub/CHANGELOG.md`, English only, its own semver, no `[Unreleased]`. Installer-only changes: no
+- **Changelogs.** Keep a Changelog format. Router changes: `changelog.md` and `changelog_ru.md`.
+  Anything under `hub/`: `hub/CHANGELOG.md`, English only, its own semver. Both collect changes
+  under `## [Unreleased]` until a release renames it. Installer-only changes: no
   entry and no version bump, because `install.sh` is served from `main` the moment it
   lands. Always write entries with the `b4-changelog` skill.
 - **Marks reference.** `docs/docs/guides/marks.md` and its RU mirror list every mark bit, ip

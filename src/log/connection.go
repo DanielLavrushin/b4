@@ -95,11 +95,17 @@ func (h *ConnectionHub) Broadcast(msg string) {
 func LogConnection(protocol, sniSet, domain, srcIP string, srcPort uint16, ipSet, dstIP string, dstPort uint16, srcMac, tlsVersion, metadata string) {
 	source := net.JoinHostPort(srcIP, strconv.Itoa(int(srcPort)))
 	destination := net.JoinHostPort(dstIP, strconv.Itoa(int(dstPort)))
-	emitConnection(protocol, sniSet, domain, source, ipSet, destination, srcMac, tlsVersion, metadata)
+	emitConnection(true, protocol, sniSet, domain, source, ipSet, destination, srcMac, tlsVersion, metadata)
+}
+
+func LogInfoConnection(protocol, sniSet, domain, srcIP string, srcPort uint16, ipSet, dstIP string, dstPort uint16, srcMac, tlsVersion, metadata string) {
+	source := net.JoinHostPort(srcIP, strconv.Itoa(int(srcPort)))
+	destination := net.JoinHostPort(dstIP, strconv.Itoa(int(dstPort)))
+	emitConnection(ConfiguredLevel() >= LevelInfo, protocol, sniSet, domain, source, ipSet, destination, srcMac, tlsVersion, metadata)
 }
 
 func LogConnectionStr(protocol, sniSet, domain, source, ipSet, destination, srcMac, tlsVersion, metadata string) {
-	emitConnection(protocol, sniSet, domain, source, ipSet, destination, srcMac, tlsVersion, metadata)
+	emitConnection(true, protocol, sniSet, domain, source, ipSet, destination, srcMac, tlsVersion, metadata)
 }
 
 func formatConnectionCSV(protocol, sniSet, domain, source, ipSet, destination, srcMac, tlsVersion, metadata string) string {
@@ -159,14 +165,16 @@ func sanitizeConnField(s string) string {
 	}, s)
 }
 
-func emitConnection(protocol, sniSet, domain, source, ipSet, destination, srcMac, tlsVersion, metadata string) {
+func emitConnection(feed bool, protocol, sniSet, domain, source, ipSet, destination, srcMac, tlsVersion, metadata string) {
 	sniSet = sanitizeConnField(sniSet)
 	domain = sanitizeConnField(domain)
 	ipSet = sanitizeConnField(ipSet)
 	srcMac = sanitizeConnField(srcMac)
 	metadata = sanitizeConnField(metadata)
-	csv := formatConnectionCSV(protocol, sniSet, domain, source, ipSet, destination, srcMac, tlsVersion, metadata)
-	GetConnectionHub().Broadcast(time.Now().Format(connectionTimestampLayout) + "," + csv)
+	if feed {
+		csv := formatConnectionCSV(protocol, sniSet, domain, source, ipSet, destination, srcMac, tlsVersion, metadata)
+		GetConnectionHub().Broadcast(time.Now().Format(connectionTimestampLayout) + "," + csv)
+	}
 
 	if Level(CurLevel.Load()) >= LevelInfo {
 		Infof("%s", formatConnectionHuman(protocol, sniSet, domain, source, ipSet, destination, srcMac, tlsVersion, metadata))

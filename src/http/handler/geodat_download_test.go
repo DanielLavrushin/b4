@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
 	"os"
 	"path/filepath"
 	"strings"
@@ -160,6 +161,30 @@ func TestDownloadFileGivesUpOnAStalledTransfer(t *testing.T) {
 		t.Fatal("the stall timeout did not fire")
 	}
 	assertKept(t, dest, good)
+}
+
+type slowTransport struct{ stallTimeout time.Duration }
+
+func (s slowTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	downloadStallTimeout = s.stallTimeout
+	httptrace.ContextClientTrace(r.Context()).ConnectDone("tcp", "files.example:80", nil)
+	select {
+	case <-r.Context().Done():
+		return nil, r.Context().Err()
+	case <-time.After(2 * time.Second):
+		return nil, errors.New("the download did not stall")
+	}
+}
+
+func TestADownloadKeepsTheStallTimeoutItStartedWith(t *testing.T) {
+	timeout, client := downloadStallTimeout, downloadClient
+	t.Cleanup(func() { downloadStallTimeout, downloadClient = timeout, client })
+	downloadStallTimeout = 50 * time.Millisecond
+	downloadClient = &http.Client{Transport: slowTransport{time.Hour}}
+	_, err := downloadFile(context.Background(), "http://files.example/geosite.dat", filepath.Join(t.TempDir(), "geosite.dat"), nil)
+	if !errors.Is(err, errDownloadStalled) {
+		t.Fatalf("want a stall error, got %v", err)
+	}
 }
 
 func TestDownloadFileKeepsGoingWhileDataFlows(t *testing.T) {

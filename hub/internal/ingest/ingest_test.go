@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4hub/internal/asn"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
@@ -221,6 +223,37 @@ func TestDuplicateRecordAnswers200(t *testing.T) {
 
 func ptr(set config.SetConfig) *config.SetConfig {
 	return &set
+}
+
+func TestShareDropsACustomGeodataAddress(t *testing.T) {
+	f := newFixture(t)
+	private := "https://canaryuser:canarypass@files.example/canarytoken/geosite.dat?sig=canarysig"
+	sources, err := geodat.Sources()
+	if err != nil || len(sources) == 0 {
+		t.Fatalf("no built-in sources: %v", err)
+	}
+	site, ip := sources[0].GeositeURL, sources[0].GeoipURL
+	for i, tc := range []struct {
+		sent, want *hubwire.GeoSource
+	}{
+		{nil, nil},
+		{&hubwire.GeoSource{SiteURL: private, IPURL: private}, nil},
+		{&hubwire.GeoSource{SiteURL: private, IPURL: ip}, &hubwire.GeoSource{IPURL: ip}},
+		{&hubwire.GeoSource{SiteURL: site, IPURL: ip}, &hubwire.GeoSource{SiteURL: site, IPURL: ip}},
+	} {
+		set := testkit.SampleSet(fmt.Sprintf("Geodata %d", i), fmt.Sprintf("geodata%d.example", i))
+		env := testkit.BuildEnvelope(t, &set)
+		env.Geo = tc.sent
+		resp := f.post(t, testkit.SignShare(t, testkit.Identity(t), env, f.clock), peerA)
+		expect(t, resp, http.StatusAccepted, "")
+		v, err := f.store.GetVersion(context.Background(), resp.Body["set_id"].(string), 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if (v.Geo == nil) != (tc.want == nil) || v.Geo != nil && *v.Geo != *tc.want {
+			t.Errorf("sent %+v, stored %+v, want %+v", tc.sent, v.Geo, tc.want)
+		}
+	}
 }
 
 func TestSharesPerKeyPerDayAreLimited(t *testing.T) {

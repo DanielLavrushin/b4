@@ -134,15 +134,23 @@ func (s *Store) keyRows(ctx context.Context, where string, args ...interface{}) 
 	}); err != nil {
 		return nil, err
 	}
-	if err := countInto(ctx, s.db, `SELECT s.author_hmac, COUNT(DISTINCT s.id),
-		COUNT(DISTINCT CASE WHEN v.status = 'active' THEN s.id END), ''
-		FROM sets s LEFT JOIN set_versions v ON v.set_id = s.id GROUP BY s.author_hmac`, func(key string, a, b int, _ string) {
-		if k := at(key); k != nil {
-			k.Sets = a
-			k.ListedSets = b
-		}
-	}); err != nil {
+	sets, err := s.Sets(ctx)
+	if err != nil {
 		return nil, err
+	}
+	for _, set := range sets {
+		if k := at(set.AuthorHMAC); k != nil {
+			k.Sets++
+		}
+	}
+	listed, err := s.ListedVersions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, v := range listed {
+		if k := at(sets[v.SetID].AuthorHMAC); k != nil {
+			k.ListedSets++
+		}
 	}
 	if err := countInto(ctx, s.db, `SELECT uploader_hmac, COUNT(*), 0, '' FROM set_versions WHERE status = 'pending' GROUP BY uploader_hmac`, func(key string, a, _ int, _ string) {
 		if k := at(key); k != nil {

@@ -128,9 +128,9 @@ if [ "$changelog_en" = 1 ] || [ "$changelog_ru" = 1 ]; then
   fi
 fi
 if has '^hub/CHANGELOG\.md$'; then
-  awk -v mode=lint -v hub=1 -f "$skill_dir/changelog.awk" hub/CHANGELOG.md > "$tmp/hub_changelog_lint"
+  awk -v mode=lint -f "$skill_dir/changelog.awk" hub/CHANGELOG.md > "$tmp/hub_changelog_lint"
   if [ -s "$tmp/hub_changelog_lint" ]; then
-    fail "hub/CHANGELOG.md format (Keep a Changelog, no [Unreleased]):"
+    fail "hub/CHANGELOG.md format (Keep a Changelog, /b4-changelog):"
     detail "$tmp/hub_changelog_lint"
   fi
 fi
