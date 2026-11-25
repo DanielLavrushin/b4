@@ -311,17 +311,17 @@ that carried only the closer ban produced four-to-six-sentence bullets.
 differences:
 
 - English only. There is no Russian mirror.
-- Its own version, independent of b4: semver from 1.0.0, `## [x.y.z] - YYYY-MM-DD`. New
-  capabilities bump the minor version, fixes alone the patch.
-- **No `[Unreleased]` section.** The release workflow in the b4hub repository takes the top
-  `## [` block and refuses the release unless its heading carries the version being
-  released. Write changes straight into the next version's block. If the top block is
-  already released (its version exists at github.com/DanielLavrushin/b4hub/releases), start
-  a new block above it.
+- Its own version, independent of b4: semver from 1.0.0. New capabilities bump the minor
+  version, fixes alone the patch. The version is chosen when the release is cut.
+- Unreleased changes collect under `## [Unreleased]`, as in `changelog.md`, and cutting a
+  release is the same rename, in `hub/CHANGELOG.md` alone. The release workflow in the b4hub
+  repository publishes the `## [x.y.z]` block of the version it releases and fails when the
+  block is missing; a pre-release without one gets the `[Unreleased]` block.
 - Every change under `hub/` (Go code, the console in `hub/ui`, the mirror, the `b4hub` CLI,
   the store schema) or to the deploy bundle in the b4hub repo gets a bullet in the same
   session.
 - Link references at the bottom compare the b4hub repository's tags:
+  `[unreleased]: https://github.com/DanielLavrushin/b4hub/compare/v<latest>...HEAD` and
   `[x.y.z]: https://github.com/DanielLavrushin/b4hub/compare/v<previous>...vx.y.z`.
 - A change that crosses both sides, such as the wire format in `src/hubwire` or the router's
   hub client together with the hub, gets a bullet in each changelog, each written for its

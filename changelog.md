@@ -2102,7 +2102,12 @@ All notable changes to b4 are recorded in this file.
 
 - Domains from geodata files are handled better.
 
-[unreleased]: https://github.com/DanielLavrushin/b4/compare/v1.90.0...HEAD
+[unreleased]: https://github.com/DanielLavrushin/b4/compare/v1.93.0...HEAD
+[1.93.0]: https://github.com/DanielLavrushin/b4/compare/v1.92.0...v1.93.0
+[1.92.0]: https://github.com/DanielLavrushin/b4/compare/v1.91.1...v1.92.0
+[1.91.1]: https://github.com/DanielLavrushin/b4/compare/v1.91.0...v1.91.1
+[1.91.0]: https://github.com/DanielLavrushin/b4/compare/v1.90.1...v1.91.0
+[1.90.1]: https://github.com/DanielLavrushin/b4/compare/v1.90.0...v1.90.1
 [1.90.0]: https://github.com/DanielLavrushin/b4/compare/v1.89.1...v1.90.0
 [1.89.1]: https://github.com/DanielLavrushin/b4/compare/v1.89.0...v1.89.1
 [1.89.0]: https://github.com/DanielLavrushin/b4/compare/v1.88.2...v1.89.0
