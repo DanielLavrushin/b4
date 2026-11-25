@@ -19,6 +19,7 @@ All notable changes to b4 are recorded in this file.
 - The login or token in a custom geodata address was written to the log and shown under **Geo Databases** when a download failed.
 - The path of an `https://` resolver address, which can hold an account ID, was written to the log and log traces, and to the saved log and history of **Discovery**, which every account on the router could read.
 - A set published with **Publish to hub** or prepared with **Prepare shared set** carried the whole address of a custom geodata source, and of its first resolver when that was an `https://` one. Replace a login, token or account ID that was in a set, log or trace you gave to someone.
+- The safe copy of **Download Configuration** kept the user name and the password of an address whose host was left out, when the password was a long number.
 
 ## [1.93.0] - 2026-11-21
 
