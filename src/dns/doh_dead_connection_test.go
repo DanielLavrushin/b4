@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -216,6 +217,56 @@ func TestAQueryWaitingOnADeadDoHConnectionIsAskedAgain(t *testing.T) {
 	}
 	if n := proxy.connections(); n != 2 {
 		t.Fatalf("%d connections, want one new connection in place of the dead one", n)
+	}
+}
+
+func TestALookupWhoseAnswerIsCutOffIsAskedAgain(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		cut   func(w io.Writer, body []byte)
+		asked int32
+		ok    bool
+	}{
+		{"after the headers", func(w io.Writer, body []byte) {
+			fmt.Fprintf(w, "HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n", len(body))
+		}, 3, true},
+		{"in the middle of the body", func(w io.Writer, body []byte) {
+			fmt.Fprintf(w, "HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n%s", len(body), body[:len(body)/2])
+		}, 3, true},
+		{"a whole refusal", func(w io.Writer, _ []byte) {
+			fmt.Fprint(w, "HTTP/1.1 500 no\r\nContent-Length: 0\r\n\r\n")
+		}, 2, false},
+	} {
+		var asked atomic.Int32
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			query, _ := io.ReadAll(r.Body)
+			body := BuildAnswerFromIPs(query, 60, []net.IP{net.IPv4(203, 0, 113, 9)})
+			if asked.Add(1) == 2 {
+				if conn, rw, err := w.(http.Hijacker).Hijack(); err == nil {
+					tc.cut(rw, body)
+					rw.Flush()
+					conn.Close()
+				}
+				return
+			}
+			_, _ = w.Write(body)
+		}))
+		client := MarkedDoHClient(0, 10*time.Second)
+		ask := func() ([]byte, error) {
+			return ResolveSetDoH(context.Background(), client, ts.URL+"/dns-query", BuildQuery("www.example.com", 7, rrTypeA))
+		}
+		if _, err := ask(); err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		answer, err := ask()
+		if (err == nil) != tc.ok || tc.ok && len(ParseResponseIPs(answer)) != 1 {
+			t.Errorf("%s: %d bytes, %v, want it answered %v", tc.name, len(answer), err, tc.ok)
+		}
+		if n := asked.Load(); n != tc.asked {
+			t.Errorf("%s: %d queries reached the server, want %d", tc.name, n, tc.asked)
+		}
+		client.CloseIdleConnections()
+		ts.Close()
 	}
 }
 

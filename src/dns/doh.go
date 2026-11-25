@@ -20,6 +20,8 @@ import (
 
 const DoHContentType = "application/dns-message"
 
+const dohMaxBody = 65536
+
 var ErrDoHMethodNotAllowed = errors.New("doh method not allowed")
 
 var (
@@ -107,7 +109,7 @@ func dohGET(ctx context.Context, send dohSend, serverURL string, query []byte) (
 func sendAgainIfLost(client *http.Client, req *http.Request) (*http.Response, error) {
 	var reused atomic.Bool
 	trace := &httptrace.ClientTrace{GotConn: func(got httptrace.GotConnInfo) { reused.Store(got.Reused) }}
-	resp, err := client.Do(req.WithContext(httptrace.WithClientTrace(req.Context(), trace)))
+	resp, err := sendAndRead(client, req.WithContext(httptrace.WithClientTrace(req.Context(), trace)))
 	if err == nil || !reused.Load() || timedOut(err) || req.Context().Err() != nil {
 		return resp, err
 	}
@@ -118,6 +120,20 @@ func sendAgainIfLost(client *http.Client, req *http.Request) (*http.Response, er
 		}
 	}
 	return client.Do(again)
+}
+
+func sendAndRead(client *http.Client, req *http.Request) (*http.Response, error) {
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, dohMaxBody))
+	if err != nil {
+		return nil, err
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	return resp, nil
 }
 
 func timedOut(err error) bool {
@@ -139,5 +155,5 @@ func dohDo(send dohSend, req *http.Request) ([]byte, error) {
 		io.Copy(io.Discard, resp.Body)
 		return nil, fmt.Errorf("doh status %d", resp.StatusCode)
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, 65536))
+	return io.ReadAll(io.LimitReader(resp.Body, dohMaxBody))
 }
