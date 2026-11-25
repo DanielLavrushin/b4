@@ -171,6 +171,7 @@ func TestAPublicResolverIsShared(t *testing.T) {
 		"https://dns.alidns.com:443/dns-query":              true,
 		"https://freedns.controld.com/p0":                   true,
 		"https://doh.cleanbrowsing.org/doh/security-filter": true,
+		"https://doh.applied-privacy.net/query":             true,
 		"https://unknown.example/dns-query":                 false,
 		"https://id.unknown.example/":                       false,
 	} {

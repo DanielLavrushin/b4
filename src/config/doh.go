@@ -18,6 +18,7 @@ var KnownDoHHosts = map[string]bool{
 }
 
 var publicDoHPaths = map[string]bool{
+	"doh.applied-privacy.net/query":             true,
 	"doh.cleanbrowsing.org/doh/security-filter": true,
 	"freedns.controld.com/p0":                   true,
 }
