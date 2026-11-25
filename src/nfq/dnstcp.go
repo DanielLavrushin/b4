@@ -252,8 +252,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		return writeDNSTCPMessage(client, resp, cfg.DNSTCPIOTimeout()) == nil
 	}
 	relay := func(cfg *config.Config, set *config.SetConfig, domain string, query []byte) bool {
-		pinsActive := cfg.IPFamilyEnabled(v6) && cfg.HasDNSPins()
-		if qtype, _ := dns.QuestionType(query); cfg.Queue.IsDiscovery || !(cfg.HasECHStrip() || s.worker.bans.any() || pinsActive) || !standardQuery(query) || qtype == dnsTypeAXFR || qtype == dnsTypeIXFR {
+		if qtype, _ := dns.QuestionType(query); cfg.Queue.IsDiscovery || !standardQuery(query) || qtype == dnsTypeAXFR || qtype == dnsTypeIXFR {
 			upstream.close()
 			s.passthrough(client, origIP, origPort, origErr, query)
 			return false
