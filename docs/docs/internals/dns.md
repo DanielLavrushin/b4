@@ -126,6 +126,8 @@ Only the addresses the set names are compared: a query a resolver sends from ano
 
 b4 finds a DoH server given by host name through the router's own resolver. When that resolver is a forwarder on the router, such as dnsmasq on OpenWrt, its upstream query for the name reaches b4 like any other query. A set that covers the name would send it to the resolver that waits for it.
 
+This can happen only when a nameserver in `/etc/resolv.conf` of b4's host may be such a forwarder: an address of the host, a private address, or an address in one of the host's networks. When every nameserver is a public address elsewhere, the set's resolvers answer the host name like any other name.
+
 Unless b4 blocks such a query or answers it from a pin, it goes past the resolvers given by host name:
 
 - Over UDP, a set that also has resolvers given by IP address asks those in [the usual order](#resolver-order), and then the resolver the query was addressed to, over plain DNS. A resolver given by IP address that denies the name also keeps b4 from the DoH server.

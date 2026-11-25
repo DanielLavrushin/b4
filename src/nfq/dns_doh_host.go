@@ -7,6 +7,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/dns"
+	"github.com/daniellavrushin/b4/netprobe"
 	"github.com/daniellavrushin/b4/sni"
 )
 
@@ -22,7 +23,7 @@ func (w *Worker) resolversNeed(cfg *config.Config, set *config.SetConfig, domain
 		host := pending[0]
 		pending = pending[1:]
 		if host == domain || zoneKeys && strings.HasSuffix(host, "."+domain) {
-			return true
+			return !lookedUpOutside()
 		}
 		if seen[host] {
 			continue
@@ -37,6 +38,22 @@ func (w *Worker) resolversNeed(cfg *config.Config, set *config.SetConfig, domain
 		}
 	}
 	return false
+}
+
+var (
+	systemNameservers = netprobe.SystemNameservers
+	ownNetworks       = net.InterfaceAddrs
+)
+
+func lookedUpOutside() bool {
+	own, err := ownNetworks()
+	return err == nil && !slices.ContainsFunc(systemNameservers(), func(server string) bool {
+		ip := net.ParseIP(server)
+		return !netprobe.PublicAddress(ip) || slices.ContainsFunc(own, func(a net.Addr) bool {
+			n, ok := a.(*net.IPNet)
+			return ok && n.Contains(ip)
+		})
+	})
 }
 
 func (w *Worker) serversToAsk(cfg *config.Config, set *config.SetConfig, servers []dns.Server, domain string, query []byte, srcMac string, asked net.IP, keep ...sni.SetFilter) []dns.Server {
