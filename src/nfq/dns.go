@@ -527,7 +527,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					return vc.accept()
 				}
 
-				if w.resolversNeed(cfg, set, domain, srcMac, keep) {
+				if servers = w.serversToAsk(cfg, set, servers, domain, srcMac, originalDst, keep); len(servers) == 0 {
 					log.Tracef("DNS redirect: the resolvers of set %s are reached through %s, forwarding its lookup unchanged", set.Name, dns.SafeName(domain))
 					logDNSEvent("UDP", set, domain, clientIP, originalDst, clientPort, srcMac, dnsActionDoHHost)
 					return vc.accept()
@@ -768,7 +768,7 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		resp = filtered
 	}
 
-	if err == nil && classifyDNSAnswer(resp) == dnsVerdictGood {
+	if err == nil && classifyDNSAnswer(resp) == dnsVerdictGood && !serverNamed(servers, source).Unlisted {
 		rememberDNSAnswer(queryDomain, query, resp)
 	}
 

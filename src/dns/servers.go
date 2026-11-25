@@ -161,7 +161,7 @@ func askInOrder[T any](callCtx context.Context, servers []Server, opt Options,
 				next++
 				release, free := func() {}, true
 				if !opt.Quiet {
-					release, free = beginSourceAsk(srv.Source, consult, capped)
+					release, free = beginSourceAsk(srv.askKey(), consult, capped)
 				}
 				if !free {
 					switch {
@@ -279,6 +279,9 @@ func armTimer(timer *time.Timer, ch *<-chan time.Time, d time.Duration) {
 }
 
 func noteAnswer(srv Server, class answerClass) {
+	if srv.Unlisted {
+		return
+	}
 	if class == answerFailed {
 		if NoteSourceFailure(srv.Source) {
 			log.Warnf("DNS: %s failed %d times in a row, lookups leave it out for %s where another resolver of the set or a fallback can answer",

@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -25,6 +26,11 @@ func strictSet(set *config.SetConfig) *config.SetConfig {
 	return set
 }
 
+func listed(set *config.SetConfig, upstreams ...string) *config.SetConfig {
+	set.DNS.Upstreams = upstreams
+	return set
+}
+
 func dohHostLoggedOnce(t *testing.T, ch chan string, why string) {
 	t.Helper()
 	lines := drainLines(ch)
@@ -41,8 +47,6 @@ func dohHostLoggedOnce(t *testing.T, ch chan string, why string) {
 func TestALookupTheSetsResolversNeedIsForwardedUnchanged(t *testing.T) {
 	thisHost(t)
 	const catchAll = "regexp:.*"
-	first := dohByName("first", "https://192.0.2.5/dns-query", catchAll)
-	first.DNS.Upstreams = []string{"https://b.example/dns-query"}
 	backup := dohByName("backup", "https://b.example/dns-query", "other.example")
 	plain := func(name string) *config.SetConfig {
 		set := config.NewSetConfig()
@@ -60,7 +64,7 @@ func TestALookupTheSetsResolversNeedIsForwardedUnchanged(t *testing.T) {
 		{"a set that targets every name", []*config.SetConfig{dohByName("all", "https://dns.example/dns-query", catchAll)}, "dns.example", ""},
 		{"a set that lists its resolver's domain", []*config.SetConfig{dohByName("own", "https://dns.example:8443/dns-query", "www.example.com", "example")}, "DNS.example", ""},
 		{"a set that fails closed", []*config.SetConfig{strictSet(dohByName("strict", "https://dns.example/dns-query", catchAll))}, "dns.example", ""},
-		{"a later resolver of the list", []*config.SetConfig{first}, "b.example", ""},
+		{"a later resolver of the list", []*config.SetConfig{listed(dohByName("first", "https://a.example/dns-query", catchAll), "https://b.example/dns-query")}, "b.example", ""},
 		{"two sets that list each other's resolver, the first", []*config.SetConfig{
 			dohByName("a", "https://a.example/dns-query", "b.example"),
 			dohByName("b", "https://b.example/dns-query", "a.example"),
@@ -103,6 +107,152 @@ func TestALookupTheSetsResolversNeedIsForwardedUnchanged(t *testing.T) {
 			dohHostLoggedOnce(t, lines, "TCP")
 		})
 	}
+}
+
+func TestALookupOnlySomeResolversWaitForIsAskedOfTheOnesByAddress(t *testing.T) {
+	thisHost(t)
+	const byAddress, plain, byName = "https://192.0.2.5/dns-query", "192.0.2.9", "https://dns.example/dns-query"
+	asked := net.ParseIP("203.0.113.53").To4()
+	for _, tc := range []struct {
+		name  string
+		list  []string
+		asked net.IP
+		want  []string
+	}{
+		{"a DoH resolver by address first", []string{byAddress, byName}, asked, []string{byAddress}},
+		{"a DoH resolver by address last", []string{byName, byAddress}, asked, []string{byAddress}},
+		{"a plain resolver", []string{byName, plain}, asked, []string{plain}},
+		{"both kinds keep their order", []string{plain, byName, byAddress}, asked, []string{plain, byAddress}},
+		{"a plain resolver that is the one asked", []string{byName, "203.0.113.53", byAddress}, asked, []string{"203.0.113.53", byAddress}},
+		{"a DoH resolver at the address asked", []string{byName, "https://203.0.113.53/dns-query"}, asked, []string{"https://203.0.113.53/dns-query"}},
+		{"the router's own address", []string{byAddress, byName}, net.ParseIP("192.168.1.1").To4(), []string{byAddress}},
+		{"a loopback address", []string{byAddress, byName}, net.ParseIP("127.0.0.1").To4(), []string{byAddress}},
+		{"a local IPv6 address", []string{byAddress, byName}, net.ParseIP("fd00::1"), []string{byAddress}},
+		{"no resolver by address", []string{byName, "https://outside.example/dns-query"}, asked, nil},
+		{"no address asked", []string{byAddress, byName}, nil, nil},
+		{"the unspecified IPv4 address", []string{byAddress, byName}, net.IPv4zero, nil},
+		{"the unspecified IPv6 address", []string{byAddress, byName}, net.IPv6unspecified, nil},
+		{"a link-local IPv4 address", []string{byAddress, byName}, net.ParseIP("169.254.1.1"), nil},
+		{"a link-local IPv6 address", []string{byAddress, byName}, net.ParseIP("fe80::1"), nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			set := strictSet(listed(dohByName("all", "", "regexp:.*"), tc.list...))
+			w := redirectWorker(t, true, set)
+			cfg := w.getConfig()
+			mark, timeout := int(cfg.MainInjectedMark()), cfg.DNSQueryTimeout()
+			if mark == 0 || timeout == 0 {
+				t.Fatalf("mark %d, timeout %s", mark, timeout)
+			}
+			var want []dns.Server
+			askedListed := false
+			for _, source := range tc.want {
+				srv := dns.Server{Source: source, Mark: mark, Timeout: timeout}
+				if ip := net.ParseIP(source); ip != nil {
+					srv.UDP = ip
+					askedListed = askedListed || ip.Equal(tc.asked)
+				} else {
+					srv.DoHURL = source
+				}
+				want = append(want, srv)
+			}
+			if want != nil && !askedListed {
+				want = append(want, dns.Server{Source: tc.asked.String(), UDP: tc.asked, Mark: mark, Timeout: timeout, Unlisted: true})
+			}
+			if got := w.serversToAsk(cfg, set, redirectServers(cfg, set), "dns.example", "", tc.asked); !reflect.DeepEqual(got, want) {
+				t.Fatalf("asked of %+v, want %+v", got, want)
+			}
+			if got := w.serversToAsk(cfg, set, redirectServers(cfg, set), "www.dns.example", "", tc.asked); len(got) != len(tc.list) {
+				t.Fatalf("a lookup no resolver waits for is asked of %+v, want the whole list", got)
+			}
+		})
+	}
+}
+
+func TestTheResolversByAddressAnswerADoHHostLookupOverUDP(t *testing.T) {
+	thisHost(t)
+	set := strictSet(listed(dohByName("all", "https://dns.example/dns-query", "regexp:.*"), "https://192.0.2.5/dns-query"))
+	w := redirectWorker(t, true, set)
+	for _, tc := range []struct {
+		src, dst string
+		verdict  int
+		rows     []string
+	}{
+		{"192.0.2.1", "203.0.113.53", nfqueue.NfDrop, []string{dnsActionDoHPrefix + "192.0.2.5"}},
+		{"2001:db8::1", "2001:db8::53", nfqueue.NfDrop, []string{dnsActionDoHPrefix + "192.0.2.5"}},
+		{"2001:db8::1", "fe80::1", nfqueue.NfAccept, []string{dnsActionDoHHost}},
+	} {
+		lines := connectionLines(t)
+		q := newFakeQueue()
+		w.processDnsPacket(&verdictCtx{id: 96, q: q}, lanQuery(tc.src, tc.dst), 40000, 53, dns.BuildQuery("dns.example", 96, dnsTypeA))
+		if v := q.now(t); v != tc.verdict {
+			t.Errorf("%s: verdict %d, want %d", tc.dst, v, tc.verdict)
+		}
+		if got := labels(drainLines(lines)); len(got) == 0 || got[0] != tc.rows[0] {
+			t.Errorf("%s: rows %q, want %q first", tc.dst, got, tc.rows)
+		}
+	}
+}
+
+func TestADoHHostLookupIsForwardedUnchangedWhileHalfOfTheLookupsAreTaken(t *testing.T) {
+	thisHost(t)
+	set := strictSet(listed(dohByName("all", "https://dns.example/dns-query", "regexp:.*"), "https://192.0.2.5/dns-query"))
+	w := redirectWorker(t, false, set)
+	for len(dnsResolveInflight) < maxDNSResolveInflight/2-1 {
+		dnsResolveInflight <- struct{}{}
+	}
+	t.Cleanup(func() {
+		for len(dnsResolveInflight) > 0 {
+			<-dnsResolveInflight
+		}
+	})
+	for _, tc := range []struct {
+		name  string
+		asked string
+		want  int
+	}{
+		{"one below half", "dns.example", nfqueue.NfDrop},
+		{"half", "dns.example", nfqueue.NfAccept},
+		{"half, a lookup no resolver waits for", "www.example.com", nfqueue.NfDrop},
+	} {
+		lines := connectionLines(t)
+		q := newFakeQueue()
+		w.processDnsPacket(&verdictCtx{id: 98, q: q}, lanQuery("192.0.2.1", "203.0.113.53"), 40000, 53, dns.BuildQuery(tc.asked, 98, dnsTypeA))
+		if v := q.now(t); v != tc.want {
+			t.Errorf("%s: verdict %d, want %d", tc.name, v, tc.want)
+		}
+		if n := countAction(drainLines(lines), dnsActionDoHHost); (n == 1) != (tc.want == nfqueue.NfAccept) {
+			t.Errorf("%s: %d %s rows", tc.name, n, dnsActionDoHHost)
+		}
+		w.wg.Wait()
+		for len(dnsResolveInflight) < maxDNSResolveInflight/2 {
+			dnsResolveInflight <- struct{}{}
+		}
+	}
+}
+
+func TestALookupARingOfSetsWaitsForIsAskedOfTheResolversByAddress(t *testing.T) {
+	thisHost(t)
+	first := strictSet(listed(dohByName("a", "https://a.example/dns-query", "b.example"), "https://192.0.2.5/dns-query"))
+	w := redirectWorker(t, false, first, strictSet(dohByName("b", "https://b.example/dns-query", "a.example")))
+	lines := connectionLines(t)
+	q := newFakeQueue()
+	w.processDnsPacket(&verdictCtx{id: 99, q: q}, lanQuery("192.0.2.1", "203.0.113.53"), 40000, 53, dns.BuildQuery("b.example", 99, dnsTypeA))
+	if v := q.now(t); v != nfqueue.NfDrop {
+		t.Fatalf("verdict %d, want the resolver by address to answer", v)
+	}
+	if got := labels(drainLines(lines)); len(got) == 0 || got[0] != dnsActionDoHPrefix+"192.0.2.5" {
+		t.Fatalf("rows %q, want the resolver by address first", got)
+	}
+}
+
+func TestADoHHostLookupOverTCPIsForwardedUnchangedWhateverElseTheSetLists(t *testing.T) {
+	thisHost(t)
+	set := strictSet(listed(dohByName("all", "https://dns.example/dns-query", "regexp:.*"), "https://192.0.2.5/dns-query"))
+	w := redirectWorker(t, false, set)
+	lines := connectionLines(t)
+	upstream := tcpDNSUpstream(t)
+	tcpFromTarget(t, w, "192.0.2.1", upstream, dns.BuildQuery("dns.example", 97, dnsTypeA))
+	dohHostLoggedOnce(t, lines, "TCP")
 }
 
 func TestALookupNoResolverWaitsForIsStillRedirected(t *testing.T) {
@@ -208,7 +358,7 @@ func TestTheSetsDoHHostStaysBlocked(t *testing.T) {
 
 func TestEscalationDoesNotSendAResolverItsOwnHostName(t *testing.T) {
 	thisHost(t)
-	next := dohByName("next", "https://dns.example/dns-query", "other.example")
+	next := listed(dohByName("next", "https://dns.example/dns-query", "other.example"), "https://192.0.2.5/dns-query")
 	w := redirectWorker(t, false, next)
 	replies := watchReplies(t)
 	query := dns.BuildQuery("dns.example", 86, dnsTypeA)
@@ -220,8 +370,8 @@ func TestEscalationDoesNotSendAResolverItsOwnHostName(t *testing.T) {
 	if w.answerViaSet(&verdictCtx{id: 86, q: newFakeQueue()}, IPv4, w.getConfig(), next, "dns.example", query, client, 40000, server) {
 		t.Fatal("the escalated set answered the reply path through a resolver that waits for this very name")
 	}
-	if len(w.answeringServers(w.getConfig(), next, "other.example", client, nil)) != 1 {
-		t.Fatal("another name of the same set still gets the set's resolver")
+	if len(w.answeringServers(w.getConfig(), next, "other.example", client, nil)) != 2 {
+		t.Fatal("another name of the same set still gets the set's resolvers")
 	}
 	noReply(t, replies, 30*time.Millisecond, "an escalated answer was sent for the resolver's own host name")
 

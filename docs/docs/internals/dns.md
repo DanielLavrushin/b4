@@ -126,11 +126,16 @@ Only the addresses the set names are compared: a query a resolver sends from ano
 
 b4 finds a DoH server given by host name through the router's own resolver. When that resolver is a forwarder on the router, such as dnsmasq on OpenWrt, its upstream query for the name reaches b4 like any other query. A set that covers the name would send it to the resolver that waits for it.
 
-b4 forwards such a query unchanged, unless it blocks the query or answers it from a pin, and logs it as `dns-doh-host`:
+Unless b4 blocks such a query or answers it from a pin, it goes past the resolvers given by host name:
+
+- Over UDP, a set that also has resolvers given by IP address asks those in [the usual order](#resolver-order), and then the resolver the query was addressed to, over plain DNS. A resolver given by IP address that denies the name also keeps b4 from the DoH server.
+- Any other such query is forwarded unchanged, and b4 logs it as `dns-doh-host`: a query over TCP, a query to a link-local address, a query that comes while 32 others are being resolved, and every query in a set without resolvers given by IP address.
+
+b4 recognises the query by its name:
 
 - The name is the one the matching set's own resolvers wait for. They can wait for it directly, or through other sets: one set covers the host name of the other set's DoH server, and the other way round.
 - The query can come from any device, over UDP or TCP. **Fail closed when no resolver is reachable** does not change this.
-- Only the host name itself passes. A name below it, and the host name of another set's DoH server that no resolver of the matching set waits for, still go to the matching set's resolvers.
+- A name below the host name, and the host name of another set's DoH server that no resolver of the matching set waits for, still go to the matching set's resolvers.
 
 A URL that names its server by IP address needs no lookup. A pin for the host name answers the router's forwarder as well. It does not reach b4's own lookup when the router asks a resolver outside the router, since b4's own lookups pass the sets.
 
