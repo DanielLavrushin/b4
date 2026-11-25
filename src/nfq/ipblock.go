@@ -13,14 +13,16 @@ import (
 )
 
 const (
-	dnsTypeA     = 1
-	dnsTypeCNAME = 5
-	dnsTypeAAAA  = 28
-	dnsTypeSVCB  = 64
-	dnsTypeHTTPS = 65
-	dnsTypeIXFR  = 251
-	dnsTypeAXFR  = 252
-	dnsTypeANY   = 255
+	dnsTypeA      = 1
+	dnsTypeCNAME  = 5
+	dnsTypeAAAA   = 28
+	dnsTypeDS     = 43
+	dnsTypeDNSKEY = 48
+	dnsTypeSVCB   = 64
+	dnsTypeHTTPS  = 65
+	dnsTypeIXFR   = 251
+	dnsTypeAXFR   = 252
+	dnsTypeANY    = 255
 )
 
 func pinnedNameLeaksThrough(qtype uint16) bool {

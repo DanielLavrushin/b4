@@ -481,3 +481,140 @@ func TestAStrictLookupOfOneResolverLeavesTheCooldownClockAlone(t *testing.T) {
 		t.Fatalf("the next lookup of a set without fail closed asked the resolver %d times, want the recovery attempt", asked)
 	}
 }
+
+func TestAServerThatIsNotListedIsNeitherCountedNorLeftOut(t *testing.T) {
+	ResetSourceHealth()
+	t.Cleanup(ResetSourceHealth)
+	const listed, asked = "192.0.2.5", "203.0.113.53"
+	query := BuildQuery("dns.example", 7, rrTypeA)
+	list := func(unlisted bool) []Server {
+		return []Server{{Source: listed, UDP: net.ParseIP(listed)}, {Source: asked, UDP: net.ParseIP(asked), Unlisted: unlisted}}
+	}
+	down := func(context.Context, Server) ([]byte, error) { return nil, errors.New("down") }
+	askedAnswers := func(_ context.Context, srv Server) ([]byte, error) {
+		if srv.Source == asked {
+			return BuildEmptyAnswer(query), nil
+		}
+		return nil, errors.New("down")
+	}
+
+	for i := 0; i < SourceFailuresToTrip; i++ {
+		if _, _, err := AskServers(context.Background(), list(true), Options{}, down); err == nil {
+			t.Fatal("a resolver that is down answered")
+		}
+	}
+	if !SourceCooling(listed) || SourceCooling(asked) {
+		t.Fatalf("left out: %s %v, %s %v, want the listed one alone", listed, SourceCooling(listed), asked, SourceCooling(asked))
+	}
+	for i := 0; i < SourceFailuresToTrip; i++ {
+		NoteSourceFailure(asked)
+	}
+	if _, _, err := AskServers(context.Background(), list(false), Options{}, askedAnswers); !errors.Is(err, ErrSourceCooling) {
+		t.Fatalf("a listed resolver that is left out was asked: %v", err)
+	}
+	if _, src, err := AskServers(context.Background(), list(true), Options{}, askedAnswers); err != nil || src != asked {
+		t.Fatalf("answered by %q, %v, want %s asked while another set leaves it out", src, err, asked)
+	}
+	refused := func(context.Context, Server) ([]byte, error) { return BuildServfailResponse(query), nil }
+	if _, src, err := AskServers(context.Background(), list(true)[1:], Options{}, refused); err != nil || src != asked {
+		t.Fatalf("refused by %q, %v", src, err)
+	}
+	if !SourceCooling(asked) {
+		t.Fatal("an answer of a server that is not listed brought the resolver of another set back")
+	}
+}
+
+func TestALateAnswerOfAServerThatIsNotListedIsNotCounted(t *testing.T) {
+	ResetSourceHealth()
+	t.Cleanup(ResetSourceHealth)
+	const listed, asked = "192.0.2.5", "203.0.113.53"
+	query := BuildQuery("dns.example", 7, rrTypeA)
+	list := []Server{{Source: listed, Timeout: 2 * time.Second}, {Source: asked, Unlisted: true}}
+	for _, tc := range []struct {
+		name    string
+		answer  []byte
+		err     error
+		cooling bool
+	}{
+		{"failures", nil, errors.New("down"), false},
+		{"answers", BuildEmptyAnswer(query), nil, true},
+		{"refusals", BuildServfailResponse(query), nil, true},
+	} {
+		ResetSourceHealth()
+		for i := 0; tc.cooling && i < SourceFailuresToTrip; i++ {
+			NoteSourceFailure(asked)
+		}
+		for i := 0; i < SourceFailuresToTrip; i++ {
+			begun, answered := make(chan struct{}), make(chan struct{})
+			var done sync.WaitGroup
+			track := func() func() { done.Add(1); return done.Done }
+			_, source, err := AskServers(context.Background(), list, Options{Life: context.Background(), Strict: true, Track: track}, func(ctx context.Context, srv Server) ([]byte, error) {
+				if srv.Source == asked {
+					close(begun)
+					select {
+					case <-answered:
+						return tc.answer, tc.err
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					}
+				}
+				select {
+				case <-begun:
+					return BuildEmptyAnswer(query), nil
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			})
+			if err != nil || source != listed {
+				t.Fatalf("%s: answered by %q, %v", tc.name, source, err)
+			}
+			close(answered)
+			done.Wait()
+		}
+		for end := time.Now().Add(200 * time.Millisecond); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+			if SourceCooling(asked) != tc.cooling {
+				t.Errorf("late %s of a server that is not listed were counted", tc.name)
+				break
+			}
+		}
+	}
+}
+
+func TestAsksOfAServerThatIsNotListedAreCappedOnTheirOwn(t *testing.T) {
+	ResetSourceHealth()
+	t.Cleanup(ResetSourceHealth)
+	const asked = "203.0.113.53"
+	life, stop := context.WithCancel(context.Background())
+	defer stop()
+	query := BuildQuery("dns.example", 7, rrTypeA)
+	var ofAsked atomic.Int32
+	ask := func(ctx context.Context, srv Server) ([]byte, error) {
+		if srv.Source == asked {
+			ofAsked.Add(1)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		time.Sleep(2 * HeadStart)
+		return BuildEmptyAnswer(query), nil
+	}
+	for _, unlisted := range []bool{false, true} {
+		ofAsked.Store(0)
+		list := []Server{{Source: "slow", Timeout: time.Minute}, {Source: asked, Timeout: time.Minute, Unlisted: unlisted}}
+		for round := 0; round < 3; round++ {
+			var wg sync.WaitGroup
+			for i := 0; i < maxSourceAsks/2; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					if _, source, err := AskServers(context.Background(), list, Options{Life: life}, ask); err != nil || source != "slow" {
+						t.Errorf("answered by %q, %v", source, err)
+					}
+				}()
+			}
+			wg.Wait()
+		}
+		if got := ofAsked.Load(); got != maxSourceAsks {
+			t.Fatalf("not listed %v: %d asks of it are running, want %d", unlisted, got, maxSourceAsks)
+		}
+	}
+}

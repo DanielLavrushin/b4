@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 
 	"github.com/daniellavrushin/b4/dns/endpoint"
@@ -99,6 +100,66 @@ func UpstreamLabel(raw string) string {
 		return ip.String()
 	}
 	return ""
+}
+
+func upstreamURLHost(raw string) string {
+	_, rest, ok := SplitUpstreamURL(raw)
+	if !ok {
+		return ""
+	}
+	if end := strings.IndexAny(rest, "/?#"); end >= 0 {
+		rest = rest[:end]
+	}
+	rest = rest[strings.LastIndexByte(rest, '@')+1:]
+	if strings.HasPrefix(rest, "[") {
+		return ""
+	}
+	host, _, _ := strings.Cut(rest, ":")
+	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
+}
+
+func urlNamesHost(raw, name string) bool {
+	_, rest, _ := strings.Cut(raw, "://")
+	rest = strings.TrimSpace(rest)
+	if !strings.Contains(rest, "@") && (len(rest) < len(name) || !strings.EqualFold(rest[:len(name)], name)) {
+		return false
+	}
+	return upstreamURLHost(raw) == name
+}
+
+func (c *DNSConfig) DoHHosts() []string {
+	if c == nil || !c.Enabled {
+		return nil
+	}
+	var hosts []string
+	for _, raw := range c.UpstreamList() {
+		host := upstreamURLHost(raw)
+		if host == "" || net.ParseIP(host) != nil || slices.Contains(hosts, host) {
+			continue
+		}
+		hosts = append(hosts, host)
+	}
+	return hosts
+}
+
+func (c *Config) IsDoHHost(name string) bool {
+	if c == nil || name == "" {
+		return false
+	}
+	for _, set := range c.Sets {
+		if set == nil || !set.Enabled || !set.DNS.Enabled {
+			continue
+		}
+		if urlNamesHost(set.DNS.DoHURL, name) {
+			return true
+		}
+		for _, raw := range set.DNS.Upstreams {
+			if urlNamesHost(raw, name) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (c *DNSConfig) HasUpstream() bool {

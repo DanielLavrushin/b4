@@ -22,12 +22,13 @@ var ErrNoAddress = errors.New("the resolver has no address for the name")
 var ErrTransientAnswer = fmt.Errorf("the resolver answered with a retryable error: %w", ErrNoAddress)
 
 type Server struct {
-	Source  string
-	DoHURL  string
-	UDP     net.IP
-	Port    int
-	Mark    int
-	Timeout time.Duration
+	Source   string
+	DoHURL   string
+	UDP      net.IP
+	Port     int
+	Mark     int
+	Timeout  time.Duration
+	Unlisted bool
 }
 
 type LookupFunc func(ctx context.Context, srv Server, name string, v4, v6 bool) ([]net.IP, error)
@@ -37,6 +38,13 @@ func (s Server) String() string {
 		return SourceLabel(s.DoHURL)
 	}
 	return s.UDP.String()
+}
+
+func (s Server) askKey() string {
+	if s.Unlisted {
+		return "unlisted " + s.Source
+	}
+	return s.Source
 }
 
 func (s Server) timeout() time.Duration {
@@ -115,7 +123,7 @@ func (s Server) exchange(ctx context.Context, name string, qtype uint16) ([]net.
 	if s.DoHURL != "" {
 		qctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		resp, err = ResolveDoH(qctx, lookupDoHClient(s.Mark, timeout), s.DoHURL, BuildQuery(name, txid, qtype))
+		resp, err = ResolveSetDoH(qctx, lookupDoHClient(s.Mark, timeout), s.DoHURL, BuildQuery(name, txid, qtype))
 	} else {
 		if deadline, ok := ctx.Deadline(); ok {
 			left := time.Until(deadline)

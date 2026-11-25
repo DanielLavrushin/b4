@@ -332,6 +332,9 @@ func (s *Suite) probeResolver(r *serverRun, lists TargetLists, qtype uint16) {
 
 	q := s.querierFor(r.server)
 	defer q.close()
+	if doh, ok := q.(*dohQuerier); ok {
+		r.server.Address, probe.Address = doh.url, doh.url
+	}
 
 	best := -1.0
 	var lastErr dnsAnswer

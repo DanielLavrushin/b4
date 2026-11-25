@@ -99,6 +99,8 @@ When no resolver answered "no error" or "no such name", the result depends on th
 
 Three failures in a row leave a resolver out of the lookups for 30 seconds. An answer with an error code is not a failure. After the 30 seconds one lookup tries the resolver again, and an answer clears the count. b4 logs `DNS: ... failed 3 times in a row` as a warning when it starts leaving a resolver out, and `DNS: ... is answering again` when the resolver is back.
 
+b4 keeps its HTTPS connection to a DoH server open for the queries that follow, and closes it after 30 seconds without one. A connection that has been silent for 5 seconds is checked with an HTTP/2 ping, and one that does not answer within 5 seconds, or within **Query timeout** when that is shorter, is closed, as after a change of the router's WAN address. The queries still waiting on it are asked once more over a new connection.
+
 The count belongs to the resolver, not to the set. Sets that name the same resolver share it, and so do the queries of devices and the [lookups b4 makes itself](#lookups-b4-makes-itself). The lookups of the [DPI Detector](../detector.md) do not count and ignore the 30 seconds.
 
 A lookup of a set with more than one resolver also leaves out a resolver that has 64 queries without a reply at that moment.
@@ -119,6 +121,28 @@ For a query over UDP, b4 does not ask the resolver the client was addressing whe
 A query that comes from the address of any of the set's resolvers is forwarded unchanged rather than handed back to them, unless b4 blocks the query or answers it from a pin. So a resolver elsewhere on the network can ask its upstream over plain DNS through the router. Any other query from that address is forwarded unchanged as well, including those of containers or VPN clients behind NAT on the resolver's host. A DoH URL is compared the same way when it names its server by IP address.
 
 Only the addresses the set names are compared: a query a resolver sends from another of its addresses, such as an IPv4 query from a resolver the set names by its IPv6 address, still goes to the set's resolvers. The comparison is not made for a resolver on the router itself, so that the set also answers the router's own lookups. Such a resolver, and the router's resolver whenever a resolver on the network uses it as its upstream, has to reach its own upstream over a transport b4 does not intercept, such as DNS over HTTPS or TLS. This holds for every entry of **Resolvers**, whatever its place.
+
+### Lookups of a DoH server's host name {#doh-host-names}
+
+b4 finds a DoH server given by host name through the router's own resolver. When that resolver is a forwarder on the router, such as dnsmasq on OpenWrt, its upstream query for the name reaches b4 like any other query. A set that covers the name would send it to the resolver that waits for it.
+
+This can happen only when a nameserver in `/etc/resolv.conf` of b4's host may be such a forwarder: an address of the host, a private address, or an address in one of the host's networks. When every nameserver is a public address elsewhere, the set's resolvers answer the host name like any other name.
+
+Unless b4 blocks such a query or answers it from a pin, it goes past the resolvers given by host name:
+
+- Over UDP, a set that also has resolvers given by IP address asks those in [the usual order](#resolver-order), and then the resolver the query was addressed to, over plain DNS. A resolver given by IP address that denies the name also keeps b4 from the DoH server.
+- Any other such query is forwarded unchanged, and b4 logs it as `dns-doh-host`: a query over TCP, a query to a link-local address, a query that comes while 32 others are being resolved, and every query in a set without resolvers given by IP address.
+
+b4 recognises the query by its name:
+
+- The name is the one the matching set's own resolvers wait for. They can wait for it directly, or through other sets: one set covers the host name of the other set's DoH server, and the other way round.
+- The query can come from any device, over UDP or TCP. **Fail closed when no resolver is reachable** does not change this.
+- The DS and DNSKEY queries for the zones above the name are forwarded unchanged. A forwarder that validates DNSSEC sends them before it accepts the answer.
+- A name below the host name, and the host name of another set's DoH server that no resolver of the matching set waits for, still go to the matching set's resolvers.
+
+Some resolvers on the router need more names than these, and those stay with the set's resolvers: Unbound, when it looks names up from the root servers or when the host name is an alias. Behind such a resolver, the set's DoH URL has to name the server by IP address.
+
+A URL that names its server by IP address needs no lookup. A pin for the host name answers the router's forwarder as well. It does not reach b4's own lookup when the router asks a resolver outside the router, since b4's own lookups pass the sets.
 
 ### Pins {#pins}
 

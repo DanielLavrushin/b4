@@ -3964,6 +3964,12 @@
       "hijackedMark": "hijacked",
       "useDoH": "copy DoH URL",
       "dohCopied": "Copied {{url}}. Paste it into a set's DNS redirect or the DNS settings.",
+      "addToSetTip": "Add to a set's resolvers",
+      "addedToSet": "{{resolver}} added to the resolvers of \"{{set}}\"",
+      "addedTurnedOn": "{{resolver}} added to the resolvers of \"{{set}}\", DNS redirect turned on",
+      "alreadyInSet": "\"{{set}}\" already asks {{resolver}}",
+      "setFull": "\"{{set}}\" already has {{max}} resolvers",
+      "addFailed": "Could not add {{resolver}}.",
       "verdictCounts": "{{checked}} blocked names checked: {{substituted}} substituted, {{noAnswer}} without an answer, {{filtered}} with NXDOMAIN or an empty answer",
       "probe": {
         "ok": "OK",
@@ -4199,6 +4205,7 @@
         "servfail": "The set's resolver did not answer in time",
         "bad-target": "The set's DNS server field does not hold a valid IP address, query forwarded unchanged",
         "from-target": "The query came from the address of the set's own resolver, forwarded unchanged",
+        "doh-host": "The set's own resolver is reached through this name, query forwarded unchanged",
         "ipv6-stripped": "AAAA records removed from the answer so the client falls back to IPv4",
         "heal+ipv6-stripped": "DNS answer had unreachable addresses replaced and its AAAA records removed",
         "ech-stripped": "ECH key removed from the HTTPS answer, so the browser names the site in its ClientHello"

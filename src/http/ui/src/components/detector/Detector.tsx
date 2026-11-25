@@ -11,7 +11,7 @@ import { useIpActions } from "@hooks/useIpActions";
 import { setsApi } from "@api/sets";
 import type { B4SetConfig } from "@models/config";
 import type { DetectorSuite } from "@models/detector";
-import { copyText } from "@utils";
+import { MAX_SET_RESOLVERS, copyText, isStaleWriteError, localizeApiError, resolverLabel, withResolver } from "@utils";
 import { SetupPanel } from "./SetupPanel";
 import { RunPanel } from "./RunPanel";
 import { VerdictPanel } from "./VerdictPanel";
@@ -87,6 +87,40 @@ export const DetectorRunner = () => {
     [addDomainsToSet, sets, showSuccess, showError, t],
   );
 
+  const handleAddResolver = useCallback(
+    async (setId: string, url: string) => {
+      const resolver = resolverLabel(url);
+      const add = async () => {
+        const target = (await setsApi.getSets()).find((s) => s.id === setId);
+        if (!target) {
+          showError(t("detector.dns.addFailed", { resolver }));
+          return;
+        }
+        const { outcome, dns } = withResolver(target.dns, url);
+        if (outcome === "present") {
+          showSuccess(t("detector.dns.alreadyInSet", { resolver, set: target.name }));
+          return;
+        }
+        if (outcome === "full") {
+          showError(t("detector.dns.setFull", { set: target.name, max: MAX_SET_RESOLVERS }));
+          return;
+        }
+        await setsApi.updateSet(target.id, { ...target, dns });
+        showSuccess(t(target.dns.enabled ? "detector.dns.addedToSet" : "detector.dns.addedTurnedOn", { resolver, set: target.name }));
+        await loadSets();
+      };
+      try {
+        await add().catch((e: unknown) => {
+          if (!isStaleWriteError(e)) throw e;
+          return add();
+        });
+      } catch (e) {
+        showError([t("detector.dns.addFailed", { resolver }), localizeApiError(e)].filter(Boolean).join(" "));
+      }
+    },
+    [loadSets, showSuccess, showError, t],
+  );
+
   const showSetup = !running && !suite;
   const both = suite?.options.fetch_mode !== "direct";
   const stale = (scope: string) => suite && suite.options.scopes.indexOf(scope as never) < 0;
@@ -125,7 +159,12 @@ export const DetectorRunner = () => {
 
       {suite?.dns && (
         <B4Section title={t("detector.scopes.dns.name")} icon={<DnsIcon />}>
-          <DnsTable result={suite.dns} onUseDoH={(url) => void copyPlain(url, t("detector.dns.dohCopied", { url }))} />
+          <DnsTable
+            result={suite.dns}
+            sets={sets}
+            onUseDoH={(url) => void copyPlain(url, t("detector.dns.dohCopied", { url }))}
+            onAddToSet={(setId, url) => void handleAddResolver(setId, url)}
+          />
         </B4Section>
       )}
 

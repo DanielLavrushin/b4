@@ -1,14 +1,20 @@
-import { Box, Button, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from "@mui/material";
+import { useState } from "react";
+import { Box, Button, IconButton, Stack, Table, TableBody, TableCell, TableHead, TableRow, Tooltip, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
+import { AddIcon } from "@b4.icons";
 import { colors } from "@design";
+import type { B4SetConfig } from "@models/config";
 import type { DNSHonesty, DNSProbe, DNSProvider, DNSResult } from "@models/detector";
+import { SetMenu } from "./SetMenu";
 import { StatusChip, dnsProbeColor, honestyColor } from "./statuses";
 
 type Translate = (k: string, o?: Record<string, unknown>) => string;
 
 interface DnsTableProps {
   result: DNSResult;
+  sets: B4SetConfig[];
   onUseDoH: (url: string) => void;
+  onAddToSet: (setId: string, url: string) => void;
 }
 
 export interface HonestyGroup {
@@ -120,9 +126,13 @@ export function dnsLead(result: DNSResult, t: Translate): string {
   return parts.join(" ");
 }
 
-export const DnsTable = ({ result, onUseDoH }: DnsTableProps) => {
+const asksResolvers = (set: B4SetConfig) => !(set.routing?.enabled && set.routing.mode === "block");
+
+export const DnsTable = ({ result, sets, onUseDoH, onAddToSet }: DnsTableProps) => {
   const { t } = useTranslation();
+  const [menu, setMenu] = useState<{ anchor: HTMLElement; url: string } | null>(null);
   const honestDoH = new Set(result.honest_doh ?? []);
+  const targets = sets.filter(asksResolvers);
 
   return (
     <Stack spacing={1.5}>
@@ -170,9 +180,23 @@ export const DnsTable = ({ result, onUseDoH }: DnsTableProps) => {
                   </TableCell>
                   <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
                     {p.doh && p.doh.status === "ok" && honestDoH.has(p.doh.address) && (
-                      <Button size="small" onClick={() => onUseDoH(p.doh!.address)} sx={{ textTransform: "none" }}>
-                        {t("detector.dns.useDoH")}
-                      </Button>
+                      <>
+                        <Button size="small" onClick={() => onUseDoH(p.doh!.address)} sx={{ textTransform: "none" }}>
+                          {t("detector.dns.useDoH")}
+                        </Button>
+                        {targets.length > 0 && (
+                          <Tooltip title={t("detector.dns.addToSetTip")}>
+                            <IconButton
+                              size="small"
+                              aria-label={t("detector.dns.addToSetTip")}
+                              onClick={(e) => setMenu({ anchor: e.currentTarget, url: p.doh!.address })}
+                              sx={{ color: colors.text.secondary, "&:hover": { color: colors.secondary } }}
+                            >
+                              <AddIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                      </>
                     )}
                   </TableCell>
                 </TableRow>
@@ -181,6 +205,14 @@ export const DnsTable = ({ result, onUseDoH }: DnsTableProps) => {
           </TableBody>
         </Table>
       </Box>
+      <SetMenu
+        anchor={menu?.anchor ?? null}
+        sets={targets}
+        onPick={(setId) => {
+          if (menu) onAddToSet(setId, menu.url);
+        }}
+        onClose={() => setMenu(null)}
+      />
     </Stack>
   );
 };

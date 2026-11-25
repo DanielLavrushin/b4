@@ -118,6 +118,12 @@ const DNS_VERDICT_STYLES: Record<string, DnsVerdictStyle> = {
     variant: "outlined",
     icon: "dns",
   },
+  "doh-host": {
+    label: "doh host",
+    color: "default",
+    variant: "outlined",
+    icon: "dns",
+  },
 };
 
 interface DnsVerdict {

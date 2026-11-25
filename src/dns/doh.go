@@ -9,7 +9,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -18,7 +20,14 @@ import (
 
 const DoHContentType = "application/dns-message"
 
+const dohMaxBody = 65536
+
 var ErrDoHMethodNotAllowed = errors.New("doh method not allowed")
+
+var (
+	dohPingIdle    = 5 * time.Second
+	dohPingTimeout = 5 * time.Second
+)
 
 func MarkedDoHClient(mark int, timeout time.Duration) *http.Client {
 	tr := &http.Transport{
@@ -27,6 +36,7 @@ func MarkedDoHClient(mark int, timeout time.Duration) *http.Client {
 		ResponseHeaderTimeout: timeout,
 		MaxIdleConns:          100,
 		IdleConnTimeout:       30 * time.Second,
+		HTTP2:                 &http.HTTP2Config{SendPingTimeout: dohPingIdle, PingTimeout: min(timeout, dohPingTimeout)},
 	}
 	var control func(string, string, syscall.RawConn) error
 	if mark != 0 {
@@ -52,25 +62,37 @@ func MarkedDoHClient(mark int, timeout time.Duration) *http.Client {
 	return &http.Client{Transport: tr, Timeout: timeout}
 }
 
+type dohSend func(*http.Request) (*http.Response, error)
+
 func ResolveDoH(ctx context.Context, client *http.Client, serverURL string, query []byte) ([]byte, error) {
-	body, err := dohPOST(ctx, client, serverURL, query)
+	return resolveDoH(ctx, client.Do, serverURL, query)
+}
+
+func ResolveSetDoH(ctx context.Context, client *http.Client, serverURL string, query []byte) ([]byte, error) {
+	return resolveDoH(ctx, func(req *http.Request) (*http.Response, error) {
+		return sendAgainIfLost(client, req)
+	}, serverURL, query)
+}
+
+func resolveDoH(ctx context.Context, send dohSend, serverURL string, query []byte) ([]byte, error) {
+	body, err := dohPOST(ctx, send, serverURL, query)
 	if errors.Is(err, ErrDoHMethodNotAllowed) {
-		body, err = dohGET(ctx, client, serverURL, query)
+		body, err = dohGET(ctx, send, serverURL, query)
 	}
 	return body, withoutResolverPath(serverURL, err)
 }
 
-func dohPOST(ctx context.Context, client *http.Client, serverURL string, query []byte) ([]byte, error) {
+func dohPOST(ctx context.Context, send dohSend, serverURL string, query []byte) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL, bytes.NewReader(query))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", DoHContentType)
 	req.Header.Set("Content-Type", DoHContentType)
-	return dohDo(client, req)
+	return dohDo(send, req)
 }
 
-func dohGET(ctx context.Context, client *http.Client, serverURL string, query []byte) ([]byte, error) {
+func dohGET(ctx context.Context, send dohSend, serverURL string, query []byte) ([]byte, error) {
 	enc := base64.RawURLEncoding.EncodeToString(query)
 	sep := "?"
 	if strings.ContainsRune(serverURL, '?') {
@@ -81,11 +103,46 @@ func dohGET(ctx context.Context, client *http.Client, serverURL string, query []
 		return nil, err
 	}
 	req.Header.Set("Accept", DoHContentType)
-	return dohDo(client, req)
+	return dohDo(send, req)
 }
 
-func dohDo(client *http.Client, req *http.Request) ([]byte, error) {
+func sendAgainIfLost(client *http.Client, req *http.Request) (*http.Response, error) {
+	var reused atomic.Bool
+	trace := &httptrace.ClientTrace{GotConn: func(got httptrace.GotConnInfo) { reused.Store(got.Reused) }}
+	resp, err := sendAndRead(client, req.WithContext(httptrace.WithClientTrace(req.Context(), trace)))
+	if err == nil || !reused.Load() || timedOut(err) || req.Context().Err() != nil {
+		return resp, err
+	}
+	again := req.Clone(req.Context())
+	if req.GetBody != nil {
+		if again.Body, err = req.GetBody(); err != nil {
+			return nil, err
+		}
+	}
+	return client.Do(again)
+}
+
+func sendAndRead(client *http.Client, req *http.Request) (*http.Response, error) {
 	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, dohMaxBody))
+	if err != nil {
+		return nil, err
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	return resp, nil
+}
+
+func timedOut(err error) bool {
+	var t interface{ Timeout() bool }
+	return errors.As(err, &t) && t.Timeout()
+}
+
+func dohDo(send dohSend, req *http.Request) ([]byte, error) {
+	resp, err := send(req)
 	if err != nil {
 		return nil, err
 	}
@@ -98,5 +155,5 @@ func dohDo(client *http.Client, req *http.Request) ([]byte, error) {
 		io.Copy(io.Discard, resp.Body)
 		return nil, fmt.Errorf("doh status %d", resp.StatusCode)
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, 65536))
+	return io.ReadAll(io.LimitReader(resp.Body, dohMaxBody))
 }

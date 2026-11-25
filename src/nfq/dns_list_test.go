@@ -135,6 +135,33 @@ func TestAQueuedQueryThroughAListIsLabelledWithBothResolvers(t *testing.T) {
 	}
 }
 
+func TestAnAnswerOfAServerThatIsNotListedIsNotKept(t *testing.T) {
+	w, cfg, set := listWorker(t)
+	good := dscpDoHServer(t, w, "203.0.113.39")
+	failing, _ := failingDoH(t)
+	query := dns.BuildQuery("www.example.com", 35, dnsTypeA)
+	for _, tc := range []struct {
+		list     []string
+		unlisted int
+		kept     bool
+	}{
+		{[]string{good}, 0, false},
+		{[]string{failing, good}, 1, false},
+		{[]string{good, failing}, 1, true},
+	} {
+		resetDNSAnswerCache()
+		set.DNS.Upstreams = tc.list
+		servers := redirectServers(cfg, set)
+		servers[tc.unlisted].Unlisted = true
+		replies := watchReplies(t)
+		w.resolveDNSRedirect(IPv4, set, cfg, query, net.ParseIP("192.168.1.100").To4(), 40000, net.ParseIP("192.168.1.1").To4(), servers, servers[0].Source, 0, false)
+		onlyAddress(t, oneReply(t, replies), "203.0.113.39")
+		if kept := recallDNSAnswer("www.example.com", query) != nil; kept != tc.kept {
+			t.Errorf("%v: the answer kept as the last good one %v, want %v", tc.list, kept, tc.kept)
+		}
+	}
+}
+
 func TestAListOnlySetRedirectsDeviceQueries(t *testing.T) {
 	w, cfg, set := listWorker(t)
 	set.DNS.Upstreams = []string{dscpDoHServer(t, w, "203.0.113.32")}
