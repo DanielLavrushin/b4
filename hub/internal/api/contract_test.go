@@ -511,7 +511,7 @@ func TestContractMessageRefusals(t *testing.T) {
 	h := f.h
 	voter := testkit.Identity(t)
 
-	unknownID, err := hubdata.NewSetID(h.clock)
+	unknownID, err := hubdata.NewSetID()
 	if err != nil {
 		t.Fatal(err)
 	}

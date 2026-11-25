@@ -72,6 +72,73 @@ func TestVoteOriginsCoverEveryVote(t *testing.T) {
 	}
 }
 
+func TestTheLastNetworkOfAKeyOutlivesItsVotes(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	days := func(n int) time.Time { return testNow.Add(-time.Duration(n) * 24 * time.Hour) }
+	vote := func(key, asn, country string, at time.Time) {
+		t.Helper()
+		if err := st.UpsertVote(ctx, Vote{SetID: "set", Version: 1, FP: "fp", KeyHMAC: key, Kind: "manual_works", Weight: 1, ASNObserved: asn, CountryObserved: country, Bucket: at.Unix(), ReceivedAt: at}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	share := func(id, key, asn, country string, at time.Time) {
+		t.Helper()
+		v := sampleVersion("fp-"+id, "targets-"+id)
+		v.UploaderHMAC, v.ASNObserved, v.CountryObserved, v.CreatedAt = key, asn, country, at
+		if err := st.CreateSet(ctx, Set{ID: id, AuthorHMAC: key, CreatedAt: at, UpdatedAt: at}, v); err != nil {
+			t.Fatal(err)
+		}
+		vote(key, asn, country, at)
+	}
+	complain := func(key, asn string, at time.Time) {
+		t.Helper()
+		if err := st.InsertReport(ctx, Report{RecordID: key + at.String(), SetID: "set", Version: 1, KeyHMAC: key, ASNObserved: asn, Reason: "reason", ReceivedAt: at}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	share("published", "published", "100", "RU", days(400))
+	complain("complained", "100", days(400))
+	vote("complained", "100", "RU", days(401))
+	vote("roaming", "200", "NL", days(3))
+	vote("roaming", "200", "DE", days(2))
+	complain("roaming", "200", days(1))
+	share("moved", "moved", "100", "RU", days(5))
+	vote("moved", "300", "KZ", days(4))
+	vote("reported", "100", "RU", days(5))
+	complain("reported", "300", days(4))
+	vote("unknown", "100", "RU", days(5))
+	vote("unknown", "", "", days(4))
+	for _, key := range []string{"published", "complained", "roaming", "moved", "reported", "unknown"} {
+		if _, _, err := st.TouchKey(ctx, key, days(500)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	networks := func() map[string]string {
+		t.Helper()
+		rows, _, _, err := st.KeyList(ctx, KeyQuery{Limit: 50})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]string{}
+		for _, k := range rows {
+			out[k.KeyHMAC] = k.LastASN + " " + k.LastCountry
+		}
+		return out
+	}
+	want := map[string]string{"published": "100 RU", "complained": "100 RU", "roaming": "200 DE", "moved": "300 KZ", "reported": "300 ", "unknown": "100 RU"}
+	if got := networks(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("the newest vote, publication or complaint names the network:\n got %v\nwant %v", got, want)
+	}
+	if n, err := st.PruneVotes(ctx, testNow, 365*24*time.Hour); err != nil || n != 2 {
+		t.Fatalf("two votes are older than a year, got %d %v", n, err)
+	}
+	want["complained"] = "100 "
+	if got := networks(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("a key without votes keeps the network of its other records:\n got %v\nwant %v", got, want)
+	}
+}
+
 func TestFindDuplicateExceptSkipsTheGivenRow(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()

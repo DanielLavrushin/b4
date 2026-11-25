@@ -45,7 +45,7 @@ type EvidenceView struct {
 
 func scoreView(s hubwire.Score) ScoreView {
 	bucket := hubwire.BucketNone
-	if s.N >= 1 && s.Devices >= 2 {
+	if s.N >= 1 && s.Devices >= hubwire.MinDevices {
 		bucket = hubwire.BucketGlobal
 	}
 	return ScoreView{Score: s.Score, N: s.N, Devices: s.Devices, Newest: s.Newest, Bucket: bucket}
@@ -59,16 +59,19 @@ func parseDay(raw string) time.Time {
 	return t
 }
 
+func lastActivity(cs *hubwire.CatalogueSet) time.Time {
+	if newest := parseDay(cs.Scores.Global.Newest); !newest.IsZero() {
+		return newest
+	}
+	return parseDay(cs.CreatedAt)
+}
+
 func attentionOf(cs *hubwire.CatalogueSet, openReports int, now time.Time) []string {
 	out := []string{}
 	if cs != nil {
-		last := parseDay(cs.Scores.Global.Newest)
-		if last.IsZero() {
-			last = parseDay(cs.UpdatedAt)
-		}
-		if reason, ok := score.Demotion(cs.Scores.Global, last, now); ok {
+		if reason, ok := score.Demotion(cs.Scores.Global, lastActivity(cs), now); ok {
 			out = append(out, reason)
-		} else if cs.Scores.Global.N >= 1 && cs.Scores.Global.Devices >= 2 && cs.Scores.Global.Score < weakScore {
+		} else if cs.Scores.Global.N >= 1 && cs.Scores.Global.Devices >= hubwire.MinDevices && cs.Scores.Global.Score < weakScore {
 			out = append(out, AttentionWeak)
 		}
 	}
@@ -120,7 +123,7 @@ func evidenceOf(pool []store.Vote, setID, author string, at time.Time) EvidenceV
 	for _, v := range pool {
 		side := &ev.Independent
 		devices := independent
-		if v.KeyHMAC == author {
+		if v.ByAuthor || v.KeyHMAC == author {
 			side = &ev.Author
 			devices = authors
 		}

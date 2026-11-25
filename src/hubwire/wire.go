@@ -443,8 +443,10 @@ type Displayed struct {
 	Newest  string  `json:"newest,omitempty"`
 }
 
+const MinDevices = 2
+
 func usable(s Score) bool {
-	return s.N >= 1.0 && s.Devices >= 2
+	return s.N >= 1.0 && s.Devices >= MinDevices
 }
 
 func PickScore(scores Scores, asn, cc string) Displayed {

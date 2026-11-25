@@ -90,10 +90,6 @@ func (s *Server) voteRows(ctx context.Context, votes []store.Vote) ([]VoteRowVie
 	if err != nil {
 		return nil, err
 	}
-	sets, err := s.Store.Sets(ctx)
-	if err != nil {
-		return nil, err
-	}
 	notable, err := s.Store.NotableKeys(ctx)
 	if err != nil {
 		return nil, err
@@ -124,7 +120,7 @@ func (s *Server) voteRows(ctx context.Context, votes []store.Vote) ([]VoteRowVie
 			row.Title = h.Title
 			row.SetStatus = h.Status
 		}
-		row.AuthorVote = sets[v.SetID].AuthorHMAC == v.KeyHMAC
+		row.AuthorVote = v.ByAuthor
 		when := at
 		if when.IsZero() {
 			when = s.now().UTC()

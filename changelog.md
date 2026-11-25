@@ -4,6 +4,10 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- The note under **Settings, Integrations, Community Hub** lists what the hub receives with a sync and with a report.
+
 ### Fixed
 
 - The **Traffic** page and the **Dashboard** could put a connection under a set that matched its address, although the set of its domain handled it. [#673](https://github.com/DanielLavrushin/b4/issues/673), [#674](https://github.com/DanielLavrushin/b4/issues/674)
