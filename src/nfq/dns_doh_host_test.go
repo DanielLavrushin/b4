@@ -374,6 +374,86 @@ func TestALookupNoResolverWaitsForIsStillRedirected(t *testing.T) {
 	}
 }
 
+func TestTheWaitFollowsTheSetsOfTheDeviceThatAsks(t *testing.T) {
+	const mine, other = "02:00:00:00:00:01", "02:00:00:00:00:02"
+	first := func() *config.SetConfig {
+		return strictSet(dohByName("a", "https://a.example/dns-query", "b.example"))
+	}
+	second := func(devices ...string) *config.SetConfig {
+		set := strictSet(dohByName("b", "https://b.example/dns-query", "a.example"))
+		set.Targets.SourceDevices = devices
+		return set
+	}
+	guests := scopeToGuest(dohByName("block", "", "a.example"), config.BlockActionDrop)
+	for _, tc := range []struct {
+		name, mac, dev string
+		sets           []*config.SetConfig
+		pass           bool
+	}{
+		{"a set of this device closes the ring", mine, "br0", []*config.SetConfig{first(), second(mine)}, true},
+		{"a set of another device closes no ring", other, "br0", []*config.SetConfig{first(), second(mine)}, false},
+		{"a block set of another interface is passed over", mine, "br0", []*config.SetConfig{guests, first(), second()}, true},
+		{"a block set of this interface ends the wait", mine, "br-guest", []*config.SetConfig{guests, first(), second()}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			idx := scopeIfaces(t)
+			thisHost(t)
+			w := redirectWorker(t, false, tc.sets...)
+			w.ipToMac.Store(map[string]string{scopeLAN: tc.mac})
+			var own *config.SetConfig
+			for _, set := range tc.sets {
+				if set.Id == "a" {
+					own = set
+				}
+			}
+			q := newFakeQueue()
+			pkt := lanQuery(scopeLAN, "203.0.113.53")
+			pkt.srcMac = tc.mac
+			query := dns.BuildQuery("b.example", 98, dnsTypeA)
+			vc := &verdictCtx{id: 98, q: q, inDev: idx[tc.dev]}
+			w.processDnsPacket(vc, pkt, 40000, 53, query)
+			want := nfqueue.NfDrop
+			if tc.pass {
+				want = nfqueue.NfAccept
+			}
+			if v := q.now(t); v != want {
+				t.Errorf("verdict %d, want %d", v, want)
+			}
+			client := net.ParseIP(scopeLAN).To4()
+			if got := w.answeringServers(w.getConfig(), own, "b.example", query, client, vc.scope); (len(got) == 0) != tc.pass {
+				t.Errorf("an escalation asks %v, want none %v", got, tc.pass)
+			}
+			s := newDNSTCPServer(w, 0)
+			t.Cleanup(s.cancel)
+			if _, err := s.answerVia(own, w.getConfig(), query, "b.example", client, vc.scope); (err == errDoHHost) != tc.pass {
+				t.Errorf("a TCP escalation: %v, want it refused %v", err, tc.pass)
+			}
+		})
+	}
+}
+
+func TestTheWaitOverTCPFollowsTheSetsOfTheDeviceThatAsks(t *testing.T) {
+	const mine = "02:00:00:00:00:01"
+	thisHost(t, "192.0.2.1")
+	ring := func() []*config.SetConfig {
+		return []*config.SetConfig{
+			strictSet(dohByName("a", "https://a.example/dns-query", "b.example")),
+			strictSet(dohByName("b", "https://b.example/dns-query", "a.example")),
+		}
+	}
+	owned := ring()
+	owned[1].Targets.SourceDevices = []string{mine}
+	guests := scopeToGuest(dohByName("block", "", "a.example"), config.BlockActionDrop)
+	for _, sets := range [][]*config.SetConfig{owned, append([]*config.SetConfig{guests}, ring()...)} {
+		w := redirectWorker(t, false, sets...)
+		w.ipToMac.Store(map[string]string{"192.0.2.1": mine})
+		lines := connectionLines(t)
+		upstream := tcpDNSUpstream(t)
+		tcpFromTarget(t, w, "192.0.2.1", upstream, dns.BuildQuery("b.example", 99, dnsTypeA))
+		dohHostLoggedOnce(t, lines, "TCP")
+	}
+}
+
 func TestTheSetsDoHHostStillGetsPinnedAnswers(t *testing.T) {
 	thisHost(t)
 	set := dohByName("all", "https://dns.example/dns-query", "regexp:.*")

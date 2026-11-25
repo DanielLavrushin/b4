@@ -250,6 +250,15 @@ func TestOnlyTheLookupsOfASetAreAskedAgain(t *testing.T) {
 	}
 }
 
+func TestADoHConnectionIsPingedForAtMostFiveSeconds(t *testing.T) {
+	for query, want := range map[time.Duration]time.Duration{3 * time.Second: 3 * time.Second, 5 * time.Second: 5 * time.Second, time.Minute: 5 * time.Second} {
+		h2 := MarkedDoHClient(0, query).Transport.(*http.Transport).HTTP2
+		if h2.SendPingTimeout != 5*time.Second || h2.PingTimeout != want {
+			t.Errorf("queries wait %s: pinged after %s, given up after %s, want 5s and %s", query, h2.SendPingTimeout, h2.PingTimeout, want)
+		}
+	}
+}
+
 func TestADeadDoHConnectionIsGivenUpBeforeTheQueryIs(t *testing.T) {
 	proxy, ask := http2DoH(t, 100*time.Millisecond, 300*time.Millisecond, 5*time.Second)
 
