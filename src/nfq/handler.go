@@ -924,7 +924,13 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			(!stageSet.MatchesTLSVersion(tlsVersion) || (earlySet.Id != set.Id && !earlySet.MatchesTLSVersion(tlsVersion)))
 		if helloGen != 0 && stageSet != nil && !hold.pinned && (tlsVersion == 0x0304 || wholeClientHello(helloRecord)) {
 			if unfit || yielded {
-				w.tlsCache.Refuse(connKey, helloGen, stageSet.Id)
+				checked := []*config.SetConfig{stageSet, earlySet}
+				if unfit {
+					checked = checked[1:]
+				} else if earlySet.Id == set.Id {
+					checked = checked[:1]
+				}
+				w.refuseTLS(connKey, helloGen, stageSet, checked, tlsVersion)
 				w.connTracker.Release(connKey, stageSet.Id)
 				w.connTracker.Release(connKey, earlySet.Id)
 			} else if w.tlsCache.Refuses(connKey, stageSet.Id) {
@@ -1260,6 +1266,21 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		return 0
 	}
 	return vc.accept()
+}
+
+func (w *Worker) refuseTLS(connKey string, gen uint64, stage *config.SetConfig, checked []*config.SetConfig, tlsVersion uint16) {
+	w.tlsCache.Refuse(connKey, gen, stage.Id)
+	cfg := w.getConfig()
+	for _, set := range checked {
+		now := cfg.GetSetById(set.Id)
+		if now == nil || !now.Enabled {
+			now = cfg.GetSetById(stage.Id)
+		}
+		if now != nil && !now.MatchesTLSVersion(tlsVersion) {
+			return
+		}
+	}
+	w.tlsCache.Refuse(connKey, gen, "")
 }
 
 func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, matcher *sni.SuffixSet, matched bool, set *config.SetConfig, st *config.SetConfig, stPrefix int) int {

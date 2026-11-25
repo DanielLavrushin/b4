@@ -932,6 +932,147 @@ func TestB4sOwnTelegramConnectionKeepsItsBackupAfterAHelloItsFilterDoesNotFit(t 
 	}
 }
 
+func TestAClientHelloInFlightDuringAReloadIsRefusedOnlyByAFilterThatStands(t *testing.T) {
+	filtered := func(tls string, change func(set *config.SetConfig)) *config.SetConfig {
+		set := newTLSFilteredSet(tls, targetsByAddress)
+		if change != nil {
+			change(&set)
+		}
+		return &set
+	}
+	learned := func(tls string) *config.SetConfig {
+		set := newTLSFilteredSet(tls, targetsByName)
+		set.Id, set.Name, set.Escalate.To = "learned", "Learned", "backup"
+		return &set
+	}
+	named := func() *config.SetConfig {
+		set := newPassiveSet()
+		set.Id, set.Name, set.Targets.DomainOnly = "named", "Named", true
+		set.Targets.DomainsToMatch = []string{"named.example"}
+		set.TCP.RSTProtection.Enabled = false
+		return &set
+	}
+	backup := func(tls string) *config.SetConfig {
+		set := newTLSFilteredSet(tls, func(set *config.SetConfig) { set.Targets.DomainsToMatch = []string{"backup.example"} })
+		set.Id, set.Name = "backup", "Backup"
+		return &set
+	}
+	off := func(set *config.SetConfig) *config.SetConfig {
+		set.Enabled = false
+		return set
+	}
+	extra := newNamedRowSet("extra", config.ConfigOff, "extra.example")
+	for _, tc := range []struct {
+		name, takes string
+		old, sets   []*config.SetConfig
+		want        string
+	}{
+		{"nothing changes", "", []*config.SetConfig{filtered("1.2", nil)}, nil, ""},
+		{"only the settings change", "", []*config.SetConfig{filtered("1.2", nil)}, []*config.SetConfig{filtered("1.2", nil)}, ""},
+		{"an unrelated set is added", "", []*config.SetConfig{filtered("1.2", nil)}, []*config.SetConfig{filtered("1.2", nil), &extra}, ""},
+		{"another field of the set changes", "", []*config.SetConfig{filtered("1.2", nil)}, []*config.SetConfig{filtered("1.2", func(set *config.SetConfig) { set.TCP.DropSACK = !set.TCP.DropSACK })}, ""},
+		{"the filter is turned off", "", []*config.SetConfig{filtered("1.2", nil)}, []*config.SetConfig{filtered("", nil)}, "Filtered"},
+		{"the filter becomes TLS 1.3", "", []*config.SetConfig{filtered("1.2", nil)}, []*config.SetConfig{filtered("1.3", nil)}, "Filtered"},
+		{"the filter becomes TLS 1.1", "", []*config.SetConfig{filtered("1.2", nil)}, []*config.SetConfig{filtered("1.1", nil)}, ""},
+		{"the backup's filter stays", "", []*config.SetConfig{learned(""), backup("1.2")}, []*config.SetConfig{learned(""), backup("1.2"), &extra}, ""},
+		{"the backup's filter is turned off", "", []*config.SetConfig{learned(""), backup("1.2")}, []*config.SetConfig{learned(""), backup("")}, "Backup"},
+		{"the backup is turned off", "", []*config.SetConfig{learned(""), backup("1.2")}, []*config.SetConfig{learned(""), off(backup("1.2"))}, "Learned"},
+		{"the backup is deleted", "", []*config.SetConfig{learned(""), backup("1.2")}, []*config.SetConfig{learned("")}, "Learned"},
+		{"the backup is turned off, the set does not fit either", "", []*config.SetConfig{learned("1.2"), backup("1.2")}, []*config.SetConfig{learned("1.2"), off(backup("1.2"))}, ""},
+		{"the backup is deleted, the set does not fit either", "", []*config.SetConfig{learned("1.2"), backup("1.2")}, []*config.SetConfig{learned("1.2")}, ""},
+		{"the backup's filter is turned off, the set does not fit", "", []*config.SetConfig{learned("1.2"), backup("1.2")}, []*config.SetConfig{learned("1.2"), backup("")}, "Backup"},
+		{"the set and its backup are deleted", "", []*config.SetConfig{learned(""), backup("1.2")}, []*config.SetConfig{&extra}, ""},
+		{"the set's filter is turned off, its backup refused", "", []*config.SetConfig{learned("1.2"), backup("1.2")}, []*config.SetConfig{learned(""), backup("1.2")}, ""},
+		{"the set that fits loses its filter, its backup refused", "", []*config.SetConfig{learned("1.3"), backup("1.2")}, []*config.SetConfig{learned(""), backup("1.2")}, ""},
+		{"the set that fits gets a filter, its backup refused", "", []*config.SetConfig{learned(""), backup("1.2")}, []*config.SetConfig{learned("1.3"), backup("1.2")}, ""},
+		{"another set takes the name, the filter stays", "named", []*config.SetConfig{learned("1.2"), backup(""), named()}, []*config.SetConfig{learned("1.2"), backup(""), named(), &extra}, ""},
+		{"another set takes the name, the filter is turned off", "named", []*config.SetConfig{learned("1.2"), backup(""), named()}, []*config.SetConfig{learned(""), backup(""), named()}, "Backup"},
+		{"another set takes the name, both refused, the set's filter is turned off", "named", []*config.SetConfig{learned("1.2"), backup("1.2"), named()}, []*config.SetConfig{learned(""), backup("1.2"), named()}, ""},
+		{"another set takes the name, both refused, the backup's filter is turned off", "named", []*config.SetConfig{learned("1.2"), backup("1.2"), named()}, []*config.SetConfig{learned("1.2"), backup(""), named()}, ""},
+		{"another set takes the name, both refused, both filters are turned off", "named", []*config.SetConfig{learned("1.2"), backup("1.2"), named()}, []*config.SetConfig{learned(""), backup(""), named()}, "Backup"},
+		{"another set takes the name, the filter moves to the set", "named", []*config.SetConfig{learned(""), backup("1.2"), named()}, []*config.SetConfig{learned("1.2"), backup(""), named()}, ""},
+		{"the backup takes the name, the filter stays", "backup", []*config.SetConfig{learned("1.2"), backup("1.2")}, []*config.SetConfig{learned("1.2"), backup("1.2"), &extra}, ""},
+		{"the backup takes the name, the set's filter is turned off", "backup", []*config.SetConfig{learned("1.2"), backup("1.2")}, []*config.SetConfig{learned(""), backup("1.2")}, "Learned"},
+		{"another set takes the name, the filter of a backup that fits changes", "named", []*config.SetConfig{learned("1.2"), backup("1.3"), named()}, []*config.SetConfig{learned("1.2"), backup(""), named()}, ""},
+	} {
+		run := func(name string, newMatcher bool) {
+			t.Run(name, func(t *testing.T) {
+				w := newInjectingWorker(t, tc.old...)
+				escalate := func() {
+					if len(tc.old) > 1 {
+						w.destState.SetEscalation("i.ytimg.com", "backup", escalateReasonStall, time.Minute)
+					}
+				}
+				if len(tc.old) > 1 {
+					taughtAddress(w, tc.old[0])
+				}
+				escalate()
+				pool := &Pool{Workers: []*Worker{w}, state: &runtimeState{hostHints: w.hostHints, destState: w.destState, tlsCache: w.tlsCache}}
+				ch := subscribeRows(t)
+				cfg, matcher := w.getConfig(), w.getMatcher()
+				if tc.sets != nil {
+					next := cfg.Clone()
+					next.Sets = tc.sets
+					if err := pool.UpdateConfig(next); err != nil {
+						t.Fatal(err)
+					}
+					escalate()
+				}
+				if newMatcher {
+					matcher = w.getMatcher()
+				}
+				host, taker := "www.example.org", ""
+				switch tc.takes {
+				case "named":
+					host, taker = "www.named.example", "Named"
+				case "backup":
+					host, taker = "www.backup.example", "Backup"
+				}
+				hello := buildClientHello(host, 16, 0xAB)
+				vc := &verdictCtx{verdict: engine.VerdictAccept, tunEntry: true}
+				pkt, _ := w.parseIPHeaders(makeV4TCPPacket(hello, 1000))
+				matched, set, prefix := w.addressSet(vc, pkt, matcher)
+				w.handleTCPPacket(vc, pkt, cfg, matcher, matched, set, set, prefix)
+				w.wg.Wait()
+				if row := lastConnectionRow(t, ch); !newMatcher && (row.ipSet != "" || row.sniSet != taker) {
+					t.Fatalf("the ClientHello is judged by the sets it was read with, got %+v", row)
+				}
+				if refused := w.tlsCache.Refuses("10.0.0.1:12345->1.2.3.4:443", tc.old[0].Id); tc.takes == "backup" && refused != (tc.want == "") {
+					t.Errorf("the set of the address is refused: %v, want %v", refused, tc.want == "")
+				}
+				w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), 1000+uint32(len(hello))))
+				w.wg.Wait()
+				if row := lastConnectionRow(t, ch); tc.takes != "backup" && row.ipSet != tc.want {
+					t.Errorf("later data is in %q, want %q", row.ipSet, tc.want)
+				}
+			})
+		}
+		run(tc.name, false)
+		run(tc.name+", read with the old config and the new matcher", true)
+	}
+}
+
+func TestARefusalIsStoredBeforeTheSetsInUseAreRead(t *testing.T) {
+	const key = "10.0.0.1:12345->1.2.3.4:443"
+	set, open := newTLSFilteredSet("1.2", targetsByAddress), newTLSFilteredSet("", targetsByAddress)
+	w := newInjectingWorker(t, &set)
+	gen := w.tlsCache.Store(key, "www.example.org", 0x0304, 1000, 7, 500)
+	next := w.getConfig().Clone()
+	next.Sets = []*config.SetConfig{&open}
+
+	w.tlsCache.mu.Lock()
+	var refused sync.WaitGroup
+	refused.Go(func() { w.refuseTLS(key, gen, &set, []*config.SetConfig{&set}, 0x0304) })
+	time.Sleep(20 * time.Millisecond)
+	w.cfg.Store(next)
+	w.tlsCache.mu.Unlock()
+	refused.Wait()
+
+	if w.tlsCache.Refuses(key, set.Id) {
+		t.Error("a reload while the refusal was being stored must drop it")
+	}
+}
+
 func TestARefusedSetIsForgottenWithTheClientHelloItWasRefusedFor(t *testing.T) {
 	const key = "10.0.0.1:12345->1.2.3.4:443"
 	cache := func() (*tlsInfoCache, uint64) {
