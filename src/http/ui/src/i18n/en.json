@@ -2813,6 +2813,8 @@
         "pin_not_targeted": "The pin for {{domain}} was dropped: the set does not target that domain.",
         "pin_private_address": "The pin for {{domain}} was dropped: it pointed at a private address.",
         "dns_dropped": "The DNS redirect was dropped: {{host}} is not a known public DoH resolver. Set a resolver in the DNS tab if the set needs one.",
+        "personal_resolver": "The resolver at {{host}} was dropped: its address holds a personal path, a query or a login. Set a resolver in the DNS tab if the set needs one.",
+        "dns_no_resolver": "The DNS redirect is on but has no resolver, so it redirects nothing until one is set in the DNS tab.",
         "private_addresses": "Addresses that look private to the author's network: {{addresses}}.",
         "block_regexp": "This block set matches by pattern ({{entry}}), so it may block far more than intended.",
         "foreign_hub_link": "The pasted set was linked to community set {{pasted}}; this set stays linked to {{kept}} and publishing it creates its next version.",
@@ -3139,7 +3141,7 @@
       "linkVote": "Your report",
       "linkVotedAt": "Reported on",
       "sectionTitle": "Share with other b4 users",
-      "info": "Routing (except block mode), device filters, escalation, the DNS server address and anything else tied to this router are left out.",
+      "info": "Routing (except block mode), device filters, escalation, every resolver except an https:// one in first place without a personal path, a query or a login, and anything else tied to this router are left out.",
       "prepare": "Prepare shared set",
       "prepareFailed": "The shared set could not be prepared",
       "refresh": "Prepare again",
@@ -3151,7 +3153,8 @@
         "routing_not_shareable": "{{path}}: routing to a proxy or an interface is tied to this router; only block mode can be shared",
         "private": "{{path}}: tied to this router",
         "pin_not_targeted": "{{path}}: pins a domain this set does not target",
-        "pin_private_address": "{{path}}: pins a private address"
+        "pin_private_address": "{{path}}: pins a private address",
+        "personal_resolver": "{{path}}: the resolver's address holds a personal path, a query or a login"
       },
       "warningsTitle": "Check before sharing",
       "warnings": {
@@ -4221,13 +4224,19 @@
     "noMatch": "No logs match your filter",
     "trace": {
       "start": "Start trace",
-      "startHint": "Record all logs to a file until you stop",
+      "startHint": "Record every log line to a file until you stop, at any log level",
       "stop": "Stop & save",
       "recording": "REC",
       "downloadLast": "Download last trace",
       "started": "Trace started — reproduce the issue, then stop",
       "saved": "Trace saved",
+      "endedTimeLimit": "The trace stopped after {{minutes}} min",
+      "endedWriteFailed": "The trace stopped, it could not be written",
+      "endedRestart": "The trace ended when b4 stopped or restarted",
+      "endedInterrupted": "The trace was cut off when b4 ended unexpectedly",
+      "endedLost": "The trace ended and its file is gone",
       "startFailed": "Failed to start trace",
+      "noSpace": "Not enough free memory or disk space for a trace",
       "stopFailed": "Failed to stop trace",
       "downloadFailed": "Failed to download trace"
     }

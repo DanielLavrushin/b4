@@ -29,6 +29,10 @@ func warnRestrictFailure(path string, err error) {
 	log.Warnf("Could not restrict permissions on %s, it stays reachable by other accounts on this device: %v", path, err)
 }
 
+func RestrictFile(path string) {
+	warnRestrictFailure(path, restrictFileMode(path))
+}
+
 func restrictFileMode(path string) error {
 	dir := filepath.Dir(path)
 	dirFd, err := unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)

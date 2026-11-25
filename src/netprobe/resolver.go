@@ -350,7 +350,7 @@ func (r *Resolver) ResolveEndpoint(ctx context.Context, ep endpoint.Endpoint, do
 		if err != nil {
 			return EndpointAnswer{}, err
 		}
-		ips, err := answerIPs(body, 0, ep.String(), domain, recordType)
+		ips, err := answerIPs(body, 0, dns.SourceLabel(ep.URL), domain, recordType)
 		return EndpointAnswer{IPs: ips}, err
 	case endpoint.TCP:
 		ips, err := r.exchange(ctx, "tcp", ep, domain, recordType)

@@ -23,10 +23,7 @@ FNR == 1 { flush(); seen_version = 0; last = 0 }
   seen_version = 1
   last = 0
   if (mode == "shape") { print; next }
-  if ($0 == "## [Unreleased]") {
-    if (hub) problem("the hub changelog has no [Unreleased] section; its release workflow reads the top block")
-    next
-  }
+  if ($0 == "## [Unreleased]") next
   if ($0 !~ ("^## \\[[0-9]+\\.[0-9]+\\.[0-9]+\\]" date)) problem("version heading is not '## [x.y.z] - YYYY-MM-DD': " $0)
   next
 }

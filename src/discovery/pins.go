@@ -86,10 +86,17 @@ func (ds *DiscoverySuite) trustedServer() endpoint.Endpoint {
 		if err == nil {
 			return ep
 		}
-		log.DiscoveryLogf("Ignoring the trusted DNS server %q given for this run: %v", ds.dnsServerOverride, err)
+		log.DiscoveryLogf("Ignoring the trusted DNS server given for this run: %v", err)
 	}
 	ep, _ := ds.cfg.TrustedDNSServer()
 	return ep
+}
+
+func trustedServerLabel(ep endpoint.Endpoint) string {
+	if ep.Transport == endpoint.HTTPS {
+		return config.UpstreamLabel(ep.URL)
+	}
+	return ep.String()
 }
 
 func (ds *DiscoverySuite) checkTrustedServer() error {

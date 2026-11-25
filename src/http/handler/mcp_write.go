@@ -381,6 +381,16 @@ func parseMCPWritePath(path string) (canonical, setRef string, err error) {
 	return path[:open+1] + "]" + path[closing+1:], setRef, nil
 }
 
+func mcpLogValue(path, value string) string {
+	switch canonical, _, _ := parseMCPWritePath(path); canonical {
+	case mcpSetPathPrefix + ".dns.doh_url", mcpSetPathPrefix + ".dns.target_dns":
+		return traceTargetDNS(value)
+	case mcpSetPathPrefix + ".dns.upstreams":
+		return strings.Join(traceUpstreams(strings.Split(value, ",")), ",")
+	}
+	return value
+}
+
 func mcpHasSourceEntries(entries []string) bool {
 	for _, e := range entries {
 		if strings.TrimSpace(e) != "" {
@@ -1142,7 +1152,7 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 				"not applied: b4 reset %s back to %q while validating the saved configuration, so nothing changed and nothing was recorded for undo. "+
 					"Call b4_list_writable_paths for the accepted form of this setting and b4_get_topic for what it means before retrying.",
 				in.Path, previous)
-			log.Infof("mcp: %s rejected on save, still %s", in.Path, previous)
+			log.Infof("mcp: %s rejected on save, still %s", in.Path, mcpLogValue(in.Path, previous))
 			return nil, out, nil
 		}
 
@@ -1151,7 +1161,7 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 			When: time.Now(), Snapshot: snapshot,
 		}, oldCfg, newCfg)
 
-		log.Infof("mcp: %s changed from %s to %s", in.Path, previous, current)
+		log.Infof("mcp: %s changed from %s to %s", in.Path, mcpLogValue(in.Path, previous), mcpLogValue(in.Path, current))
 
 		switch {
 		case slices.Contains(mcpRestartOnlyPaths, canonical):
@@ -1261,7 +1271,7 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		api.applyRuntimeChanges(last.Snapshot, oldCfg)
 		api.PerformSoftRestart(last.Snapshot, oldCfg)
 
-		log.Infof("mcp: reverted %s back to %s", last.Path, last.Previous)
+		log.Infof("mcp: reverted %s back to %s", last.Path, mcpLogValue(last.Path, last.Previous))
 		mcpNoteWrite(last.Path, "MCP reverted "+last.Path)
 
 		applied := "applied live"

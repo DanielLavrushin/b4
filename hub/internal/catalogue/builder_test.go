@@ -2,12 +2,15 @@ package catalogue
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
 	"github.com/daniellavrushin/b4hub/internal/store"
@@ -42,6 +45,11 @@ func testBuilder(t *testing.T) (*Builder, *store.Store) {
 
 func addActiveSet(t *testing.T, st *store.Store, id, fp string) {
 	t.Helper()
+	addActiveSetFrom(t, st, id, fp, nil)
+}
+
+func addActiveSetFrom(t *testing.T, st *store.Store, id, fp string, geo *hubwire.GeoSource) {
+	t.Helper()
 	now := time.Date(2026, 9, 12, 12, 0, 0, 0, time.UTC)
 	v := &store.Version{
 		FP:         fp,
@@ -49,6 +57,7 @@ func addActiveSet(t *testing.T, st *store.Store, id, fp string) {
 		Title:      "set " + id,
 		Projection: map[string]interface{}{"targets": map[string]interface{}{"sni_domains": []interface{}{id + ".example"}}},
 		Payloads:   []hubwire.BlobRef{{SHA256: "aa" + fp, Protocol: "tls", Size: 3}},
+		Geo:        geo,
 		Status:     hubwire.SetStatusPending,
 		CreatedAt:  now,
 		UpdatedAt:  now,
@@ -121,6 +130,49 @@ func TestBuildPublishesSignedManifestAndKeepsThreeFiles(t *testing.T) {
 	}
 	if fresh.Latest().Manifest.Seq != 5 || len(fresh.Latest().ByID) != 2 {
 		t.Errorf("LoadPublished must restore the latest build")
+	}
+}
+
+func TestAStoredCustomGeodataAddressIsNotPublished(t *testing.T) {
+	b, st := testBuilder(t)
+	private := "https://canaryuser:canarypass@files.example/canarytoken/geosite.dat?sig=canarysig"
+	sources, err := geodat.Sources()
+	if err != nil || len(sources) == 0 {
+		t.Fatalf("no built-in sources: %v", err)
+	}
+	site, ip := sources[0].GeositeURL, sources[0].GeoipURL
+	both, one, plain := "01ARZ3NDEKTSV4RRFFQ69G5FAV", "01ARZ3NDEKTSV4RRFFQ69G5FAW", "01ARZ3NDEKTSV4RRFFQ69G5FAX"
+	addActiveSetFrom(t, st, both, "fp-a", &hubwire.GeoSource{SiteURL: private, IPURL: private})
+	addActiveSetFrom(t, st, one, "fp-b", &hubwire.GeoSource{SiteURL: site, IPURL: private})
+	addActiveSetFrom(t, st, plain, "fp-c", &hubwire.GeoSource{SiteURL: site, IPURL: ip})
+
+	result, err := b.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	gz, err := os.ReadFile(filepath.Join(b.PublicDir, result.Manifest.Catalogue.File))
+	if err != nil {
+		t.Fatal(err)
+	}
+	published, err := Decode(gz)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(published)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "canary") || strings.Contains(string(raw), "files.example") {
+		t.Errorf("the catalogue names the private address: %s", raw)
+	}
+	want := map[string]*hubwire.GeoSource{both: nil, one: {SiteURL: site}, plain: {SiteURL: site, IPURL: ip}}
+	if len(published.Sets) != len(want) {
+		t.Fatalf("the sets themselves are published: %+v", published.Sets)
+	}
+	for _, cs := range published.Sets {
+		if w := want[cs.ID]; (cs.Geo == nil) != (w == nil) || cs.Geo != nil && *cs.Geo != *w {
+			t.Errorf("set %s names %+v, want %+v", cs.ID, cs.Geo, w)
+		}
 	}
 }
 

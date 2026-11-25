@@ -16,6 +16,7 @@ func withDNSNames(t *testing.T, wanted bool) *dns.NameCache {
 	prev := DNSNames
 	DNSNames = c
 	t.Cleanup(func() { DNSNames = prev })
+	t.Cleanup(stopDNSRouteCleanup)
 	return c
 }
 

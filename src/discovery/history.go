@@ -185,7 +185,7 @@ func (dh *DiscoveryHistory) Save(configPath string) error {
 		return log.Errorf("failed to marshal discovery history: %v", err)
 	}
 
-	if err := utils.WriteFileAtomic(path, data, 0644); err != nil {
+	if err := utils.WriteFileAtomic(path, data, config.ConfigFileMode); err != nil {
 		return log.Errorf("failed to write discovery history: %v", err)
 	}
 

@@ -419,7 +419,7 @@ func logDNSEvent(proto string, set *config.SetConfig, domain string, clientIP, s
 	if set != nil {
 		setName = set.Name
 	}
-	log.LogConnection(proto, setName, dns.SafeName(domain), clientIP.String(), clientPort, "", serverIP.String(), 53, srcMac, "", action)
+	log.LogInfoConnection(proto, setName, dns.SafeName(domain), clientIP.String(), clientPort, "", serverIP.String(), 53, srcMac, "", action)
 }
 
 func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dport uint16, payload []byte) int {
@@ -774,7 +774,7 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 
 	w.answerClient(direct, query, ipVersion, originalDst, clientIP, clientPort, resp)
 
-	log.Tracef("DNS redirect: %s -> %s answered for %s with %d IPs (set: %s)", originalDst, source, clientIP, len(dns.ParseResponseIPs(resp)), set.Name)
+	log.Tracef("DNS redirect: %s -> %s answered for %s with %d IPs (set: %s)", originalDst, dnsUpstreamLabel(source), clientIP, len(dns.ParseResponseIPs(resp)), set.Name)
 }
 
 var dnsReplyObserver func(resp []byte)

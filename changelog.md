@@ -12,12 +12,22 @@ All notable changes to b4 are recorded in this file.
 
 - **Recommended DNS Servers** leave out Mullvad, which announced the end of its public resolvers, and xbox-dns.ru, which its operator reports as not working, and 94.140.14.140 is called **AdGuard No Filter** in place of AdGuard Family, as it blocks neither ads nor adult sites. [#680](https://github.com/DanielLavrushin/b4/issues/680)
 - Where the router's own DNS server may be on the router or on its network, as on OpenWrt, a lookup of the host name of a set's own `https://` resolver goes to the set's resolvers given by IP address and, when there are none or none of them answers, to the resolver the device asked, also with **Fail closed when no resolver is reachable**; **Traffic** marks a lookup passed on unchanged `doh host`. [#680](https://github.com/DanielLavrushin/b4/issues/680)
+- **Start trace** on the **Logs** page records every log line down to debug at any **Log Level**, and the log itself keeps its level. A trace takes at most 8 MB, less when free memory or disk space is short, and a longer one keeps its first and its newest lines.
 - The note under **Settings, Integrations, Community Hub** lists what the hub receives with a sync and with a report.
+- Importing a shared set, or applying one on the **Community** page, tells when its DNS redirect is on but has no resolver.
 
 ### Fixed
 
+- A log trace being recorded was lost when b4 crashed or restarted, and a long one could fill a router's memory.
 - A set whose domains include the host name of its own `https://` resolver, such as a set for every name, resolved with 5-second pauses on a router with its own DNS forwarder, such as OpenWrt, and not at all with **Fail closed when no resolver is reachable**. [#680](https://github.com/DanielLavrushin/b4/issues/680)
 - After the router's WAN address changed, a set with a single `https://` resolver could go on for minutes without it: its names went to the device's resolver, or stopped resolving with **Fail closed when no resolver is reachable**. [#680](https://github.com/DanielLavrushin/b4/issues/680)
+
+### Security
+
+- The login or token in a custom geodata address was written to the log and shown under **Geo Databases** when a download failed.
+- The path of an `https://` resolver address, which can hold an account ID, was written to the log and log traces, and to the saved log and history of **Discovery**, which every account on the router could read.
+- A set published with **Publish to hub** or prepared with **Prepare shared set** carried the whole address of a custom geodata source, and of its first resolver when that was an `https://` one. Replace a login, token or account ID that was in a set, log or trace you gave to someone.
+- The safe copy of **Download Configuration** kept the user name and the password of an address whose host was left out, when the password was a long number.
 
 ## [1.93.0] - 2026-11-21
 
@@ -2101,7 +2111,12 @@ All notable changes to b4 are recorded in this file.
 
 - Domains from geodata files are handled better.
 
-[unreleased]: https://github.com/DanielLavrushin/b4/compare/v1.90.0...HEAD
+[unreleased]: https://github.com/DanielLavrushin/b4/compare/v1.93.0...HEAD
+[1.93.0]: https://github.com/DanielLavrushin/b4/compare/v1.92.0...v1.93.0
+[1.92.0]: https://github.com/DanielLavrushin/b4/compare/v1.91.1...v1.92.0
+[1.91.1]: https://github.com/DanielLavrushin/b4/compare/v1.91.0...v1.91.1
+[1.91.0]: https://github.com/DanielLavrushin/b4/compare/v1.90.1...v1.91.0
+[1.90.1]: https://github.com/DanielLavrushin/b4/compare/v1.90.0...v1.90.1
 [1.90.0]: https://github.com/DanielLavrushin/b4/compare/v1.89.1...v1.90.0
 [1.89.1]: https://github.com/DanielLavrushin/b4/compare/v1.89.0...v1.89.1
 [1.89.0]: https://github.com/DanielLavrushin/b4/compare/v1.88.2...v1.89.0

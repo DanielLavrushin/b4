@@ -95,6 +95,16 @@ func hubStateOf(cfg *config.Config, set *config.SetConfig) string {
 	return HubStateModified
 }
 
+func hubBuildOptions(cfg *config.Config) hubwire.BuildOptions {
+	return hubwire.BuildOptions{
+		B4Version:   Version,
+		Engine:      cfg.Queue.Mode,
+		GeoSiteURL:  cfg.System.Geo.GeoSiteURL,
+		GeoIPURL:    cfg.System.Geo.GeoIpURL,
+		ReadPayload: cfg.ReadCapturePayload,
+	}
+}
+
 // @Summary Build a shareable envelope from a set
 // @Description Strips everything private from the set, attaches its payload files and returns the envelope with a report of what was left out.
 // @Tags Hub
@@ -114,13 +124,7 @@ func (api *API) handleHubEnvelope(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg := api.getCfg()
-	env, report, err := hubwire.Build(&set, hubwire.BuildOptions{
-		B4Version:   Version,
-		Engine:      cfg.Queue.Mode,
-		GeoSiteURL:  cfg.System.Geo.GeoSiteURL,
-		GeoIPURL:    cfg.System.Geo.GeoIpURL,
-		ReadPayload: cfg.ReadCapturePayload,
-	})
+	env, report, err := hubwire.Build(&set, hubBuildOptions(cfg))
 	if err != nil {
 		writeAPIError(w, err)
 		return
@@ -727,14 +731,9 @@ func (api *API) handleHubShare(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrNotFound("Set not found"))
 		return
 	}
-	env, _, err := hubwire.Build(set, hubwire.BuildOptions{
-		B4Version:   Version,
-		Engine:      cfg.Queue.Mode,
-		GeoSiteURL:  cfg.System.Geo.GeoSiteURL,
-		GeoIPURL:    cfg.System.Geo.GeoIpURL,
-		Description: strings.TrimSpace(req.Description),
-		ReadPayload: cfg.ReadCapturePayload,
-	})
+	opts := hubBuildOptions(cfg)
+	opts.Description = strings.TrimSpace(req.Description)
+	env, _, err := hubwire.Build(set, opts)
 	if err != nil {
 		writeAPIError(w, err)
 		return

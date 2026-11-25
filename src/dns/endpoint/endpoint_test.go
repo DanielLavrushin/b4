@@ -104,3 +104,29 @@ func TestZeroEndpoint(t *testing.T) {
 		t.Fatalf("the zero endpoint means no server, got %+v %q", ep, ep.String())
 	}
 }
+
+func TestARefusedServerIsNotRepeatedInTheReason(t *testing.T) {
+	for _, in := range []string{
+		"https://canary:99999/canarypath",
+		"https://canaryuser:canary^pass@dns.example/",
+		"https://canaryuser:canarypass@dns.example/canarypath",
+		"https://canaryuser:canarypass@10.0.0.256/canarypath",
+		"https://[canary]/canarypath",
+		"https://dns.example/canary%zz",
+		"canaryuser:canarypass@dns.example/canarypath",
+		"dns.canary.example/canarypath",
+		"udp://dns.canary.example/canarypath",
+		"udp://10.0.0.1:canaryport",
+		"canaryuser:canarypass@https://dns.example/canarypath",
+		"canary::canary::",
+	} {
+		_, err := Parse(in)
+		if err == nil {
+			t.Errorf("Parse(%q) must refuse it", in)
+			continue
+		}
+		if strings.Contains(err.Error(), "canary") {
+			t.Errorf("Parse(%q) repeats the value: %v", in, err)
+		}
+	}
+}

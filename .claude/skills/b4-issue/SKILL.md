@@ -87,8 +87,13 @@ Info copy and what in them is private.
 
 ## 5. Read the trace
 
-- It starts with a System Info snapshot and the enabled sets, then the log lines at the level
-  the reporter chose. Debug is the useful one; at Info, ask for a new trace.
+- It starts with a System Info snapshot and the enabled sets, then the log lines. `level:` in
+  its header names what it holds: debug, or in a trace of an older b4 the level the reporter
+  chose. At Info, ask for a new trace. `log level setting:` is the reporter's own setting.
+- Its last line says how it ended. `interrupted` means b4 crashed or was killed while
+  recording, so the lines right above are the evidence, next to `errors.log`. A
+  `lines left out here` line marks the middle of a trace that reached its size limit, and
+  `[cut]` a line or a System Info JSON that was too long for it.
 - Rebuild windows are marked by `resyncing routing rules`, `Routing rules missing`,
   `reinstalled policy routes for interface` and `IPTABLES: adding rules`. "Slow after
   switching sets" reports usually fall inside one.

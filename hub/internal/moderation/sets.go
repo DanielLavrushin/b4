@@ -44,6 +44,7 @@ type Options struct {
 	KeepReports bool
 	Partial     bool
 	DryRun      bool
+	edited      bool
 }
 
 type Effect struct {
@@ -78,7 +79,7 @@ func catalogueListed(versions []store.Version, withheld bool) int {
 	}
 	listed := 0
 	for _, v := range versions {
-		if v.Status == hubwire.SetStatusActive && v.Version > listed {
+		if v.Listable() && v.Version > listed {
 			listed = v.Version
 		}
 	}
@@ -171,6 +172,9 @@ func (s *Service) plan(ctx context.Context, t *store.Tx, action string, r Ref, o
 		if v.HiddenFrom == hubwire.SetStatusPending {
 			eff.To = hubwire.SetStatusPending
 		}
+	}
+	if eff.To == hubwire.SetStatusActive && !opts.edited && hubwire.HasPersonalResolver(v.Projection) {
+		return eff, v, fail(CodePersonalResolver, "the resolver address of "+ref(r.SetID, r.Version)+" holds a personal path, a query or a login", params)
 	}
 	after := make([]store.Version, len(versions))
 	copy(after, versions)
