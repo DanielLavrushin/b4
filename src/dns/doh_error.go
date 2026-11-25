@@ -9,13 +9,14 @@ import (
 )
 
 func withoutResolverPath(serverURL string, err error) error {
+	cause := utils.URLErrorCause(serverURL, err)
 	var failed *url.Error
 	if !errors.As(err, &failed) {
-		return err
+		return cause
 	}
 	label := config.UpstreamLabel(serverURL)
 	if host := utils.RedirectedHost(serverURL, failed); host != "" {
 		label += " redirected to " + host
 	}
-	return &url.Error{Op: failed.Op, URL: label, Err: utils.URLErrorCause(serverURL, failed)}
+	return &url.Error{Op: failed.Op, URL: label, Err: cause}
 }

@@ -3,9 +3,11 @@ package handler
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +27,8 @@ import (
 )
 
 const canaryGeoPath = "/canarypath/geosite.dat?token=canaryquery"
+
+var canaryLogin = base64.StdEncoding.EncodeToString([]byte("canaryuser:canarypass"))
 
 func withLogin(t *testing.T, base string) string {
 	t.Helper()
@@ -77,11 +81,16 @@ func rawServer(t *testing.T, answer func(conn net.Conn, r *http.Request)) string
 	return ln.Addr().String()
 }
 
-func echoServer(t *testing.T, format string) string {
+func replyServer(t *testing.T, reply func(r *http.Request) string) string {
 	t.Helper()
 	return withLogin(t, "http://"+rawServer(t, func(conn net.Conn, r *http.Request) {
-		fmt.Fprintf(conn, format, r.RequestURI)
+		_, _ = io.WriteString(conn, reply(r))
 	})+canaryGeoPath)
+}
+
+func echoServer(t *testing.T, format string) string {
+	t.Helper()
+	return replyServer(t, func(r *http.Request) string { return fmt.Sprintf(format, r.RequestURI) })
 }
 
 func geoServer(t *testing.T, answer http.HandlerFunc) string {
@@ -127,9 +136,15 @@ func TestAFailedGeodataDownloadDoesNotTellTheLogin(t *testing.T) {
 		{"redirect to a dead host", geoServer(t, redirectTo(withLogin(t, dead+canaryGeoPath))), "connection refused"},
 		{"redirect to a host that hangs up", geoServer(t, redirectTo("http://canaryuser:canarypass@"+strings.Replace(dropped, "127.0.0.1", "localhost", 1)+canaryGeoPath)), "redirected to " + strings.Replace(dropped, "127.0.0.1", "localhost", 1)},
 		{"status line that repeats the request", echoServer(t, "HTTP/1.1 404 %s\r\nContent-Length: 0\r\n\r\n"), "404 Not Found"},
-		{"status code that repeats the request", echoServer(t, "HTTP/1.1 %s\r\n\r\n"), utils.ErrURLReply.Error()},
-		{"header that repeats the request", echoServer(t, "HTTP/1.1 200 OK\r\n%s\r\n\r\n"), utils.ErrURLReply.Error()},
-		{"length that repeats the request", echoServer(t, "HTTP/1.1 200 OK\r\nContent-Length: %s\r\n\r\n"), utils.ErrURLReply.Error()},
+		{"status code that repeats the request", echoServer(t, "HTTP/1.1 %s\r\n\r\n"), "malformed HTTP status code"},
+		{"header that repeats the request", echoServer(t, "HTTP/1.1 200 OK\r\n%s\r\n\r\n"), "missing colon"},
+		{"length that repeats the request", echoServer(t, "HTTP/1.1 200 OK\r\nContent-Length: %s\r\n\r\n"), "bad Content-Length"},
+		{"trailer that repeats the request", echoServer(t, "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n1\r\n\n\r\n0\r\n%s\r\n\r\n"), "missing colon"},
+		{"reply that is the token", replyServer(t, func(r *http.Request) string { return r.FormValue("token") + "\r\n\r\n" }), "malformed HTTP response"},
+		{"header that repeats the login", replyServer(t, func(r *http.Request) string {
+			return "HTTP/1.1 200 OK\r\n" + r.Header.Get("Authorization") + "\r\n\r\n"
+		}), "missing colon"},
+		{"redirect to a host that repeats its own path", geoServer(t, redirectTo(strings.Replace(echoServer(t, "HTTP/1.1 %s\r\n\r\n"), canaryGeoPath, "/canarysigned?sig=canarysig", 1))), "malformed HTTP status code"},
 		{"redirect that does not parse", geoServer(t, redirectTo("http://[canaryhost/canarypath")), utils.ErrURLRedirect.Error()},
 		{"redirect loop", geoServer(t, redirectTo(canaryGeoPath)), "redirects"},
 		{"forgotten host", "https://canaryuser:canarypass/geosite.dat", errDownloadAddress.Error()},
@@ -162,7 +177,7 @@ func TestAFailedGeodataDownloadDoesNotTellTheLogin(t *testing.T) {
 				if !strings.Contains(text, tc.says) {
 					t.Errorf("%s must say what went wrong (%q): %s", where, tc.says, text)
 				}
-				if strings.Contains(text, "canary") || strings.Contains(text, "123456789") {
+				if strings.Contains(text, "canary") || strings.Contains(text, "123456789") || strings.Contains(text, canaryLogin) {
 					t.Errorf("%s holds a private part of the address: %s", where, text)
 				}
 				if strings.Contains(text, "redirected to") && !strings.HasPrefix(tc.name, "redirect") {

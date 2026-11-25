@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"crypto/tls"
 	"errors"
 	"net/url"
 	"strconv"
@@ -10,36 +11,29 @@ import (
 var (
 	ErrURLSyntax   = errors.New("the address is not a valid URL")
 	ErrURLRedirect = errors.New("the server sent a redirect that is not a valid URL")
-	ErrURLReply    = errors.New("the server sent a reply that is not valid HTTP")
 )
 
 func URLErrorCause(asked string, err error) error {
+	if err == nil {
+		return nil
+	}
 	var failed *url.Error
-	if !errors.As(err, &failed) {
-		return err
+	if errors.As(err, &failed) {
+		u, parseErr := url.Parse(asked)
+		if failed.Op == "parse" || parseErr != nil || !ValidURLPort(u) {
+			return ErrURLSyntax
+		}
+		err = failed.Err
 	}
-	u, parseErr := url.Parse(asked)
-	if failed.Op == "parse" || parseErr != nil || !ValidURLPort(u) {
-		return ErrURLSyntax
-	}
-	reason := failed.Err.Error()
+	var certificate *tls.CertificateVerificationError
+	reason, _, quoted := strings.Cut(err.Error(), `"`)
 	switch {
+	case !quoted, errors.As(err, &certificate):
+		return err
 	case strings.HasPrefix(reason, "failed to parse Location header"):
 		return ErrURLRedirect
-	case quotesRequest(u, reason):
-		return ErrURLReply
 	}
-	return failed.Err
-}
-
-func quotesRequest(asked *url.URL, reason string) bool {
-	_, quoted, _ := strings.Cut(reason, `"`)
-	for _, part := range []string{asked.Path, asked.EscapedPath(), asked.RawQuery} {
-		if len(part) > 1 && strings.Contains(quoted, part) {
-			return true
-		}
-	}
-	return false
+	return errors.New(reason + `"..."`)
 }
 
 func RedirectedHost(asked string, err error) string {

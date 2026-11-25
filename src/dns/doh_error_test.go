@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/daniellavrushin/b4/utils"
 	"golang.org/x/sys/unix"
 )
 
@@ -100,8 +99,13 @@ func TestAFailedLookupNamesTheResolverWithoutItsPath(t *testing.T) {
 		{"escape that does not parse", "https://dns.example/canary%zz", "https://", nil},
 		{"forgotten host", "https://canaryuser:canarypass/dns-query", "https://", nil},
 		{"forgotten host with a number for a password", "https://canaryuser:123456789/dns-query", "https://", nil},
-		{"status code that repeats the request", echoDoHServer(t, "HTTP/1.1 %s\r\n\r\n"), utils.ErrURLReply.Error(), nil},
-		{"header that repeats the request", echoDoHServer(t, "HTTP/1.1 200 OK\r\n%s\r\n\r\n"), utils.ErrURLReply.Error(), nil},
+		{"status code that repeats the request", echoDoHServer(t, "HTTP/1.1 %s\r\n\r\n"), `malformed HTTP status code "..."`, nil},
+		{"header that repeats the request", echoDoHServer(t, "HTTP/1.1 200 OK\r\n%s\r\n\r\n"), `missing colon: "..."`, nil},
+		{"trailer that repeats the request", echoDoHServer(t, "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n%s\r\n\r\n"), `missing colon: "..."`, nil},
+		{"redirect to a host that repeats its own path", canaryDoHServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Location", strings.Replace(echoDoHServer(t, "HTTP/1.1 %s\r\n\r\n"), canaryResolverPath, "/canarysigned", 1))
+			w.WriteHeader(http.StatusTemporaryRedirect)
+		}), `malformed HTTP status code "..."`, nil},
 		{"redirect to a dead host", canaryDoHServer(t, func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Location", "http://"+closed+canaryResolverPath)
 			w.WriteHeader(http.StatusTemporaryRedirect)
