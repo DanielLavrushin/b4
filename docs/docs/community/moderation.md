@@ -86,7 +86,7 @@ The cards add the score routers got in the last build: green from 70%, orange fr
 | --- | --- |
 | **low score** | At least 3 weighted votes and a score under 30% |
 | **stale** | No vote for 60 days, and almost no weight left |
-| **under 50%** | Enough independent votes to show a score, and it is under 50% |
+| **under 50%** | Enough votes to show a score, and it is under 50% |
 | **open reports** | The listed version has open reports |
 
 A card opens the set's panel with every version, its votes and its **History**. A hidden version can be restored there, and a rejected one approved after all.
@@ -108,7 +108,7 @@ A ban is a reversible quarantine. From the moment it is set:
 - its votes stop counting, and its reports stop counting toward the automatic hide;
 - its pending versions can be approved only with a second confirmation, and stay out of the catalogue.
 
-Nothing is deleted, and **Unban** restores it all at the next build. The ban dialog counts what is affected, and names the mirrors the key announced. A ban leaves them announced; rejecting them on the Mirrors page takes them off.
+The ban deletes nothing, and **Unban** restores the reports at once, and the sets and the remaining votes at the next build. The ban dialog counts what is affected, and names the mirrors the key announced. A ban leaves them announced; rejecting them on the Mirrors page takes them off.
 
 ## Mirrors {#mirrors}
 
@@ -141,7 +141,7 @@ Votes count per strategy, in three cells: the ASN and the country the hub saw th
 | A vote without a known network, such as one relayed by an approved mirror | a quarter of the above |
 | A vote from a key first seen less than a week ago | a quarter of the above |
 
-The two reductions multiply. Every vote loses half its weight every two weeks. The score is `(works + 1) / (all + 2)`. A router uses a cell once at least two devices voted in it with a total weight of at least one. The hub also defines capped weights for automated votes from the DPI detector, the watchdog and Discovery, which b4 does not send yet.
+The two reductions multiply. Every vote loses half its weight every two weeks. The score is `(works + 1) / (all + 2)`. A router uses a cell once at least two devices voted in it with a total weight of at least one. The catalogue lists network and country cells from two devices up, and votes by the authors of a strategy count only in the worldwide cell. The author of a rejected set counts like any other device. Votes are deleted a year after they arrive. The hub also defines capped weights for automated votes from the DPI detector, the watchdog and Discovery, which b4 does not send yet.
 
 ### Reports
 

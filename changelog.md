@@ -12,6 +12,7 @@ All notable changes to b4 are recorded in this file.
 
 - **Recommended DNS Servers** leave out Mullvad, which announced the end of its public resolvers, and xbox-dns.ru, which its operator reports as not working, and 94.140.14.140 is called **AdGuard No Filter** in place of AdGuard Family, as it blocks neither ads nor adult sites. [#680](https://github.com/DanielLavrushin/b4/issues/680)
 - A lookup of the host name of a set's own `https://` resolver goes to the set's resolvers given by IP address and, when there are none or none of them answers, to the resolver the device asked, also with **Fail closed when no resolver is reachable**; **Traffic** marks a lookup passed on unchanged `doh host`. [#680](https://github.com/DanielLavrushin/b4/issues/680)
+- The note under **Settings, Integrations, Community Hub** lists what the hub receives with a sync and with a report.
 
 ### Fixed
 

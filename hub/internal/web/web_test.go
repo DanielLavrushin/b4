@@ -32,7 +32,7 @@ const (
 	voterAddress  = "203.0.113.9"
 	otherAddress  = "198.51.100.7"
 	thirdAddress  = "192.0.2.9"
-	fourthAddress = "192.0.2.77"
+	fourthAddress = "198.18.4.77"
 	password      = "moderator-secret"
 )
 

@@ -1194,7 +1194,7 @@
       "info": "The set editor gets a Share section that prepares a set with everything private left out.\n\nThe Community page lists the catalogue signed by the hub. A shared set pasted into Import is accepted whether or not this is on.",
       "urlsInfo": "A mirror serves the same signed catalogue, so the key below stays the same.",
       "publicKeyInfo": "A self-hosted hub is, for example, a development hub on this network.",
-      "privacy": "Reports on what works are sent under the author identity below; nothing else about this router leaves it."
+      "privacy": "Like any website, the hub or mirror sees this router's public address on a sync, and b4's version. A Works or Broken report adds the set, the domain the list was filtered by, the provider, the country and the capture engine, and is signed with the author identity below."
     }
   },
   "dashboard": {
