@@ -19,7 +19,7 @@ import {
 import { colors, spacing } from "@design";
 import { B4Dialog } from "@common/B4Dialog";
 import { useSnackbar } from "@context/SnackbarProvider";
-import { copyText } from "@utils";
+import { capabilityHints, copyText } from "@utils";
 import { formatByteSize, formatInteger } from "@common/charts";
 import {
   Diagnostics,
@@ -806,6 +806,7 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
                             : cap.name === "quic_drop_persistence"
                               ? t("settings.SystemInfo.capQuicDropPersistence")
                               : cap.name;
+                const hints = capabilityHints(cap, data.engine.mode);
                 return (
                   <Stack key={cap.name} spacing={0.3} sx={{ py: 0.3, px: 1 }}>
                     <Stack
@@ -828,22 +829,31 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
                         t("settings.SystemInfo.capUnavailable"),
                       )}
                     </Stack>
-                    {!cap.available &&
-                      cap.packages &&
-                      cap.packages.length > 0 && (
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            color: colors.text.secondary,
-                            fontSize: "0.7rem",
-                          }}
-                        >
-                          {t("settings.SystemInfo.capInstallHint", {
-                            packages: cap.packages.join(" "),
-                          })}
-                        </Typography>
-                      )}
-                    {!cap.available && cap.hint === "keenetic_netfilter" && (
+                    {hints.notNeeded && (
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: colors.text.secondary,
+                          fontSize: "0.7rem",
+                        }}
+                      >
+                        {t("settings.SystemInfo.capPacketQueueNotNeeded")}
+                      </Typography>
+                    )}
+                    {hints.install && (
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: colors.text.secondary,
+                          fontSize: "0.7rem",
+                        }}
+                      >
+                        {t("settings.SystemInfo.capInstallHint", {
+                          packages: (cap.packages ?? []).join(" "),
+                        })}
+                      </Typography>
+                    )}
+                    {hints.keenetic && (
                       <Typography
                         variant="caption"
                         sx={{

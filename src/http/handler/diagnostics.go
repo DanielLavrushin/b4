@@ -1160,7 +1160,7 @@ func packetQueueCapabilityRow(ok bool, missing, pkgs, reasons []string, tun bool
 	case ok:
 		c.Detail = "NFQUEUE interception available (b4 can inspect and rewrite matched traffic)"
 	case tun:
-		c.Detail = "NFQUEUE interception unavailable on this firewall backend; the TUN engine in use does not need it"
+		c.Detail = "NFQUEUE interception unavailable on this firewall backend; TUN mode does not use it"
 	default:
 		c.Detail = "NFQUEUE interception unavailable - b4 cannot intercept packets on this firewall backend; install the missing modules or switch to TUN mode"
 	}

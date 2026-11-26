@@ -1109,6 +1109,7 @@
       "moduleNotFound": "не найден как модуль",
       "kernelCapabilities": "Возможности ядра",
       "capPacketQueue": "Перехват пакетов (NFQUEUE)",
+      "capPacketQueueNotNeeded": "Режим TUN не использует NFQUEUE, поэтому для него ничего устанавливать не нужно",
       "capTransparentProxy": "Прозрачный прокси (TPROXY)",
       "capReplySideBypass": "Обход обратного трафика (connmark)",
       "capDnsBeforeConntrack": "DNS-запросы в очереди раньше conntrack (raw)",

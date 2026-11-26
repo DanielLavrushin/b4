@@ -110,7 +110,7 @@ func TestNFQueueWorksIsThePacketQueueProbe(t *testing.T) {
 func TestPacketQueueDetailUnderTUNDoesNotAskToSwitchToTUN(t *testing.T) {
 	missing := []string{"xt_NFQUEUE"}
 	tun := packetQueueCapabilityRow(false, missing, nil, nil, true)
-	if strings.Contains(tun.Detail, "switch to TUN") || !strings.Contains(tun.Detail, "TUN engine in use does not need it") {
+	if strings.Contains(tun.Detail, "switch to TUN") || strings.Contains(tun.Detail, "in use") || !strings.Contains(tun.Detail, "TUN mode does not use it") {
 		t.Fatalf("TUN detail = %q", tun.Detail)
 	}
 	nfq := packetQueueCapabilityRow(false, missing, nil, nil, false)

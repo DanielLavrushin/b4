@@ -1096,6 +1096,7 @@
       "moduleNotFound": "not found as a module",
       "kernelCapabilities": "Kernel Capabilities",
       "capPacketQueue": "Packet interception (NFQUEUE)",
+      "capPacketQueueNotNeeded": "TUN mode does not use NFQUEUE, so nothing needs to be installed for it",
       "capTransparentProxy": "Transparent proxy (TPROXY)",
       "capReplySideBypass": "Reply-side bypass (connmark)",
       "capDnsBeforeConntrack": "DNS queries queued before conntrack (raw)",
