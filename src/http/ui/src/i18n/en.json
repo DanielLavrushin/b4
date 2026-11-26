@@ -3194,7 +3194,9 @@
       "imported_other": "{{count}} sets imported into group {{group}}",
       "importedNoGroup_one": "{{count}} set imported",
       "importedNoGroup_other": "{{count}} sets imported",
-      "importFailed": "Failed to import"
+      "importFailed": "Failed to import",
+      "missingPayloads_one": "An imported set points to a payload file that does not exist on this device: {{files}}. Its fake packets are built from a built-in payload until the file is uploaded under the same name.",
+      "missingPayloads_other": "Imported sets point to payload files that do not exist on this device: {{files}}. Their fake packets are built from a built-in payload until the files are uploaded under the same names."
     },
     "share": {
       "linkId": "Hub set ID",

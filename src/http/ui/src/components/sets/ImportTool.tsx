@@ -44,7 +44,13 @@ import { hubApi } from "@api/hub";
 import { setsApi } from "@api/sets";
 import { HubWarning, formatWarningParam } from "@models/hub";
 import { SetsImport, parseSetsImport } from "@models/setGroups";
-import { mergeHubLink, reportSaveError, withAdoptedHubLink } from "@utils";
+import { captureApi } from "@api/capture";
+import {
+  mergeHubLink,
+  missingPayloadRefs,
+  reportSaveError,
+  withAdoptedHubLink,
+} from "@utils";
 import { udpL7Label } from "./udpL7";
 
 const AUTO = "auto";
@@ -254,6 +260,23 @@ export function ImportToolDialog({
           "warning",
         );
       }
+      void captureApi.list().then(
+        (files) => {
+          const missing = missingPayloadRefs(
+            created.sets,
+            files.map((file) => file.filepath),
+          );
+          if (missing.length === 0) return;
+          showSnackbar(
+            t("sets.convert.missingPayloads", {
+              count: missing.length,
+              files: missing.join(", "),
+            }),
+            "warning",
+          );
+        },
+        () => undefined,
+      );
       onImported();
       onClose();
     } catch (e) {

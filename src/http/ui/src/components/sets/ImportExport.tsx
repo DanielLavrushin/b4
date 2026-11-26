@@ -19,17 +19,19 @@ import { useCaptures } from "@b4.capture";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useTranslation, Trans } from "react-i18next";
 
-import { B4SetConfig, FakingPayloadType } from "@models/config";
+import { B4SetConfig } from "@models/config";
 import { createDefaultSet } from "@models/defaults";
 import { HubWarning, formatWarningParam, isHubEnvelope } from "@models/hub";
 import { hubApi } from "@api/hub";
 import { ApiError } from "@api/apiClient";
 import {
+  collectPayloadRefs,
   copyText,
   exportSetJson,
   isPlainObject,
   keepLocalDscp,
   mergeHubLink,
+  payloadBaseName,
   sanitizeProbeUrls,
 } from "@utils";
 
@@ -85,25 +87,6 @@ function compactJson(text: string): string {
   } catch {
     return text;
   }
-}
-
-function payloadBaseName(path: string): string {
-  return path.split(/[\\/]/).pop() ?? path;
-}
-
-function collectPayloadRefs(cfg: B4SetConfig): string[] {
-  const refs: string[] = [];
-  if (
-    cfg.faking?.sni_type === FakingPayloadType.CAPTURE &&
-    cfg.faking.payload_file
-  ) {
-    refs.push(cfg.faking.payload_file);
-  }
-  const udpFile = cfg.udp?.fake_payload_file ?? "";
-  if (cfg.udp?.mode === "fake" && udpFile && !udpFile.startsWith("@")) {
-    refs.push(udpFile);
-  }
-  return [...new Set(refs)];
 }
 
 interface ImportExportSettingsProps {
