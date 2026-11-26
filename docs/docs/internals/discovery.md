@@ -243,7 +243,7 @@ First, the engine is asked which set it uses for each address's host name, from 
 | A block page in the first 4 KB, or fewer than 1 KB read | Fails. At most 100 KB is read. |
 | A body cut off before its end: less than 90% of the announced length without a closing `</html>`, or a read error | Fails. |
 
-Only the IP versions the running capture engine handles are used: IPv4 alone under the TUN engine or with **Enable IPv6 Support** off, IPv6 alone with **Enable IPv4 Support** off under NFQUEUE. **Check Timeout** limits the whole fetch. An **Unusable** address is never healed.
+Only the IP versions the running capture engine handles are used: IPv4 alone under the TUN engine or with **Enable IPv6 Support** off, IPv6 alone with **Enable IPv4 Support** off under NFQUEUE. With **Force IPv4 for matched domains** on, the names the sets cover reach the check without their IPv6 addresses, so a site with only IPv6 addresses fails rather than reads **Unusable**. **Check Timeout** limits the whole fetch. An **Unusable** address is never healed.
 
 ## How a heal runs
 
