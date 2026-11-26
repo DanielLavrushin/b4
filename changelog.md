@@ -27,7 +27,7 @@ All notable changes to b4 are recorded in this file.
 - A set matched by address whose **TLS Version Filter** did not fit a TCP connection left its start alone but handled the rest of it. [#676](https://github.com/DanielLavrushin/b4/issues/676)
 - For up to two minutes after sets were moved or edited, the start of connections to addresses a device had just resolved could still go to the old set. [#677](https://github.com/DanielLavrushin/b4/issues/677)
 - The help for **QUIC Matching** and **TLS Version Filter** read as if they could keep a set away from QUIC to its own IP targets, and **Order of sets** left out that a domain match comes before an address match. [#678](https://github.com/DanielLavrushin/b4/issues/678)
-- **System Info** could show NFQUEUE as failed without testing it and the firewall backend as `none` in TUN mode, call kernel modules built into the kernel missing in a container, and leave out why iptables refused NFQUEUE. [#531](https://github.com/DanielLavrushin/b4/issues/531)
+- **System Info** could show NFQUEUE as failed without testing it, show the firewall backend as `none` in TUN mode and list NFQUEUE modules there with packages to install, call built-in kernel modules missing in a container, and leave out why iptables refused NFQUEUE. [#531](https://github.com/DanielLavrushin/b4/issues/531)
 
 ### Security
 
