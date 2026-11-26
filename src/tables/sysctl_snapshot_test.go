@@ -154,7 +154,7 @@ func TestFinishesInTimeGivesUpOnAGoroutineItCannotRelease(t *testing.T) {
 	}
 	var out bytes.Buffer
 	cmd := exec.Command(os.Args[0], "-test.run=^TestFinishesInTimeGivesUpOnAGoroutineItCannotRelease$", "-test.timeout=5m")
-	cmd.Env = append(os.Environ(), "B4_TEST_STUCK_HELPER=1")
+	cmd.Env = append(os.Environ(), "B4_TEST_STUCK_HELPER=1", "TMPDIR="+t.TempDir())
 	cmd.Stdout, cmd.Stderr = &out, &out
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -1288,6 +1288,71 @@ func TestAFailedSysctlSaveIsLoggedOnceForEachOutage(t *testing.T) {
 	}
 }
 
+func TestSysctlSnapshotIsNotHeldUpByAFIFOSwappedInAfterItLooked(t *testing.T) {
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	older := filepath.Join(tmp, "b4_sysctl_snapshot.json")
+	writeSnapshotFile(t, older, map[string]string{testChecksum: "1", testLiberal: "0"}, 0o600)
+	stubConntrackSysctls(t, map[string]string{testChecksum: "0", testLiberal: "1"})
+	prev := sysctlSnapOpenat
+	t.Cleanup(func() { sysctlSnapOpenat = prev })
+	swapped := false
+	sysctlSnapOpenat = func(dirfd int, name string, flags int, mode uint32) (int, error) {
+		if !swapped && name == "b4_sysctl_snapshot.json" {
+			swapped = true
+			if err := os.Remove(older); err != nil {
+				t.Error(err)
+			}
+			if err := syscall.Mkfifo(older, 0o600); err != nil {
+				t.Error(err)
+			}
+		}
+		return prev(dirfd, name, flags, mode)
+	}
+
+	finishesInTime(t, "a load next to a FIFO swapped in after the look", releaseFIFO(older), func() {
+		loadSysctlSnapshot()
+	})
+	if err := os.Remove(older); err != nil {
+		t.Fatal(err)
+	}
+	writeSnapshotFile(t, older, map[string]string{testChecksum: "1", testLiberal: "0"}, 0o600)
+	if got := loadSysctlSnapshot(); got[testChecksum] != "1" || got[testLiberal] != "0" {
+		t.Fatalf("snapshot = %v, want the originals once the file is back", got)
+	}
+}
+
+func TestAnUnreadableSnapshotIsLoggedOnceForEachOutage(t *testing.T) {
+	buf := captureTablesLog(t)
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	stubConntrackSysctls(t, map[string]string{testChecksum: "1", testLiberal: "0"})
+	applyAll()
+	prev := sysctlSnapOpenat
+	t.Cleanup(func() { sysctlSnapOpenat = prev })
+	failing := false
+	sysctlSnapOpenat = func(dirfd int, name string, flags int, mode uint32) (int, error) {
+		if failing && name == testSnapName {
+			return -1, syscall.EMFILE
+		}
+		return prev(dirfd, name, flags, mode)
+	}
+
+	failing = true
+	applyAll()
+	applyAll()
+	failing = false
+	applyAll()
+	failing = true
+	applyAll()
+	applyAll()
+	if n := logLinesWith(buf.String(), "[ERROR]", "leaving "+testChecksum+" as it is"); n != 2 {
+		t.Fatalf("%d errors for %s over two read outages with a good read between them, want 2:\n%s", n, testChecksum, buf.String())
+	}
+}
+
 func TestAnEmptySysctlSnapshotLeavesNoFile(t *testing.T) {
 	run := privateRunDir(t)
 	tmp := sharedTmp(t)
@@ -1346,8 +1411,11 @@ func TestTheQueueEngineNetnsRunKeepsItsTempDirAndBinaryInReach(t *testing.T) {
 		t.Skip("the checkout itself is under /tmp")
 	}
 	outside := filepath.Join(repo, "out")
-	if err := os.MkdirAll(outside, 0o755); err != nil {
-		t.Fatal(err)
+	if _, err := os.Stat(outside); os.IsNotExist(err) {
+		if err := os.Mkdir(outside, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Remove(outside) })
 	}
 	stubDir := func(t *testing.T, parent string) string {
 		t.Helper()
