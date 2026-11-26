@@ -318,8 +318,9 @@ func collectNetworkInterfaces(cfg *config.Config) DiagNetwork {
 
 func collectFirewallInfo(cfg *config.Config, tun, queueWorks bool) DiagFirewall {
 	info := DiagFirewall{Backend: detectFirewallBackend(), NFQueueWorks: queueWorks}
-	iptablesGroups := collectIptablesRuleGroups(info.Backend)
-	info.Backend = tunFirewallBackend(info.Backend, tun, iptablesGroups)
+	tunRules := diagTUNRulesOf(cfg)
+	iptablesGroups := collectIptablesRuleGroups(info.Backend, tunRules.device)
+	info.Backend = tunFirewallBackend(info.Backend, tun, tunRules, iptablesGroups)
 
 	info.RuleGroups = append(info.RuleGroups, collectNftRuleGroups()...)
 	info.RuleGroups = append(info.RuleGroups, iptablesGroups...)
@@ -513,9 +514,68 @@ func detectFirewallBackend() string {
 	return "none"
 }
 
-func tunFirewallBackend(backend string, tun bool, iptablesGroups []DiagRuleGroup) string {
-	if tun && backend == "none" && len(iptablesGroups) > 0 {
-		return "iptables"
+type diagTUNRules struct {
+	device    string
+	skipSetup bool
+}
+
+func diagTUNRulesOf(cfg *config.Config) diagTUNRules {
+	r := diagTUNRules{device: config.DefaultTUNDeviceName}
+	if cfg != nil {
+		r.device = cfg.Queue.TUN.Device()
+		r.skipSetup = cfg.System.Tables.SkipSetup
+	}
+	if globalTUNEngine != nil && globalTUNEngine.DeviceName() != "" {
+		r.device = globalTUNEngine.DeviceName()
+	}
+	return r
+}
+
+func ruleOnDevice(l, device string) bool {
+	if device == "" {
+		return false
+	}
+	f := strings.Fields(l)
+	for i := 0; i+1 < len(f); i++ {
+		if (f[i] == "-i" || f[i] == "-o") && f[i+1] == device {
+			return true
+		}
+	}
+	return false
+}
+
+func tunCaptureRule(l string) bool {
+	f := strings.Fields(l)
+	for i := 0; i+1 < len(f); i++ {
+		if (f[i] == "-N" || f[i] == "-A" || f[i] == "-j") && (f[i+1] == "B4_TUN" || f[i+1] == "B4_TUN_GATE") {
+			return true
+		}
+	}
+	return false
+}
+
+func tunNotrackRule(l string) bool {
+	if !strings.Contains(l, "-j CT --notrack") {
+		return false
+	}
+	return strings.Contains(l, diagMarkMatch(engine.ReinjectMarkBit)) || strings.Contains(l, diagMarkMatch(engine.ClientMark))
+}
+
+func (r diagTUNRules) owns(l string) bool {
+	if tunCaptureRule(l) {
+		return true
+	}
+	return !r.skipSetup && (ruleOnDevice(l, r.device) || tunNotrackRule(l))
+}
+
+func tunFirewallBackend(backend string, tun bool, rules diagTUNRules, iptablesGroups []DiagRuleGroup) string {
+	if !tun || backend != "none" {
+		return backend
+	}
+	for _, g := range iptablesGroups {
+		if slices.ContainsFunc(g.Rules, rules.owns) {
+			return "iptables"
+		}
 	}
 	return backend
 }
@@ -593,7 +653,7 @@ func collectNftRuleGroups() []DiagRuleGroup {
 	return groups
 }
 
-func collectIptablesRuleGroups(backend string) []DiagRuleGroup {
+func collectIptablesRuleGroups(backend, tunDevice string) []DiagRuleGroup {
 	bin := "iptables"
 	if backend == "iptables-legacy" {
 		bin = "iptables-legacy"
@@ -627,7 +687,7 @@ func collectIptablesRuleGroups(backend string) []DiagRuleGroup {
 		var rules []string
 		for _, line := range strings.Split(string(out), "\n") {
 			l := strings.TrimSpace(line)
-			if l == "" || !isB4IptablesRule(l) {
+			if l == "" || !isB4IptablesRule(l, tunDevice) {
 				continue
 			}
 			rules = append(rules, l)
@@ -690,21 +750,25 @@ func diagChainAlreadyDumped(l string) bool {
 	return false
 }
 
-func isB4IptablesRule(l string) bool {
+func isB4IptablesRule(l, tunDevice string) bool {
 	if diagChainAlreadyDumped(l) {
 		return false
 	}
-	clientMark := fmt.Sprintf("0x%x/0x%x", engine.ClientMark, engine.ClientMark)
-	reinjectMark := fmt.Sprintf("0x%x/0x%x", engine.ReinjectMarkBit, engine.ReinjectMarkBit)
-	steerMark := fmt.Sprintf("0x%x/0x%x", engine.TunSteerMark, engine.TunSteerMark)
+	if ruleOnDevice(l, tunDevice) {
+		return true
+	}
 	return strings.Contains(l, "b4_") ||
 		strings.Contains(l, "b4r_") ||
 		strings.Contains(l, "b4tun") ||
 		strings.Contains(l, "NFQUEUE") ||
 		strings.Contains(l, "-j B4") ||
-		strings.Contains(l, clientMark) ||
-		strings.Contains(l, reinjectMark) ||
-		strings.Contains(l, steerMark)
+		strings.Contains(l, diagMarkMatch(engine.ClientMark)) ||
+		strings.Contains(l, diagMarkMatch(engine.ReinjectMarkBit)) ||
+		strings.Contains(l, diagMarkMatch(engine.TunSteerMark))
+}
+
+func diagMarkMatch(mark int) string {
+	return fmt.Sprintf("0x%x/0x%x", mark, mark)
 }
 
 func nonEmptyLines(s string) []string {

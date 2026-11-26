@@ -3,6 +3,8 @@ package handler
 import (
 	"strings"
 	"testing"
+
+	"github.com/daniellavrushin/b4/config"
 )
 
 var tunPortCaptureGroups = []DiagRuleGroup{
@@ -18,9 +20,11 @@ var tunDefaultCaptureGroups = []DiagRuleGroup{
 	{Title: "iptables filter (b4)", Rules: []string{"-A FORWARD -o b4tun0 -j ACCEPT", "-A FORWARD -i b4tun0 -j ACCEPT"}},
 }
 
+var defaultTUNRules = diagTUNRules{device: "b4tun0"}
+
 func TestTUNFirewallBackendNamesTheIptablesThatHoldItsRules(t *testing.T) {
 	for name, groups := range map[string][]DiagRuleGroup{"ports": tunPortCaptureGroups, "default": tunDefaultCaptureGroups} {
-		if got := tunFirewallBackend("none", true, groups); got != "iptables" {
+		if got := tunFirewallBackend("none", true, defaultTUNRules, groups); got != "iptables" {
 			t.Errorf("TUN with %s capture and its rules in iptables: backend = %q, want iptables", name, got)
 		}
 	}
@@ -40,9 +44,51 @@ func TestTUNFirewallBackendLeavesOtherAnswersAlone(t *testing.T) {
 		{"NFQUEUE engine without a B4 chain", "none", false, tunDefaultCaptureGroups, "none"},
 	}
 	for _, c := range cases {
-		if got := tunFirewallBackend(c.backend, c.tun, c.groups); got != c.want {
+		if got := tunFirewallBackend(c.backend, c.tun, defaultTUNRules, c.groups); got != c.want {
 			t.Errorf("%s: backend = %q, want %q", c.name, got, c.want)
 		}
+	}
+}
+
+func TestTUNFirewallBackendCountsOnlyTheTUNEnginesOwnRules(t *testing.T) {
+	custom := diagTUNRules{device: "tun0"}
+	customDevice := []DiagRuleGroup{
+		{Title: "iptables nat (b4)", Rules: []string{"-A POSTROUTING -o tun0 -j SNAT --to-source 10.0.0.2"}},
+		{Title: "iptables filter (b4)", Rules: []string{"-A FORWARD -o tun0 -j ACCEPT", "-A FORWARD -i tun0 -j ACCEPT"}},
+	}
+	foreignQueue := []DiagRuleGroup{
+		{Title: "iptables mangle (b4)", Rules: []string{"-A PREROUTING -p tcp -m tcp --dport 443 -j NFQUEUE --queue-num 200 --queue-bypass"}},
+	}
+	userNAT := []DiagRuleGroup{
+		{Title: "iptables nat (b4)", Rules: []string{"-A POSTROUTING -o b4tun0 -j MASQUERADE"}},
+	}
+	cases := []struct {
+		name   string
+		rules  diagTUNRules
+		groups []DiagRuleGroup
+		want   string
+	}{
+		{"default capture on a custom device", custom, customDevice, "iptables"},
+		{"another program's NFQUEUE rule alone", defaultTUNRules, foreignQueue, "none"},
+		{"skip_setup with the user's own NAT on the TUN device", diagTUNRules{device: "b4tun0", skipSetup: true}, userNAT, "none"},
+		{"skip_setup with b4's port capture chain", diagTUNRules{device: "b4tun0", skipSetup: true}, tunPortCaptureGroups, "iptables"},
+	}
+	for _, c := range cases {
+		if got := tunFirewallBackend("none", true, c.rules, c.groups); got != c.want {
+			t.Errorf("%s: backend = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestDiagTUNRulesFollowTheConfiguredDevice(t *testing.T) {
+	cfg := config.NewConfig()
+	if got := diagTUNRulesOf(&cfg); got != (diagTUNRules{device: config.DefaultTUNDeviceName}) {
+		t.Errorf("default config: %+v", got)
+	}
+	cfg.Queue.TUN.DeviceName = "tun0"
+	cfg.System.Tables.SkipSetup = true
+	if got := diagTUNRulesOf(&cfg); got != (diagTUNRules{device: "tun0", skipSetup: true}) {
+		t.Errorf("custom device with skip_setup: %+v", got)
 	}
 }
 
