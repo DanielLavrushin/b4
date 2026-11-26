@@ -848,10 +848,28 @@ func (api *API) handleHubTest(w http.ResponseWriter, r *http.Request) {
 	log.Infof("Hub: probing %s for set %s", domain, res.Set.ID)
 	through, bypassed := probeDomainBothWays(r.Context(), cfg, domain, mcpProbeTimeout(0))
 	if mcpProbeUnfetched(&through) {
-		writeAPIError(w, &APIError{Status: http.StatusBadRequest, Code: "not_fetched", Message: through.Error})
+		writeAPIError(w, hubNotFetched(&through))
 		return
 	}
 	sendResponse(w, HubTestResponse{Domain: domain, ThroughB4: hubProbeResultOf(through), Bypassed: hubProbeResultOf(bypassed)})
+}
+
+func hubDomainField(code, msg string, params map[string]any) []FieldError {
+	return []FieldError{{Path: "domain", Code: code, Message: msg, Params: params}}
+}
+
+func hubNotFetched(r *mcpProbeResult) *APIError {
+	e := &APIError{Status: http.StatusBadRequest, Code: "not_fetched", Message: r.Error}
+	var unhandled *watchdog.ErrUnhandledFamily
+	if errors.As(r.err, &unhandled) {
+		code, params := "unhandled_family_"+strings.ToLower(unhandled.Family), map[string]any{"host": unhandled.Host}
+		if unhandled.From != "" {
+			code += "_redirect"
+			params["from"] = unhandled.From
+		}
+		e.Fields = hubDomainField(code, r.Error, params)
+	}
+	return e
 }
 
 // @Summary Hub identity

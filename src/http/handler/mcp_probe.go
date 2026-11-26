@@ -54,6 +54,7 @@ type mcpProbeResult struct {
 	answered  bool
 	redirect  string
 	status    int
+	err       error
 }
 
 type mcpProbeOut struct {
@@ -87,7 +88,7 @@ func mcpProbeResultOf(domain, mode string, res watchdog.CheckResult, err error) 
 		return mcpProbeResult{Domain: domain, Mode: mode, Verdict: string(netprobe.DomainDNSFake), Error: msg}
 	}
 	if err != nil {
-		return mcpProbeResult{Domain: domain, Mode: mode, Error: err.Error()}
+		return mcpProbeResult{Domain: domain, Mode: mode, Error: err.Error(), err: err}
 	}
 	return mcpProbeResult{
 		Domain:    domain,

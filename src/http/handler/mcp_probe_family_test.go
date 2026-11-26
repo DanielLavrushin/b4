@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"strings"
@@ -94,4 +95,9 @@ func TestTheHubTestSaysWhyNothingWasFetched(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "six.example has only IPv6 addresses") {
 		t.Errorf("the reason replaces a verdict about the site: %s", rec.Body.String())
 	}
+	var body APIError
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	expectTranslatedField(t, body.Fields, "unhandled_family_ipv6", map[string]any{"host": "six.example"})
 }
