@@ -4,7 +4,7 @@ title: First steps
 description: From opening the web interface to a first set that opens a blocked site.
 ---
 
-This tutorial goes from opening the web interface to a set that opens a blocked site. It starts once b4 is [installed](install/index.md) and running.
+b4 must already be [installed](install/index.md) and running.
 
 ## Opening the web interface {#open-the-web-interface}
 
@@ -19,12 +19,12 @@ The dashboard opens. With no sets yet, the **Sets** panel reads **No sets yet: b
 
 ## Community sets (optional) {#community-sets}
 
-Sets that other b4 users published can be tested before b4's own strategies. Discovery does this while the Community Hub is on.
+While the Community Hub is on, Discovery tests sets that other b4 users published before it tries b4's own strategies.
 
 1. Open **Settings > Integrations** and turn on **Enable Community Hub** in the **Community Hub** card.
 2. Click **Save Changes**.
 
-**Community** then appears in the side menu, and Discovery shows **Try community sets first**, on by default: it tests up to three published sets for each site before the built-in strategies. With the hub on, b4 syncs the catalogue from `hub.b4core.app`. [What leaves the router](community/index.md#what-leaves-the-router) lists what the hub receives.
+**Community** then appears in the side menu, and Discovery gets the **Try community sets first** option, on by default. It tests up to three published sets per site. With the hub on, b4 syncs the catalogue from `hub.b4core.app`. [What leaves the router](community/index.md#what-leaves-the-router) lists what the hub receives.
 
 ## Finding a strategy {#run-discovery}
 
@@ -50,7 +50,7 @@ b4 tries its strategies on the sites. A run takes from one to ten minutes, depen
 ## Applying the result {#apply-the-configuration}
 
 1. Click **Apply as a set** on the card of a site with a strategy found.
-2. Check the rows under **The set will**. They describe what the set does.
+2. Read the rows under **The set will** to see what the set changes.
 3. Keep the suggested **Set name** or type another one.
 4. Click **Create set**.
 
@@ -61,7 +61,7 @@ b4 tries its strategies on the sites. A run takes from one to ten minutes, depen
 
 ![The Traffic page, with set names in the Set column](/img/connections/20260923214001.png)
 
-The **Sets** panel of the dashboard counts the set's connections as well. When the site still does not open, [Unblocking a site](guides/unblock.md) lists the next steps. A browser that had the site open before keeps reusing its old connections, see [The browser opens new connections](troubleshooting/index.md#browser).
+The **Sets** panel of the dashboard counts the set's connections as well. When the site still does not open, [Unblocking a site](guides/unblock.md) lists the next steps. A browser that had the site open before keeps reusing its old connections; see [The browser opens new connections](troubleshooting/index.md#browser).
 
 ## Next steps {#whats-next}
 
