@@ -133,6 +133,17 @@ func TestReorderSetsSavesGroupsWithTheOrder(t *testing.T) {
 	}
 }
 
+func TestReorderSetsRefusesARepeatedID(t *testing.T) {
+	api, mux := asnAPI(t, groupedSet("a", ""), groupedSet("b", ""), groupedSet("c", ""))
+	rec := serve(mux, http.MethodPost, "/api/sets/reorder", `{"set_ids":["a","a","c"]}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("a list that names one set twice and leaves one out = %d, want 400", rec.Code)
+	}
+	if got, want := setOrder(api), []string{"a:", "b:", "c:"}; !slices.Equal(got, want) {
+		t.Errorf("sets = %v, want every set kept once: %v", got, want)
+	}
+}
+
 func TestBatchSetGroupRefusesUnknownSets(t *testing.T) {
 	api, mux := asnAPI(t, groupedSet("a", ""))
 	if rec := serve(mux, http.MethodPost, "/api/sets/batch-set-group", `{"ids":["nope"],"group":"yt"}`); rec.Code != http.StatusNotFound {

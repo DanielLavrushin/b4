@@ -828,10 +828,17 @@ func (api *API) handleReorderSets(w http.ResponseWriter, r *http.Request) {
 			setMap[set.Id] = set
 		}
 		reordered := make([]*config.SetConfig, 0, len(req.SetIds))
+		listed := make(map[string]bool, len(req.SetIds))
 		for _, id := range req.SetIds {
-			if set, ok := setMap[id]; ok {
-				reordered = append(reordered, set)
+			set, ok := setMap[id]
+			if !ok {
+				continue
 			}
+			if listed[id] {
+				return ErrBadRequest("Invalid set IDs")
+			}
+			listed[id] = true
+			reordered = append(reordered, set)
 		}
 		if len(reordered) != len(next.Sets) {
 			return ErrBadRequest("Invalid set IDs")
