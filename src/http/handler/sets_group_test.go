@@ -68,6 +68,24 @@ func TestBatchSetGroupLabelsAndGathersTheSets(t *testing.T) {
 			want: []string{"h1:old", "h3:old", "h2:new", "x:new"},
 		},
 		{
+			name: "a name that differs only by case joins the group and takes its spelling",
+			sets: []*config.SetConfig{groupedSet("x", ""), groupedSet("g1", "YouTube"), groupedSet("g2", "YouTube")},
+			body: `{"ids":["x"],"group":"youtube"}`,
+			want: []string{"x:YouTube", "g1:YouTube", "g2:YouTube"},
+		},
+		{
+			name: "an exact name wins over one that differs by case",
+			sets: []*config.SetConfig{groupedSet("a", "yt"), groupedSet("b", "YT"), groupedSet("x", "")},
+			body: `{"ids":["x"],"group":"YT"}`,
+			want: []string{"a:yt", "b:YT", "x:YT"},
+		},
+		{
+			name: "a group keeps a new case of its own name",
+			sets: []*config.SetConfig{groupedSet("g1", "yt"), groupedSet("g2", "yt"), groupedSet("a", "")},
+			body: `{"ids":["g1","g2"],"group":"YT"}`,
+			want: []string{"g1:YT", "g2:YT", "a:"},
+		},
+		{
 			name: "a split group is pulled back together",
 			sets: []*config.SetConfig{groupedSet("g1", "yt"), groupedSet("a", ""), groupedSet("g2", "yt")},
 			body: `{"ids":["g1","g2"],"group":"yt"}`,

@@ -24,7 +24,7 @@ type ImportSetsResult struct {
 }
 
 // @Summary Put sets into a group, or take them out of one
-// @Description Sets every listed set's group to "group" (an empty group takes them out). The group's sets then stand together in the list: the block keeps the place of the group's first set from before the call, or, for a new group, of the first listed set. A group that a listed set left stays together too: a set taken out of its middle moves to just after it.
+// @Description Sets every listed set's group to "group" (an empty group takes them out). The group's sets then stand together in the list: the block keeps the place of the group's first set from before the call, or, for a new group, of the first listed set. A group that a listed set left stays together too: a set taken out of its middle moves to just after it. When no group has exactly this name but one differs only by case, the sets join that group and take its spelling.
 // @Tags Sets
 // @Accept json
 // @Produce json
@@ -50,7 +50,8 @@ func (api *API) handleBatchSetGroup(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrBadRequest("No set IDs provided"))
 		return
 	}
-	group := config.NormalizeSetGroup(req.Group)
+	requested := config.NormalizeSetGroup(req.Group)
+	group := requested
 	target := make(map[string]bool, len(req.Ids))
 	for _, id := range req.Ids {
 		target[id] = true
@@ -58,12 +59,23 @@ func (api *API) handleBatchSetGroup(w http.ResponseWriter, r *http.Request) {
 
 	updated := 0
 	oldCfg, newCfg, err := api.editConfig(func(next *config.Config) error {
+		group = requested
 		anchor := ""
+		var sameButCase *config.SetConfig
 		for _, set := range next.Sets {
-			if set != nil && group != "" && set.Group == group && !target[set.Id] {
+			if set == nil || group == "" || target[set.Id] {
+				continue
+			}
+			if set.Group == group {
 				anchor = set.Id
 				break
 			}
+			if sameButCase == nil && strings.EqualFold(set.Group, group) {
+				sameButCase = set
+			}
+		}
+		if anchor == "" && sameButCase != nil {
+			anchor, group = sameButCase.Id, sameButCase.Group
 		}
 		matched := 0
 		updated = 0
