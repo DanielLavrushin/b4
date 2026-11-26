@@ -228,6 +228,24 @@ func TestImportSetsCreatesTheGroupAtTheTopInOrder(t *testing.T) {
 	}
 }
 
+func TestImportedSetsStartWithTheWatchdogAndIPPriorityOff(t *testing.T) {
+	api, mux := asnAPI(t)
+	body := `{"sets":[{"name":"watched","discovery":{"watchdog":true,"urls":["https://example.org/"]},"targets":{"ip_priority":true,"ip":["203.0.113.0/24"]}}]}`
+	if rec := serve(mux, http.MethodPost, "/api/sets/import", body); rec.Code != http.StatusCreated {
+		t.Fatalf("import = %d %s", rec.Code, rec.Body.String())
+	}
+	set := api.getCfg().Sets[0]
+	if set.Discovery.Watchdog {
+		t.Error("the imported set has the watchdog on, want it off as for a duplicated set")
+	}
+	if set.Targets.IPPriority {
+		t.Error("the imported set has IP priority on, want it off as for a duplicated set")
+	}
+	if !slices.Equal(set.Discovery.URLs, []string{"https://example.org/"}) || !slices.Equal(set.Targets.IPs, []string{"203.0.113.0/24"}) {
+		t.Errorf("urls = %v, ips = %v, want the rest of the set kept", set.Discovery.URLs, set.Targets.IPs)
+	}
+}
+
 func TestImportSetsRefusesBadDocumentsWithoutWriting(t *testing.T) {
 	for name, body := range map[string]string{
 		"no sets":     `{"group":"yt","sets":[]}`,
