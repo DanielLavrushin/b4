@@ -757,6 +757,43 @@ func TestAnErrorStatusIsTheSitesOwnOnlyWhenTheSearchGotIt(t *testing.T) {
 	}
 }
 
+func TestAPlainFixKeepsTheAddressItLoadedFrom(t *testing.T) {
+	ds := settleSuite(t, settleDomain)
+	cfg := config.NewConfig()
+	ds.cfg = &cfg
+	ds.candidate(settleDomain, nil)
+	ds.recordECHStrip(settleDomain, CheckResult{Domain: settleDomain, Status: CheckStatusComplete, StatusCode: http.StatusOK, UsedIP: settleSystem[0]})
+	ds.recordResultsMulti(ConfigPreset{Name: presetNoBypass, Phase: PhaseBaseline}, map[string]CheckResult{settleDomain: {
+		Domain: settleDomain, Status: CheckStatusComplete, StatusCode: http.StatusOK, UsedIP: settleSystem[1],
+	}})
+
+	results := ds.domainResults[settleDomain].Results
+	if r := results[presetECHStrip]; r == nil || r.usedIP != settleSystem[0] {
+		t.Errorf("the ECH strip result keeps the address it loaded from: %+v", r)
+	}
+	if r := results[presetDNSRedirect]; r == nil || r.usedIP != settleSystem[1] {
+		t.Errorf("the DNS fix result keeps the address it loaded from: %+v", r)
+	}
+}
+
+func TestAStatusFromTheAddressUnderTestIsNoEvidenceWhateverResultGotIt(t *testing.T) {
+	port, roots := settleServer(t)
+	trustSettleRoots(t, roots, true)
+	const system, reference = "127.0.0.1", "198.51.100.7"
+	ds := liveSettleSuite(t, "example.com", "https://"+net.JoinHostPort("example.com", port)+"/gone")
+	ds.candidate("example.com", func(r *DNSDiscoveryResult) { r.systemIPs = []string{system} })
+	ds.found("example.com", "tcp", 1000)
+	winner := ds.domainResults["example.com"].Results["tcp"]
+	winner.StatusCode, winner.usedIP = http.StatusNotFound, reference
+	ds.recordECHStrip("example.com", CheckResult{Domain: "example.com", Status: CheckStatusComplete, StatusCode: http.StatusOK, UsedIP: system})
+
+	served, completed := ds.checkSystemAddresses("tcp", strategySet("tcp"), ds.Domains, map[string][]string{"example.com": {system}})
+
+	if !completed || !served["example.com"] {
+		t.Errorf("a 200 the ECH strip result got from the system address under test says nothing about the site elsewhere, so the reference's 404 decides: served=%v", served)
+	}
+}
+
 func TestAResultKeepsTheAddressItLoadedFrom(t *testing.T) {
 	ds := settleSuite(t, settleDomain)
 	ds.Domain = settleDomain

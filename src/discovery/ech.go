@@ -265,5 +265,6 @@ func (ds *DiscoverySuite) recordECHStrip(domain string, result CheckResult) {
 		BytesRead:  result.BytesRead,
 		StatusCode: result.StatusCode,
 		Set:        ds.plainFixSet(presetECHStrip, FamilyECHStrip),
+		usedIP:     result.UsedIP,
 	}
 }
