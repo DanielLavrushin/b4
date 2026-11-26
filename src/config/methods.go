@@ -455,6 +455,16 @@ func (c *Config) IPFamilyEnabled(v6 bool) bool {
 	return c.Queue.IPv4Enabled
 }
 
+func (c *Config) HandledNetwork() string {
+	switch {
+	case RunningEngineTUN() || !c.IPFamilyEnabled(true):
+		return "tcp4"
+	case !c.IPFamilyEnabled(false):
+		return "tcp6"
+	}
+	return ""
+}
+
 func (c *Config) ECHOnlyFamily(v6 bool) bool {
 	return !c.IPFamilyEnabled(v6) && c.IPFamilyEnabled(!v6) && c.Queue.Mode != "tun" && !c.Queue.IsDiscovery && c.HasECHStrip()
 }

@@ -189,7 +189,7 @@ func TestStopCancelsSetChecksInFlight(t *testing.T) {
 	h := newHarness(t, watchedSet("yt", ytURL))
 	started := make(chan struct{})
 	var once sync.Once
-	h.w.checkURL = func(ctx context.Context, _ string, _ bool, _ time.Duration) URLCheck {
+	h.w.checkURL = func(ctx context.Context, _, _ string, _ time.Duration) URLCheck {
 		once.Do(func() { close(started) })
 		<-ctx.Done()
 		return failCheck
@@ -219,7 +219,7 @@ func TestStopCancelsLegacyChecksInFlight(t *testing.T) {
 	next.System.Checker.Watchdog.Domains = []string{"rutracker.org"}
 	h.ptr.Store(next)
 	started := make(chan struct{})
-	h.w.checkLegacy = func(ctx context.Context, domains []string, _ uint, _ time.Duration) map[string]CheckResult {
+	h.w.checkLegacy = func(ctx context.Context, domains []string, _ string, _ uint, _ time.Duration) map[string]CheckResult {
 		close(started)
 		<-ctx.Done()
 		out := map[string]CheckResult{}

@@ -16,7 +16,7 @@ A set is watched while **Keep this set working with the watchdog** is on in its 
 
 A check fetches the set's Discovery addresses through b4, the way a device behind the router reaches them. A set is checked as soon as it is watched, then every **Check Interval**, and every **Failure Re-check Interval** after a failed check.
 
-An address that another set handles, or that an [escalation](./sets/escalation.md) currently sends to another set, is not counted: a strategy written into this set would not affect it. An address fails when it does not load, answers with an HTTP error such as 451 or 5xx, returns a block page or is cut off. A certificate error, a required client certificate or a private destination makes it **Unusable**: no strategy changes that, so it is never healed.
+An address that another set handles, or that an [escalation](./sets/escalation.md) currently sends to another set, is not counted: a strategy written into this set would not affect it. An address fails when it does not load, answers with an HTTP error such as 451 or 5xx, returns a block page or is cut off. A certificate error, a required client certificate, a private destination or a site without an address of an IP version b4 handles makes it **Unusable**: no strategy changes that, so it is never healed. Under the NFQUEUE engine, while **Enable IPv6 Support** is off and **Force IPv4 for matched domains** is on, b4 also removes the IPv6 addresses of the names its sets cover from the plain DNS answers the router itself receives, so a site of such a name that has only IPv6 addresses can fail the check.
 
 ## Heals
 
@@ -24,7 +24,7 @@ After **Max Retries** failed checks in a row, the watchdog runs [Discovery for t
 
 A heal writes only a strategy that works on every address, and only the bypass strategy, as [Writing into an existing set](./discovery.md#writing-into-an-existing-set) describes. Then the addresses are checked again, and when one still fails, the set's previous strategy comes back. A heal never touches another set.
 
-A heal of a set with its own [DSCP value](./sets/routing.md#dscp) tests strategies with that value, as [Discovery for the set](./discovery.md#a-run-for-a-set) does, except under the TUN engine, see below. Nothing is written when the set's traffic has moved to another DSCP path by then, as after a change to **Set DSCP** under [Settings > Core > Firewall](./settings/core.md#dscp) or to its interface list.
+A heal of a set with its own [DSCP value](./sets/routing.md#dscp) tests strategies with that value, as [Discovery for the set](./discovery.md#a-run-for-a-set) does (the TUN engine is the exception, see below). Nothing is written when the set's traffic has moved to another DSCP path by then, as after a change to **Set DSCP** under [Settings > Core > Firewall](./settings/core.md#dscp) or to its interface list.
 
 After every heal, the set waits for the **Healing Cooldown**. After three failed heals in a row, the watchdog gives up on the set. Checks go on, but no heal starts until one of these happens:
 
@@ -32,7 +32,7 @@ After every heal, the set waits for the **Healing Cooldown**. After three failed
 - **Check now** is clicked;
 - the set's watchdog is turned off and on again.
 
-Under the [TUN engine](./discovery.md#tun), a heal cannot run for a set whose **IP Version Filter** is IPv6 or that has its own DSCP value. The watchdog then gives up on the set at once, without a failed heal. Checks go on, and the give-up also ends when the filter changes or the set stops writing its own value. While the TUN engine is not running or has no uplink address yet, a heal waits in **Cooldown** for at least a minute instead, and the watchdog does not give up.
+Under the [TUN engine](./discovery.md#tun), a heal cannot run for a set whose **IP Version Filter** is IPv6 or that has its own DSCP value. The watchdog then gives up on the set at once, without a failed heal. Checks go on. Besides the three events above, the give-up ends when the filter changes or the set stops writing its own value. While the TUN engine is not running or has no uplink address yet, a heal waits in **Cooldown** for at least a minute instead, and the watchdog does not give up.
 
 A page opened before a heal, such as the set editor, cannot undo it. Its save is refused with an offer to reload, which discards the unsaved changes.
 

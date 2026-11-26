@@ -22,6 +22,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	sysctlSnapPath = filepath.Join(dir, "sysctl.json")
+	kmodProcRoot = filepath.Join(dir, "proc")
 	code := m.Run()
 	_ = os.RemoveAll(dir)
 	os.Exit(code)

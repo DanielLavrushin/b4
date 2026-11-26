@@ -97,7 +97,16 @@ func stubResolver(t *testing.T, names map[string]stubName) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	t.Cleanup(func() { pc.Close() })
+	var lagMu sync.Mutex
+	var lagged sync.WaitGroup
+	closing := false
+	t.Cleanup(func() {
+		lagMu.Lock()
+		closing = true
+		lagMu.Unlock()
+		lagged.Wait()
+		pc.Close()
+	})
 
 	var mu sync.Mutex
 	served := map[string]int{}
@@ -120,11 +129,21 @@ func stubResolver(t *testing.T, names map[string]stubName) {
 			count := served[name]
 			mu.Unlock()
 			reply := stubReply(buf[:end], entry, known, qtype, count)
-			if qtype == 28 && entry.aaaaLag > 0 {
+			lagMu.Lock()
+			lag := entry.aaaaLag
+			if closing {
+				lag = 0
+			}
+			if qtype == 28 && lag > 0 {
+				lagged.Add(1)
+			}
+			lagMu.Unlock()
+			if qtype == 28 && lag > 0 {
 				go func(reply []byte, addr net.Addr, lag time.Duration) {
+					defer lagged.Done()
 					time.Sleep(lag)
 					pc.WriteTo(reply, addr)
-				}(reply, addr, entry.aaaaLag)
+				}(reply, addr, lag)
 				continue
 			}
 			pc.WriteTo(reply, addr)

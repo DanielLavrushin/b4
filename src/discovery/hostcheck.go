@@ -369,7 +369,7 @@ func (run *hostRun) withPass(ctx context.Context, index int) {
 	}
 	if ctx.Err() == nil {
 		log.DiscoveryLogf("Page hosts: testing %d hosts with '%s'", len(hosts), t.Preset)
-		if err := ds.applyHostConfig(withHosts(t.base, hosts)); err != nil {
+		if err := ds.applyHostsWithAddresses(ctx, withHosts(t.base, hosts), hosts); err != nil {
 			log.DiscoveryLogf("Page hosts: could not apply '%s' with the hosts: %v", t.Preset, err)
 			for _, e := range failing {
 				e.res.Error = "the strategy could not be applied with the host"
@@ -483,6 +483,32 @@ func (ds *DiscoverySuite) applyHostConfig(cfg *config.Config) error {
 	return nil
 }
 
+func (ds *DiscoverySuite) applyHostsWithAddresses(ctx context.Context, named *config.Config, hosts []string) error {
+	if err := ds.applyHostConfig(named); err != nil {
+		return err
+	}
+	lookupCtx, cancel := context.WithTimeout(ctx, nameCheckTimeout)
+	defer cancel()
+	seeds, reasons := ds.lookupSeeds(lookupCtx, ds.lookupNetwork(), hosts)
+	var addrs, missed []string
+	for i, host := range hosts {
+		if len(seeds[i]) == 0 {
+			missed = append(missed, host+" ("+reasons[i]+")")
+			continue
+		}
+		log.Tracef("Page hosts: %s is matched from the first SYN by %v", host, seeds[i])
+		addrs = appendUnique(addrs, seeds[i]...)
+	}
+	if len(missed) > 0 && ctx.Err() == nil {
+		log.DiscoveryLogf("Page hosts: no address was found for %s, so a part of the strategy that acts on the first packet of a connection can miss their first connection", strings.Join(missed, ", "))
+	}
+	seeded := withAddresses(named, addrs)
+	if seeded == named || ctx.Err() != nil {
+		return nil
+	}
+	return ds.applyHostConfig(seeded)
+}
+
 func (ds *DiscoverySuite) noBypassConfig() *config.Config {
 	return ds.buildTestConfigMulti(GetPhase1Presets()[0])
 }
@@ -506,11 +532,29 @@ func withHosts(base *config.Config, hosts []string) *config.Config {
 	set := *base.Sets[0]
 	set.Targets.SNIDomains = append(append([]string(nil), set.Targets.SNIDomains...), hosts...)
 	set.Targets.DomainsToMatch = append(append([]string(nil), set.Targets.DomainsToMatch...), hosts...)
+	return withSet(base, &set)
+}
+
+func withAddresses(base *config.Config, addrs []string) *config.Config {
+	if base == nil || len(base.Sets) == 0 {
+		return base
+	}
+	known := base.Sets[0].Targets.IpsToMatch
+	matched := plusMatchIPs(known, addrs)
+	if len(matched) == len(known) {
+		return base
+	}
+	set := *base.Sets[0]
+	set.Targets.IpsToMatch = matched
+	return withSet(base, &set)
+}
+
+func withSet(base *config.Config, set *config.SetConfig) *config.Config {
 	return &config.Config{
 		ConfigPath: base.ConfigPath,
 		Queue:      base.Queue,
 		System:     base.System,
-		Sets:       []*config.SetConfig{&set},
+		Sets:       []*config.SetConfig{set},
 	}
 }
 
