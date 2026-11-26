@@ -429,10 +429,9 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
 
   const blocks = useMemo(() => setBlocks(sets), [sets]);
   const visibleBlocks = useMemo(() => {
-    const withAll = blocks.map((block) => ({ ...block, all: block.sets }));
-    if (!filterText.trim()) return withAll;
+    if (!filterText.trim()) return blocks;
     const lower = filterText.toLowerCase();
-    return withAll
+    return blocks
       .map((block) => ({
         ...block,
         sets: block.sets.filter((set) => setMatches(set, lower)),

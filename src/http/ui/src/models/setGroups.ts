@@ -10,6 +10,7 @@ export interface SetBlock<T> {
   id: string;
   group: string;
   sets: T[];
+  all: T[];
 }
 
 export interface SetGroupDocument {
@@ -50,8 +51,14 @@ const groupOf = (set: GroupedSet | undefined): string => set?.group ?? "";
 
 export function setBlocks<T extends GroupedSet>(sets: T[]): SetBlock<T>[] {
   const blocks: SetBlock<T>[] = [];
+  const members = new Map<string, T[]>();
   for (const set of sets) {
     const group = groupOf(set);
+    const all = group === "" ? [set] : (members.get(group) ?? []);
+    if (group !== "") {
+      all.push(set);
+      members.set(group, all);
+    }
     const last = blocks.at(-1);
     if (group !== "" && last?.group === group) {
       last.sets.push(set);
@@ -61,6 +68,7 @@ export function setBlocks<T extends GroupedSet>(sets: T[]): SetBlock<T>[] {
       id: group === "" ? set.id : `${GROUP_BLOCK_PREFIX}${set.id}`,
       group,
       sets: [set],
+      all,
     });
   }
   return blocks;

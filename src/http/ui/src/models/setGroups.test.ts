@@ -56,6 +56,16 @@ void test("consecutive sets of one group form one block, the rest stand alone", 
   assert.deepEqual(setBlocks([]), []);
 });
 
+void test("each block of a split group knows every set of the group", () => {
+  const blocks = setBlocks(list("a:yt x b:yt c:yt d"));
+  const all = blocks.map((block) => block.all.map((set) => set.id).join(","));
+  assert.deepEqual(all, ["a,b,c", "x", "a,b,c", "d"]);
+  assert.deepEqual(
+    blocks.map((block) => block.sets.map((set) => set.id).join(",")),
+    ["a", "x", "b,c", "d"],
+  );
+});
+
 void test("a card picked up and dropped in place changes nothing", () => {
   const spec = "p a:yt b:yt c:yt q one:dc r";
   const order = list(spec).map((set) => set.id);
