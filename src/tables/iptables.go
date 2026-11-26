@@ -398,12 +398,13 @@ func (s SysctlSetting) Apply() {
 		snap[s.Name] = cur
 		if err := saveSysctlSnapshot(snap); err != nil {
 			if sysctlSnapFirstWarning("save " + s.Name) {
-				log.Errorf("TABLES: leaving %s at %q rather than setting it to %s: b4 could not save its current value to put back on exit (%v). It stays as it is until b4 can save that value, and this is logged once per run", s.Name, cur, s.Desired, err)
+				log.Errorf("TABLES: leaving %s at %q rather than setting it to %s: b4 could not save its current value to put back on exit (%v). It stays as it is until b4 can save that value, and this is logged once until saving works again", s.Name, cur, s.Desired, err)
 			} else {
 				log.Tracef("TABLES: still leaving %s at %q: %v", s.Name, cur, err)
 			}
 			return
 		}
+		sysctlSnapForgetWarning("save " + s.Name)
 	}
 	setSysctl(s.Name, s.Desired)
 	if s.Name == conntrackLiberalSysctl {

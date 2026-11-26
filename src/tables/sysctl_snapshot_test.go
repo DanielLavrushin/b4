@@ -958,6 +958,38 @@ func TestAFailedSysctlSaveIsLoggedOncePerRun(t *testing.T) {
 	}
 }
 
+func TestAFailedSysctlSaveIsLoggedOnceForEachOutage(t *testing.T) {
+	buf := captureTablesLog(t)
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	stubConntrackSysctls(t, map[string]string{testChecksum: "1", testLiberal: "0"})
+	blocker := filepath.Join(run, testSnapName)
+	block := func() {
+		if err := os.Mkdir(blocker, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(blocker, "x"), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	block()
+	applyAll()
+	applyAll()
+	if err := os.RemoveAll(blocker); err != nil {
+		t.Fatal(err)
+	}
+	applyAll()
+	revertAll()
+	block()
+	applyAll()
+	applyAll()
+	if n := logLinesWith(buf.String(), "[ERROR]", "leaving "+testChecksum); n != 2 {
+		t.Fatalf("%d errors for %s over two outages with a successful save between them, want 2:\n%s", n, testChecksum, buf.String())
+	}
+}
+
 func TestAnEmptySysctlSnapshotLeavesNoFile(t *testing.T) {
 	run := privateRunDir(t)
 	tmp := sharedTmp(t)

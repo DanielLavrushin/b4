@@ -95,6 +95,12 @@ func sysctlSnapFirstWarning(key string) bool {
 	return true
 }
 
+func sysctlSnapForgetWarning(key string) {
+	sysctlSnapWarned.Lock()
+	defer sysctlSnapWarned.Unlock()
+	delete(sysctlSnapWarned.keys, key)
+}
+
 type sysctlSnapRefusal struct {
 	msg string
 }
