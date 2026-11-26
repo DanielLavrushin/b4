@@ -5,6 +5,7 @@ import { createDefaultSet } from "./defaults";
 export const SET_TEMPLATE_OWN_KEYS = [
   "id",
   "name",
+  "group",
   "enabled",
   "targets",
   "hub",
