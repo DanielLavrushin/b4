@@ -147,6 +147,8 @@ type DiagTUN struct {
 	CaptureRulesExpected *int   `json:"capture_rules_expected,omitempty"`
 	CaptureRestores      int    `json:"capture_restores,omitempty"`
 	LastCaptureRestore   string `json:"last_capture_restore,omitempty"`
+
+	skipTables bool
 }
 
 type DiagFirewall struct {

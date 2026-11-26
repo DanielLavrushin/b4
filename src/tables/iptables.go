@@ -80,8 +80,8 @@ func (im *IPTablesManager) checkConnbytesSupport(ipt string) error {
 	}
 
 	err := fmt.Errorf("xt_connbytes kernel module is not available for %s (%v) - install it with: modprobe xt_connbytes (or apt install xtables-addons-common / linux-modules-extra-$(uname -r))", ipt, probeErr)
-	if kmodLoaded("xt_connbytes") {
-		err = fmt.Errorf("%s rejected the connbytes match although the xt_connbytes kernel module is loaded (%v) - the iptables match library is missing (OpenWrt/Entware: opkg install iptables-mod-conntrack-extra) or another program kept rewriting the filter table while b4 was probing it", ipt, probeErr)
+	if kmodPresent("xt_connbytes") {
+		err = fmt.Errorf("%s rejected the connbytes match although the xt_connbytes kernel module is present (%v) - the iptables match library is missing (OpenWrt/Entware: opkg install iptables-mod-conntrack-extra) or another program kept rewriting the filter table while b4 was probing it", ipt, probeErr)
 	}
 	im.connbytesSupport[ipt] = err
 	return err
