@@ -20,7 +20,7 @@ If you don't know which technique your provider needs, Discovery tests strategie
 
 - Ten fragmentation strategies: `combo`, `hybrid`, `tcp`, `ip`, `tls`, `oob`, `disorder`, `extsplit`, `firstbyte`, `none`, plus a random strategy pool
 - Fake packet injection: decoy ClientHellos, TCP desync bursts, window manipulation, fake SYN, SACK stripping, ClientHello mutation
-- RST protection - detects forged resets by TTL/flag/option fingerprint and drops them
+- RST protection: detects forged resets by TTL/flag/option fingerprint and drops them
 - [DNS](https://docs.b4core.app/docs/dns): per-set redirect to a plain resolver or DoH, hosts-style pins, fragmented queries, DNS-over-TCP interception, healing of answers pointing at dead addresses
 - [Routing](https://docs.b4core.app/docs/sets/routing): send a set's traffic out a chosen interface (VPN, WireGuard, second WAN), through an upstream SOCKS5 proxy, or block it
 - [Block mode](https://docs.b4core.app/docs/sets/blocking) for network-wide ad and tracker blocking
@@ -123,7 +123,7 @@ services:
     restart: unless-stopped
 ```
 
-Linux hosts only, and `--network host` is mandatory. The config is auto-discovered at `/etc/b4/b4.json` - do not override it with `--config` or it gets written inside the container and lost on recreation. Self-update and restart from the web UI do not work in Docker; pull a new image instead.
+Linux hosts only, and `--network host` is mandatory. B4 finds the config at `/etc/b4/b4.json` on its own. Do not override it with `--config`, or the config gets written inside the container and is lost when the container is recreated. Self-update and restart from the web UI do not work in Docker; pull a new image instead.
 
 Images: `lavrushin/b4` and `ghcr.io/daniellavrushin/b4`.
 
@@ -137,7 +137,7 @@ Docs: [Sets](https://docs.b4core.app/docs/sets/) · [Targets](https://docs.b4cor
 
 ## GeoSite / GeoIP
 
-Rather than listing domains by hand, a set can target whole categories - `youtube`, `category-ads-all`, a country's address ranges - from the v2ray/xray geosite and geoip databases. This is how most people cover a service and everything it talks to.
+A set can target whole categories from the v2ray/xray geosite and geoip databases (`youtube`, `category-ads-all`, a country's address ranges) instead of domains listed by hand. This is how most people cover a service and everything it talks to.
 
 Download the databases from **Settings → Geodat Settings** (Loyalsoldier, RUNET Freedom, b4geoip, or your own URL), or let the installer fetch them during setup, then add categories under **Sets → Targets**. They can be refreshed on a schedule.
 
@@ -168,7 +168,7 @@ Docs: [Splitting](https://docs.b4core.app/docs/sets/tcp/splitting) · [Faking](h
 
 B4 intercepts plain DNS on port 53 and answers matched domains itself. Per set: redirect to a plain resolver or DoH endpoint, hosts-style pins, fragmented queries, and HealDNS to strip unreachable addresses out of answers.
 
-A device running its own DoH/DoT (Chrome Secure DNS, Android Private DNS) bypasses all of it - turn that off on the client or block it.
+A device running its own DoH/DoT (Chrome Secure DNS, Android Private DNS) bypasses all of it, so turn that off on the client or block it.
 
 Docs: [DNS](https://docs.b4core.app/docs/dns)
 
@@ -193,15 +193,15 @@ Docs: [Routing](https://docs.b4core.app/docs/sets/routing) · [Blocking](https:/
 
 Two independent features, under **Settings → Telegram**.
 
-**MTProto proxy** - a fake-TLS proxy Telegram clients connect to directly, with named revocable secrets and a `tg://proxy` share link. Disabled by default, port 3128.
+**MTProto proxy** is a fake-TLS proxy that Telegram clients connect to directly, with named revocable secrets and a `tg://proxy` share link. Disabled by default, port 3128.
 
-**Telegram over WebSocket** - a routing mode you pick on a set, working as a transparent bridge. Clients keep using stock Telegram with no proxy configured, and B4 carries their traffic over WebSocket, Cloudflare-proxied domains, or your own Cloudflare Worker when direct TCP is blocked. It runs on its own; the proxy above does not need to be enabled.
+**Telegram over WebSocket** is a routing mode you pick on a set, and it works as a transparent bridge. Clients keep using stock Telegram with no proxy configured, and B4 carries their traffic over WebSocket, Cloudflare-proxied domains, or your own Cloudflare Worker when direct TCP is blocked. It runs on its own; the proxy above does not need to be enabled.
 
 Docs: [MTProto / Telegram](https://docs.b4core.app/docs/mtproto)
 
 ## Discovery, Watchdog, DPI Detector
 
-**Discovery** tests bypass strategies against your real network on an isolated queue, or under TUN on a TUN device of its own, tunes the parameters of whatever works, and checks for DNS poisoning and IP-level blocks along the way, asking other regions' DNS answers for an address the block does not cover. Results apply as sets without a restart, and the set is previewed before it is created.
+**Discovery** tests bypass strategies against your real network on an isolated queue, or under TUN on a TUN device of its own, and tunes the parameters of whatever works. Along the way it checks for DNS poisoning and IP-level blocks, and asks other regions' DNS for an address the block does not cover. You see the set before it is created, and it applies without a restart.
 
 **Watchdog** fetches the domains you list periodically. After enough consecutive failures it re-runs Discovery for that domain, verifies the result, and rolls back if it does not hold. Disabled by default.
 
@@ -263,7 +263,7 @@ Docs: [Configuration file (RU)](https://docs.b4core.app/ru/docs/advanced/config)
 For kernels without NFQUEUE support, switch the engine mode to **TUN interface** under **Settings → Core → Packet Engine**. B4 creates its own TUN device and steers traffic into it with policy routing, running the same packet engine.
 
 > [!IMPORTANT]
-> TUN mode is a fallback, not an equal alternative. Roughly 60% of the feature set works there: B4 installs none of its usual firewall rules, so anything built on them is unavailable. Discovery and the Watchdog's auto-healing run with limits: IPv4 only, without strategies that act on replies, and not for a set with its own DSCP value. IPv6 is not forwarded. Use NFQUEUE where the kernel supports it.
+> TUN mode is a fallback, and roughly 60% of the feature set works there: B4 installs none of its usual firewall rules, so anything built on them is unavailable. Discovery and the Watchdog's auto-healing run with limits: IPv4 only, without strategies that act on replies, and not for a set with its own DSCP value. IPv6 is not forwarded. Use NFQUEUE where the kernel supports it.
 
 ## Command line
 
