@@ -68,6 +68,12 @@ func TestBatchSetGroupLabelsAndGathersTheSets(t *testing.T) {
 			want: []string{"h1:old", "h3:old", "h2:new", "x:new"},
 		},
 		{
+			name: "the block keeps the place of the group's first set when that set is listed too",
+			sets: []*config.SetConfig{groupedSet("a", "g"), groupedSet("b", ""), groupedSet("c", "g"), groupedSet("x", "")},
+			body: `{"ids":["a","x"],"group":"g"}`,
+			want: []string{"a:g", "c:g", "x:g", "b:"},
+		},
+		{
 			name: "a name that differs only by case joins the group and takes its spelling",
 			sets: []*config.SetConfig{groupedSet("x", ""), groupedSet("g1", "YouTube"), groupedSet("g2", "YouTube")},
 			body: `{"ids":["x"],"group":"youtube"}`,

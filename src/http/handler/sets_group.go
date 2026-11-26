@@ -60,22 +60,18 @@ func (api *API) handleBatchSetGroup(w http.ResponseWriter, r *http.Request) {
 	updated := 0
 	oldCfg, newCfg, err := api.editConfig(func(next *config.Config) error {
 		group = requested
-		anchor := ""
-		var sameButCase *config.SetConfig
-		for _, set := range next.Sets {
-			if set == nil || group == "" || target[set.Id] {
-				continue
-			}
-			if set.Group == group {
-				anchor = set.Id
-				break
-			}
-			if sameButCase == nil && strings.EqualFold(set.Group, group) {
-				sameButCase = set
+		inGroup := func(set *config.SetConfig) bool { return set != nil && group != "" && set.Group == group }
+		if group != "" && !slices.ContainsFunc(next.Sets, inGroup) {
+			for _, set := range next.Sets {
+				if set != nil && !target[set.Id] && strings.EqualFold(set.Group, group) {
+					group = set.Group
+					break
+				}
 			}
 		}
-		if anchor == "" && sameButCase != nil {
-			anchor, group = sameButCase.Id, sameButCase.Group
+		anchor := ""
+		if first := slices.IndexFunc(next.Sets, inGroup); first >= 0 {
+			anchor = next.Sets[first].Id
 		}
 		matched := 0
 		updated = 0
