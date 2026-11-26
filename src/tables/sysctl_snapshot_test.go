@@ -421,6 +421,44 @@ func TestSysctlSnapshotRefusesAFileOfAnotherUserBeforeOpeningIt(t *testing.T) {
 	}
 }
 
+func TestSysctlSnapshotTellsTheInitialNamespaceApartOrTakesTheUnkeyedFile(t *testing.T) {
+	cases := []struct {
+		name string
+		errs []error
+	}{
+		{name: "a passing error, then an answer", errs: []error{syscall.ENOMEM}},
+		{name: "no way to tell", errs: []error{syscall.EACCES, syscall.EACCES, syscall.EACCES, syscall.EACCES, syscall.EACCES, syscall.EACCES}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			run := privateRunDir(t)
+			tmp := sharedTmp(t)
+			useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+			errs := c.errs
+			readInitNetnsLink = func() (string, error) {
+				if len(errs) > 0 {
+					err := errs[0]
+					errs = errs[1:]
+					return "", &os.PathError{Op: "readlink", Path: "/proc/1/ns/net", Err: err}
+				}
+				return "net:[4026531992]", nil
+			}
+			writeSnapshotFile(t, filepath.Join(tmp, "b4_sysctl_snapshot.json"), map[string]string{testChecksum: "1", testLiberal: "0"}, 0o600)
+			writeSnapshotFile(t, filepath.Join(tmp, testSnapName), map[string]string{testChecksum: "0", testLiberal: "1"}, 0o600)
+			s := stubConntrackSysctls(t, map[string]string{testChecksum: "0", testLiberal: "1"})
+
+			revertAll()
+			applyAll()
+			s.wrote = nil
+			revertAll()
+			want := testChecksum + "=1," + testLiberal + "=0"
+			if got := strings.Join(s.wrote, ","); got != want {
+				t.Fatalf("stop wrote %q, want the originals %q from the 1.92 file", got, want)
+			}
+		})
+	}
+}
+
 func applyAll() {
 	for _, setting := range b4SysctlSettings() {
 		setting.Apply()

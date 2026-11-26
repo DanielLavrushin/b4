@@ -45,13 +45,18 @@ var readInitNetnsLink = func() (string, error) {
 	return os.Readlink("/proc/1/ns/net")
 }
 
-func sameNetnsAsInit() bool {
+func sharesInitNetns() (bool, error) {
 	own, err := readNetnsLink()
-	if err != nil {
-		return false
+	if err == nil {
+		var first string
+		if first, err = readInitNetnsLink(); err == nil {
+			return own == first, nil
+		}
 	}
-	first, err := readInitNetnsLink()
-	return err == nil && own == first
+	if transientSnapshotError(err) {
+		return false, err
+	}
+	return true, nil
 }
 
 var (
@@ -124,7 +129,7 @@ func transientSnapshotError(err error) bool {
 	if errors.As(err, &refusal) {
 		return false
 	}
-	for _, lasting := range []syscall.Errno{syscall.ENOENT, syscall.ENOTDIR, syscall.ELOOP, syscall.EACCES, syscall.EPERM, syscall.EROFS} {
+	for _, lasting := range []syscall.Errno{syscall.ENOENT, syscall.ENOTDIR, syscall.ELOOP, syscall.EACCES, syscall.EPERM, syscall.EROFS, syscall.EINVAL} {
 		if errors.Is(err, lasting) {
 			return false
 		}
@@ -489,8 +494,14 @@ func sysctlSnapshotOrigins(cur *sysctlSnapDir, name string) ([]sysctlSnapOrigin,
 	add(sysctlSnapPrivateDir, true, false, name)
 	unkeyed := sysctlSnapBase + ".json"
 	legacy := []string{name}
-	if name != unkeyed && sameNetnsAsInit() {
-		legacy = []string{unkeyed, name}
+	if name != unkeyed {
+		shared, err := sharesInitNetns()
+		switch {
+		case err != nil:
+			blocked = cmp.Or(blocked, err)
+		case shared:
+			legacy = []string{unkeyed, name}
+		}
 	}
 	add(sysctlSnapLegacyDir, false, true, legacy...)
 	return origins, func() {
