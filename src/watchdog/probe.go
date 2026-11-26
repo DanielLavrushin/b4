@@ -52,14 +52,37 @@ func IsReservedHost(host string) bool {
 	return false
 }
 
+type HostProblem string
+
+const (
+	HostMissing  HostProblem = "missing"
+	HostNotBare  HostProblem = "not_bare"
+	HostNotASCII HostProblem = "not_ascii"
+)
+
+type ErrUnprobeableHost struct {
+	Host    string
+	Problem HostProblem
+}
+
+func (e *ErrUnprobeableHost) Error() string {
+	switch e.Problem {
+	case HostNotBare:
+		return fmt.Sprintf("%q is not a bare hostname: pass a domain such as example.com", e.Host)
+	case HostNotASCII:
+		return fmt.Sprintf("%q is not written in ASCII: pass its punycode form, the xn-- spelling that DNS uses", e.Host)
+	}
+	return "no hostname to probe"
+}
+
 func ValidateProbeHost(host string) error {
 	switch {
 	case host == "":
-		return fmt.Errorf("no hostname to probe")
+		return &ErrUnprobeableHost{Problem: HostMissing}
 	case strings.ContainsAny(host, "/?#@ \t"):
-		return fmt.Errorf("%q is not a bare hostname: pass a domain such as example.com", host)
+		return &ErrUnprobeableHost{Host: host, Problem: HostNotBare}
 	case strings.IndexFunc(host, func(r rune) bool { return r > unicode.MaxASCII }) >= 0:
-		return fmt.Errorf("%q is not written in ASCII: pass its punycode form, the xn-- spelling that DNS uses", host)
+		return &ErrUnprobeableHost{Host: host, Problem: HostNotASCII}
 	}
 	return nil
 }

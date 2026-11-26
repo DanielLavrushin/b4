@@ -12,7 +12,7 @@ import { B4Alert, B4Dialog, B4ResultCard, B4TextField } from "@b4.elements";
 import { TestIcon } from "@b4.icons";
 import { colors } from "@design";
 import { HubProbeResult, HubSet, HubTestResponse } from "@models/hub";
-import { describeApiError } from "@utils";
+import { localizeApiError } from "@utils";
 import { useHubTest } from "@hooks/useHub";
 
 interface TestDialogProps {
@@ -42,7 +42,9 @@ const ProbeCard = ({ title, result }: ProbeCardProps) => {
           }}
         >
           {result.ok ? t("hub.test.ok") : t("hub.test.fail")}
-          {result.status ? ` · ${result.status}` : ""}
+          {result.status
+            ? ` · ${t(`detector.status.${result.status}`, { defaultValue: result.status })}`
+            : ""}
         </Typography>
       }
     />
@@ -112,7 +114,7 @@ export const TestDialog = ({ set, defaultDomain, onClose }: TestDialogProps) => 
           />
           {test.isError && (
             <B4Alert severity="error">
-              {t("hub.test.failed", { error: describeApiError(test.error) })}
+              {t("hub.test.failed", { error: localizeApiError(test.error) })}
             </B4Alert>
           )}
           {result && (

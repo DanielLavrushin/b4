@@ -30,6 +30,7 @@ All notable changes to b4 are recorded in this file.
 - **Discovery** kept a DNS fix in the set it offers for a site whose link answers with an error such as 404, although the system resolver gives an address that serves the site. [#623](https://github.com/DanielLavrushin/b4/issues/623)
 - With **Enable IPv6 Support** off or under the TUN engine, the **Watchdog**, **MCP** and **Test** on the **Community** page could fetch a site over IPv6, which b4 does not handle then, and report on it whatever b4 did. [#631](https://github.com/DanielLavrushin/b4/issues/631)
 - **Page hosts** in **Discovery** could call a host blocked even with the strategy when the strategy acts on the first packet of a connection, such as a fake SYN, because b4 did not know the address of the host yet. [#642](https://github.com/DanielLavrushin/b4/issues/642)
+- In the Russian interface, **Test** on the **Community** page showed its errors and the status of each fetch in English.
 
 ### Security
 

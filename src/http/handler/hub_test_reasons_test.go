@@ -2,11 +2,14 @@ package handler
 
 import (
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/hub/hubtest"
 	"github.com/daniellavrushin/b4/watchdog"
 )
 
@@ -54,6 +57,69 @@ func expectTranslatedField(t *testing.T, fields []FieldError, code string, param
 				t.Errorf("%s.json errors.%s leaves out {{%s}}: %q", locale, code, k, text)
 			}
 		}
+	}
+}
+
+func expectTranslatedCode(t *testing.T, code string) {
+	t.Helper()
+	for _, locale := range []string{"en", "ru"} {
+		if uiErrorText(t, locale, code) == "" {
+			t.Errorf("%s.json has no errors.%s, so the UI shows the English message", locale, code)
+		}
+	}
+}
+
+func hubTestEnvFor(t *testing.T, domains ...string) *hubEnv {
+	t.Helper()
+	env := newHubEnv(t)
+	set := hubStrategySet("Refusals", domains...)
+	cs, _ := hubtest.CatalogueSet(t, "refuse-1", 1, &set, nil)
+	env.publish(t, cs)
+	return env
+}
+
+func TestTheHubTestRefusesInTheUIsLanguage(t *testing.T) {
+	env := hubTestEnvFor(t, "*.wild.example")
+	cases := []struct {
+		name, domain, code, field string
+		params                    map[string]any
+	}{
+		{"no plain domain in the set", "", "no_domain", "", nil},
+		{"a private address", "192.168.1.1", "bad_request", "private_host", map[string]any{"host": "192.168.1.1"}},
+		{"not a bare host name", "exa mple.com", "not_fetched", "invalid_host", map[string]any{"value": "exa mple.com"}},
+		{"not written in ASCII", "пример.рф", "not_fetched", "host_not_ascii", map[string]any{"value": "пример.рф"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			rec := postJSON(t, env.mux, "/api/hub/sets/refuse-1/test", HubTestRequest{Domain: c.domain})
+			expectCode(t, rec, http.StatusBadRequest, c.code)
+			var body APIError
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if c.field == "" {
+				if len(body.Fields) != 0 {
+					t.Errorf("unexpected field errors %+v", body.Fields)
+				}
+				expectTranslatedCode(t, c.code)
+				return
+			}
+			expectTranslatedField(t, body.Fields, c.field, c.params)
+		})
+	}
+}
+
+func TestTheHubTestNamesAHubThatCannotServeItInTheUIsLanguage(t *testing.T) {
+	env := hubTestEnvFor(t, "example.com")
+	env.update(func(cfg *config.Config) { cfg.System.Hub.Enabled = false })
+	expectCode(t, postJSON(t, env.mux, "/api/hub/sets/refuse-1/test", HubTestRequest{}), http.StatusConflict, "hub_disabled")
+
+	env.update(func(cfg *config.Config) { cfg.System.Hub.Enabled = true })
+	SetHubService(nil)
+	expectCode(t, postJSON(t, env.mux, "/api/hub/sets/refuse-1/test", HubTestRequest{}), http.StatusServiceUnavailable, "hub_unavailable")
+
+	for _, code := range []string{"hub_disabled", "hub_unavailable", "hub_not_configured", "not_found", "invalid_json"} {
+		expectTranslatedCode(t, code)
 	}
 }
 

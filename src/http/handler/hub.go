@@ -841,7 +841,9 @@ func (api *API) handleHubTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if watchdog.IsReservedHost(domain) {
-		writeAPIError(w, ErrBadRequest(domain+" is a private or local address"))
+		e := ErrBadRequest(domain + " is a private or local address")
+		e.Fields = hubDomainField("private_host", e.Message, map[string]any{"host": domain})
+		writeAPIError(w, e)
 		return
 	}
 	cfg := api.getCfg()
@@ -861,13 +863,19 @@ func hubDomainField(code, msg string, params map[string]any) []FieldError {
 func hubNotFetched(r *mcpProbeResult) *APIError {
 	e := &APIError{Status: http.StatusBadRequest, Code: "not_fetched", Message: r.Error}
 	var unhandled *watchdog.ErrUnhandledFamily
-	if errors.As(r.err, &unhandled) {
+	var unprobeable *watchdog.ErrUnprobeableHost
+	switch {
+	case errors.As(r.err, &unhandled):
 		code, params := "unhandled_family_"+strings.ToLower(unhandled.Family), map[string]any{"host": unhandled.Host}
 		if unhandled.From != "" {
 			code += "_redirect"
 			params["from"] = unhandled.From
 		}
 		e.Fields = hubDomainField(code, r.Error, params)
+	case errors.As(r.err, &unprobeable) && unprobeable.Problem == watchdog.HostNotBare:
+		e.Fields = hubDomainField("invalid_host", r.Error, map[string]any{"value": unprobeable.Host})
+	case errors.As(r.err, &unprobeable) && unprobeable.Problem == watchdog.HostNotASCII:
+		e.Fields = hubDomainField("host_not_ascii", r.Error, map[string]any{"value": unprobeable.Host})
 	}
 	return e
 }
