@@ -1079,7 +1079,12 @@ func (api *API) collectGeodataInfo() DiagGeodata {
 	return info
 }
 
-func kernelModuleNames(backend string, st tables.DNSQueryState) []string {
+var tunKernelModules = []string{"tun", "xt_mark", "xt_multiport", "xt_connbytes", "xt_conntrack", "xt_CT", "nf_conntrack", "nf_conntrack_netlink"}
+
+func kernelModuleNames(backend string, st tables.DNSQueryState, tun bool) []string {
+	if tun {
+		return slices.Clone(tunKernelModules)
+	}
 	if backend == "nftables" {
 		return []string{"nft_queue", "nfnetlink_queue", "nft_ct", "nf_conntrack"}
 	}
@@ -1134,7 +1139,7 @@ func collectKernelModules(cfg *config.Config, tun bool) DiagKernel {
 	result.Capabilities = append(result.Capabilities, dnsQueryCapabilities(dnsQueries, listener)...)
 	markKeeneticHints(result.Capabilities, tables.KeeneticOS())
 
-	modules := kernelModuleNames(tables.DetectBackend(cfg), dnsQueries)
+	modules := kernelModuleNames(tables.DetectBackend(cfg), dnsQueries, tun)
 	result.Modules = make([]DiagModule, 0, len(modules))
 	for _, mod := range modules {
 		result.Modules = append(result.Modules, DiagModule{Name: mod, Status: tables.KernelModuleStatus(mod)})

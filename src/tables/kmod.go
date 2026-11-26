@@ -85,6 +85,8 @@ var kmodProcRegistry = map[string]kmodProcEvidence{
 	"xt_CONNMARK":  {files: kmodProcTargets, entry: "CONNMARK"},
 	"xt_DSCP":      {files: kmodProcTargets, entry: "DSCP"},
 	"xt_NFLOG":     {files: kmodProcTargets, entry: "NFLOG"},
+	"xt_CT":        {files: kmodProcTargets, entry: "CT"},
+	"xt_mark":      {files: kmodProcMatches, entry: "mark"},
 	"xt_connbytes": {files: kmodProcMatches, entry: "connbytes"},
 	"xt_conntrack": {files: kmodProcMatches, entry: "conntrack"},
 	"xt_multiport": {files: kmodProcMatches, entry: "multiport"},
@@ -92,6 +94,7 @@ var kmodProcRegistry = map[string]kmodProcEvidence{
 	"xt_connmark":  {files: kmodProcMatches, entry: "connmark"},
 	"xt_addrtype":  {files: kmodProcMatches, entry: "addrtype"},
 
+	"tun":             {files: []string{"misc"}, entry: "200 tun"},
 	"nfnetlink_queue": {files: []string{"net/netfilter/nfnetlink_queue"}},
 	"nfnetlink_log":   {files: []string{"net/netfilter/nfnetlink_log"}},
 	"nf_conntrack":    {files: []string{"sys/net/netfilter/nf_conntrack_count", "sys/net/netfilter/nf_conntrack_max"}},

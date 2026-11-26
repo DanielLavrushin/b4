@@ -319,10 +319,31 @@ func TestNFLOGModuleRowsOnlyWhereDNSQueriesAreCopiedOrHeldAfterConntrack(t *test
 		{"nftables", "nftables", tables.DNSQueryState{Applied: true, Release: "4.9.337", Placements: map[string]string{"nftables": "mangle"}}, []string{"nft_queue", "nfnetlink_queue", "nft_ct", "nf_conntrack"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := kernelModuleNames(tc.backend, tc.st); !slices.Equal(got, tc.want) {
+			if got := kernelModuleNames(tc.backend, tc.st, false); !slices.Equal(got, tc.want) {
 				t.Errorf("modules %v, want %v: a module b4 has no use for shows as missing with a warning", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestTUNModeListsTheModulesOfItsOwnRules(t *testing.T) {
+	want := []string{"tun", "xt_mark", "xt_multiport", "xt_connbytes", "xt_conntrack", "xt_CT", "nf_conntrack", "nf_conntrack_netlink"}
+	copying := tables.DNSQueryState{Applied: true, Release: "4.1.52", Affected: true, Placements: map[string]string{"iptables": "copy"}}
+	for _, backend := range []string{"iptables", "iptables-legacy", "nftables", "none"} {
+		got := kernelModuleNames(backend, copying, true)
+		if !slices.Equal(got, want) {
+			t.Errorf("TUN with the %s backend: modules %v, want %v", backend, got, want)
+		}
+		for _, queueOnly := range []string{"xt_NFQUEUE", "nfnetlink_queue", "nft_queue"} {
+			if slices.Contains(got, queueOnly) {
+				t.Errorf("TUN with the %s backend lists %s, which only the NFQUEUE engine uses", backend, queueOnly)
+			}
+		}
+	}
+	got := kernelModuleNames("iptables", tables.DNSQueryState{}, true)
+	got[0] = "changed"
+	if kernelModuleNames("iptables", tables.DNSQueryState{}, true)[0] != "tun" {
+		t.Error("a caller can change the shared TUN module list")
 	}
 }
 
