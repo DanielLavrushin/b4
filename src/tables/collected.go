@@ -376,14 +376,16 @@ func applyCollectedAccounting(cfg *config.Config) {
 		revertCollectedAccounting()
 		return
 	}
-	if _, saved := loadSysctlSnapshot()[collectedAccounting.Name]; !saved && getSysctl(collectedAccounting.Name) == "1" {
+	snap, err := readSysctlSnapshot()
+	if _, saved := snap[collectedAccounting.Name]; err == nil && !saved && getSysctl(collectedAccounting.Name) == "1" {
 		return
 	}
 	collectedAccounting.Apply()
 }
 
 func revertCollectedAccounting() {
-	if _, saved := loadSysctlSnapshot()[collectedAccounting.Name]; saved {
+	snap, err := readSysctlSnapshot()
+	if _, saved := snap[collectedAccounting.Name]; err != nil || saved {
 		collectedAccounting.RevertBack()
 	}
 }

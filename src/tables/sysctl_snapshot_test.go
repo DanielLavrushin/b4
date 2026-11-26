@@ -199,6 +199,51 @@ func stubConntrackSysctls(t *testing.T, cur map[string]string) *sysctlStub {
 	return s
 }
 
+func loadSysctlSnapshot() map[string]string {
+	m, _ := readSysctlSnapshot()
+	return m
+}
+
+func TestSysctlSnapshotLeavesTheSysctlsAloneWhenItCannotReadTheSnapshot(t *testing.T) {
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	s := stubConntrackSysctls(t, map[string]string{testChecksum: "1", testLiberal: "0", "net.netfilter.nf_conntrack_acct": "0"})
+	applyAll()
+	collectedAccounting.Apply()
+	path := filepath.Join(run, testSnapName)
+	saved := readSnapshotJSON(t, path)
+	prev := sysctlSnapOpenat
+	t.Cleanup(func() { sysctlSnapOpenat = prev })
+	failing := true
+	sysctlSnapOpenat = func(dirfd int, name string, flags int, mode uint32) (int, error) {
+		if failing && name == testSnapName {
+			return -1, syscall.EMFILE
+		}
+		return prev(dirfd, name, flags, mode)
+	}
+
+	s.wrote = nil
+	applyAll()
+	collectedAccounting.Apply()
+	revertAll()
+	revertCollectedAccounting()
+	if len(s.wrote) != 0 {
+		t.Fatalf("with the saved settings unreadable for a moment, b4 wrote %v", s.wrote)
+	}
+	if got := readSnapshotJSON(t, path); len(got) != len(saved) || got[testChecksum] != "1" || got[testLiberal] != "0" || got["net.netfilter.nf_conntrack_acct"] != "0" {
+		t.Fatalf("the saved settings went from %v to %v while they could not be read", saved, got)
+	}
+
+	failing = false
+	revertAll()
+	revertCollectedAccounting()
+	want := testChecksum + "=1," + testLiberal + "=0,net.netfilter.nf_conntrack_acct=0"
+	if got := strings.Join(s.wrote, ","); got != want {
+		t.Fatalf("once readable again, RevertBack wrote %q, want the originals %q", got, want)
+	}
+}
+
 func applyAll() {
 	for _, setting := range b4SysctlSettings() {
 		setting.Apply()

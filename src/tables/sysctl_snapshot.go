@@ -55,6 +55,7 @@ func sameNetnsAsInit() bool {
 
 var (
 	sysctlSnapOpen   = syscall.Open
+	sysctlSnapOpenat = syscall.Openat
 	sysctlSnapUnlink = syscall.Unlinkat
 )
 
@@ -327,7 +328,7 @@ func (d sysctlSnapDir) read(name string) (map[string]string, *sysctlSnapID, erro
 	if mode&syscall.S_IFMT != syscall.S_IFREG {
 		return nil, &id, refuseSnapshot("%s is not a regular file", path)
 	}
-	fd, err := syscall.Openat(d.fd, name, sysctlSnapReadFlags, 0)
+	fd, err := sysctlSnapOpenat(d.fd, name, sysctlSnapReadFlags, 0)
 	if err != nil {
 		return nil, nil, &os.PathError{Op: "open", Path: path, Err: err}
 	}
@@ -545,17 +546,20 @@ func takeOverEarlierSnapshots(cur *sysctlSnapDir, name string, m map[string]stri
 	sysctlSnapState.done = true
 }
 
-func loadSysctlSnapshot() map[string]string {
+func readSysctlSnapshot() (map[string]string, error) {
 	m := map[string]string{}
 	d, name, err := openSysctlSnapshot()
 	if err != nil {
-		if sysctlSnapPath == "" && !transientSnapshotError(err) {
+		if transientSnapshotError(err) {
+			return m, err
+		}
+		if sysctlSnapPath == "" {
 			if sysctlSnapFirstWarning("no dir") {
 				log.Warnf("TABLES: the saved conntrack settings have nowhere safe to live, so b4 only reads what an earlier b4 left: %v", err)
 			}
 			takeOverEarlierSnapshots(nil, name, m)
 		}
-		return m
+		return m, nil
 	}
 	defer d.close()
 	cur, _, err := d.read(name)
@@ -564,7 +568,7 @@ func loadSysctlSnapshot() map[string]string {
 		m = cur
 	case errors.Is(err, fs.ErrNotExist):
 	case transientSnapshotError(err):
-		return m
+		return map[string]string{}, err
 	default:
 		if sysctlSnapFirstWarning("read " + d.file(name)) {
 			log.Warnf("TABLES: ignoring the saved conntrack settings: %v", err)
@@ -573,7 +577,7 @@ func loadSysctlSnapshot() map[string]string {
 	if sysctlSnapPath == "" {
 		takeOverEarlierSnapshots(&d, name, m)
 	}
-	return m
+	return m, nil
 }
 
 func saveSysctlSnapshot(m map[string]string) error {

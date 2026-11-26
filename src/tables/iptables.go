@@ -388,7 +388,16 @@ func isSysctlNumber(v string) bool {
 }
 
 func (s SysctlSetting) Apply() {
-	snap := loadSysctlSnapshot()
+	snap, err := readSysctlSnapshot()
+	if err != nil {
+		if sysctlSnapFirstWarning("read " + s.Name) {
+			log.Errorf("TABLES: leaving %s as it is: the saved conntrack settings could not be read (%v), and b4 does not record a new original value over them. It stays as it is until b4 can read them, and this is logged once until reading works again", s.Name, err)
+		} else {
+			log.Tracef("TABLES: still leaving %s as it is: %v", s.Name, err)
+		}
+		return
+	}
+	sysctlSnapForgetWarning("read " + s.Name)
 	if !isSysctlNumber(snap[s.Name]) {
 		cur := getSysctl(s.Name)
 		if !isSysctlNumber(cur) {
@@ -417,7 +426,11 @@ func (s SysctlSetting) RevertBack() {
 		log.Warnf("TABLES: b4 is leaving %s at 1 rather than putting this router's 0 back: this firewall drops what strict TCP window tracking marks invalid, so restoring it would stop a large download finishing. A reboot resets it and b4 sets it again on the way up", conntrackLiberalSysctl)
 		return
 	}
-	snap := loadSysctlSnapshot()
+	snap, err := readSysctlSnapshot()
+	if err != nil {
+		log.Warnf("TABLES: not putting %s back now: the saved conntrack settings could not be read: %v", s.Name, err)
+		return
+	}
 	v, ok := snap[s.Name]
 	if !ok {
 		return
