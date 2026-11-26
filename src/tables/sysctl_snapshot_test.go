@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 const testSnapName = "b4_sysctl_snapshot.4026531992.json"
@@ -359,6 +361,63 @@ func TestSysctlSnapshotLeavesTheSysctlsAloneWhenItsDirectoryCannotBeReachedLater
 	want := testChecksum + "=1," + testLiberal + "=0"
 	if got := strings.Join(s.wrote, ","); got != want {
 		t.Fatalf("after the snapshot's directory could not be reached once during a rules pass, stop wrote %q, want the originals %q", got, want)
+	}
+}
+
+func TestSysctlSnapshotFinishesTheTakeoverPastAnEntryItCannotRemove(t *testing.T) {
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	older := filepath.Join(tmp, "b4_sysctl_snapshot.json")
+	writeSnapshotFile(t, older, map[string]string{testChecksum: "1", testLiberal: "0"}, 0o600)
+	planted := filepath.Join(tmp, testSnapName)
+	if err := os.Mkdir(planted, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := stubConntrackSysctls(t, map[string]string{testChecksum: "0", testLiberal: "1"})
+
+	revertAll()
+	want := testChecksum + "=1," + testLiberal + "=0"
+	if got := strings.Join(s.wrote, ","); got != want {
+		t.Fatalf("start wrote %q, want the originals %q", got, want)
+	}
+	requireGone(t, older)
+	applyAll()
+	revertAll()
+	if names := dirEntries(t, run); len(names) != 0 {
+		t.Fatalf("after a clean stop %s holds %v; an entry b4 could not remove kept the takeover open", run, names)
+	}
+	s.cur[testChecksum], s.cur[testLiberal] = "0", "1"
+	forgetSysctlSnapshotState()
+	s.wrote = nil
+	revertAll()
+	if len(s.wrote) != 0 {
+		t.Fatalf("the next start wrote %v over values set while b4 was stopped", s.wrote)
+	}
+}
+
+func TestSysctlSnapshotRefusesAFileOfAnotherUserBeforeOpeningIt(t *testing.T) {
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	writeSnapshotFile(t, filepath.Join(tmp, "b4_sysctl_snapshot.json"), map[string]string{testChecksum: "1", testLiberal: "0"}, 0o600)
+	planted := filepath.Join(tmp, testSnapName)
+	writeSnapshotFile(t, planted, map[string]string{testChecksum: "7"}, 0o664)
+	f, err := os.OpenFile(planted, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+	if _, err := unix.FcntlInt(f.Fd(), unix.F_SETLEASE, unix.F_WRLCK); err != nil {
+		t.Skipf("cannot take a write lease here: %v", err)
+	}
+	t.Cleanup(func() { _, _ = unix.FcntlInt(f.Fd(), unix.F_SETLEASE, unix.F_UNLCK) })
+	s := stubConntrackSysctls(t, map[string]string{testChecksum: "0", testLiberal: "1"})
+
+	revertAll()
+	want := testChecksum + "=1," + testLiberal + "=0"
+	if got := strings.Join(s.wrote, ","); got != want {
+		t.Fatalf("with a leased file of another user at the 1.93 name, start wrote %q, want the originals %q", got, want)
 	}
 }
 
@@ -1214,13 +1273,13 @@ func TestSysctlSnapshotTrustsOnlyRootOrB4(t *testing.T) {
 	if err := syscall.Stat(path, &st); err != nil {
 		t.Fatal(err)
 	}
-	if err := trustSnapshotFile(path, &st, true); err != nil {
+	if err := trustSnapshotFile(path, attrsOf(&st), true); err != nil {
 		t.Fatalf("a file of b4's own user: %v", err)
 	}
 	prev := sysctlSnapOwnerOK
 	t.Cleanup(func() { sysctlSnapOwnerOK = prev })
 	sysctlSnapOwnerOK = func(uint32) bool { return false }
-	if err := trustSnapshotFile(path, &st, true); err == nil || !strings.Contains(err.Error(), "belongs to uid") {
+	if err := trustSnapshotFile(path, attrsOf(&st), true); err == nil || !strings.Contains(err.Error(), "belongs to uid") {
 		t.Fatalf("a file of another user: err %v", err)
 	}
 	sysctlSnapOwnerOK = prev

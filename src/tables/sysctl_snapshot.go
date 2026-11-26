@@ -189,25 +189,49 @@ func (d sysctlSnapDir) same(o sysctlSnapDir) bool {
 	return d.dev == o.dev && d.ino == o.ino
 }
 
-func trustSnapshotOwner(path string, st *syscall.Stat_t) error {
-	if !sysctlSnapOwnerOK(st.Uid) {
-		return refuseSnapshot("%s belongs to uid %d, not to root or to b4", path, st.Uid)
+type sysctlSnapID struct {
+	dev uint64
+	ino uint64
+}
+
+type sysctlSnapAttrs struct {
+	id    sysctlSnapID
+	mode  uint32
+	uid   uint32
+	nlink uint64
+}
+
+func attrsOf(st *syscall.Stat_t) sysctlSnapAttrs {
+	return sysctlSnapAttrs{id: sysctlSnapID{dev: uint64(st.Dev), ino: uint64(st.Ino)}, mode: uint32(st.Mode), uid: st.Uid, nlink: uint64(st.Nlink)}
+}
+
+func lstatAt(dirfd int, name string) (sysctlSnapAttrs, error) {
+	var st unix.Stat_t
+	if err := unix.Fstatat(dirfd, name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return sysctlSnapAttrs{}, err
 	}
-	if st.Mode&0o022 != 0 {
-		return refuseSnapshot("%s can be written by other users (mode %04o)", path, st.Mode&0o7777)
+	return sysctlSnapAttrs{id: sysctlSnapID{dev: uint64(st.Dev), ino: uint64(st.Ino)}, mode: uint32(st.Mode), uid: st.Uid, nlink: uint64(st.Nlink)}, nil
+}
+
+func trustSnapshotOwner(path string, a sysctlSnapAttrs) error {
+	if !sysctlSnapOwnerOK(a.uid) {
+		return refuseSnapshot("%s belongs to uid %d, not to root or to b4", path, a.uid)
+	}
+	if a.mode&0o022 != 0 {
+		return refuseSnapshot("%s can be written by other users (mode %04o)", path, a.mode&0o7777)
 	}
 	return nil
 }
 
-func trustSnapshotFile(path string, st *syscall.Stat_t, shared bool) error {
-	if st.Mode&syscall.S_IFMT != syscall.S_IFREG {
+func trustSnapshotFile(path string, a sysctlSnapAttrs, shared bool) error {
+	if a.mode&syscall.S_IFMT != syscall.S_IFREG {
 		return refuseSnapshot("%s is not a regular file", path)
 	}
-	if err := trustSnapshotOwner(path, st); err != nil {
+	if err := trustSnapshotOwner(path, a); err != nil {
 		return err
 	}
-	if shared && st.Nlink != 1 {
-		return refuseSnapshot("%s has %d hard links", path, st.Nlink)
+	if shared && a.nlink != 1 {
+		return refuseSnapshot("%s has %d hard links", path, a.nlink)
 	}
 	return nil
 }
@@ -230,7 +254,7 @@ func openSnapshotDir(path string, noFollow, shared bool) (sysctlSnapDir, error) 
 		return sysctlSnapDir{}, &os.PathError{Op: "stat", Path: path, Err: err}
 	}
 	if !shared {
-		if err := trustSnapshotOwner(path, &st); err != nil {
+		if err := trustSnapshotOwner(path, attrsOf(&st)); err != nil {
 			_ = syscall.Close(fd)
 			return sysctlSnapDir{}, err
 		}
@@ -308,27 +332,15 @@ func openSysctlSnapshot() (sysctlSnapDir, string, error) {
 	return c, name, err
 }
 
-type sysctlSnapID struct {
-	dev uint64
-	ino uint64
-}
-
-func lstatAt(dirfd int, name string) (sysctlSnapID, uint32, error) {
-	var st unix.Stat_t
-	if err := unix.Fstatat(dirfd, name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
-		return sysctlSnapID{}, 0, err
-	}
-	return sysctlSnapID{dev: uint64(st.Dev), ino: uint64(st.Ino)}, uint32(st.Mode), nil
-}
-
 func (d sysctlSnapDir) read(name string) (map[string]string, *sysctlSnapID, error) {
 	path := d.file(name)
-	id, mode, err := lstatAt(d.fd, name)
+	a, err := lstatAt(d.fd, name)
 	if err != nil {
 		return nil, nil, &os.PathError{Op: "stat", Path: path, Err: err}
 	}
-	if mode&syscall.S_IFMT != syscall.S_IFREG {
-		return nil, &id, refuseSnapshot("%s is not a regular file", path)
+	id := a.id
+	if err := trustSnapshotFile(path, a, d.shared); err != nil {
+		return nil, &id, err
 	}
 	fd, err := sysctlSnapOpenat(d.fd, name, sysctlSnapReadFlags, 0)
 	if err != nil {
@@ -340,10 +352,11 @@ func (d sysctlSnapDir) read(name string) (map[string]string, *sysctlSnapID, erro
 	if err := syscall.Fstat(fd, &st); err != nil {
 		return nil, nil, &os.PathError{Op: "stat", Path: path, Err: err}
 	}
-	if uint64(st.Dev) != id.dev || uint64(st.Ino) != id.ino {
+	opened := attrsOf(&st)
+	if opened.id != id {
 		return nil, nil, fmt.Errorf("%s changed while b4 opened it", path)
 	}
-	if err := trustSnapshotFile(path, &st, d.shared); err != nil {
+	if err := trustSnapshotFile(path, opened, d.shared); err != nil {
 		return nil, &id, err
 	}
 	b, err := io.ReadAll(f)
@@ -424,21 +437,22 @@ type sysctlSnapOrigin struct {
 }
 
 type sysctlSnapFound struct {
-	dir  sysctlSnapDir
-	name string
-	id   sysctlSnapID
+	dir     sysctlSnapDir
+	name    string
+	id      sysctlSnapID
+	refused bool
 }
 
 func (f sysctlSnapFound) remove() error {
 	path := f.dir.file(f.name)
-	id, _, err := lstatAt(f.dir.fd, f.name)
+	a, err := lstatAt(f.dir.fd, f.name)
 	if err != nil {
 		if errors.Is(err, syscall.ENOENT) {
 			return nil
 		}
 		return &os.PathError{Op: "stat", Path: path, Err: err}
 	}
-	if id != f.id {
+	if a.id != f.id {
 		return fmt.Errorf("%s changed after b4 read it", path)
 	}
 	return f.dir.remove(f.name)
@@ -505,7 +519,7 @@ func takeOverEarlierSnapshots(cur *sysctlSnapDir, name string, m map[string]stri
 			if sysctlSnapFirstWarning("origin " + path) {
 				log.Warnf("TABLES: ignoring the saved conntrack settings in %s: %v", path, err)
 			}
-			found = append(found, sysctlSnapFound{dir: o.dir, name: o.name, id: *id})
+			found = append(found, sysctlSnapFound{dir: o.dir, name: o.name, id: *id, refused: true})
 			continue
 		case errors.Is(err, fs.ErrNotExist):
 			continue
@@ -544,6 +558,10 @@ func takeOverEarlierSnapshots(cur *sysctlSnapDir, name string, m map[string]stri
 	}
 	for _, f := range slices.Backward(found) {
 		if err := f.remove(); err != nil {
+			if f.refused {
+				log.Tracef("TABLES: could not remove what b4 ignored: %v", err)
+				continue
+			}
 			log.Tracef("TABLES: keeping the earlier saved conntrack settings for now: %v", err)
 			return nil
 		}
