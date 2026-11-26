@@ -396,6 +396,66 @@ func TestSysctlSnapshotFinishesTheTakeoverPastAnEntryItCannotRemove(t *testing.T
 	}
 }
 
+func TestSysctlSnapshotRemovesAnEarlierFileItFoundButCouldNotOpen(t *testing.T) {
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	older := filepath.Join(tmp, "b4_sysctl_snapshot.json")
+	writeSnapshotFile(t, older, map[string]string{testChecksum: "0", testLiberal: "1"}, 0o600)
+	s := stubConntrackSysctls(t, map[string]string{testChecksum: "1", testLiberal: "0"})
+	prev := sysctlSnapOpenat
+	t.Cleanup(func() { sysctlSnapOpenat = prev })
+	sysctlSnapOpenat = func(dirfd int, name string, flags int, mode uint32) (int, error) {
+		if name == "b4_sysctl_snapshot.json" {
+			return -1, syscall.EACCES
+		}
+		return prev(dirfd, name, flags, mode)
+	}
+
+	applyAll()
+	requireGone(t, older)
+	revertAll()
+	sysctlSnapOpenat = prev
+	forgetSysctlSnapshotState()
+	s.wrote = nil
+	revertAll()
+	if len(s.wrote) != 0 {
+		t.Fatalf("the next start wrote %v from an earlier file b4 could not open before", s.wrote)
+	}
+}
+
+func TestSysctlSnapshotKeepsTheTakeoverOpenWhileAnEarlierFileItCouldNotOpenRemains(t *testing.T) {
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	older := filepath.Join(tmp, "b4_sysctl_snapshot.json")
+	writeSnapshotFile(t, older, map[string]string{testChecksum: "0", testLiberal: "1"}, 0o600)
+	stubConntrackSysctls(t, map[string]string{testChecksum: "1", testLiberal: "0"})
+	prevOpen, prevUnlink := sysctlSnapOpenat, sysctlSnapUnlink
+	t.Cleanup(func() { sysctlSnapOpenat, sysctlSnapUnlink = prevOpen, prevUnlink })
+	sysctlSnapOpenat = func(dirfd int, name string, flags int, mode uint32) (int, error) {
+		if name == "b4_sysctl_snapshot.json" {
+			return -1, syscall.EACCES
+		}
+		return prevOpen(dirfd, name, flags, mode)
+	}
+	removable := false
+	sysctlSnapUnlink = func(dirfd int, name string) error {
+		if !removable && name == "b4_sysctl_snapshot.json" {
+			return syscall.EPERM
+		}
+		return prevUnlink(dirfd, name)
+	}
+
+	loadSysctlSnapshot()
+	if _, err := os.Lstat(older); err != nil {
+		t.Fatalf("%s should still be there while it cannot be removed: %v", older, err)
+	}
+	removable = true
+	loadSysctlSnapshot()
+	requireGone(t, older)
+}
+
 func TestSysctlSnapshotRefusesAFileOfAnotherUserBeforeOpeningIt(t *testing.T) {
 	run := privateRunDir(t)
 	tmp := sharedTmp(t)
