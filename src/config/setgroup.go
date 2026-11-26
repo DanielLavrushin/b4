@@ -64,3 +64,26 @@ func UniqueSetGroup(group string, sets []*SetConfig) string {
 	}
 	return name
 }
+
+func SettleSetGroup(sets []*SetConfig, at int) {
+	if at < 0 || at >= len(sets) || sets[at] == nil {
+		return
+	}
+	set := sets[at]
+	groupAt := func(i int) string {
+		if i < 0 || i >= len(sets) || sets[i] == nil {
+			return ""
+		}
+		return sets[i].Group
+	}
+	before, after := groupAt(at-1), groupAt(at+1)
+	switch {
+	case before != "" && before == after:
+		set.Group = before
+	case set.Group == "" || set.Group == before || set.Group == after:
+	case slices.ContainsFunc(sets, func(other *SetConfig) bool {
+		return other != nil && other != set && other.Group == set.Group
+	}):
+		set.Group = ""
+	}
+}

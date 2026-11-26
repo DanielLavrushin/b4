@@ -320,6 +320,7 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 			if err != nil {
 				return nil, mcpManageSetOut{}, err
 			}
+			config.SettleSetGroup(newCfg.Sets, at)
 			api.loadTargetsForSetCached(&fresh)
 			focusID = fresh.Id
 			ipPrioritySwitchedOff = ipPrioritySwitchedOff && mcpListsHoldableRanges(fresh.Targets.IpsToMatch)
@@ -349,6 +350,7 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 				return nil, mcpManageSetUnchanged(out, newCfg, idx, fmt.Sprintf(
 					"%q is already at position %d of %d; nothing was written", newCfg.Sets[idx].Name, idx+1, len(newCfg.Sets))), nil
 			}
+			config.SettleSetGroup(newCfg.Sets, at)
 
 		case "set_enabled":
 			want, err := mcpParseBool(in.Enabled)

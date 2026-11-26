@@ -136,6 +136,50 @@ func TestMCPManageSetMove(t *testing.T) {
 	}
 }
 
+func TestMCPManageSetKeepsEveryGroupInOneBlock(t *testing.T) {
+	cfg := writableCfg(t)
+	cfg.Sets = []*config.SetConfig{
+		groupedSet("yt-a", "YouTube"), groupedSet("yt-b", "YouTube"), groupedSet("plain", ""), groupedSet("other", ""),
+	}
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+	groups := func() string {
+		var out []string
+		for _, set := range api.getCfg().Sets {
+			out = append(out, set.Name+":"+set.Group)
+		}
+		return strings.Join(out, " ")
+	}
+
+	if res := callManageSet(t, session, ctx, map[string]any{"action": "duplicate", "set": "yt-a", "name": "copy"}); res.IsError {
+		t.Fatalf("duplicate failed: %+v", res.Content)
+	}
+	if got, want := groups(), "yt-a:YouTube yt-b:YouTube plain: other: copy:"; got != want {
+		t.Errorf("after a duplicate that lands last: %s, want the copy outside the group: %s", got, want)
+	}
+
+	if res := callManageSet(t, session, ctx, map[string]any{"action": "move", "set": "plain", "position": "after:yt-a"}); res.IsError {
+		t.Fatalf("move failed: %+v", res.Content)
+	}
+	if got, want := groups(), "yt-a:YouTube plain:YouTube yt-b:YouTube other: copy:"; got != want {
+		t.Errorf("after a move into the group: %s, want the set to join it: %s", got, want)
+	}
+
+	if res := callManageSet(t, session, ctx, map[string]any{"action": "move", "set": "yt-b", "position": "last"}); res.IsError {
+		t.Fatalf("move failed: %+v", res.Content)
+	}
+	if got, want := groups(), "yt-a:YouTube plain:YouTube other: copy: yt-b:"; got != want {
+		t.Errorf("after a move away from the group: %s, want the set to leave it: %s", got, want)
+	}
+
+	if res := callManageSet(t, session, ctx, map[string]any{"action": "duplicate", "set": "plain", "name": "twin", "position": "after:plain"}); res.IsError {
+		t.Fatalf("duplicate failed: %+v", res.Content)
+	}
+	if got, want := groups(), "yt-a:YouTube plain:YouTube twin:YouTube other: copy: yt-b:"; got != want {
+		t.Errorf("after a duplicate placed next to its source: %s, want the copy in the group: %s", got, want)
+	}
+}
+
 func TestMCPManageSetDuplicateDoesNotCarrySecrets(t *testing.T) {
 	cfg := mcpSecretsCfg()
 	cfg.System.WebServer.MCP.AllowWrites = true

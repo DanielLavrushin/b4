@@ -57,6 +57,36 @@ func TestResetToDefaultsKeepsTheGroup(t *testing.T) {
 	}
 }
 
+func TestSettleSetGroupFollowsTheNeighbours(t *testing.T) {
+	cases := []struct {
+		name, sets string
+		at         int
+		want       string
+	}{
+		{"between two sets of a group it joins", "a:yt x b:yt", 1, "yt"},
+		{"between two sets of a group it leaves its own", "a:yt x:dc b:yt d:dc", 1, "yt"},
+		{"next to its own group it stays", "a:yt x:yt c", 1, "yt"},
+		{"away from its group it leaves", "a:yt c x:yt", 2, ""},
+		{"at the edge of another group it stays loose", "a:yt x c", 1, ""},
+		{"between two groups that are not its own it leaves", "a:yt x:old b:dc o:old", 1, ""},
+		{"the only set of its group keeps the group", "a x:solo b", 1, "solo"},
+		{"the last place next to its group", "a b:yt x:yt", 2, "yt"},
+	}
+	for _, tc := range cases {
+		var sets []*SetConfig
+		for _, item := range strings.Fields(tc.sets) {
+			id, group, _ := strings.Cut(item, ":")
+			sets = append(sets, &SetConfig{Id: id, Group: group})
+		}
+		SettleSetGroup(sets, tc.at)
+		if got := sets[tc.at].Group; got != tc.want {
+			t.Errorf("%s: %q at %d has group %q, want %q", tc.name, tc.sets, tc.at, got, tc.want)
+		}
+	}
+	SettleSetGroup(nil, 0)
+	SettleSetGroup([]*SetConfig{{Id: "a", Group: "yt"}}, 3)
+}
+
 func TestGatherSetGroupKeepsEveryOtherSetInPlace(t *testing.T) {
 	mk := func(spec string) []*SetConfig {
 		var out []*SetConfig
