@@ -84,13 +84,19 @@ action_remove() {
 
 _remove_sysctl_snapshots() {
     for _rss_d in /var/run /run /tmp/b4-run /tmp; do
-        _remove_sysctl_snapshot "$_rss_d"
+        case "$_rss_d" in
+        /tmp/b4-run) _remove_sysctl_snapshot "$_rss_d" private ;;
+        *) _remove_sysctl_snapshot "$_rss_d" ;;
+        esac
     done
     rmdir /tmp/b4-run 2>/dev/null || true
 }
 
 _remove_sysctl_snapshot() {
     _rss_dir="${1:-/tmp}"
+    if [ "${2:-}" = private ] && [ -L "$_rss_dir" ]; then
+        return 0
+    fi
     rm -f "${_rss_dir}/b4_sysctl_snapshot.json" "${_rss_dir}/b4_sysctl_snapshot.json."* 2>/dev/null || true
     _rss_ns=$(readlink /proc/self/ns/net 2>/dev/null) || return 0
     _rss_ino=${_rss_ns#net:\[}

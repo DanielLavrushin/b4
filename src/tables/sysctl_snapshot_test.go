@@ -1552,6 +1552,50 @@ func TestTheQueueEngineNetnsRunKeepsItsTempDirAndBinaryInReach(t *testing.T) {
 	})
 }
 
+func TestUninstallLeavesTheTargetOfALinkedPrivateDirectoryAlone(t *testing.T) {
+	script, err := filepath.Abs("../../installer/actions/remove.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	names := []string{"b4_sysctl_snapshot.json", testSnapName, testSnapName + ".k3j9"}
+	fill := func(t *testing.T, dir string) {
+		t.Helper()
+		for _, n := range names {
+			if err := os.WriteFile(filepath.Join(dir, n), []byte("{}"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	clean := func(t *testing.T, dir string) {
+		t.Helper()
+		out, err := exec.Command("sh", "-c", `. "$1" && readlink() { echo 'net:[4026531992]'; }; _remove_sysctl_snapshot "$2" private`, "sh", script, dir).CombinedOutput()
+		if err != nil {
+			t.Fatalf("_remove_sysctl_snapshot: %v\n%s", err, out)
+		}
+	}
+
+	target := t.TempDir()
+	fill(t, target)
+	link := filepath.Join(t.TempDir(), "b4-run")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	clean(t, link)
+	if got := dirEntries(t, target); len(got) != len(names) {
+		t.Fatalf("cleaning a private directory that is a link removed files behind it: %v left of %v", got, names)
+	}
+
+	plain := t.TempDir()
+	fill(t, plain)
+	clean(t, plain)
+	if got := dirEntries(t, plain); len(got) != 0 {
+		t.Fatalf("a real private directory still holds %v after the cleanup", got)
+	}
+}
+
 func TestUninstallRemovesTheSysctlSnapshotWhereverB4KeepsIt(t *testing.T) {
 	script, err := filepath.Abs("../../installer/actions/remove.sh")
 	if err != nil {
