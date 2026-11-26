@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -57,6 +58,7 @@ var (
 	sysctlSnapOpen   = syscall.Open
 	sysctlSnapOpenat = syscall.Openat
 	sysctlSnapUnlink = syscall.Unlinkat
+	sysctlSnapDup    = func(fd int) (int, error) { return unix.FcntlInt(uintptr(fd), unix.F_DUPFD_CLOEXEC, 0) }
 )
 
 var sysctlSnapState struct {
@@ -170,7 +172,7 @@ func (d sysctlSnapDir) close() {
 }
 
 func (d sysctlSnapDir) dup() (sysctlSnapDir, error) {
-	fd, err := unix.FcntlInt(uintptr(d.fd), unix.F_DUPFD_CLOEXEC, 0)
+	fd, err := sysctlSnapDup(d.fd)
 	if err != nil {
 		return sysctlSnapDir{}, &os.PathError{Op: "dup", Path: d.path, Err: err}
 	}
@@ -442,17 +444,17 @@ func (f sysctlSnapFound) remove() error {
 	return f.dir.remove(f.name)
 }
 
-func sysctlSnapshotOrigins(cur *sysctlSnapDir, name string) ([]sysctlSnapOrigin, func(), bool) {
+func sysctlSnapshotOrigins(cur *sysctlSnapDir, name string) ([]sysctlSnapOrigin, func(), error) {
 	var origins []sysctlSnapOrigin
 	var dirs []sysctlSnapDir
-	complete := true
+	var blocked error
 	add := func(path string, noFollow, shared bool, names ...string) {
 		d, err := openSnapshotDir(path, noFollow, shared)
 		if err != nil {
 			switch {
 			case errors.Is(err, fs.ErrNotExist):
 			case transientSnapshotError(err):
-				complete = false
+				blocked = cmp.Or(blocked, err)
 				log.Tracef("TABLES: could not look for saved conntrack settings in %v", err)
 			case sysctlSnapFirstWarning("origin dir " + path):
 				log.Tracef("TABLES: not looking for saved conntrack settings in %v", err)
@@ -481,16 +483,16 @@ func sysctlSnapshotOrigins(cur *sysctlSnapDir, name string) ([]sysctlSnapOrigin,
 		for _, d := range dirs {
 			d.close()
 		}
-	}, complete
+	}, blocked
 }
 
-func takeOverEarlierSnapshots(cur *sysctlSnapDir, name string, m map[string]string) {
+func takeOverEarlierSnapshots(cur *sysctlSnapDir, name string, m map[string]string) error {
 	sysctlSnapState.Lock()
 	defer sysctlSnapState.Unlock()
 	if sysctlSnapState.done {
-		return
+		return nil
 	}
-	origins, closeDirs, complete := sysctlSnapshotOrigins(cur, name)
+	origins, closeDirs, blocked := sysctlSnapshotOrigins(cur, name)
 	defer closeDirs()
 	var found []sysctlSnapFound
 	var took []string
@@ -508,7 +510,7 @@ func takeOverEarlierSnapshots(cur *sysctlSnapDir, name string, m map[string]stri
 		case errors.Is(err, fs.ErrNotExist):
 			continue
 		case transientSnapshotError(err):
-			complete = false
+			blocked = cmp.Or(blocked, err)
 			log.Tracef("TABLES: could not read the saved conntrack settings in %s: %v", path, err)
 			continue
 		default:
@@ -525,25 +527,29 @@ func takeOverEarlierSnapshots(cur *sysctlSnapDir, name string, m map[string]stri
 			}
 		}
 	}
-	if cur == nil || !complete {
-		return
+	if blocked != nil {
+		return fmt.Errorf("not everything an earlier b4 saved could be read: %w", blocked)
+	}
+	if cur == nil {
+		return nil
 	}
 	if len(took) > 0 {
 		if err := cur.write(name, m); err != nil {
 			if sysctlSnapFirstWarning("move " + cur.file(name)) {
 				log.Errorf("TABLES: could not move the conntrack settings an earlier b4 saved into %s, so b4 reads them where that b4 left them until it can: %v", cur.file(name), err)
 			}
-			return
+			return nil
 		}
 		log.Infof("TABLES: moved the conntrack settings an earlier b4 saved into %s: %s", cur.file(name), strings.Join(took, ", "))
 	}
 	for _, f := range slices.Backward(found) {
 		if err := f.remove(); err != nil {
 			log.Tracef("TABLES: keeping the earlier saved conntrack settings for now: %v", err)
-			return
+			return nil
 		}
 	}
 	sysctlSnapState.done = true
+	return nil
 }
 
 func readSysctlSnapshot() (map[string]string, error) {
@@ -557,7 +563,9 @@ func readSysctlSnapshot() (map[string]string, error) {
 			if sysctlSnapFirstWarning("no dir") {
 				log.Warnf("TABLES: the saved conntrack settings have nowhere safe to live, so b4 only reads what an earlier b4 left: %v", err)
 			}
-			takeOverEarlierSnapshots(nil, name, m)
+			if err := takeOverEarlierSnapshots(nil, name, m); err != nil {
+				return map[string]string{}, err
+			}
 		}
 		return m, nil
 	}
@@ -575,7 +583,9 @@ func readSysctlSnapshot() (map[string]string, error) {
 		}
 	}
 	if sysctlSnapPath == "" {
-		takeOverEarlierSnapshots(&d, name, m)
+		if err := takeOverEarlierSnapshots(&d, name, m); err != nil {
+			return map[string]string{}, err
+		}
 	}
 	return m, nil
 }

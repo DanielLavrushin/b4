@@ -244,6 +244,124 @@ func TestSysctlSnapshotLeavesTheSysctlsAloneWhenItCannotReadTheSnapshot(t *testi
 	}
 }
 
+func dirInode(t *testing.T, dir string) uint64 {
+	t.Helper()
+	fi, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fi.Sys().(*syscall.Stat_t).Ino
+}
+
+func fdIsDir(fd int, ino uint64) bool {
+	var st syscall.Stat_t
+	return syscall.Fstat(fd, &st) == nil && st.Ino == ino
+}
+
+func TestSysctlSnapshotLeavesTheSysctlsAloneWhileAnEarlierFileCannotBeRead(t *testing.T) {
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	writeSnapshotFile(t, filepath.Join(tmp, "b4_sysctl_snapshot.json"), map[string]string{testChecksum: "1", testLiberal: "0"}, 0o600)
+	writeSnapshotFile(t, filepath.Join(tmp, testSnapName), map[string]string{testChecksum: "0", testLiberal: "1"}, 0o600)
+	s := stubConntrackSysctls(t, map[string]string{testChecksum: "0", testLiberal: "1"})
+	tmpIno := dirInode(t, tmp)
+	prev := sysctlSnapOpenat
+	t.Cleanup(func() { sysctlSnapOpenat = prev })
+	failing := true
+	sysctlSnapOpenat = func(dirfd int, name string, flags int, mode uint32) (int, error) {
+		if failing && name == "b4_sysctl_snapshot.json" && fdIsDir(dirfd, tmpIno) {
+			return -1, syscall.EMFILE
+		}
+		return prev(dirfd, name, flags, mode)
+	}
+
+	revertAll()
+	applyAll()
+	if len(s.wrote) != 0 {
+		t.Fatalf("while the 1.92 file could not be read, b4 wrote %v from what it could read", s.wrote)
+	}
+	failing = false
+	applyAll()
+	s.wrote = nil
+	revertAll()
+	want := testChecksum + "=1," + testLiberal + "=0"
+	if got := strings.Join(s.wrote, ","); got != want {
+		t.Fatalf("stop wrote %q, want the originals %q from the 1.92 file", got, want)
+	}
+}
+
+func TestSysctlSnapshotLeavesTheSysctlsAloneWhileItsDirectoryCannotBeOpened(t *testing.T) {
+	for _, private := range []bool{false, true} {
+		name := "run directory"
+		if private {
+			name = "directory in tmp"
+		}
+		t.Run(name, func(t *testing.T) {
+			run := privateRunDir(t)
+			tmp := sharedTmp(t)
+			privateDir := filepath.Join(tmp, "b4-run")
+			dir := run
+			runDirs := []string{run}
+			if private {
+				if err := os.Mkdir(privateDir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				dir = privateDir
+				runDirs = []string{filepath.Join(t.TempDir(), "missing")}
+			}
+			useSnapshotDirs(t, runDirs, privateDir, tmp)
+			writeSnapshotFile(t, filepath.Join(dir, testSnapName), map[string]string{testChecksum: "1", testLiberal: "0"}, 0o600)
+			s := stubConntrackSysctls(t, map[string]string{testChecksum: "0", testLiberal: "1"})
+			prev := sysctlSnapOpen
+			t.Cleanup(func() { sysctlSnapOpen = prev })
+			failures := 1
+			sysctlSnapOpen = func(path string, flags int, mode uint32) (int, error) {
+				if path == dir && failures > 0 {
+					failures--
+					return -1, syscall.EMFILE
+				}
+				return prev(path, flags, mode)
+			}
+
+			applyAll()
+			s.wrote = nil
+			revertAll()
+			want := testChecksum + "=1," + testLiberal + "=0"
+			if got := strings.Join(s.wrote, ","); got != want {
+				t.Fatalf("after %s could not be opened once, stop wrote %q, want the originals %q", dir, got, want)
+			}
+		})
+	}
+}
+
+func TestSysctlSnapshotLeavesTheSysctlsAloneWhenItsDirectoryCannotBeReachedLater(t *testing.T) {
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	s := stubConntrackSysctls(t, map[string]string{testChecksum: "1", testLiberal: "0"})
+	revertAll()
+	applyAll()
+	prev := sysctlSnapDup
+	t.Cleanup(func() { sysctlSnapDup = prev })
+	failures := 1
+	sysctlSnapDup = func(fd int) (int, error) {
+		if failures > 0 {
+			failures--
+			return -1, syscall.EMFILE
+		}
+		return prev(fd)
+	}
+
+	applyAll()
+	s.wrote = nil
+	revertAll()
+	want := testChecksum + "=1," + testLiberal + "=0"
+	if got := strings.Join(s.wrote, ","); got != want {
+		t.Fatalf("after the snapshot's directory could not be reached once during a rules pass, stop wrote %q, want the originals %q", got, want)
+	}
+}
+
 func applyAll() {
 	for _, setting := range b4SysctlSettings() {
 		setting.Apply()
