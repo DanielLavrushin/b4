@@ -5,6 +5,7 @@ import {
   groupDrop,
   leanOf,
   nearestSlot,
+  normalizeSetGroup,
   parseSetsImport,
   setBlocks,
   setGroupFileName,
@@ -224,6 +225,14 @@ void test("pasted text is recognised as sets, a group, a shared set or a command
       text,
     );
   }
+});
+
+void test("a typed group name is shaped the way b4 saves it", () => {
+  assert.equal(normalizeSetGroup(""), "");
+  assert.equal(normalizeSetGroup("   "), "");
+  assert.equal(normalizeSetGroup("  You   Tube \t"), "You Tube");
+  assert.equal(normalizeSetGroup("я".repeat(70)), "я".repeat(64));
+  assert.equal(normalizeSetGroup(`${"a".repeat(63)} b`), "a".repeat(63));
 });
 
 void test("the export file name keeps letters of any script", () => {

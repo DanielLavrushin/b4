@@ -47,7 +47,14 @@ export interface DropResult {
 const GROUP_BLOCK_PREFIX = "group:";
 const LEAN_REACH = 0.15;
 
+export const MAX_SET_GROUP_CHARS = 64;
+
 const groupOf = (set: GroupedSet | undefined): string => set?.group ?? "";
+
+export function normalizeSetGroup(group: string): string {
+  const words = group.split(/\s+/u).filter(Boolean).join(" ");
+  return [...words].slice(0, MAX_SET_GROUP_CHARS).join("").trim();
+}
 
 export function setBlocks<T extends GroupedSet>(sets: T[]): SetBlock<T>[] {
   const blocks: SetBlock<T>[] = [];

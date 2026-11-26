@@ -28,7 +28,11 @@ import { B4Dialog, B4TextField } from "@b4.elements";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { colors, fonts, radius, radiusPx } from "@design";
 import { B4SetConfig } from "@models/config";
-import { setGroupFileName } from "@models/setGroups";
+import {
+  MAX_SET_GROUP_CHARS,
+  normalizeSetGroup,
+  setGroupFileName,
+} from "@models/setGroups";
 import { copyText, exportSetGroupJson } from "@utils";
 
 export const GROUP_ROW_GAP = 44;
@@ -233,7 +237,7 @@ export const SetGroupNameDialog = ({
 }: SetGroupNameDialogProps) => {
   const { t } = useTranslation();
   const [value, setValue] = useState(initial);
-  const name = value.trim();
+  const name = normalizeSetGroup(value);
 
   return (
     <B4Dialog
@@ -269,14 +273,19 @@ export const SetGroupNameDialog = ({
         onChange={(event, next) => {
           if (typeof next !== "string") return;
           setValue(next);
-          if (event.type === "keydown" && next.trim() !== "") {
-            onConfirm(next.trim());
-          }
+          const picked = normalizeSetGroup(next);
+          if (event.type === "keydown" && picked !== "") onConfirm(picked);
         }}
         renderInput={(params) => (
           <B4TextField
             {...params}
             autoFocus
+            slotProps={{
+              htmlInput: {
+                ...params.inputProps,
+                maxLength: MAX_SET_GROUP_CHARS,
+              },
+            }}
             label={t("sets.groups.name")}
             helperText={t("sets.groups.nameHelp")}
           />
