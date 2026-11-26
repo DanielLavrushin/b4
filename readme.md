@@ -14,7 +14,7 @@ Configuration is built from **sets**. A set is a list of targets (domains, IPs/C
 
 If you don't know which technique your provider needs, Discovery tests strategies against your own connection and saves the working one as a set. The Watchdog re-runs it when a site breaks.
 
-<img width="1187" height="787" alt="image" src="https://github.com/user-attachments/assets/3e4c105d-5b28-4e93-ab54-6d92338b1293" />
+<img width="1449" height="954" alt="image" src="https://github.com/user-attachments/assets/d2dc1785-2bb2-4b74-bb33-a6c90a69b27a" />
 
 ## Features
 
