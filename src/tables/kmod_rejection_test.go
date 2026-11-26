@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -92,4 +93,29 @@ func TestAddressTypeRejectionIsPrintedOnce(t *testing.T) {
 	logs := captureTablesLog(t)
 	routeLocalGuardReject("nft", "nft_fib_inet", "Error: Could not process rule: No such file or directory")
 	assertRejectionOnce(t, logs.String(), "Could not process rule", "rejected the address-type match")
+}
+
+func TestNftSocketRejectionIsPrintedOnce(t *testing.T) {
+	r := newDirectionRig(t)
+	r.refuse = refuseNftSocketProbe("wildcard", "transparent")
+	rig := run
+	run = func(args ...string) (string, error) {
+		out, err := rig(args...)
+		if err != nil && strings.TrimSpace(out) != "" {
+			return out, fmt.Errorf("command [%s] failed: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(out))
+		}
+		return out, err
+	}
+	t.Cleanup(func() { run = rig })
+	logs := captureTablesLog(t)
+	if err := AddRules(sendIntoTestConfig(backendNFTables, false)); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	var warning string
+	for line := range strings.SplitSeq(logs.String(), "\n") {
+		if strings.Contains(line, "the socket expression is not available") {
+			warning = line
+		}
+	}
+	assertRejectionOnce(t, warning, "refused by the test", "the socket expression is not available")
 }
