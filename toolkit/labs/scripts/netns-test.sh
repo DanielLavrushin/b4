@@ -12,7 +12,7 @@ ROOT="${4:-}"
 }
 exec unshare -n -m sh -ec '
 	mount --make-rprivate /
-	mount -t tmpfs tmpfs /run
+	mount -t tmpfs -o mode=0755 tmpfs /run
 	mount -t tmpfs tmpfs /tmp
 	mount -t sysfs sysfs /sys
 	ip link set lo up
@@ -30,7 +30,7 @@ exec unshare -n -m sh -ec '
 	if [ -L "$3/run" ]; then
 		mkdir -p "$3/tmp/run"
 	else
-		mount -t tmpfs tmpfs "$3/run"
+		mount -t tmpfs -o mode=0755 tmpfs "$3/run"
 	fi
 	mkdir -p "$3/lab"
 	mount --bind "$(dirname "$0")" "$3/lab"
