@@ -47,3 +47,11 @@ export function mergeHubLink(
   if (keepPastedAppliedAt && pasted.applied_at) adopted.applied_at = pasted.applied_at;
   return { hub: adopted, warnings: [] };
 }
+
+export function withAdoptedHubLink(
+  set: Record<string, unknown>,
+): Record<string, unknown> {
+  const { hub: pasted, ...rest } = set;
+  const { hub } = mergeHubLink(undefined, pasted);
+  return hub ? { ...rest, hub } : rest;
+}

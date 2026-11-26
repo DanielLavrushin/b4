@@ -44,7 +44,7 @@ import { hubApi } from "@api/hub";
 import { setsApi } from "@api/sets";
 import { HubWarning, formatWarningParam } from "@models/hub";
 import { SetsImport, parseSetsImport } from "@models/setGroups";
-import { mergeHubLink, reportSaveError } from "@utils";
+import { mergeHubLink, reportSaveError, withAdoptedHubLink } from "@utils";
 import { udpL7Label } from "./udpL7";
 
 const AUTO = "auto";
@@ -222,7 +222,10 @@ export function ImportToolDialog({
           },
         ];
       } else {
-        doc = { group: parsed.group, sets: parsed.sets };
+        doc = {
+          group: parsed.group,
+          sets: parsed.sets.map(withAdoptedHubLink),
+        };
       }
       const created = await setsApi.importSetGroup(doc);
       showSuccess(
