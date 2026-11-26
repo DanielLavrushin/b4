@@ -416,7 +416,7 @@ func TestUninstallKeepsAnotherNamespacesSysctlSnapshot(t *testing.T) {
 		own = filepath.Join(dir, "b4_sysctl_snapshot."+ino+".json")
 		foreign = filepath.Join(dir, "b4_sysctl_snapshot.1.json")
 		legacy := filepath.Join(dir, "b4_sysctl_snapshot.json")
-		for _, p := range []string{own, foreign, legacy} {
+		for _, p := range []string{own, foreign, legacy, own + ".k3j9", foreign + ".k3j9", legacy + ".k3j9"} {
 			if err := os.WriteFile(p, []byte("{}"), 0600); err != nil {
 				t.Fatal(err)
 			}
@@ -425,18 +425,24 @@ func TestUninstallKeepsAnotherNamespacesSysctlSnapshot(t *testing.T) {
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("_remove_sysctl_snapshot: %v\n%s", err, out)
 		}
-		if _, err := os.Stat(legacy); !os.IsNotExist(err) {
-			t.Errorf("legacy snapshot %s was left behind", legacy)
+		for _, p := range []string{legacy, legacy + ".k3j9"} {
+			if _, err := os.Stat(p); !os.IsNotExist(err) {
+				t.Errorf("legacy snapshot %s was left behind", p)
+			}
 		}
 		return own, foreign
 	}
 
 	check := func(t *testing.T, own, foreign string) {
-		if _, err := os.Stat(own); !os.IsNotExist(err) {
-			t.Errorf("this namespace's snapshot %s was left behind", own)
+		for _, p := range []string{own, own + ".k3j9"} {
+			if _, err := os.Stat(p); !os.IsNotExist(err) {
+				t.Errorf("this namespace's snapshot %s was left behind", p)
+			}
 		}
-		if _, err := os.Stat(foreign); err != nil {
-			t.Errorf("another namespace's snapshot %s was removed; that b4 can no longer restore its sysctls: %v", foreign, err)
+		for _, p := range []string{foreign, foreign + ".k3j9"} {
+			if _, err := os.Stat(p); err != nil {
+				t.Errorf("another namespace's snapshot %s was removed; that b4 can no longer restore its sysctls: %v", p, err)
+			}
 		}
 	}
 

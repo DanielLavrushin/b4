@@ -4252,14 +4252,14 @@ _remove_sysctl_snapshots() {
 
 _remove_sysctl_snapshot() {
     _rss_dir="${1:-/tmp}"
-    rm -f "${_rss_dir}/b4_sysctl_snapshot.json" 2>/dev/null || true
+    rm -f "${_rss_dir}/b4_sysctl_snapshot.json" "${_rss_dir}/b4_sysctl_snapshot.json."* 2>/dev/null || true
     _rss_ns=$(readlink /proc/self/ns/net 2>/dev/null) || return 0
     _rss_ino=${_rss_ns#net:\[}
     _rss_ino=${_rss_ino%\]}
     case "$_rss_ino" in
     '' | *[!0-9]*) return 0 ;;
     esac
-    rm -f "${_rss_dir}/b4_sysctl_snapshot.${_rss_ino}.json" 2>/dev/null || true
+    rm -f "${_rss_dir}/b4_sysctl_snapshot.${_rss_ino}.json" "${_rss_dir}/b4_sysctl_snapshot.${_rss_ino}.json."* 2>/dev/null || true
 }
 
 _remove_netfilter_state() {

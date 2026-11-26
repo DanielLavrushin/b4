@@ -293,6 +293,7 @@ func openSysctlSnapshot() (sysctlSnapDir, string, error) {
 	if err != nil {
 		return sysctlSnapDir{}, name, err
 	}
+	d.sweepTemps(name)
 	sysctlSnapState.pinned = &d
 	c, err := d.dup()
 	return c, name, err
@@ -348,6 +349,29 @@ func (d sysctlSnapDir) read(name string) (map[string]string, *sysctlSnapID, erro
 		m = map[string]string{}
 	}
 	return m, &id, nil
+}
+
+func (d sysctlSnapDir) sweepTemps(name string) {
+	c, err := d.dup()
+	if err != nil {
+		return
+	}
+	f := os.NewFile(uintptr(c.fd), d.path)
+	defer f.Close()
+	entries, err := f.Readdirnames(-1)
+	if err != nil {
+		return
+	}
+	for _, n := range entries {
+		if !strings.HasPrefix(n, name+".") {
+			continue
+		}
+		if err := d.remove(n); err != nil {
+			log.Tracef("TABLES: could not remove %v", err)
+		} else {
+			log.Tracef("TABLES: removed %s, left by a b4 that stopped while saving", d.file(n))
+		}
+	}
 }
 
 func (d sysctlSnapDir) remove(name string) error {

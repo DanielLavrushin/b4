@@ -900,6 +900,22 @@ func TestSysctlSnapshotIsNotHeldUpByAFIFOAtItsDirectoryInTmp(t *testing.T) {
 	}
 }
 
+func TestSysctlSnapshotRemovesATemporaryFileLeftByADeadB4(t *testing.T) {
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	stale := filepath.Join(run, testSnapName+".k3j9")
+	writeSnapshotFile(t, stale, map[string]string{testChecksum: "1"}, 0o600)
+	foreign := filepath.Join(run, "b4_sysctl_snapshot.1.json.k3j9")
+	writeSnapshotFile(t, foreign, map[string]string{testChecksum: "1"}, 0o600)
+
+	loadSysctlSnapshot()
+	requireGone(t, stale)
+	if _, err := os.Stat(foreign); err != nil {
+		t.Fatalf("another namespace's file %s was removed: %v", foreign, err)
+	}
+}
+
 func TestSysctlSnapshotSurvivesARunDirectoryThatIsALinkToAnother(t *testing.T) {
 	run := privateRunDir(t)
 	varRun := filepath.Join(t.TempDir(), "var-run")
@@ -991,14 +1007,14 @@ func TestUninstallRemovesTheSysctlSnapshotWhereverB4KeepsIt(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("no sh")
 	}
-	stubs := `rm() { echo "rm $*"; }; rmdir() { echo "rmdir $*"; }; readlink() { echo 'net:[4026531992]'; }; `
+	stubs := `set -f; rm() { echo "rm $*"; }; rmdir() { echo "rmdir $*"; }; readlink() { echo 'net:[4026531992]'; }; `
 	out, err := exec.Command("sh", "-c", `. "$1" && `+stubs+`_remove_sysctl_snapshots`, "sh", script).CombinedOutput()
 	if err != nil {
 		t.Fatalf("_remove_sysctl_snapshots: %v\n%s", err, out)
 	}
 	var want []string
 	for _, dir := range append(slices.Clone(sysctlSnapRunDirs), sysctlSnapPrivateDir, sysctlSnapLegacyDir) {
-		want = append(want, "rm -f "+dir+"/b4_sysctl_snapshot.json", "rm -f "+dir+"/"+testSnapName)
+		want = append(want, "rm -f "+dir+"/b4_sysctl_snapshot.json "+dir+"/b4_sysctl_snapshot.json.*", "rm -f "+dir+"/"+testSnapName+" "+dir+"/"+testSnapName+".*")
 	}
 	want = append(want, "rmdir "+sysctlSnapPrivateDir)
 	if got := strings.Split(strings.TrimSpace(string(out)), "\n"); !slices.Equal(got, want) {
