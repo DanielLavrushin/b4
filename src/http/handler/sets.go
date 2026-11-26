@@ -636,7 +636,7 @@ func insertSetAfter(sets []*config.SetConfig, set *config.SetConfig, afterID str
 }
 
 // @Summary Update a set
-// @Description The body replaces the whole set. It must carry "name", "enabled" and "targets", otherwise the write is refused with 400 validation_failed and the set is left as it was. Any other field the body leaves out takes its set default, not the value the set had. When the body carries the "revision" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before.
+// @Description The body replaces the whole set. It must carry "name", "enabled" and "targets", otherwise the write is refused with 400 validation_failed and the set is left as it was. Any other field the body leaves out takes its set default, not the value the set had. When the body carries the "revision" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before. The set keeps the group it is stored with whatever the body says, and a change of group does not change the revision: use POST /sets/batch-set-group to change it.
 // @Tags Sets
 // @Accept json
 // @Produce json
@@ -716,6 +716,7 @@ func (api *API) updateSet(w http.ResponseWriter, r *http.Request, id string) {
 		found := false
 		for i, set := range next.Sets {
 			if set.Id == id {
+				updated.Group = set.Group
 				next.Sets[i] = &updated
 				found = true
 				break

@@ -2,12 +2,14 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"slices"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/hub/hubtest"
+	"github.com/daniellavrushin/b4/watchdog"
 )
 
 func setOrder(api *API) []string {
@@ -136,6 +138,23 @@ func TestReorderSetsSavesGroupsWithTheOrder(t *testing.T) {
 	}
 	if got, want := setOrder(api), []string{"a:yt", "g1:yt", "g2:yt", "b:"}; !slices.Equal(got, want) {
 		t.Errorf("sets = %v, want them untouched after a refusal: %v", got, want)
+	}
+}
+
+func TestSavingASetKeepsItsGroupAndARegroupKeepsItsRevision(t *testing.T) {
+	api, mux := asnAPI(t, groupedSet("a", "yt"), groupedSet("b", ""))
+	revision := watchdog.SetRevision(api.getCfg().GetSetById("b"))
+	if rec := serve(mux, http.MethodPost, "/api/sets/batch-set-group", `{"ids":["b"],"group":"yt"}`); rec.Code != http.StatusOK {
+		t.Fatalf("batch-set-group = %d %s", rec.Code, rec.Body.String())
+	}
+
+	body := fmt.Sprintf(`{"name":"b","enabled":true,"targets":{"sni_domains":["b.example.org"]},"group":"other","revision":%q}`, revision)
+	rec := serve(mux, http.MethodPut, "/api/sets/b", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("a save with the revision read before the regroup = %d %s, want 200", rec.Code, rec.Body.String())
+	}
+	if got, want := setOrder(api), []string{"a:yt", "b:yt"}; !slices.Equal(got, want) {
+		t.Errorf("sets = %v, want the stored group kept: %v", got, want)
 	}
 }
 
