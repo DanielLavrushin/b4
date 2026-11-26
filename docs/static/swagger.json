@@ -3307,7 +3307,7 @@
                         }
                     },
                     "400": {
-                        "description": "no_domain",
+                        "description": "no_domain, not_fetched",
                         "schema": {
                             "$ref": "#/definitions/handler.APIError"
                         }
@@ -3648,7 +3648,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Captures all log output to a file until stopped or the max duration elapses. The file is prefixed with build info and a full system diagnostics snapshot. Only one session may run at a time.",
+                "description": "Records every log line, down to debug, to a file until stopped or the max duration elapses; the log level setting and the other log outputs stay as they are. The file is prefixed with build info and a system diagnostics snapshot, cut when it would take more than a quarter of the trace. A trace that reaches its size limit (8 MB, less when free memory or disk space is short) keeps its first and its newest lines. Only one session may run at a time.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3684,6 +3684,15 @@
                                 "type": "string"
                             }
                         }
+                    },
+                    "507": {
+                        "description": "Not enough free memory or disk space for a trace",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 }
             }
@@ -3695,7 +3704,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Reports whether a trace is active, its captured line count and start time, and whether a finished trace is available to download.",
+                "description": "Reports whether a trace is active, its captured line count and start time, whether a finished trace is available to download and, in endReason, how it ended: user, time_limit, write_failed, shutdown or interrupted.",
                 "produces": [
                     "application/json"
                 ],
@@ -4484,6 +4493,52 @@
                 }
             }
         },
+        "/sets/batch-set-group": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets every listed set's group to \"group\" (an empty group takes them out). The group's sets then stand together in the list: the block keeps the place of the group's first set from before the call, or, for a new group, of the first listed set. A group that a listed set left stays together too: a set taken out of its middle moves to just after it.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sets"
+                ],
+                "summary": "Put sets into a group, or take them out of one",
+                "parameters": [
+                    {
+                        "description": "ids and group",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/sets/check-domain": {
             "get": {
                 "security": [
@@ -4526,6 +4581,51 @@
                 }
             }
         },
+        "/sets/import": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates every set of the document in one write, at the top of the list and in the document's order, all in one group. A field a set leaves out takes b4's set default, as in POST /sets. A set name or group name already in use gets a number appended.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sets"
+                ],
+                "summary": "Import a group of sets",
+                "parameters": [
+                    {
+                        "description": "The group, as the web interface exports it",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.setGroupDocument"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ImportSetsResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/sets/reorder": {
             "post": {
                 "security": [
@@ -4533,6 +4633,7 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "\"set_ids\" lists every set in its new place. \"groups\" is optional: it maps a set ID to that set's new group, an empty string for none, and is saved in the same write as the order.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4545,7 +4646,7 @@
                 "summary": "Reorder sets",
                 "parameters": [
                     {
-                        "description": "Ordered set IDs",
+                        "description": "Ordered set IDs, and optionally new groups by set ID",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -6885,6 +6986,9 @@
                 "fragmentation": {
                     "$ref": "#/definitions/config.FragmentationConfig"
                 },
+                "group": {
+                    "type": "string"
+                },
                 "hub": {
                     "$ref": "#/definitions/config.HubOrigin"
                 },
@@ -8239,6 +8343,9 @@
                 },
                 "fragmentation": {
                     "$ref": "#/definitions/config.FragmentationConfig"
+                },
+                "group": {
+                    "type": "string"
                 },
                 "hub": {
                     "$ref": "#/definitions/config.HubOrigin"
@@ -10092,6 +10199,20 @@
                 }
             }
         },
+        "handler.ImportSetsResult": {
+            "type": "object",
+            "properties": {
+                "group": {
+                    "type": "string"
+                },
+                "sets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/config.SetConfig"
+                    }
+                }
+            }
+        },
         "handler.MetricsResetResponse": {
             "type": "object",
             "properties": {
@@ -10321,6 +10442,9 @@
                 "fragmentation": {
                     "$ref": "#/definitions/config.FragmentationConfig"
                 },
+                "group": {
+                    "type": "string"
+                },
                 "hub": {
                     "$ref": "#/definitions/config.HubOrigin"
                 },
@@ -10448,6 +10572,9 @@
                 },
                 "downloadReady": {
                     "type": "boolean"
+                },
+                "endReason": {
+                    "type": "string"
                 },
                 "level": {
                     "type": "string"
@@ -10734,6 +10861,9 @@
                 }
             }
         },
+        "handler.setGroupDocument": {
+            "type": "object"
+        },
         "hub.CatalogueStatus": {
             "type": "object",
             "properties": {
@@ -10958,13 +11088,15 @@
                 0,
                 1,
                 2,
-                3
+                3,
+                -2147483648
             ],
             "x-enum-varnames": [
                 "LevelError",
                 "LevelInfo",
                 "LevelTrace",
-                "LevelDebug"
+                "LevelDebug",
+                "levelAlways"
             ]
         },
         "metrics.Activity": {

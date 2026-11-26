@@ -7,9 +7,11 @@ All notable changes to b4 are recorded in this file.
 ### Added
 
 - **Add to a set's resolvers** in the DNS results of the **DPI Detector** puts a working encrypted resolver into a set's **Resolvers**. If the set has **Enable DNS Redirect** off, the resolver goes first and the redirect is switched on. [#680](https://github.com/DanielLavrushin/b4/issues/680)
+- Sets can be grouped: **Select** them and press **Group**, pick a group in a set's menu, or drag a set onto a group. A group moves as one, and is enabled, renamed or exported as one file.
 
 ### Changed
 
+- **Import** on the sets page takes everything in one field: a set, several sets, a group or a shared set from b4, or a zapret or byedpi command line.
 - **Recommended DNS Servers** no longer list Mullvad, which announced the end of its public resolvers, or xbox-dns.ru, which its operator reports as not working. 94.140.14.140 is renamed from AdGuard Family to **AdGuard No Filter**. [#680](https://github.com/DanielLavrushin/b4/issues/680)
 - On a router whose DNS server may run on the router or elsewhere on its network, such as OpenWrt, the host name of a set's own `https://` resolver is looked up through the set's resolvers given by IP address, or, when there are none or none answers, through the resolver the device asked, even with **Fail closed when no resolver is reachable** on. **Traffic** marks a lookup passed on unchanged as `doh host`. [#680](https://github.com/DanielLavrushin/b4/issues/680)
 - **Start trace** on the **Logs** page records every log line down to debug whatever the **Log Level**, while the log itself keeps its level. A trace is capped at 8 MB, less when free memory or disk space runs short, and a longer one keeps its first and newest lines.

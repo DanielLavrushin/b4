@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ChangeEvent } from "react";
+import type { TFunction } from "i18next";
 import {
   Box,
   Button,
@@ -24,7 +26,7 @@ import {
   B4Help,
   B4TextField,
 } from "@b4.elements";
-import { ImportExportIcon } from "@b4.icons";
+import { ImportExportIcon, UploadIcon } from "@b4.icons";
 import { colors } from "@design";
 import { useSnackbar } from "@context/SnackbarProvider";
 import {
@@ -38,9 +40,17 @@ import {
   ConvertUnresolved,
   convertApi,
 } from "@api/convert";
+import { hubApi } from "@api/hub";
+import { setsApi } from "@api/sets";
+import { HubWarning, formatWarningParam } from "@models/hub";
+import { SetsImport, parseSetsImport } from "@models/setGroups";
+import { mergeHubLink, reportSaveError } from "@utils";
 import { udpL7Label } from "./udpL7";
 
 const AUTO = "auto";
+
+const setName = (set: Record<string, unknown>): string =>
+  typeof set.name === "string" && set.name !== "" ? set.name : "?";
 
 const statusColor: Record<ConvertStatus, string> = {
   mapped: colors.state.success,
@@ -77,8 +87,13 @@ export function ImportToolDialog({
   const [result, setResult] = useState<ConvertResult | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
   const [collapsed, setCollapsed] = useState(false);
+  const parsed = useMemo(() => parseSetsImport(text), [text]);
+  const isCommand = parsed.kind === "command";
+  const importCount =
+    parsed.kind === "sets" ? parsed.sets.length : parsed.kind === "envelope" ? 1 : 0;
 
   useEffect(() => {
     if (!open) return;
@@ -175,6 +190,75 @@ export function ImportToolDialog({
     }
   }, [request, showSuccess, showError, showSnackbar, onImported, onClose, t]);
 
+  const loadFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    void file.text().then(
+      (content) => {
+        setText(content);
+        setResult(null);
+        setError("");
+        setCollapsed(false);
+      },
+      () => showError(t("sets.convert.fileFailed")),
+    );
+  };
+
+  const handleImport = useCallback(async () => {
+    if (parsed.kind !== "sets" && parsed.kind !== "envelope") return;
+    setImporting(true);
+    try {
+      let doc = { group: "", sets: [] as Record<string, unknown>[] };
+      let warnings: HubWarning[] = [];
+      if (parsed.kind === "envelope") {
+        const opened = await hubApi.importEnvelope(parsed.envelope);
+        warnings = opened.warnings ?? [];
+        doc.sets = [
+          {
+            ...opened.set,
+            hub: mergeHubLink(undefined, opened.set.hub, true).hub,
+          },
+        ];
+      } else {
+        doc = { group: parsed.group, sets: parsed.sets };
+      }
+      const created = await setsApi.importSetGroup(doc);
+      showSuccess(
+        created.group
+          ? t("sets.convert.imported", {
+              count: created.sets.length,
+              group: created.group,
+            })
+          : t("sets.convert.importedNoGroup", { count: created.sets.length }),
+      );
+      if (warnings.length > 0) {
+        showSnackbar(
+          warnings
+            .map((w) =>
+              t(`sets.importExport.warnings.${w.code}`, {
+                defaultValue: w.code,
+                ...Object.fromEntries(
+                  Object.entries(w.params ?? {}).map(([k, v]) => [
+                    k,
+                    formatWarningParam(v),
+                  ]),
+                ),
+              }),
+            )
+            .join(" "),
+          "warning",
+        );
+      }
+      onImported();
+      onClose();
+    } catch (e) {
+      reportSaveError(e, showError, t, "sets.convert.importFailed");
+    } finally {
+      setImporting(false);
+    }
+  }, [parsed, showSuccess, showError, showSnackbar, onImported, onClose, t]);
+
   const grouped = useMemo(() => groupNotes(result), [result]);
 
   return (
@@ -189,42 +273,66 @@ export function ImportToolDialog({
       actions={
         <>
           <Button onClick={onClose}>{t("core.cancel")}</Button>
-          <Button
-            onClick={() => {
-              handleAnalyze().catch(() => {});
-            }}
-            disabled={!text.trim() || analyzing}
-            variant="outlined"
-            startIcon={analyzing ? <CircularProgress size={16} /> : undefined}
-          >
-            {t("sets.convert.analyze")}
+          <Box sx={{ flex: 1 }} />
+          <Button component="label" startIcon={<UploadIcon />}>
+            {t("sets.convert.openFile")}
+            <input hidden type="file" onChange={loadFile} />
           </Button>
-          <Button
-            onClick={() => {
-              handleApply().catch(() => {});
-            }}
-            disabled={!result || !result.applicable || applying}
-            variant="contained"
-            startIcon={applying ? <CircularProgress size={16} /> : undefined}
-          >
-            {t("sets.convert.createSets", { count: result?.sets.length ?? 0 })}
-          </Button>
+          {isCommand && (
+            <Button
+              onClick={() => {
+                handleAnalyze().catch(() => {});
+              }}
+              disabled={analyzing}
+              variant="outlined"
+              startIcon={analyzing ? <CircularProgress size={16} /> : undefined}
+            >
+              {t("sets.convert.analyze")}
+            </Button>
+          )}
+          {isCommand ? (
+            <Button
+              onClick={() => {
+                handleApply().catch(() => {});
+              }}
+              disabled={!result || !result.applicable || applying}
+              variant="contained"
+              startIcon={applying ? <CircularProgress size={16} /> : undefined}
+            >
+              {t("sets.convert.createSets", { count: result?.sets.length ?? 0 })}
+            </Button>
+          ) : (
+            <Button
+              onClick={() => {
+                handleImport().catch(() => {});
+              }}
+              disabled={importCount === 0 || importing}
+              variant="contained"
+              startIcon={importing ? <CircularProgress size={16} /> : undefined}
+            >
+              {importCount === 0
+                ? t("sets.convert.import")
+                : t("sets.convert.importSets", { count: importCount })}
+            </Button>
+          )}
         </>
       }
     >
-      <Stack gap={2}>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-          <Typography variant="body2" sx={{ color: "text.secondary" }}>
-            {t("sets.convert.disclaimer")}
-          </Typography>
-          <B4Help
-            label={t("sets.convert.title")}
-            info={t("sets.convert.disclaimerInfo")}
-            learnMore="sets/import"
-          />
-        </Box>
+      <Stack gap={2} sx={{ pt: 2 }}>
+        {isCommand && (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+              {t("sets.convert.disclaimer")}
+            </Typography>
+            <B4Help
+              label={t("sets.convert.title")}
+              info={t("sets.convert.disclaimerInfo")}
+              learnMore="sets/import"
+            />
+          </Box>
+        )}
 
-        {collapsed ? (
+        {collapsed && isCommand ? (
           <Stack
             direction="row"
             gap={1.5}
@@ -257,16 +365,21 @@ export function ImportToolDialog({
           <>
             <B4TextField
               label={t("sets.convert.inputLabel")}
-              helperText={t("sets.convert.inputHelper")}
+              helperText={importHelper(t, parsed)}
+              error={parsed.kind === "invalid"}
+              info={t("sets.convert.inputInfo")}
+              learnMore="sets/import"
               value={text}
               onChange={(e) => setText(e.target.value)}
               multiline
               minRows={4}
+              maxRows={16}
               slotProps={{
                 input: { sx: { fontFamily: "monospace", fontSize: 13 } },
               }}
             />
 
+            {isCommand && (
             <Stack direction={{ xs: "column", sm: "row" }} gap={2}>
               <B4TextField
                 select
@@ -309,16 +422,17 @@ export function ImportToolDialog({
                 />
               </Box>
             </Stack>
+            )}
           </>
         )}
 
-        {error && (
+        {error && isCommand && (
           <B4Alert severity="error" noWrapper>
             {error}
           </B4Alert>
         )}
 
-        {result && (
+        {result && isCommand && (
           <>
             <Divider />
             <Summary result={result} />
@@ -423,6 +537,27 @@ export function ImportToolDialog({
       </Stack>
     </B4Dialog>
   );
+}
+
+function importHelper(t: TFunction, parsed: SetsImport): string {
+  switch (parsed.kind) {
+    case "command":
+      return t("sets.convert.foundCommand");
+    case "envelope":
+      return t("sets.convert.foundShared", {
+        name: parsed.envelope.title || setName(parsed.envelope.set),
+      });
+    case "sets": {
+      const names = parsed.sets.map(setName).join(", ");
+      return parsed.group
+        ? t("sets.convert.foundGroup", { group: parsed.group, names })
+        : t("sets.convert.foundSets", { count: parsed.sets.length, names });
+    }
+    case "invalid":
+      return t(`sets.convert.invalid.${parsed.reason}`);
+    default:
+      return t("sets.convert.inputHelper");
+  }
 }
 
 function sameDomains(a: string[] | undefined, b: string[]): boolean {

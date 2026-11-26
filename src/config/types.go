@@ -761,6 +761,7 @@ func (l Logging) UpdateLogPath() string {
 type SetConfig struct {
 	Id             string              `json:"id" mcp:"deny"`
 	Name           string              `json:"name"`
+	Group          string              `json:"group"`
 	TCP            TCPConfig           `json:"tcp"`
 	UDP            UDPConfig           `json:"udp"`
 	Fragmentation  FragmentationConfig `json:"fragmentation"`

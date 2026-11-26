@@ -72,6 +72,7 @@
     "fragmentation.strategy_pool",
     "fragmentation.tlsrec_pos",
     "fragmentation.tlsrec_pos_max",
+    "group",
     "hub.applied_at",
     "hub.hash",
     "hub.id",
@@ -259,6 +260,7 @@
       "tlsrec_pos": 0,
       "tlsrec_pos_max": 0
     },
+    "group": "",
     "id": "",
     "mss_clamp": {
       "enabled": false,

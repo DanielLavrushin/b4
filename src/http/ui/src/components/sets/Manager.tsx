@@ -16,6 +16,7 @@ import { useNavigate } from "react-router";
 
 import {
   AddIcon,
+  CategoryIcon,
   CheckIcon,
   ClearIcon,
   DomainIcon,
@@ -27,19 +28,21 @@ import { ImportToolDialog } from "./ImportTool";
 import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 
 import {
+  CollisionDetection,
   DndContext,
-  DragEndEvent,
+  DragMoveEvent,
   DragOverlay,
   DragStartEvent,
   MouseSensor,
   TouchSensor,
-  closestCenter,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
 import {
+  AnimateLayoutChanges,
   SortableContext,
-  rectSortingStrategy,
+  SortingStrategy,
+  defaultAnimateLayoutChanges,
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -50,6 +53,13 @@ import { deviceFilterSelects, reportSaveError } from "@utils";
 
 import { SetCompare } from "./Compare";
 import { SetCard } from "./SetCard";
+import {
+  GROUP_ROW_GAP,
+  SetGroupExportDialog,
+  SetGroupHeader,
+  SetGroupNameDialog,
+  groupTraySx,
+} from "./SetGroups";
 import { EditorSection } from "./facets";
 import { FacetCompareBar } from "./SignalRail";
 
@@ -61,6 +71,16 @@ import { useSetFacetSelection } from "@hooks/useSetFacetSelection";
 import { useWatchdogSetStatuses } from "@hooks/useWatchdog";
 import { B4Config, B4SetConfig } from "@models/config";
 import { formatAsn } from "@models/asn";
+import {
+  DropResult,
+  Point,
+  SlotRect,
+  cardDrop,
+  groupDrop,
+  leanOf,
+  nearestSlot,
+  setBlocks,
+} from "@models/setGroups";
 import { telegramSetId, telegramSetProblem } from "@models/telegramSet";
 import { useTranslation } from "react-i18next";
 
@@ -112,22 +132,87 @@ const setItemWithEnabled = (
   return { ...item, enabled };
 };
 
+const setItemWithGroup = (item: SetWithStats, group: string): SetWithStats => {
+  const nested = item as unknown as { set?: B4SetConfig };
+  if (nested.set) {
+    return { ...item, set: { ...nested.set, group } } as SetWithStats;
+  }
+  return { ...item, group };
+};
+
+const arrangedItems = (
+  data: SetWithStats[],
+  ids: string[],
+  groups: Record<string, string>,
+): SetWithStats[] => {
+  const byId = new Map(data.map((item) => [setItemId(item), item]));
+  const ordered = ids.flatMap((id) => {
+    const item = byId.get(id);
+    return item ? [item] : [];
+  });
+  if (ordered.length !== data.length) return data;
+  return ordered.map((item) => {
+    const group = groups[setItemId(item)];
+    return group === undefined ? item : setItemWithGroup(item, group);
+  });
+};
+
+const sameDrop = (a: DropResult, b: DropResult): boolean =>
+  a.group === b.group && a.ids.join("\n") === b.ids.join("\n");
+
 interface SetsManagerProps {
   config: B4Config & { sets?: SetWithStats[] };
   onRefresh: () => void;
 }
 
+const noCollisions: CollisionDetection = () => [];
+const noShift: SortingStrategy = () => null;
+const animateReorder: AnimateLayoutChanges = (args) =>
+  defaultAnimateLayoutChanges({ ...args, wasDragging: true });
+
+const setMatches = (set: B4SetConfig, lower: string): boolean =>
+  set.name.toLowerCase().includes(lower) ||
+  (set.group ?? "").toLowerCase().includes(lower) ||
+  !!set.targets?.sni_domains?.some((d) => d.toLowerCase().includes(lower)) ||
+  !!set.targets?.geosite_categories?.some((c) =>
+    c.toLowerCase().includes(lower),
+  ) ||
+  !!set.targets?.asns?.some((a) => formatAsn(a).toLowerCase().includes(lower));
+
+interface GroupDialogState {
+  rename: boolean;
+  ids: string[];
+  initial: string;
+}
+
+type HandleProps = React.HTMLAttributes<HTMLDivElement>;
+
+interface DragSession {
+  kind: "card" | "group";
+  activeId: string;
+  run: string[];
+  base: B4SetConfig[];
+  visible: string[];
+  slots: SlotRect[];
+  origin: Point;
+  vertical: boolean;
+}
+
 interface SortableCardWrapperProps {
   id: string;
+  tray?: { first: boolean; last: boolean };
+  dimmed: boolean;
   outerRef?: (el: HTMLDivElement | null) => void;
-  children:
-    | React.ReactNode
-    | ((props: React.HTMLAttributes<HTMLDivElement>) => React.JSX.Element);
+  header?: (handleProps: HandleProps) => React.ReactNode;
+  children: (handleProps: HandleProps) => React.JSX.Element;
 }
 
 const SortableCardWrapper = ({
   id,
+  tray,
+  dimmed,
   outerRef,
+  header,
   children,
 }: SortableCardWrapperProps) => {
   const {
@@ -137,7 +222,8 @@ const SortableCardWrapper = ({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id });
+  } = useSortable({ id, animateLayoutChanges: animateReorder });
+  const handleProps = { ...attributes, ...listeners };
 
   const combinedRef = (el: HTMLDivElement | null) => {
     setNodeRef(el);
@@ -148,16 +234,19 @@ const SortableCardWrapper = ({
     <Box
       ref={combinedRef}
       style={{
-        height: "100%",
-        transform: CSS.Transform.toString(transform),
+        transform: CSS.Translate.toString(transform),
         transition,
-        opacity: isDragging ? 0.4 : 1,
+        opacity: isDragging || dimmed ? 0.4 : 1,
         zIndex: isDragging ? 1 : 0,
       }}
+      sx={{
+        position: "relative",
+        height: "100%",
+        ...(tray ? groupTraySx(tray.first, tray.last) : null),
+      }}
     >
-      {typeof children === "function"
-        ? children({ ...attributes, ...listeners })
-        : children}
+      {header?.(handleProps)}
+      {children(handleProps)}
     </Box>
   );
 };
@@ -172,6 +261,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
     duplicateSet,
     reorderSets,
     setEnabledForSets,
+    setGroupForSets,
   } = useSets();
 
   const [filterText, setFilterText] = useState("");
@@ -186,6 +276,13 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
   });
   const [batchDeleteDialog, setBatchDeleteDialog] = useState(false);
   const [importToolOpen, setImportToolOpen] = useState(false);
+  const [groupDialog, setGroupDialog] = useState<GroupDialogState | null>(
+    null,
+  );
+  const [exportBlock, setExportBlock] = useState<{
+    group: string;
+    sets: B4SetConfig[];
+  } | null>(null);
   const [compareDialog, setCompareDialog] = useState<{
     open: boolean;
     setId: string | null;
@@ -193,7 +290,13 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
   const [templateSetId, setTemplateSetId] = useState<string | null>(null);
   const [savingTemplate, setSavingTemplate] = useState(false);
 
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [drag, setDrag] = useState<Pick<
+    DragSession,
+    "kind" | "activeId" | "run"
+  > | null>(null);
+  const [arrangement, setArrangement] = useState<DropResult | null>(null);
+  const dragRef = useRef<DragSession | null>(null);
+  const dropRef = useRef<DropResult | null>(null);
   const [highlightedSetId, setHighlightedSetId] = useState<string | null>(null);
   const cardRefs = useRef(new Map<string, HTMLDivElement>());
   const tempIdSeq = useRef(0);
@@ -217,13 +320,24 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
     });
   }, []);
 
+  const liveData = useMemo(
+    () =>
+      drag && arrangement
+        ? arrangedItems(
+            setsData,
+            arrangement.ids,
+            drag.kind === "card" ? { [drag.activeId]: arrangement.group } : {},
+          )
+        : setsData,
+    [setsData, drag, arrangement],
+  );
   const sets = useMemo(
-    () => setsData.map((s) => ("set" in s ? s.set : s)) as B4SetConfig[],
-    [setsData],
+    () => liveData.map((s) => ("set" in s ? s.set : s)) as B4SetConfig[],
+    [liveData],
   );
   const setsStats = useMemo(
-    () => setsData.map((s) => ("stats" in s ? s.stats : null)),
-    [setsData],
+    () => liveData.map((s) => ("stats" in s ? s.stats : null)),
+    [liveData],
   );
   const statsOf = useCallback(
     (id: string) => {
@@ -313,66 +427,187 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
     [],
   );
 
-  const filteredSets = useMemo(() => {
-    if (!filterText.trim()) return sets;
+  const blocks = useMemo(() => setBlocks(sets), [sets]);
+  const visibleBlocks = useMemo(() => {
+    const withAll = blocks.map((block) => ({ ...block, all: block.sets }));
+    if (!filterText.trim()) return withAll;
     const lower = filterText.toLowerCase();
-    return sets.filter((set) => {
-      if (set.name.toLowerCase().includes(lower)) return true;
-      if (
-        set.targets?.sni_domains?.some((d) => d.toLowerCase().includes(lower))
-      )
-        return true;
-      if (
-        set.targets?.geosite_categories?.some((c) =>
-          c.toLowerCase().includes(lower),
-        )
-      )
-        return true;
-      if (
-        set.targets?.asns?.some((a) =>
-          formatAsn(a).toLowerCase().includes(lower),
-        )
-      )
-        return true;
-      return false;
-    });
-  }, [sets, filterText]);
+    return withAll
+      .map((block) => ({
+        ...block,
+        sets: block.sets.filter((set) => setMatches(set, lower)),
+      }))
+      .filter((block) => block.sets.length > 0);
+  }, [blocks, filterText]);
+  const filteredSets = useMemo(
+    () => visibleBlocks.flatMap((block) => block.sets),
+    [visibleBlocks],
+  );
+  const groupNames = useMemo(
+    () => [...new Set(sets.map((s) => s.group ?? "").filter(Boolean))],
+    [sets],
+  );
 
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
+  const endDrag = () => {
+    dragRef.current = null;
+    dropRef.current = null;
+    setDrag(null);
+    setArrangement(null);
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    setActiveId(null);
+  const handleDragStart = (event: DragStartEvent) => {
+    const id = String(event.active.id);
+    const visible = filteredSets.map((s) => s.id);
+    const slots = visible.flatMap((setId) => {
+      const el = cardRefs.current.get(setId);
+      return el ? [el.getBoundingClientRect()] : [];
+    });
+    const home = slots[visible.indexOf(id)];
+    if (slots.length !== visible.length || !home) return;
+    const target = event.activatorEvent.target;
+    const block =
+      target instanceof Element && target.closest("[data-group-handle]")
+        ? blocks.find((b) => b.sets.some((s) => s.id === id))
+        : undefined;
+    const session: DragSession = {
+      kind: block ? "group" : "card",
+      activeId: id,
+      run: block ? block.sets.map((s) => s.id) : [id],
+      base: sets,
+      visible,
+      slots,
+      origin: {
+        x: home.left + home.width / 2,
+        y: home.top + home.height / 2,
+      },
+      vertical:
+        slots.length > 1 && Math.abs(slots[0].left - slots[1].left) < 1,
+    };
+    dragRef.current = session;
+    dropRef.current = null;
+    setDrag({ kind: session.kind, activeId: id, run: session.run });
+  };
 
-    if (!over || active.id === over.id) return;
+  const handleDragMove = (event: DragMoveEvent) => {
+    const session = dragRef.current;
+    if (!session) return;
+    const center = {
+      x: session.origin.x + event.delta.x,
+      y: session.origin.y + event.delta.y,
+    };
+    const slot = nearestSlot(center, session.slots);
+    const next =
+      session.kind === "group"
+        ? {
+            ids: groupDrop(session.base, session.visible, session.run, slot),
+            group: "",
+          }
+        : cardDrop(
+            session.base,
+            session.visible,
+            session.activeId,
+            slot,
+            leanOf(center, session.slots[slot], session.vertical),
+          );
+    if (dropRef.current && sameDrop(dropRef.current, next)) return;
+    dropRef.current = next;
+    setArrangement(next);
+  };
 
-    const oldIndex = setsData.findIndex((s) => setItemId(s) === active.id);
-    const newIndex = setsData.findIndex((s) => setItemId(s) === over.id);
-
-    if (oldIndex === -1 || newIndex === -1) return;
-
-    const newData = [...setsData];
-    const [removed] = newData.splice(oldIndex, 1);
-    newData.splice(newIndex, 0, removed);
-    setSetsData(newData);
+  const handleDragEnd = () => {
+    const session = dragRef.current;
+    const result = dropRef.current;
+    endDrag();
+    if (!session || !result) return;
+    const own =
+      session.base.find((s) => s.id === session.activeId)?.group ?? "";
+    const regrouped =
+      session.kind === "card" &&
+      result.group !== own &&
+      !isTempId(session.activeId);
+    const moved =
+      result.ids.join("\n") !== session.base.map((s) => s.id).join("\n");
+    if (!regrouped && !moved) return;
+    const groups = regrouped
+      ? { [session.activeId]: result.group }
+      : undefined;
+    setSetsData((prev) => arrangedItems(prev, result.ids, groups ?? {}));
 
     void (async () => {
-      const realIds = newData
-        .map((s) => setItemId(s))
-        .filter((id) => !isTempId(id));
-      const result = await reorderSets(realIds);
-      if (result.success) {
-        onRefresh();
-      } else {
-        reportSaveError(result.error, showError, t, "sets.manager.failedToReorder");
-        onRefresh();
+      const response = await reorderSets(
+        result.ids.filter((id) => !isTempId(id)),
+        groups,
+      );
+      if (!response.success) {
+        reportSaveError(response.error, showError, t, "sets.manager.failedToReorder");
       }
+      onRefresh();
     })();
   };
 
-  const activeSet = activeId ? sets.find((s) => s.id === activeId) : null;
+  const activeSet = drag ? sets.find((s) => s.id === drag.activeId) : undefined;
+
+  const applyGroup = (ids: string[], group: string, done: string) => {
+    const real = ids.filter((id) => !isTempId(id));
+    setGroupDialog(null);
+    if (real.length === 0) return;
+    void (async () => {
+      const result = await setGroupForSets(real, group);
+      if (result.success) showSuccess(done);
+      else reportSaveError(result.error, showError, t, "sets.groups.failed");
+      onRefresh();
+    })();
+  };
+
+  const confirmGroupDialog = (name: string) => {
+    if (!groupDialog) return;
+    const { ids, rename } = groupDialog;
+    if (!rename) handleExitSelectionMode();
+    applyGroup(
+      ids,
+      name,
+      rename
+        ? t("sets.groups.renamed", { group: name })
+        : t("sets.groups.grouped", { count: ids.length, group: name }),
+    );
+  };
+
+  const removeFromGroup = () => {
+    if (!groupDialog) return;
+    const { ids } = groupDialog;
+    handleExitSelectionMode();
+    applyGroup(ids, "", t("sets.groups.removed", { count: ids.length }));
+  };
+
+  const openGroupDialog = () => {
+    const picked = sets.filter((s) => selectedIds.has(s.id));
+    const groups = new Set(picked.map((s) => s.group ?? ""));
+    setGroupDialog({
+      rename: false,
+      ids: picked.map((s) => s.id),
+      initial: groups.size === 1 ? [...groups][0] : "",
+    });
+  };
+
+  const handleToggleBlock = (members: B4SetConfig[], enabled: boolean) => {
+    const ids = members.map((s) => s.id).filter((id) => !isTempId(id));
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    setSetsData((prev) =>
+      prev.map((s) =>
+        idSet.has(setItemId(s)) ? setItemWithEnabled(s, enabled) : s,
+      ),
+    );
+    markSyncing(ids, true);
+    void (async () => {
+      const result = await setEnabledForSets(ids, enabled);
+      markSyncing(ids, false);
+      if (!result.success) {
+        reportSaveError(result.error, showError, t, "sets.manager.failedToToggleSets");
+      }
+      onRefresh();
+    })();
+  };
 
   const handleAddSet = () => {
     navigate("/sets/new")?.catch(() => {});
@@ -551,6 +786,110 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
     })();
   };
 
+  const renderCell = (
+    set: B4SetConfig,
+    block: (typeof visibleBlocks)[number],
+    position: number,
+  ) => {
+    const index = sets.findIndex((s) => s.id === set.id);
+    const grouped = block.group !== "";
+    return (
+      <SortableCardWrapper
+        id={set.id}
+        outerRef={registerCardRef(set.id)}
+        dimmed={drag?.kind === "group" && drag.run.includes(set.id)}
+        tray={
+          grouped
+            ? {
+                first: position === 0,
+                last: position === block.sets.length - 1,
+              }
+            : undefined
+        }
+        header={
+          grouped && position === 0
+            ? (handleProps) => (
+                <SetGroupHeader
+                  group={block.group}
+                  count={block.all.length}
+                  enabledCount={block.all.filter((s) => s.enabled).length}
+                  selectionMode={selectionMode}
+                  handleProps={handleProps}
+                  onToggleEnabled={(enabled) =>
+                    handleToggleBlock(block.all, enabled)
+                  }
+                  onRename={() =>
+                    setGroupDialog({
+                      rename: true,
+                      ids: block.all.map((s) => s.id),
+                      initial: block.group,
+                    })
+                  }
+                  onExport={() =>
+                    setExportBlock({ group: block.group, sets: block.all })
+                  }
+                  onUngroup={() =>
+                    applyGroup(
+                      block.all.map((s) => s.id),
+                      "",
+                      t("sets.groups.ungrouped", { group: block.group }),
+                    )
+                  }
+                />
+              )
+            : undefined
+        }
+      >
+        {(dragHandleProps) => (
+          <SetCard
+            set={set}
+            stats={setsStats[index] || undefined}
+            index={index}
+            onEdit={(section?: EditorSection) => handleEditSet(set, section)}
+            onDuplicate={() => handleDuplicateSet(set)}
+            onCompare={() => setCompareDialog({ open: true, setId: set.id })}
+            onUseForNewSets={() => setTemplateSetId(set.id)}
+            onDelete={() => setDeleteDialog({ open: true, setId: set.id })}
+            groups={groupNames}
+            onMoveToGroup={(group) =>
+              applyGroup(
+                [set.id],
+                group,
+                t("sets.groups.grouped", { count: 1, group }),
+              )
+            }
+            onNewGroup={() =>
+              setGroupDialog({ rename: false, ids: [set.id], initial: "" })
+            }
+            onRemoveFromGroup={() =>
+              applyGroup([set.id], "", t("sets.groups.removed", { count: 1 }))
+            }
+            onToggleEnabled={(enabled) => handleToggleEnabled(set, enabled)}
+            syncing={syncingIds.has(set.id)}
+            dragHandleProps={dragHandleProps}
+            selectionMode={selectionMode}
+            selected={selectedIds.has(set.id)}
+            onSelect={() => handleToggleSelection(set.id)}
+            escalatesTo={escalationMaps.escalatesTo.get(set.id)}
+            escalatedFrom={escalationMaps.escalatedFrom.get(set.id)}
+            highlighted={highlightedSetId === set.id}
+            onEscalationHover={handleEscalationHover}
+            onEscalationClick={handleEscalationClick}
+            activeFacet={facetSelection.open[set.id] ?? null}
+            onFacetSelect={(key) => {
+              facetSelection.selectFacet(set.id, key);
+            }}
+            onVoted={onRefresh}
+            watchStatus={watchStatuses.byId.get(set.id)}
+            watchdogOn={watchdogOn}
+            deviceFilter={deviceFilter}
+            telegramSet={set.id === telegramId ? telegramState : undefined}
+          />
+        )}
+      </SortableCardWrapper>
+    );
+  };
+
   return (
     <Stack spacing={3}>
       <B4Section
@@ -682,6 +1021,15 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                   </Button>
                   <Button
                     size="small"
+                    variant="outlined"
+                    startIcon={<CategoryIcon />}
+                    disabled={selectedIds.size === 0}
+                    onClick={openGroupDialog}
+                  >
+                    {t("sets.groups.group")}
+                  </Button>
+                  <Button
+                    size="small"
                     variant="contained"
                     color="error"
                     startIcon={<ClearIcon />}
@@ -756,93 +1104,54 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
 
         <DndContext
           sensors={sensors}
-          collisionDetection={closestCenter}
+          collisionDetection={noCollisions}
           onDragStart={handleDragStart}
+          onDragMove={handleDragMove}
           onDragEnd={handleDragEnd}
+          onDragCancel={endDrag}
         >
           <SortableContext
             items={filteredSets.map((s) => s.id)}
-            strategy={rectSortingStrategy}
+            strategy={noShift}
           >
-            <Grid container spacing={3}>
-              {filteredSets.map((set) => {
-                const index = sets.findIndex((s) => s.id === set.id);
-                const stats = setsStats[index] || undefined;
-
-                return (
+            <Grid
+              container
+              columnSpacing={3}
+              rowSpacing={groupNames.length > 0 ? `${GROUP_ROW_GAP}px` : 3}
+              sx={groupNames.length > 0 ? { mt: `${GROUP_ROW_GAP - 12}px` } : null}
+            >
+              {visibleBlocks.flatMap((block) =>
+                block.sets.map((set, position) => (
                   <Grid key={set.id} size={{ xs: 12, sm: 6, lg: 4, xl: 3 }}>
-                    <SortableCardWrapper
-                      id={set.id}
-                      outerRef={registerCardRef(set.id)}
-                    >
-                      {(
-                        dragHandleProps: React.HTMLAttributes<HTMLDivElement>,
-                      ) => (
-                        <SetCard
-                          set={set}
-                          stats={stats}
-                          index={index}
-                          onEdit={(section?: EditorSection) =>
-                            handleEditSet(set, section)
-                          }
-                          onDuplicate={() => handleDuplicateSet(set)}
-                          onCompare={() =>
-                            setCompareDialog({ open: true, setId: set.id })
-                          }
-                          onUseForNewSets={() => setTemplateSetId(set.id)}
-                          onDelete={() =>
-                            setDeleteDialog({ open: true, setId: set.id })
-                          }
-                          onToggleEnabled={(enabled) =>
-                            handleToggleEnabled(set, enabled)
-                          }
-                          syncing={syncingIds.has(set.id)}
-                          dragHandleProps={dragHandleProps}
-                          selectionMode={selectionMode}
-                          selected={selectedIds.has(set.id)}
-                          onSelect={() => handleToggleSelection(set.id)}
-                          escalatesTo={escalationMaps.escalatesTo.get(set.id)}
-                          escalatedFrom={escalationMaps.escalatedFrom.get(set.id)}
-                          highlighted={highlightedSetId === set.id}
-                          onEscalationHover={handleEscalationHover}
-                          onEscalationClick={handleEscalationClick}
-                          activeFacet={facetSelection.open[set.id] ?? null}
-                          onFacetSelect={(key) => {
-                            facetSelection.selectFacet(set.id, key);
-                          }}
-                          onVoted={onRefresh}
-                          watchStatus={watchStatuses.byId.get(set.id)}
-                          watchdogOn={watchdogOn}
-                          deviceFilter={deviceFilter}
-                          telegramSet={
-                            set.id === telegramId ? telegramState : undefined
-                          }
-                        />
-                      )}
-                    </SortableCardWrapper>
+                    {renderCell(set, block, position)}
                   </Grid>
-                );
-              })}
+                )),
+              )}
             </Grid>
           </SortableContext>
 
           <DragOverlay>
-            {activeSet ? (
+            {drag && activeSet ? (
               <Box
                 sx={{
+                  height: "100%",
                   p: 3,
                   bgcolor: colors.background.paper,
                   border: `2px solid ${colors.secondary}`,
                   borderRadius: radius.md,
-                  boxShadow: `0 16px 48px ${colors.accent.primary}60`,
-                  minWidth: 280,
+                  boxShadow:
+                    drag.kind === "group"
+                      ? `7px 7px 0 -2px ${colors.background.paper}, 7px 7px 0 0 ${colors.secondary}, 14px 14px 0 -2px ${colors.background.paper}, 14px 14px 0 0 ${colors.secondary}`
+                      : `0 16px 48px ${colors.accent.primary}60`,
                 }}
               >
-                <Typography variant="h6" fontWeight={600}>
-                  {activeSet.name}
+                <Typography variant="h6" fontWeight={600} noWrap>
+                  {drag.kind === "group" ? activeSet.group : activeSet.name}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  {activeSet.fragmentation.strategy.toUpperCase()}
+                  {drag.kind === "group"
+                    ? t("sets.groups.setCount", { count: drag.run.length })
+                    : activeSet.fragmentation.strategy.toUpperCase()}
                 </Typography>
               </Box>
             ) : null}
@@ -1010,6 +1319,38 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
           {t("sets.templateDialog.note")}
         </Typography>
       </B4Dialog>
+
+      {groupDialog && (
+        <SetGroupNameDialog
+          title={
+            groupDialog.rename
+              ? t("sets.groups.renameTitle")
+              : t("sets.groups.groupTitle", { count: groupDialog.ids.length })
+          }
+          subtitle={
+            groupDialog.rename ? undefined : t("sets.groups.groupSubtitle")
+          }
+          initial={groupDialog.initial}
+          groups={groupNames}
+          confirmLabel={
+            groupDialog.rename ? t("sets.groups.rename") : t("sets.groups.group")
+          }
+          onConfirm={confirmGroupDialog}
+          onRemove={
+            !groupDialog.rename &&
+            sets.some((s) => groupDialog.ids.includes(s.id) && s.group)
+              ? removeFromGroup
+              : undefined
+          }
+          onClose={() => setGroupDialog(null)}
+        />
+      )}
+
+      <SetGroupExportDialog
+        group={exportBlock?.group ?? null}
+        sets={exportBlock?.sets ?? []}
+        onClose={() => setExportBlock(null)}
+      />
 
       <ImportToolDialog
         open={importToolOpen}

@@ -307,6 +307,7 @@ func (c *Config) Validate() error {
 	c.System.IPHealth.RepeatBanTTLSec = clampBanSec(c.System.IPHealth.RepeatBanTTLSec, DefaultIPRepeatBanTTLSec, MaxIPRepeatBanTTLSec)
 
 	for setIdx, set := range c.Sets {
+		set.Group = NormalizeSetGroup(set.Group)
 		set.defaultEmptyModes()
 		ws := &set.TCP.WSSize
 		ws.Cutoff = NormalizeWSSizeCutoff(ws.Cutoff)

@@ -260,6 +260,7 @@ export const ImportExportSettings = ({
       const parsed = {
         ...result.set,
         id: config.id,
+        group: config.group,
         enabled: config.enabled,
         hub: link.hub,
         discovery: config.discovery ?? result.set.discovery,
@@ -327,6 +328,7 @@ export const ImportExportSettings = ({
       }
 
       parsed.id = config.id;
+      parsed.group = config.group;
       parsed.targets = {
         ...parsed.targets,
         ip_priority: config.targets.ip_priority ?? false,

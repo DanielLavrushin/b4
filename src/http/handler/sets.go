@@ -37,6 +37,8 @@ func (api *API) RegisterSetsApi() {
 	api.mux.HandleFunc("/api/sets/{id}/add-domain", api.handleSetDomains)
 	api.mux.HandleFunc("/api/sets/batch-delete", api.handleBatchDeleteSets)
 	api.mux.HandleFunc("/api/sets/batch-set-enabled", api.handleBatchSetEnabled)
+	api.mux.HandleFunc("/api/sets/batch-set-group", api.handleBatchSetGroup)
+	api.mux.HandleFunc("/api/sets/import", api.handleImportSets)
 }
 
 // @Summary List all targeted domains from enabled sets
@@ -797,10 +799,11 @@ func (api *API) deleteSet(w http.ResponseWriter, id string) {
 }
 
 // @Summary Reorder sets
+// @Description "set_ids" lists every set in its new place. "groups" is optional: it maps a set ID to that set's new group, an empty string for none, and is saved in the same write as the order.
 // @Tags Sets
 // @Accept json
 // @Produce json
-// @Param body body object true "Ordered set IDs"
+// @Param body body object true "Ordered set IDs, and optionally new groups by set ID"
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @Router /sets/reorder [post]
@@ -811,7 +814,8 @@ func (api *API) handleReorderSets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		SetIds []string `json:"set_ids"`
+		SetIds []string          `json:"set_ids"`
+		Groups map[string]string `json:"groups"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, ErrInvalidJSON())
@@ -831,6 +835,13 @@ func (api *API) handleReorderSets(w http.ResponseWriter, r *http.Request) {
 		}
 		if len(reordered) != len(next.Sets) {
 			return ErrBadRequest("Invalid set IDs")
+		}
+		for id, group := range req.Groups {
+			set, ok := setMap[id]
+			if !ok {
+				return ErrBadRequest("Invalid set IDs")
+			}
+			set.Group = config.NormalizeSetGroup(group)
 		}
 		next.Sets = reordered
 		return nil
