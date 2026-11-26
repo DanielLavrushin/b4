@@ -500,6 +500,7 @@ func TestKmodProcShowsTheModulesOfTheTUNEngine(t *testing.T) {
 	t.Run("registered", func(t *testing.T) {
 		fx := newKmodFixture(t)
 		fx.noLibModules()
+		fx.stubContainerModprobe()
 		fx.proc("misc", "130 watchdog\n 62 ppp\n200 tun\n")
 		fx.proc("net/ip_tables_targets", "CT\nSNAT\nMARK\n")
 		fx.proc("net/ip_tables_matches", "mark\nconntrack\n")
@@ -515,12 +516,16 @@ func TestKmodProcShowsTheModulesOfTheTUNEngine(t *testing.T) {
 	t.Run("only similar names", func(t *testing.T) {
 		fx := newKmodFixture(t)
 		fx.noLibModules()
+		fx.stubContainerModprobe()
 		fx.proc("misc", "130 watchdog\n201 tunnel\n")
 		fx.proc("net/ip_tables_targets", "CTMARK\n")
 		fx.proc("net/ip_tables_matches", "connmark\n")
 		for _, mod := range tunModules {
 			if got := KernelModuleStatus(mod); got != KernelModuleNotFound {
 				t.Errorf("%s: status = %q, want %q", mod, got, KernelModuleNotFound)
+			}
+			if err := loadKernelModule(mod); err == nil {
+				t.Errorf("%s: modprobe failed and /proc lists only similar names, but loading it succeeded", mod)
 			}
 		}
 	})
