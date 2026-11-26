@@ -53,7 +53,7 @@ func (api *API) collectDiagnostics() Diagnostics {
 	engine := collectEngineInfo(cfg)
 	tun := engine.Mode == "tun"
 	tunRules := diagTUNRulesOf(cfg, engine.TUN)
-	kernel := collectKernelModules(cfg, tun)
+	kernel := collectKernelModules(cfg, tun, tunRules)
 
 	return Diagnostics{
 		System:    collectSystemInfo(),
@@ -1077,7 +1077,10 @@ func (api *API) collectGeodataInfo() DiagGeodata {
 
 var tunKernelModules = []string{"tun", "xt_mark", "xt_multiport", "xt_connbytes", "xt_conntrack", "xt_CT", "nf_conntrack", "nf_conntrack_netlink"}
 
-func kernelModuleNames(backend string, st tables.DNSQueryState, tun bool) []string {
+func kernelModuleNames(backend string, st tables.DNSQueryState, tun bool, tunRules diagTUNRules) []string {
+	if tun && tunRules.skipSetup {
+		return slices.DeleteFunc(slices.Clone(tunKernelModules), func(m string) bool { return m == "xt_CT" })
+	}
 	if tun {
 		return slices.Clone(tunKernelModules)
 	}
@@ -1091,7 +1094,7 @@ func kernelModuleNames(backend string, st tables.DNSQueryState, tun bool) []stri
 	return modules
 }
 
-func collectKernelModules(cfg *config.Config, tun bool) DiagKernel {
+func collectKernelModules(cfg *config.Config, tun bool, tunRules diagTUNRules) DiagKernel {
 	dnsQueries := tables.DNSQueryPlacement()
 	var result DiagKernel
 
@@ -1135,7 +1138,7 @@ func collectKernelModules(cfg *config.Config, tun bool) DiagKernel {
 	result.Capabilities = append(result.Capabilities, dnsQueryCapabilities(dnsQueries, listener)...)
 	markKeeneticHints(result.Capabilities, tables.KeeneticOS())
 
-	modules := kernelModuleNames(tables.DetectBackend(cfg), dnsQueries, tun)
+	modules := kernelModuleNames(tables.DetectBackend(cfg), dnsQueries, tun, tunRules)
 	result.Modules = make([]DiagModule, 0, len(modules))
 	for _, mod := range modules {
 		result.Modules = append(result.Modules, DiagModule{Name: mod, Status: tables.KernelModuleStatus(mod)})

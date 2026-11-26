@@ -319,7 +319,7 @@ func TestNFLOGModuleRowsOnlyWhereDNSQueriesAreCopiedOrHeldAfterConntrack(t *test
 		{"nftables", "nftables", tables.DNSQueryState{Applied: true, Release: "4.9.337", Placements: map[string]string{"nftables": "mangle"}}, []string{"nft_queue", "nfnetlink_queue", "nft_ct", "nf_conntrack"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := kernelModuleNames(tc.backend, tc.st, false); !slices.Equal(got, tc.want) {
+			if got := kernelModuleNames(tc.backend, tc.st, false, diagTUNRules{}); !slices.Equal(got, tc.want) {
 				t.Errorf("modules %v, want %v: a module b4 has no use for shows as missing with a warning", got, tc.want)
 			}
 		})
@@ -330,7 +330,7 @@ func TestTUNModeListsTheModulesOfItsOwnRules(t *testing.T) {
 	want := []string{"tun", "xt_mark", "xt_multiport", "xt_connbytes", "xt_conntrack", "xt_CT", "nf_conntrack", "nf_conntrack_netlink"}
 	copying := tables.DNSQueryState{Applied: true, Release: "4.1.52", Affected: true, Placements: map[string]string{"iptables": "copy"}}
 	for _, backend := range []string{"iptables", "iptables-legacy", "nftables", "none"} {
-		got := kernelModuleNames(backend, copying, true)
+		got := kernelModuleNames(backend, copying, true, diagTUNRules{})
 		if !slices.Equal(got, want) {
 			t.Errorf("TUN with the %s backend: modules %v, want %v", backend, got, want)
 		}
@@ -340,10 +340,23 @@ func TestTUNModeListsTheModulesOfItsOwnRules(t *testing.T) {
 			}
 		}
 	}
-	got := kernelModuleNames("iptables", tables.DNSQueryState{}, true)
+	got := kernelModuleNames("iptables", tables.DNSQueryState{}, true, diagTUNRules{})
 	got[0] = "changed"
-	if kernelModuleNames("iptables", tables.DNSQueryState{}, true)[0] != "tun" {
+	if kernelModuleNames("iptables", tables.DNSQueryState{}, true, diagTUNRules{})[0] != "tun" {
 		t.Error("a caller can change the shared TUN module list")
+	}
+}
+
+func TestTUNModeWithSkipSetupLeavesOutTheCTTarget(t *testing.T) {
+	want := []string{"tun", "xt_mark", "xt_multiport", "xt_connbytes", "xt_conntrack", "nf_conntrack", "nf_conntrack_netlink"}
+	if got := kernelModuleNames("iptables", tables.DNSQueryState{}, true, diagTUNRules{skipSetup: true}); !slices.Equal(got, want) {
+		t.Errorf("modules %v, want %v: with skip_setup the TUN engine installs no CT --notrack rule", got, want)
+	}
+	if got := kernelModuleNames("iptables", tables.DNSQueryState{}, true, diagTUNRules{}); !slices.Contains(got, "xt_CT") {
+		t.Errorf("without skip_setup the list lost xt_CT: %v", got)
+	}
+	if !slices.Contains(tunKernelModules, "xt_CT") {
+		t.Error("leaving out xt_CT changed the shared TUN module list")
 	}
 }
 
