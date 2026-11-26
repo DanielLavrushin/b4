@@ -1626,6 +1626,25 @@ func TestUninstallLeavesTheTargetOfALinkedPrivateDirectoryAlone(t *testing.T) {
 	if got := dirEntries(t, plain); len(got) != 0 {
 		t.Fatalf("a real private directory still holds %v after the cleanup", got)
 	}
+
+	parent := t.TempDir()
+	private := filepath.Join(parent, "b4-run")
+	if err := os.Mkdir(private, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fill(t, private)
+	behind := t.TempDir()
+	fill(t, behind)
+	swap := `. "$1" && readlink() { echo 'net:[4026531992]'; }; p="$2"; b="$3"; swapped=; rm() { if [ -z "$swapped" ]; then swapped=1; command mv "$p" "$p.old" && command ln -s "$b" "$p"; fi; command rm "$@"; }; _remove_sysctl_snapshot "$p" private`
+	if out, err := exec.Command("sh", "-c", swap, "sh", script, private, behind).CombinedOutput(); err != nil {
+		t.Fatalf("_remove_sysctl_snapshot: %v\n%s", err, out)
+	}
+	if got := dirEntries(t, behind); len(got) != len(names) {
+		t.Fatalf("a link swapped in after the look redirected the cleanup: %v left of %v behind it", got, names)
+	}
+	if got := dirEntries(t, private+".old"); len(got) != 0 {
+		t.Fatalf("the directory that was looked at still holds %v", got)
+	}
 }
 
 func TestUninstallRemovesTheSysctlSnapshotWhereverB4KeepsIt(t *testing.T) {
@@ -1636,17 +1655,30 @@ func TestUninstallRemovesTheSysctlSnapshotWhereverB4KeepsIt(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("no sh")
 	}
-	stubs := `set -f; rm() { echo "rm $*"; }; rmdir() { echo "rmdir $*"; }; readlink() { echo 'net:[4026531992]'; }; `
+	stubs := `_remove_sysctl_snapshot() { echo "clean $*"; }; rmdir() { echo "rmdir $*"; }; `
 	out, err := exec.Command("sh", "-c", `. "$1" && `+stubs+`_remove_sysctl_snapshots`, "sh", script).CombinedOutput()
 	if err != nil {
 		t.Fatalf("_remove_sysctl_snapshots: %v\n%s", err, out)
 	}
 	var want []string
-	for _, dir := range append(slices.Clone(sysctlSnapRunDirs), sysctlSnapPrivateDir, sysctlSnapLegacyDir) {
-		want = append(want, "rm -f "+dir+"/b4_sysctl_snapshot.json "+dir+"/b4_sysctl_snapshot.json.*", "rm -f "+dir+"/"+testSnapName+" "+dir+"/"+testSnapName+".*")
+	for _, dir := range sysctlSnapRunDirs {
+		want = append(want, "clean "+dir)
 	}
-	want = append(want, "rmdir "+sysctlSnapPrivateDir)
+	want = append(want, "clean "+sysctlSnapPrivateDir+" private", "clean "+sysctlSnapLegacyDir, "rmdir "+sysctlSnapPrivateDir)
 	if got := strings.Split(strings.TrimSpace(string(out)), "\n"); !slices.Equal(got, want) {
 		t.Fatalf("uninstall ran\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+
+	stubs = `set -f; rm() { echo "rm $*"; }; readlink() { echo 'net:[4026531992]'; }; `
+	out, err = exec.Command("sh", "-c", `. "$1" && `+stubs+`_remove_sysctl_snapshot_names /var/run`, "sh", script).CombinedOutput()
+	if err != nil {
+		t.Fatalf("_remove_sysctl_snapshot_names: %v\n%s", err, out)
+	}
+	want = []string{
+		"rm -f /var/run/b4_sysctl_snapshot.json /var/run/b4_sysctl_snapshot.json.*",
+		"rm -f /var/run/" + testSnapName + " /var/run/" + testSnapName + ".*",
+	}
+	if got := strings.Split(strings.TrimSpace(string(out)), "\n"); !slices.Equal(got, want) {
+		t.Fatalf("cleaning one directory ran\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }

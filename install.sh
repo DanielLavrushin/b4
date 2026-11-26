@@ -4255,17 +4255,29 @@ _remove_sysctl_snapshots() {
 
 _remove_sysctl_snapshot() {
     _rss_dir="${1:-/tmp}"
-    if [ "${2:-}" = private ] && [ -L "$_rss_dir" ]; then
+    if [ "${2:-}" != private ]; then
+        _remove_sysctl_snapshot_names "$_rss_dir"
         return 0
     fi
-    rm -f "${_rss_dir}/b4_sysctl_snapshot.json" "${_rss_dir}/b4_sysctl_snapshot.json."* 2>/dev/null || true
-    _rss_ns=$(readlink /proc/self/ns/net 2>/dev/null) || return 0
-    _rss_ino=${_rss_ns#net:\[}
-    _rss_ino=${_rss_ino%\]}
-    case "$_rss_ino" in
+    (
+        _rss_want="$(cd -P "${_rss_dir%/*}" 2>/dev/null && pwd -P)/${_rss_dir##*/}"
+        cd -P "$_rss_dir" 2>/dev/null || exit 0
+        [ "$(pwd -P)" = "$_rss_want" ] || exit 0
+        _remove_sysctl_snapshot_names .
+    )
+    return 0
+}
+
+_remove_sysctl_snapshot_names() {
+    _rsn_dir="$1"
+    rm -f "${_rsn_dir}/b4_sysctl_snapshot.json" "${_rsn_dir}/b4_sysctl_snapshot.json."* 2>/dev/null || true
+    _rsn_ns=$(readlink /proc/self/ns/net 2>/dev/null) || return 0
+    _rsn_ino=${_rsn_ns#net:\[}
+    _rsn_ino=${_rsn_ino%\]}
+    case "$_rsn_ino" in
     '' | *[!0-9]*) return 0 ;;
     esac
-    rm -f "${_rss_dir}/b4_sysctl_snapshot.${_rss_ino}.json" "${_rss_dir}/b4_sysctl_snapshot.${_rss_ino}.json."* 2>/dev/null || true
+    rm -f "${_rsn_dir}/b4_sysctl_snapshot.${_rsn_ino}.json" "${_rsn_dir}/b4_sysctl_snapshot.${_rsn_ino}.json."* 2>/dev/null || true
 }
 
 _remove_netfilter_state() {
