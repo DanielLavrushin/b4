@@ -16,7 +16,7 @@ A set is watched while **Keep this set working with the watchdog** is on in its 
 
 A check fetches the set's Discovery addresses through b4, the way a device behind the router reaches them. A set is checked as soon as it is watched, then every **Check Interval**, and every **Failure Re-check Interval** after a failed check.
 
-An address that another set handles, or that an [escalation](./sets/escalation.md) currently sends to another set, is not counted: a strategy written into this set would not affect it. An address fails when it does not load, answers with an HTTP error such as 451 or 5xx, returns a block page or is cut off. A certificate error, a required client certificate or a private destination makes it **Unusable**: no strategy changes that, so it is never healed.
+An address that another set handles, or that an [escalation](./sets/escalation.md) currently sends to another set, is not counted: a strategy written into this set would not affect it. An address fails when it does not load, answers with an HTTP error such as 451 or 5xx, returns a block page or is cut off. A certificate error, a required client certificate, a private destination or a site without an address of an IP version b4 handles makes it **Unusable**: no strategy changes that, so it is never healed.
 
 ## Heals
 

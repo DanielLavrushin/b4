@@ -24,6 +24,7 @@ type pageSite struct {
 
 func pageHostsFixture(t *testing.T, sites ...pageSite) (*DiscoverySuite, *fakeHosts, *httptest.Server) {
 	t.Helper()
+	noResolver(t)
 	mux := http.NewServeMux()
 	for _, site := range sites {
 		html := site.html
@@ -553,13 +554,12 @@ func TestPageHostsNameTheHostARedirectLandsOn(t *testing.T) {
 	}))
 	defer target.Close()
 	_, port, _ := strings.Cut(strings.TrimPrefix(target.URL, "http://"), ":")
-	stubResolver(t, map[string]stubName{"moved.example.org": {a: "127.0.0.1"}})
-
 	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "http://moved.example.org:"+port+"/home", http.StatusFound)
 	}))
 	defer redirector.Close()
 	ds, _, _ := pageHostsFixture(t, pageSite{domain: "a.example.com", path: "/a", html: ""})
+	stubResolver(t, map[string]stubName{"moved.example.org": {a: "127.0.0.1"}})
 	ds.Domains[0].CheckURL = redirector.URL + "/a"
 	ds.winsWith("combo", true, "a.example.com")
 

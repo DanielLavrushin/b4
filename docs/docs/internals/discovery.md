@@ -87,9 +87,9 @@ An address serves the site when it completes a TLS handshake with the site's nam
 - the answer holds a private or reserved address;
 - [the first hop](#gateway-interception) in front of this host answers part of its addresses, but not all.
 
-For a site blocked by its name, the addresses accept connections, but none completes the handshake without a strategy, the reference's included. When none of the cases above applies to such an answer, the verdict waits for the end of the run, and the search runs with the DNS fix, as for a wrong answer. During **Confirming**, the first two addresses of the system answer are fetched through the strategy the result offers. It is built as the set would carry it, without the DNS fix, and each address gets up to two tries.
+For a site blocked by its name, the addresses accept connections, but none completes the handshake without a strategy, the reference's included. When none of the cases above applies to such an answer, the verdict waits for the end of the run, and the search runs with the DNS fix, as for a wrong answer. During **Confirming**, the first two addresses of the system answer are fetched through the strategy the result offers. It is built as the set would carry it, without the DNS fix, and it matches both addresses from the first packet of a connection. Each address gets up to two tries.
 
-- When every address loads the page, and the certificate of its first answer, before any redirect, is valid for the site, the answer is honest. The set gets no DNS fix, unless another site on the same card needs one. It does not pin the reference's addresses either, and [alternative addresses](#alternative-addresses) stay pinned. Other strategies keep the DNS fix they were tested with. These are the strategies under **N other strategies worked**, and a card under **Results per address** whose strategy differs from the verdict's.
+- When every address loads the page, and the certificate of its first answer, before any redirect, is valid for the site, the answer is honest. An error status such as 404 counts as loading when the search got the same status from addresses outside the system answer and no strategy loaded the site there with a success status. When the search loaded the site only from the system answer, the strategy under check must have got that status. The set gets no DNS fix, unless another site on the same card needs one. It does not pin the reference's addresses either, and [alternative addresses](#alternative-addresses) stay pinned. Other strategies keep the DNS fix they were tested with. These are the strategies under **N other strategies worked**, and a card under **Results per address** whose strategy differs from the verdict's.
 - When an address fails, the answer is wrong, and the set keeps the DNS fix.
 - When the check cannot run, the set keeps the DNS fix it was tested with. That is the case when the result changes no packets, when the site's link starts with `http://` and so shows no certificate, or when **Stop now** ended the run.
 
@@ -175,6 +175,8 @@ A fetch fails on:
 - a block page in the first 4 KB of an HTML answer;
 - a body that stops arriving for 2 seconds.
 
+A strategy part that acts on the first packet of a connection, which carries no name, such as a fake SYN, needs the host's address beforehand. Before the pass with the strategy, the hosts are looked up through the resolver their fetches use, with the set's DNS fix in effect, for the IP versions the probes use. Their addresses are used only for matching during that pass and never reach a set.
+
 With the strategy, HTTP 400 counts as a block too. Hosts are fetched over TCP and without ECH, whatever keys they publish.
 
 | Limit | Value |
@@ -235,12 +237,13 @@ First, the engine is asked which set it uses for each address's host name, from 
 | The certificate is verified against the system root certificates and those Entware installs under `/opt/etc/ssl` | A certificate error makes the address **Unusable**. A router with no root certificates skips the check. |
 | The server requires a client certificate | **Unusable**. |
 | A private or local destination, on any hop | **Unusable**. |
+| No address of an IP version the capture engine handles, on any hop | **Unusable**. |
 | More than 3 redirects, or a redirect to a known block page | Fails. |
 | HTTP 400, 451 and any 5xx | Fails. |
 | A block page in the first 4 KB, or fewer than 1 KB read | Fails. At most 100 KB is read. |
 | A body cut off before its end: less than 90% of the announced length without a closing `</html>`, or a read error | Fails. |
 
-IPv6 is used only while the capture engine handles it. **Check Timeout** limits the whole fetch. An **Unusable** address is never healed.
+Only the IP versions the running capture engine handles are used: IPv4 alone under the TUN engine or with **Enable IPv6 Support** off, IPv6 alone with **Enable IPv4 Support** off under NFQUEUE. **Check Timeout** limits the whole fetch. An **Unusable** address is never healed.
 
 ## How a heal runs
 
@@ -258,7 +261,7 @@ Settings pages and the set editor send the revision they loaded with every save.
 
 ### The older per-domain list
 
-An entry of the older list is checked on its own. After **Max Retries** failed checks, Discovery runs for the domain with the DNS check skipped. A confirmed result for a domain that needs a bypass goes into the first enabled set without routing whose domain list holds the domain or a parent of it. A GeoSite match does not count. Without such a set, a new set `watchdog-<domain>` is created at the top of the list. A matched parent gets the domain itself added, and the firewall rules are refreshed when the write changes the intercepted ports.
+An entry of the older list is checked on its own, over the same IP versions as a set's addresses. A site without an address of such a version starts no search. After **Max Retries** failed checks, Discovery runs for the domain with the DNS check skipped. A confirmed result for a domain that needs a bypass goes into the first enabled set without routing whose domain list holds the domain or a parent of it. A GeoSite match does not count. Without such a set, a new set `watchdog-<domain>` is created at the top of the list. A matched parent gets the domain itself added, and the firewall rules are refreshed when the write changes the intercepted ports.
 
 The run for a domain carries the DSCP value of the set that handles the domain at that moment. Domains whose sets carry another value get a run of their own right after it, if they still fail. A result goes into a set only when that set's traffic takes the path the probes took.
 

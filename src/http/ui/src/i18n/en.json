@@ -4344,7 +4344,7 @@
     "reason": {
       "not_owned": "From the router's view these addresses are handled by another set or by none, so a strategy written into this set does not affect them.",
       "escalated": "An escalation sends these addresses to another set, so a strategy written into this set does not affect them.",
-      "unusable": "These addresses cannot be healed: a certificate error, a required client certificate, or a private or local destination.",
+      "unusable": "These addresses cannot be healed: a certificate error, a required client certificate, a private or local destination, or a site without an address of an IP version b4 handles.",
       "current_works": "Tested alone, the current strategy of this set loads these addresses, yet the live check fails. Something outside the strategy is in the way: another set, DNS or IPv6. Nothing was changed.",
       "not_needed": "Tested alone, these addresses load without a bypass, yet the live check fails. Something outside the strategy is in the way: another set, DNS or IPv6. Nothing was changed.",
       "partial": "The search found a strategy for only some of the addresses, so nothing was written.",

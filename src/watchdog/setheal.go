@@ -408,6 +408,7 @@ func (w *Watchdog) verifySetURLs(id string, urls []string) (map[string]URLWatchS
 		tries = 1
 	}
 	timeout := time.Duration(wdCfg.TimeoutSec) * time.Second
+	network := cfg.HandledNetwork()
 	check := w.checkURL
 	if check == nil {
 		check = checkURLStrict
@@ -436,7 +437,7 @@ func (w *Watchdog) verifySetURLs(id string, urls []string) (map[string]URLWatchS
 			wg.Add(1)
 			go func(u *URLWatchStatus) {
 				defer wg.Done()
-				res := check(ctx, u.URL, cfg.Queue.IPv6Enabled, timeout)
+				res := check(ctx, u.URL, network, timeout)
 				u.Status, u.StatusCode, u.BytesRead, u.Speed, u.LastError = res.Status, res.StatusCode, res.BytesRead, res.Speed, res.Error
 			}(u)
 		}

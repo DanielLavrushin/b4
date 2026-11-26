@@ -34,6 +34,7 @@ func (e *ErrPrivateDestination) Error() string {
 
 type ProbeOptions struct {
 	Mark    uint
+	Network string
 	Timeout time.Duration
 }
 
@@ -82,8 +83,6 @@ func probe(ctx context.Context, host, target string, opt ProbeOptions, guard *di
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	dialer := guard.dialer(opt.Mark, timeout)
-
 	verify := true
 	if roots == nil {
 		roots, verify = netprobe.TLSRoots()
@@ -97,7 +96,7 @@ func probe(ctx context.Context, host, target string, opt ProbeOptions, guard *di
 		ForceAttemptHTTP2:     true,
 		ResponseHeaderTimeout: timeout,
 		IdleConnTimeout:       timeout,
-		DialContext:           dialer.DialContext,
+		DialContext:           guard.dialContext(opt.Mark, timeout, opt.Network),
 	}
 	defer transport.CloseIdleConnections()
 
@@ -130,6 +129,13 @@ func probe(ctx context.Context, host, target string, opt ProbeOptions, guard *di
 		}
 		if refused := guard.refusal(); refused != nil {
 			return CheckResult{}, &ErrPrivateDestination{Addr: refused.Addr, Host: hop}
+		}
+		var unhandled *ErrUnhandledFamily
+		if errors.As(err, &unhandled) {
+			if !strings.EqualFold(hop, host) {
+				unhandled.From = host
+			}
+			return CheckResult{}, unhandled
 		}
 		var urlErr *url.Error
 		if errors.As(err, &urlErr) {

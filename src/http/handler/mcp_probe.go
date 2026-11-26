@@ -67,7 +67,7 @@ const (
 )
 
 func probeDomain(ctx context.Context, cfg *config.Config, domain, mode string, timeout time.Duration) mcpProbeResult {
-	opts := watchdog.ProbeOptions{Timeout: timeout}
+	opts := watchdog.ProbeOptions{Network: cfg.HandledNetwork(), Timeout: timeout}
 	if mode == probeModeBaseline {
 		opts.Mark = cfg.MainInjectedMark()
 	}

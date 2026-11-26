@@ -36,6 +36,7 @@ func (ds *DiscoverySuite) recordResult(preset ConfigPreset, result CheckResult) 
 		Error:      result.Error,
 		StatusCode: result.StatusCode,
 		Set:        setForResult(result),
+		usedIP:     result.UsedIP,
 	}
 	domainResult.noteAddresses(result)
 
@@ -102,6 +103,7 @@ func (ds *DiscoverySuite) recordResultsMulti(preset ConfigPreset, results map[st
 			StatusCode: result.StatusCode,
 			Set:        setForResult(result),
 			cutShort:   result.cutShort,
+			usedIP:     result.UsedIP,
 		}
 		domainResult.noteAddresses(result)
 

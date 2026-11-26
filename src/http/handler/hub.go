@@ -811,7 +811,7 @@ func (api *API) stampHubOrigin(localID, hubID string, version int, hash string) 
 // @Param id path string true "Hub set id"
 // @Param body body HubTestRequest true "Domain to fetch"
 // @Success 200 {object} HubTestResponse
-// @Failure 400 {object} APIError "no_domain"
+// @Failure 400 {object} APIError "no_domain, not_fetched"
 // @Security BearerAuth
 // @Router /hub/sets/{id}/test [post]
 func (api *API) handleHubTest(w http.ResponseWriter, r *http.Request) {
@@ -847,6 +847,10 @@ func (api *API) handleHubTest(w http.ResponseWriter, r *http.Request) {
 	cfg := api.getCfg()
 	log.Infof("Hub: probing %s for set %s", domain, res.Set.ID)
 	through, bypassed := probeDomainBothWays(r.Context(), cfg, domain, mcpProbeTimeout(0))
+	if mcpProbeUnfetched(&through) {
+		writeAPIError(w, &APIError{Status: http.StatusBadRequest, Code: "not_fetched", Message: through.Error})
+		return
+	}
 	sendResponse(w, HubTestResponse{Domain: domain, ThroughB4: hubProbeResultOf(through), Bypassed: hubProbeResultOf(bypassed)})
 }
 

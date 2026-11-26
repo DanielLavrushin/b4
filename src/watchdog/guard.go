@@ -1,6 +1,9 @@
 package watchdog
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"net"
 	"net/netip"
 	"sync"
@@ -10,6 +13,24 @@ import (
 	"github.com/daniellavrushin/b4/utils"
 	"golang.org/x/sys/unix"
 )
+
+type ErrUnhandledFamily struct {
+	Host   string
+	Family string
+	From   string
+}
+
+func (e *ErrUnhandledFamily) Error() string {
+	why := "IPv6 support is off, or the TUN engine is running"
+	if e.Family == "IPv4" {
+		why = "IPv4 support is off"
+	}
+	msg := fmt.Sprintf("%s has only %s addresses, and b4 applies no strategy to %s now (%s)", e.Host, e.Family, e.Family, why)
+	if e.From != "" {
+		msg += ", reached by a redirect from " + e.From
+	}
+	return msg
+}
 
 type dialGuard struct {
 	mu         sync.Mutex
@@ -62,6 +83,50 @@ func (g *dialGuard) dialer(mark uint, timeout time.Duration) *net.Dialer {
 			return ctrlErr
 		},
 	}
+}
+
+func (g *dialGuard) dialContext(mark uint, timeout time.Duration, network string) func(context.Context, string, string) (net.Conn, error) {
+	dialer := g.dialer(mark, timeout)
+	if network == "" {
+		return dialer.DialContext
+	}
+	return func(ctx context.Context, _, address string) (net.Conn, error) {
+		conn, err := dialer.DialContext(ctx, network, address)
+		if err == nil {
+			return conn, nil
+		}
+		if unhandled := g.otherFamilyOnly(ctx, network, address, err, timeout/2); unhandled != nil {
+			return nil, unhandled
+		}
+		return nil, err
+	}
+}
+
+func (g *dialGuard) otherFamilyOnly(ctx context.Context, network, address string, err error, budget time.Duration) *ErrUnhandledFamily {
+	var dnsErr *net.DNSError
+	var addrErr *net.AddrError
+	noAddress := errors.As(err, &dnsErr) && dnsErr.IsNotFound || errors.As(err, &addrErr)
+	host, _, splitErr := net.SplitHostPort(address)
+	if !noAddress || splitErr != nil {
+		return nil
+	}
+	other, family := "ip6", "IPv6"
+	if network == "tcp6" {
+		other, family = "ip4", "IPv4"
+	}
+	lookupCtx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+	addrs, lookupErr := net.DefaultResolver.LookupNetIP(lookupCtx, other, host)
+	if lookupErr != nil || len(addrs) == 0 {
+		return nil
+	}
+	for _, addr := range addrs {
+		if !g.isReserved(addr.Unmap()) {
+			return &ErrUnhandledFamily{Host: host, Family: family}
+		}
+	}
+	g.refuse(&ErrPrivateDestination{Addr: addrs[0].Unmap().String()})
+	return nil
 }
 
 func (g *dialGuard) reservedLiteral(host string) *ErrPrivateDestination {

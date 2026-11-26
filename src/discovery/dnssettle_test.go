@@ -621,8 +621,11 @@ func settleServer(t *testing.T) (port string, roots *x509.CertPool) {
 	t.Helper()
 	page := "<html><body>" + strings.Repeat("x", 2048) + "</body></html>"
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/gone" {
+		switch r.URL.Path {
+		case "/gone":
 			w.WriteHeader(http.StatusNotFound)
+		case "/denied":
+			w.WriteHeader(http.StatusForbidden)
 		}
 		_, _ = w.Write([]byte(page))
 	}))
@@ -682,7 +685,7 @@ func TestSystemAddressesMustLoadThePageWithTheSitesCertificate(t *testing.T) {
 		t.Error("every tried address must serve the site, a refused one fails the check")
 	}
 	if check("example.com", "/gone", "127.0.0.1") {
-		t.Error("a 404 is not the site loading")
+		t.Error("a 404 the search never got from the site is not the site loading")
 	}
 
 	trustSettleRoots(t, x509.NewCertPool(), true)
@@ -696,6 +699,110 @@ func TestSystemAddressesMustLoadThePageWithTheSitesCertificate(t *testing.T) {
 	}
 	if check("other.example", "/", "127.0.0.1") {
 		t.Error("a certificate for another name is not the site's")
+	}
+}
+
+func TestAnErrorStatusIsTheSitesOwnOnlyWhenTheSearchGotIt(t *testing.T) {
+	port, roots := settleServer(t)
+	trustSettleRoots(t, roots, true)
+	const system, reference = "127.0.0.1", "198.51.100.7"
+	type found struct {
+		preset, ip string
+		status     int
+		failed     bool
+	}
+
+	for _, tc := range []struct {
+		name   string
+		domain string
+		path   string
+		found  []found
+		want   bool
+	}{
+		{"the reference addresses answer 404 too", "example.com", "/gone", []found{{preset: "tcp", ip: reference, status: 404}}, true},
+		{"the reference addresses answer 200", "example.com", "/gone", []found{{preset: "tcp", ip: reference, status: 200}}, false},
+		{"the reference addresses answer another error", "example.com", "/denied", []found{{preset: "tcp", ip: reference, status: 404}}, false},
+		{"the reference addresses answer 404, the system addresses load", "example.com", "/", []found{{preset: "tcp", ip: reference, status: 404}}, true},
+		{"the certificate is for another name", "other.example", "/gone", []found{{preset: "tcp", ip: reference, status: 404}}, false},
+		{"only another strategy got the 404", "example.com", "/gone", []found{{preset: "tcp", ip: reference, status: 200}, {preset: "combo", ip: reference, status: 404}}, false},
+		{"one other strategy got 429 from the reference", "example.com", "/gone", []found{{preset: "tcp", ip: reference, status: 404}, {preset: "combo", ip: reference, status: 429}}, true},
+		{"the reference answered only another error", "example.com", "/gone", []found{{preset: "tcp", ip: reference, status: 429}, {preset: "combo", ip: reference, status: 403}}, false},
+		{"another strategy got 200 from the system address, the reference answered 404", "example.com", "/gone", []found{{preset: "tcp", ip: reference, status: 404}, {preset: "combo", ip: system, status: 200}}, true},
+		{"another strategy loaded the reference addresses with 200", "example.com", "/gone", []found{{preset: "tcp", ip: reference, status: 404}, {preset: "combo", ip: reference, status: 200}}, false},
+		{"the winner loaded from the system address, the reference answered 404 and 200", "example.com", "/gone", []found{{preset: "tcp", ip: system, status: 404}, {preset: "combo", ip: reference, status: 404}, {preset: "tcp2", ip: reference, status: 200}}, false},
+		{"the winner's name was looked up at the fetch", "example.com", "/gone", []found{{preset: "tcp", status: 404}}, true},
+		{"the winner loaded from the system address, the others from the reference with 200", "example.com", "/gone", []found{{preset: "tcp", ip: system, status: 404}, {preset: "combo", ip: reference, status: 200}}, false},
+		{"the winner loaded from the system address, the others from the reference with 404", "example.com", "/gone", []found{{preset: "tcp", ip: system, status: 404}, {preset: "combo", ip: reference, status: 404}}, true},
+		{"the winner loaded from the system address, the reference answered 200 in a result that failed", "example.com", "/gone", []found{{preset: "tcp", ip: system, status: 404}, {preset: "combo", ip: reference, status: 200, failed: true}}, true},
+		{"no reference address ever loaded", "example.com", "/gone", []found{{preset: "tcp", ip: system, status: 404}}, true},
+		{"the winner failed", "example.com", "/gone", []found{{preset: "tcp", ip: reference, status: 404, failed: true}}, false},
+		{"the winner is not recorded", "example.com", "/gone", nil, false},
+	} {
+		ds := liveSettleSuite(t, tc.domain, "https://"+net.JoinHostPort(tc.domain, port)+tc.path)
+		ds.candidate(tc.domain, func(r *DNSDiscoveryResult) { r.systemIPs = []string{system} })
+		for _, f := range tc.found {
+			ds.found(tc.domain, f.preset, 1000)
+			r := ds.domainResults[tc.domain].Results[f.preset]
+			r.StatusCode, r.usedIP = f.status, f.ip
+			if f.failed {
+				r.Status = CheckStatusFailed
+			}
+		}
+
+		served, completed := ds.checkSystemAddresses("tcp", strategySet("tcp"), ds.Domains, map[string][]string{tc.domain: {system}})
+
+		if !completed || served[tc.domain] != tc.want {
+			t.Errorf("%s: served=%v completed=%v, want served=%v", tc.name, served[tc.domain], completed, tc.want)
+		}
+	}
+}
+
+func TestAResultKeepsTheAddressItLoadedFrom(t *testing.T) {
+	ds := settleSuite(t, settleDomain)
+	ds.Domain = settleDomain
+	result := func(ip string) CheckResult {
+		return CheckResult{Domain: settleDomain, Status: CheckStatusComplete, StatusCode: http.StatusNotFound, UsedIP: ip, Set: strategySet("tcp")}
+	}
+	ds.recordResult(ConfigPreset{Name: "single"}, result(settleSystem[0]))
+	ds.recordResultsMulti(ConfigPreset{Name: "multi"}, map[string]CheckResult{settleDomain: result(settleReference[0])})
+
+	results := ds.domainResults[settleDomain].Results
+	if results["single"].usedIP != settleSystem[0] || results["multi"].usedIP != settleReference[0] {
+		t.Errorf("the settle tells a status seen on the addresses under test from one seen elsewhere by the address of each result, got %q and %q", results["single"].usedIP, results["multi"].usedIP)
+	}
+}
+
+func TestACheckURLThatAnswers404EverywhereNeedsNoDNSFix(t *testing.T) {
+	port, roots := settleServer(t)
+	trustSettleRoots(t, roots, true)
+	const domain = "example.com"
+	ds := liveSettleSuite(t, domain, "https://"+net.JoinHostPort(domain, port)+"/gone")
+	r := ds.candidate(domain, func(r *DNSDiscoveryResult) {
+		r.BestDoHURL = ""
+		r.AlternativeIPs = append([]string(nil), settleReference...)
+		r.referencePinned = true
+	})
+	ds.put(domain, presetNoBypass, CheckStatusFailed, PhaseBaseline, 0)
+	set := strategySet("tcp")
+	set.DNS = config.DNSConfig{Enabled: true, DoHURL: settleDoH}
+	ds.recordResultsMulti(ConfigPreset{Name: "cached-1-tcp", Phase: PhaseCached}, map[string]CheckResult{domain: {
+		Domain: domain, Status: CheckStatusComplete, StatusCode: http.StatusNotFound, Speed: 1000, UsedIP: settleReference[0], Set: set,
+	}})
+	ds.determineBest()
+	ds.dnsSettleFn = func(name string, stored *config.SetConfig, inputs []DomainInput, addrs map[string][]string) (map[string]bool, bool) {
+		if !reflect.DeepEqual(addrs[domain], settleSystem) {
+			t.Errorf("the settle tries the system addresses, got %v", addrs)
+		}
+		return ds.checkSystemAddresses(name, stored, inputs, map[string][]string{domain: {"127.0.0.1"}})
+	}
+
+	ds.settleUnverifiedDNS("")
+
+	if r.IsPoisoned || !r.SystemServesWithStrategy || len(r.AlternativeIPs) != 0 {
+		t.Fatalf("the search counted the 404 as the site loading, so a system address with the site's certificate that answers 404 serves it: %+v", r)
+	}
+	if offered := groupSetFor(t, ds, domain); offered.DNS.Enabled || len(offered.DNS.Pins) != 0 {
+		t.Errorf("the offered set carries no DNS fix and no pin: %+v", offered.DNS)
 	}
 }
 
@@ -740,9 +847,12 @@ func TestTheSettleCheckRunsInTheShapeItWouldDeploy(t *testing.T) {
 	stored := strategySet("tcp")
 	stored.DNS = config.DNSConfig{Enabled: true, DoHURL: settleDoH, StripECH: true}
 
-	built := ds.settleConfig(stored, []string{settleDomain})
+	built := ds.settleConfig(stored, []string{settleDomain}, map[string][]string{settleDomain: settleSystem})
 
 	set := built.Sets[0]
+	if want := asCIDRs(settleSystem); !reflect.DeepEqual(set.Targets.IpsToMatch, want) || len(set.Targets.IPs) != 0 {
+		t.Errorf("the addresses it tries are matched from the first SYN, as a DNS answer or an earlier ClientHello makes the deployed set match them, and listed nowhere: match %v, listed %v", set.Targets.IpsToMatch, set.Targets.IPs)
+	}
 	if set.DNS.Enabled || set.DNS.DoHURL != "" || len(set.DNS.Pins) != 0 || !set.DNS.StripECH {
 		t.Errorf("the check runs without the DNS fix and the pins, keeping the ECH strip: %+v", set.DNS)
 	}
