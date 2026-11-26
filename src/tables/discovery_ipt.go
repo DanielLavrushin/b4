@@ -152,7 +152,7 @@ func discoveryIptStamp(bin, flow, injected string, stamp *discoveryStamp) error 
 				[]string{"-m", "mark", "--mark", mark, "-j", "DSCP", "--set-dscp", strconv.Itoa(value)})
 			if out, err := run(spec...); err != nil {
 				kmodNoteRejected("xt_DSCP", bin, out)
-				return fmt.Errorf("%s rejected the rule that writes DSCP %d into Discovery's probes (%s). %s", bin, value, iptErrText(out, err), kmodMissingHint([]string{"xt_DSCP"}))
+				return fmt.Errorf("%s rejected the rule that writes DSCP %d into Discovery's probes (%s). %s", bin, value, iptErrText(out, err), kmodHintAfterRejection([]string{"xt_DSCP"}))
 			}
 		}
 	}

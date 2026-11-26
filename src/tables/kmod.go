@@ -464,18 +464,25 @@ func KernelModulePackages(missing []string) []string {
 }
 
 func KernelModuleReasons(missing []string) []string {
+	return kmodReasons(missing, true)
+}
+
+func kmodReasons(missing []string, withRejection bool) []string {
 	reasons := make([]string, 0, len(missing))
 	for _, m := range missing {
 		key := kmodCanonical(m)
 		kmodStateMu.Lock()
 		loadErr, rejected := kmodLoadErrs[key], kmodRejected[key]
 		kmodStateMu.Unlock()
+		present := rejected != "" && kmodStateOf(m) == kmodStatePresent
 		switch {
-		case rejected != "" && kmodStateOf(m) == kmodStatePresent:
+		case present && withRejection:
 			reasons = append(reasons, m+": the kernel module is present, but "+rejected)
-		case rejected != "" && loadErr != "":
+		case present:
+			reasons = append(reasons, m+": the kernel module is present")
+		case rejected != "" && withRejection && loadErr != "":
 			reasons = append(reasons, m+": "+rejected+"; "+loadErr)
-		case rejected != "":
+		case rejected != "" && withRejection:
 			reasons = append(reasons, m+": "+rejected)
 		case loadErr != "":
 			reasons = append(reasons, m+": "+loadErr)
@@ -485,13 +492,21 @@ func KernelModuleReasons(missing []string) []string {
 }
 
 func kmodMissingHint(missing []string) string {
+	return kmodHint(missing, true)
+}
+
+func kmodHintAfterRejection(missing []string) string {
+	return kmodHint(missing, false)
+}
+
+func kmodHint(missing []string, withRejection bool) string {
 	var parts []string
 	if pkgs := kmodPkgsFor(missing); len(pkgs) > 0 {
 		parts = append(parts, "Package(s) that may provide it: "+strings.Join(pkgs, " "))
 	} else if len(missing) > 0 && dnsKernelFacts().KeeneticOS {
 		parts = append(parts, kmodKeeneticHint)
 	}
-	parts = append(parts, KernelModuleReasons(missing)...)
+	parts = append(parts, kmodReasons(missing, withRejection)...)
 	if len(parts) == 0 {
 		return "The running kernel offers no such module"
 	}
