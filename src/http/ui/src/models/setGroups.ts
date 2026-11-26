@@ -45,7 +45,6 @@ export interface DropResult {
 
 const GROUP_BLOCK_PREFIX = "group:";
 const LEAN_REACH = 0.15;
-const SET_ROOT_KEYS = ["name", "tcp", "udp", "targets", "fragmentation", "faking"];
 
 const groupOf = (set: GroupedSet | undefined): string => set?.group ?? "";
 
@@ -204,7 +203,7 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const looksLikeSet = (value: unknown): value is Record<string, unknown> =>
-  isObject(value) && SET_ROOT_KEYS.some((key) => key in value);
+  isObject(value) && typeof value.name === "string" && value.name.trim() !== "";
 
 function severalJsonValues(text: string): unknown[] | null {
   const values: unknown[] = [];

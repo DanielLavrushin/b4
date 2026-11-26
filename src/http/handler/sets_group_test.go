@@ -180,6 +180,8 @@ func TestImportSetsRefusesBadDocumentsWithoutWriting(t *testing.T) {
 		"not a set":   `{"group":"yt","sets":[{"name":"ok"},"text"]}`,
 		"not json":    `{"group":`,
 		"wrong shape": `{"group":"yt","sets":{"name":"x"}}`,
+		"no name":     `{"sets":[{"name":"ok"},{"targets":{"sni_domains":["a.example.org"]}}]}`,
+		"blank name":  `{"sets":[{"name":"  ","tcp":{}}]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			api, mux := asnAPI(t, groupedSet("a", ""))

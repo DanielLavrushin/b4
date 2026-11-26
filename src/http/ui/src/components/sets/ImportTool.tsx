@@ -217,6 +217,7 @@ export function ImportToolDialog({
         doc.sets = [
           {
             ...opened.set,
+            name: opened.set.name || parsed.envelope.title,
             hub: mergeHubLink(undefined, opened.set.hub, true).hub,
           },
         ];

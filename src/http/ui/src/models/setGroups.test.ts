@@ -163,8 +163,8 @@ void test("pasted text is recognised as sets, a group, a shared set or a command
     kind: "command",
   });
   assert.deepEqual(
-    parseSetsImport('{"group":" yt ","sets":[{"name":"a"},{"tcp":{}}]}'),
-    { kind: "sets", group: "yt", sets: [{ name: "a" }, { tcp: {} }] },
+    parseSetsImport('{"group":" yt ","sets":[{"name":"a"},{"name":"b","tcp":{}}]}'),
+    { kind: "sets", group: "yt", sets: [{ name: "a" }, { name: "b", tcp: {} }] },
   );
   assert.deepEqual(parseSetsImport('{"name":"a","targets":{}}'), {
     kind: "sets",
@@ -177,11 +177,11 @@ void test("pasted text is recognised as sets, a group, a shared set or a command
     sets: [{ name: "a" }, { name: "b" }],
   });
   assert.deepEqual(
-    parseSetsImport('{"name":"a } \\" {"}\n\n{"name":"b"}, {"udp":{}}'),
+    parseSetsImport('{"name":"a } \\" {"}\n\n{"name":"b"}, {"name":"c","udp":{}}'),
     {
       kind: "sets",
       group: "",
-      sets: [{ name: 'a } " {' }, { name: "b" }, { udp: {} }],
+      sets: [{ name: 'a } " {' }, { name: "b" }, { name: "c", udp: {} }],
     },
   );
   const envelope = { format: 1, set: { name: "a" }, fingerprint: "x" };
@@ -203,6 +203,9 @@ void test("pasted text is recognised as sets, a group, a shared set or a command
     '{"sets":[{"name":"a"},"b"]}',
     '{"hello":1}',
     '{"name":"a"} {"hello":1}',
+    '[{"name":"a"},{"targets":{"sni_domains":["a.example.org"]}}]',
+    '{"name":"  ","tcp":{}}',
+    '{"name":7,"tcp":{}}',
     "42",
   ]) {
     assert.deepEqual(

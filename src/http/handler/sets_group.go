@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
@@ -145,6 +146,10 @@ func (api *API) handleImportSets(w http.ResponseWriter, r *http.Request) {
 		set := config.NewSetConfig()
 		if err := json.Unmarshal(raw, &set); err != nil {
 			writeAPIError(w, ErrBadRequest(fmt.Sprintf("Set %d is not a valid set: %v", i+1, err)))
+			return
+		}
+		if strings.TrimSpace(set.Name) == "" {
+			writeAPIError(w, ErrBadRequest(fmt.Sprintf("Set %d has no name", i+1)))
 			return
 		}
 		set.Id = uuid.New().String()
