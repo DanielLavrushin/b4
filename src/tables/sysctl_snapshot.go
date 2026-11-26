@@ -567,7 +567,7 @@ func takeOverEarlierSnapshots(cur *sysctlSnapDir, name string, m map[string]stri
 			if sysctlSnapFirstWarning("origin " + path) {
 				log.Warnf("TABLES: ignoring the saved conntrack settings in %s: %v", path, err)
 			}
-			found = append(found, sysctlSnapFound{dir: o.dir, name: o.name, id: *id, refused: errors.As(err, new(sysctlSnapRefusal))})
+			found = append(found, sysctlSnapFound{dir: o.dir, name: o.name, id: *id, refused: true})
 			continue
 		case errors.Is(err, fs.ErrNotExist):
 			continue
