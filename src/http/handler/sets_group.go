@@ -153,6 +153,7 @@ func (api *API) handleImportSets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	geoBefore := api.getCfg().System.Geo
 	created := make([]*config.SetConfig, 0, len(doc.Sets))
 	for i, raw := range doc.Sets {
 		set := config.NewSetConfig()
@@ -176,6 +177,7 @@ func (api *API) handleImportSets(w http.ResponseWriter, r *http.Request) {
 			group = config.UniqueSetGroup(group, next.Sets)
 		}
 		for _, set := range created {
+			api.reloadTargetsIfGeoMoved(set, geoBefore, next)
 			set.Group = group
 		}
 		uniqueSetNames(created, next.Sets)
