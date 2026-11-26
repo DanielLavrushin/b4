@@ -34,6 +34,7 @@ func (e *ErrPrivateDestination) Error() string {
 
 type ProbeOptions struct {
 	Mark    uint
+	Network string
 	Timeout time.Duration
 }
 
@@ -51,14 +52,37 @@ func IsReservedHost(host string) bool {
 	return false
 }
 
+type HostProblem string
+
+const (
+	HostMissing  HostProblem = "missing"
+	HostNotBare  HostProblem = "not_bare"
+	HostNotASCII HostProblem = "not_ascii"
+)
+
+type ErrUnprobeableHost struct {
+	Host    string
+	Problem HostProblem
+}
+
+func (e *ErrUnprobeableHost) Error() string {
+	switch e.Problem {
+	case HostNotBare:
+		return fmt.Sprintf("%q is not a bare hostname: pass a domain such as example.com", e.Host)
+	case HostNotASCII:
+		return fmt.Sprintf("%q is not written in ASCII: pass its punycode form, the xn-- spelling that DNS uses", e.Host)
+	}
+	return "no hostname to probe"
+}
+
 func ValidateProbeHost(host string) error {
 	switch {
 	case host == "":
-		return fmt.Errorf("no hostname to probe")
+		return &ErrUnprobeableHost{Problem: HostMissing}
 	case strings.ContainsAny(host, "/?#@ \t"):
-		return fmt.Errorf("%q is not a bare hostname: pass a domain such as example.com", host)
+		return &ErrUnprobeableHost{Host: host, Problem: HostNotBare}
 	case strings.IndexFunc(host, func(r rune) bool { return r > unicode.MaxASCII }) >= 0:
-		return fmt.Errorf("%q is not written in ASCII: pass its punycode form, the xn-- spelling that DNS uses", host)
+		return &ErrUnprobeableHost{Host: host, Problem: HostNotASCII}
 	}
 	return nil
 }
@@ -82,8 +106,6 @@ func probe(ctx context.Context, host, target string, opt ProbeOptions, guard *di
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	dialer := guard.dialer(opt.Mark, timeout)
-
 	verify := true
 	if roots == nil {
 		roots, verify = netprobe.TLSRoots()
@@ -97,7 +119,7 @@ func probe(ctx context.Context, host, target string, opt ProbeOptions, guard *di
 		ForceAttemptHTTP2:     true,
 		ResponseHeaderTimeout: timeout,
 		IdleConnTimeout:       timeout,
-		DialContext:           dialer.DialContext,
+		DialContext:           guard.dialContext(opt.Mark, timeout, opt.Network),
 	}
 	defer transport.CloseIdleConnections()
 
@@ -130,6 +152,13 @@ func probe(ctx context.Context, host, target string, opt ProbeOptions, guard *di
 		}
 		if refused := guard.refusal(); refused != nil {
 			return CheckResult{}, &ErrPrivateDestination{Addr: refused.Addr, Host: hop}
+		}
+		var unhandled *ErrUnhandledFamily
+		if errors.As(err, &unhandled) {
+			if !strings.EqualFold(hop, host) {
+				unhandled.From = host
+			}
+			return CheckResult{}, unhandled
 		}
 		var urlErr *url.Error
 		if errors.As(err, &urlErr) {

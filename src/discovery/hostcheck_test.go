@@ -94,8 +94,23 @@ var (
 	passedProbe      = hostProbe{ok: true, bytes: hostReadCap}
 )
 
+func noResolver(t *testing.T) {
+	t.Helper()
+	orig := probeResolver
+	probeResolver = func(int, time.Duration) *net.Resolver {
+		return &net.Resolver{
+			PreferGo: true,
+			Dial: func(context.Context, string, string) (net.Conn, error) {
+				return nil, errors.New("this test has no resolver")
+			},
+		}
+	}
+	t.Cleanup(func() { probeResolver = orig })
+}
+
 func hostRunFixture(t *testing.T, domains ...string) (*DiscoverySuite, *fakeHosts) {
 	t.Helper()
+	noResolver(t)
 	inputs := make([]DomainInput, 0, len(domains))
 	results := map[string]*DomainDiscoveryResult{}
 	for _, d := range domains {

@@ -27,6 +27,10 @@ All notable changes to b4 are recorded in this file.
 - A set matched by address whose **TLS Version Filter** did not fit a TCP connection left its start alone but handled the rest of it. [#676](https://github.com/DanielLavrushin/b4/issues/676)
 - For up to two minutes after sets were moved or edited, the start of connections to addresses a device had just resolved could still go to the old set. [#677](https://github.com/DanielLavrushin/b4/issues/677)
 - The help for **QUIC Matching** and **TLS Version Filter** read as if they could keep a set away from QUIC to its own IP targets, and **Order of sets** left out that a domain match comes before an address match. [#678](https://github.com/DanielLavrushin/b4/issues/678)
+- **Discovery** kept a DNS fix in the set it offers for a site whose link answers with an error such as 404, although the system resolver gives an address that serves the site. [#623](https://github.com/DanielLavrushin/b4/issues/623)
+- With **Enable IPv6 Support** off or under the TUN engine, the **Watchdog**, **MCP** and **Test** on the **Community** page could fetch a site over IPv6, which b4 does not handle then, and report on it whatever b4 did. [#631](https://github.com/DanielLavrushin/b4/issues/631)
+- **Page hosts** in **Discovery** could call a host blocked even with the strategy when the strategy acts on the first packet of a connection, such as a fake SYN, because b4 did not know the address of the host yet. [#642](https://github.com/DanielLavrushin/b4/issues/642)
+- In the Russian interface, **Test** on the **Community** page showed its errors and the status of each fetch in English.
 - **System Info** could show NFQUEUE as failed without testing it, show the firewall backend as `none` in TUN mode and list NFQUEUE modules there with packages to install, call built-in kernel modules missing in a container, and leave out why iptables refused NFQUEUE. [#531](https://github.com/DanielLavrushin/b4/issues/531)
 
 ### Security

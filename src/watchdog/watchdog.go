@@ -70,8 +70,8 @@ type Watchdog struct {
 	healWG           sync.WaitGroup
 
 	now         func() time.Time
-	checkURL    func(ctx context.Context, rawURL string, ipv6Enabled bool, timeout time.Duration) URLCheck
-	checkLegacy func(ctx context.Context, domains []string, mark uint, timeout time.Duration) map[string]CheckResult
+	checkURL    func(ctx context.Context, rawURL, network string, timeout time.Duration) URLCheck
+	checkLegacy func(ctx context.Context, domains []string, network string, mark uint, timeout time.Duration) map[string]CheckResult
 	pollEvery   time.Duration
 	verifyDelay time.Duration
 	idleWait    time.Duration
@@ -311,7 +311,7 @@ func (w *Watchdog) tickLegacy(cfg *config.Config, watchers map[string]setRef) {
 		check = checkAllConcurrently
 	}
 	ctx, cancel := w.stopContext()
-	results := check(ctx, domainsToCheck, mark, timeout)
+	results := check(ctx, domainsToCheck, cfg.HandledNetwork(), mark, timeout)
 	cancel()
 	if w.stopping() {
 		return
@@ -825,6 +825,7 @@ func (w *Watchdog) verifyApplied(domains []string, wdCfg config.WatchdogConfig) 
 		tries = 1
 	}
 	mark := markThroughEngine
+	network := w.cfgPtr.Load().HandledNetwork()
 	timeout := time.Duration(wdCfg.TimeoutSec) * time.Second
 
 	check := w.checkLegacy
@@ -840,7 +841,7 @@ func (w *Watchdog) verifyApplied(domains []string, wdCfg config.WatchdogConfig) 
 			return verified, true
 		}
 
-		results := check(ctx, pending, mark, timeout)
+		results := check(ctx, pending, network, mark, timeout)
 		if w.stopping() {
 			return verified, true
 		}

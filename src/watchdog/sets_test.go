@@ -146,10 +146,11 @@ func (d *fakeDriver) Cancel(string) {
 }
 
 type fakeChecker struct {
-	mu      sync.Mutex
-	results map[string]URLCheck
-	calls   map[string]int
-	onCheck func(url string)
+	mu       sync.Mutex
+	results  map[string]URLCheck
+	calls    map[string]int
+	networks []string
+	onCheck  func(url string)
 }
 
 func (c *fakeChecker) set(url string, res URLCheck) {
@@ -158,15 +159,24 @@ func (c *fakeChecker) set(url string, res URLCheck) {
 	c.mu.Unlock()
 }
 
+func (c *fakeChecker) takeNetworks() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	taken := c.networks
+	c.networks = nil
+	return taken
+}
+
 func (c *fakeChecker) callsFor(url string) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.calls[url]
 }
 
-func (c *fakeChecker) check(_ context.Context, url string, _ bool, _ time.Duration) URLCheck {
+func (c *fakeChecker) check(_ context.Context, url, network string, _ time.Duration) URLCheck {
 	c.mu.Lock()
 	c.calls[url]++
+	c.networks = append(c.networks, network)
 	res, ok := c.results[url]
 	hook := c.onCheck
 	c.mu.Unlock()
@@ -311,10 +321,10 @@ func newHarness(t *testing.T, sets ...*config.SetConfig) *harness {
 	h.w.SetEngine(h.engine)
 	h.w.disc = h.driver
 	h.w.checkURL = h.check.check
-	h.w.checkLegacy = func(ctx context.Context, domains []string, _ uint, _ time.Duration) map[string]CheckResult {
+	h.w.checkLegacy = func(ctx context.Context, domains []string, network string, _ uint, _ time.Duration) map[string]CheckResult {
 		out := map[string]CheckResult{}
 		for _, d := range domains {
-			res := h.check.check(ctx, d, false, 0)
+			res := h.check.check(ctx, d, network, 0)
 			out[d] = CheckResult{OK: res.Status == URLStatusOK, Error: res.Error}
 		}
 		return out
@@ -977,7 +987,7 @@ func TestEditingAQueuedSetDropsItsHeal(t *testing.T) {
 }
 
 func TestLegacyCheckRefusesPrivateDestinations(t *testing.T) {
-	res := checkDomain(context.Background(), "http://127.0.0.1:9/", markThroughEngine, 2*time.Second)
+	res := checkDomain(context.Background(), "http://127.0.0.1:9/", "", markThroughEngine, 2*time.Second)
 	if !res.Unusable || res.OK {
 		t.Fatalf("a private destination is unusable, never a failure to heal: %+v", res)
 	}
@@ -989,7 +999,7 @@ func TestLegacyUnusableGoesStraightToCooldown(t *testing.T) {
 	next.System.Checker.Watchdog.Domains = []string{"lan.example"}
 	next.System.Checker.Watchdog.MaxRetries = 1
 	h.ptr.Store(next)
-	h.w.checkLegacy = func(_ context.Context, domains []string, _ uint, _ time.Duration) map[string]CheckResult {
+	h.w.checkLegacy = func(_ context.Context, domains []string, _ string, _ uint, _ time.Duration) map[string]CheckResult {
 		out := map[string]CheckResult{}
 		for _, d := range domains {
 			out[d] = CheckResult{Error: "10.0.0.7 is a private or local address", Unusable: true}

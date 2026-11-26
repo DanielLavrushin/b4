@@ -11,7 +11,7 @@ import (
 	"github.com/daniellavrushin/b4/log"
 )
 
-const carrierSeedLookups = 8
+const seedLookups = 8
 
 func (ds *DiscoverySuite) seedCarrierAddresses() {
 	if !ds.carrier || ds.interrupted() {
@@ -32,22 +32,7 @@ func (ds *DiscoverySuite) seedCarrierAddresses() {
 	defer stop()
 	ctx, cancel := context.WithTimeout(runCtx, nameCheckTimeout)
 	defer cancel()
-	resolver := probeResolver(int(ds.flowMark), nameCheckTimeout)
-
-	seeds := make([][]string, len(pending))
-	reasons := make([]string, len(pending))
-	slots := make(chan struct{}, carrierSeedLookups)
-	var wg sync.WaitGroup
-	for i, domain := range pending {
-		wg.Add(1)
-		go func(i int, domain string) {
-			defer wg.Done()
-			slots <- struct{}{}
-			defer func() { <-slots }()
-			seeds[i], reasons[i] = lookupCarrierSeeds(ctx, resolver, domain)
-		}(i, domain)
-	}
-	wg.Wait()
+	seeds, reasons := ds.lookupSeeds(ctx, "ip4", pending)
 	if ds.interrupted() {
 		return
 	}
@@ -72,26 +57,48 @@ func (ds *DiscoverySuite) seedCarrierAddresses() {
 	}
 }
 
-func lookupCarrierSeeds(ctx context.Context, resolver *net.Resolver, domain string) ([]string, string) {
-	addrs, err := resolver.LookupNetIP(ctx, "ip4", domain)
+func (ds *DiscoverySuite) lookupSeeds(ctx context.Context, network string, names []string) ([][]string, []string) {
+	resolver := probeResolver(int(ds.flowMark), nameCheckTimeout)
+	seeds := make([][]string, len(names))
+	reasons := make([]string, len(names))
+	slots := make(chan struct{}, seedLookups)
+	var wg sync.WaitGroup
+	for i, name := range names {
+		wg.Add(1)
+		go func(i int, name string) {
+			defer wg.Done()
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			seeds[i], reasons[i] = lookupSeed(ctx, resolver, network, name)
+		}(i, name)
+	}
+	wg.Wait()
+	return seeds, reasons
+}
+
+func lookupSeed(ctx context.Context, resolver *net.Resolver, network, name string) ([]string, string) {
+	addrs, err := resolver.LookupNetIP(ctx, network, name)
 	if err != nil {
-		return nil, carrierLookupReason(err)
+		return nil, seedLookupReason(err)
 	}
 	var ips []string
 	for _, addr := range addrs {
 		addr = addr.Unmap()
-		if !addr.Is4() || refusedProbeIP(addr.String()) {
+		if (network == "ip4" && !addr.Is4()) || (network == "ip6" && addr.Is4()) || refusedProbeIP(addr.String()) {
 			continue
 		}
 		ips = appendUnique(ips, addr.String())
 	}
 	if len(ips) == 0 {
-		return nil, "no usable IPv4 address"
+		if network == "ip4" {
+			return nil, "no usable IPv4 address"
+		}
+		return nil, "no usable address"
 	}
 	return asCIDRs(ips), ""
 }
 
-func carrierLookupReason(err error) string {
+func seedLookupReason(err error) string {
 	var dnsErr *net.DNSError
 	switch {
 	case errors.As(err, &dnsErr) && dnsErr.IsNotFound:
