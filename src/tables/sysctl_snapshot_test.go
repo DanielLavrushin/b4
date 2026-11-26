@@ -748,6 +748,60 @@ func TestSysctlSnapshotLeavesTheUnkeyedFileToTheInitialNamespace(t *testing.T) {
 	requireGone(t, own)
 }
 
+func TestSysctlSnapshotWaitsWhenItCannotTellItsOwnNamespace(t *testing.T) {
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	readInitNetnsLink = func() (string, error) { return "net:[4026531840]", nil }
+	failures := 1
+	readNetnsLink = func() (string, error) {
+		if failures > 0 {
+			failures--
+			return "", &os.PathError{Op: "readlink", Path: "/proc/self/ns/net", Err: syscall.ENOMEM}
+		}
+		return "net:[4026531992]", nil
+	}
+	hosts := filepath.Join(tmp, "b4_sysctl_snapshot.json")
+	writeSnapshotFile(t, hosts, map[string]string{testChecksum: "1", testLiberal: "0"}, 0o600)
+	s := stubConntrackSysctls(t, map[string]string{testChecksum: "0", testLiberal: "1"})
+
+	revertAll()
+	applyAll()
+	revertAll()
+	for _, w := range s.wrote {
+		if w == testChecksum+"=1" || w == testLiberal+"=0" {
+			t.Fatalf("a b4 outside the initial network namespace wrote %v, which includes the initial namespace's values", s.wrote)
+		}
+	}
+	if got := readSnapshotJSON(t, hosts); got[testChecksum] != "1" || got[testLiberal] != "0" {
+		t.Fatalf("%s = %v: one failed look at its own namespace let b4 take another namespace's file", hosts, got)
+	}
+	for _, n := range dirEntries(t, run) {
+		if n == "b4_sysctl_snapshot.json" {
+			t.Fatalf("%s holds a snapshot under the name of a kernel without network namespaces", run)
+		}
+	}
+}
+
+func TestSysctlSnapshotKeepsItsNameForTheRun(t *testing.T) {
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	s := stubConntrackSysctls(t, map[string]string{testChecksum: "1", testLiberal: "0"})
+	revertAll()
+	applyAll()
+	readNetnsLink = func() (string, error) {
+		return "", &os.PathError{Op: "readlink", Path: "/proc/self/ns/net", Err: syscall.EINVAL}
+	}
+
+	s.wrote = nil
+	revertAll()
+	want := testChecksum + "=1," + testLiberal + "=0"
+	if got := strings.Join(s.wrote, ","); got != want {
+		t.Fatalf("after the namespace link stopped answering, stop wrote %q, want the originals %q from %s", got, want, testSnapName)
+	}
+}
+
 func TestSysctlSnapshotKeepsItsOwnValuesOverOlderOnes(t *testing.T) {
 	buf := captureTablesLog(t)
 	run := privateRunDir(t)

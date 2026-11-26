@@ -69,6 +69,7 @@ var (
 var sysctlSnapState struct {
 	sync.Mutex
 	pinned *sysctlSnapDir
+	name   string
 	done   bool
 }
 
@@ -83,6 +84,7 @@ func forgetSysctlSnapshotState() {
 		sysctlSnapState.pinned.close()
 	}
 	sysctlSnapState.pinned = nil
+	sysctlSnapState.name = ""
 	sysctlSnapState.done = false
 	sysctlSnapState.Unlock()
 	sysctlSnapWarned.Lock()
@@ -137,31 +139,38 @@ func transientSnapshotError(err error) bool {
 	return true
 }
 
-func netnsInode() (uint64, bool) {
+func netnsInode() (uint64, bool, error) {
 	link, err := readNetnsLink()
 	if err != nil {
-		return 0, false
+		if transientSnapshotError(err) {
+			return 0, false, err
+		}
+		return 0, false, nil
 	}
 	id, ok := strings.CutPrefix(link, "net:[")
 	if !ok {
-		return 0, false
+		return 0, false, nil
 	}
 	id, ok = strings.CutSuffix(id, "]")
 	if !ok {
-		return 0, false
+		return 0, false, nil
 	}
 	ino, err := strconv.ParseUint(id, 10, 64)
 	if err != nil || ino == 0 {
-		return 0, false
+		return 0, false, nil
 	}
-	return ino, true
+	return ino, true, nil
 }
 
-func sysctlSnapshotName() string {
-	if ino, ok := netnsInode(); ok {
-		return fmt.Sprintf("%s.%d.json", sysctlSnapBase, ino)
+func sysctlSnapshotName() (string, error) {
+	ino, ok, err := netnsInode()
+	if err != nil {
+		return "", err
 	}
-	return sysctlSnapBase + ".json"
+	if ok {
+		return fmt.Sprintf("%s.%d.json", sysctlSnapBase, ino), nil
+	}
+	return sysctlSnapBase + ".json", nil
 }
 
 type sysctlSnapDir struct {
@@ -314,9 +323,9 @@ func openSysctlSnapshot() (sysctlSnapDir, string, error) {
 		d, err := openSnapshotDir(filepath.Dir(sysctlSnapPath), false, false)
 		return d, filepath.Base(sysctlSnapPath), err
 	}
-	name := sysctlSnapshotName()
 	sysctlSnapState.Lock()
 	defer sysctlSnapState.Unlock()
+	name := sysctlSnapState.name
 	if p := sysctlSnapState.pinned; p != nil {
 		var st syscall.Stat_t
 		if err := syscall.Fstat(p.fd, &st); err == nil && st.Nlink == 0 {
@@ -327,12 +336,19 @@ func openSysctlSnapshot() (sysctlSnapDir, string, error) {
 			return d, name, err
 		}
 	}
+	if name == "" {
+		var err error
+		if name, err = sysctlSnapshotName(); err != nil {
+			return sysctlSnapDir{}, "", err
+		}
+	}
 	d, err := chooseSysctlSnapshotDir()
 	if err != nil {
 		return sysctlSnapDir{}, name, err
 	}
 	d.sweepTemps(name)
 	sysctlSnapState.pinned = &d
+	sysctlSnapState.name = name
 	c, err := d.dup()
 	return c, name, err
 }

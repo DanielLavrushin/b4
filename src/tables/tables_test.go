@@ -368,12 +368,20 @@ func TestSysctlSnapshotFileFollowsTheNetworkNamespace(t *testing.T) {
 		{name: "no closing bracket", link: "net:[4026531992", want: unkeyed},
 		{name: "not a number", link: "net:[abc]", want: unkeyed},
 		{name: "zero", link: "net:[0]", want: unkeyed},
+		{name: "a passing error", err: syscall.ENOMEM},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			readNetnsLink = func() (string, error) { return c.link, c.err }
-			if got := sysctlSnapshotName(); got != c.want {
-				t.Fatalf("snapshot file for link %q (err %v) = %q, want %q", c.link, c.err, got, c.want)
+			got, err := sysctlSnapshotName()
+			if c.want == "" {
+				if err == nil {
+					t.Fatalf("snapshot file for a passing error %v = %q, want the error back so b4 tries again", c.err, got)
+				}
+				return
+			}
+			if err != nil || got != c.want {
+				t.Fatalf("snapshot file for link %q (err %v) = %q, %v, want %q", c.link, c.err, got, err, c.want)
 			}
 		})
 	}
@@ -384,7 +392,10 @@ func TestSysctlSnapshotFileFollowsTheNetworkNamespace(t *testing.T) {
 		if err != nil {
 			t.Skipf("no network namespace link here: %v", err)
 		}
-		got := sysctlSnapshotName()
+		got, err := sysctlSnapshotName()
+		if err != nil {
+			t.Fatal(err)
+		}
 		if got == unkeyed {
 			t.Fatalf("snapshot file is still %q with namespace link %q; two network namespaces sharing a run directory overwrite each other's saved sysctls", got, link)
 		}
@@ -405,8 +416,8 @@ func TestUninstallKeepsAnotherNamespacesSysctlSnapshot(t *testing.T) {
 		ino := "4026531992"
 		prelude := ""
 		if stubNetns == "" {
-			name := sysctlSnapshotName()
-			if name == sysctlSnapBase+".json" {
+			name, err := sysctlSnapshotName()
+			if err != nil || name == sysctlSnapBase+".json" {
 				t.Skip("no network namespace link here")
 			}
 			ino = strings.TrimSuffix(strings.TrimPrefix(name, sysctlSnapBase+"."), ".json")
