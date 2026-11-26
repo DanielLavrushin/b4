@@ -68,9 +68,11 @@ var (
 
 var sysctlSnapState struct {
 	sync.Mutex
-	pinned *sysctlSnapDir
-	name   string
-	done   bool
+	pinned   *sysctlSnapDir
+	name     string
+	done     bool
+	held     map[string]bool
+	deferred map[string]bool
 }
 
 var sysctlSnapWarned struct {
@@ -86,6 +88,8 @@ func forgetSysctlSnapshotState() {
 	sysctlSnapState.pinned = nil
 	sysctlSnapState.name = ""
 	sysctlSnapState.done = false
+	sysctlSnapState.held = nil
+	sysctlSnapState.deferred = nil
 	sysctlSnapState.Unlock()
 	sysctlSnapWarned.Lock()
 	sysctlSnapWarned.keys = nil
@@ -462,6 +466,17 @@ type sysctlSnapFound struct {
 	name    string
 	id      sysctlSnapID
 	refused bool
+	keys    []string
+}
+
+func heldKeys(found []sysctlSnapFound) map[string]bool {
+	held := map[string]bool{}
+	for _, f := range found {
+		for _, k := range f.keys {
+			held[k] = true
+		}
+	}
+	return held
 }
 
 func (f sysctlSnapFound) remove() error {
@@ -560,18 +575,24 @@ func takeOverEarlierSnapshots(cur *sysctlSnapDir, name string, m map[string]stri
 			}
 			continue
 		}
-		found = append(found, sysctlSnapFound{dir: o.dir, name: o.name, id: *id})
+		f := sysctlSnapFound{dir: o.dir, name: o.name, id: *id}
 		for _, k := range slices.Sorted(maps.Keys(om)) {
-			if _, have := m[k]; !have && isSysctlNumber(om[k]) {
+			if !isSysctlNumber(om[k]) {
+				continue
+			}
+			f.keys = append(f.keys, k)
+			if _, have := m[k]; !have {
 				m[k] = om[k]
 				took = append(took, k+"="+om[k]+" from "+path)
 			}
 		}
+		found = append(found, f)
 	}
 	if blocked != nil {
 		return fmt.Errorf("not everything an earlier b4 saved could be read: %w", blocked)
 	}
 	if cur == nil {
+		sysctlSnapState.held = heldKeys(found)
 		return nil
 	}
 	if len(took) > 0 {
@@ -579,31 +600,61 @@ func takeOverEarlierSnapshots(cur *sysctlSnapDir, name string, m map[string]stri
 			if sysctlSnapFirstWarning("move " + cur.file(name)) {
 				log.Errorf("TABLES: could not move the conntrack settings an earlier b4 saved into %s, so b4 reads them where that b4 left them until it can: %v", cur.file(name), err)
 			}
+			sysctlSnapState.held = heldKeys(found)
 			return nil
 		}
 		log.Infof("TABLES: moved the conntrack settings an earlier b4 saved into %s: %s", cur.file(name), strings.Join(took, ", "))
 	}
-	for _, f := range slices.Backward(found) {
+	for i := len(found) - 1; i >= 0; i-- {
+		f := found[i]
 		if err := f.remove(); err != nil {
 			if f.refused {
 				log.Tracef("TABLES: could not remove what b4 ignored: %v", err)
 				continue
 			}
 			log.Tracef("TABLES: keeping the earlier saved conntrack settings for now: %v", err)
+			sysctlSnapState.held = heldKeys(found[:i+1])
 			return nil
 		}
 	}
+	dropped := false
+	for k := range sysctlSnapState.deferred {
+		if _, have := m[k]; have {
+			delete(m, k)
+			dropped = true
+		}
+	}
+	if dropped {
+		if err := cur.write(name, m); err != nil {
+			log.Tracef("TABLES: could not drop the values b4 already put back: %v", err)
+		}
+	}
 	sysctlSnapState.done = true
+	sysctlSnapState.held = nil
+	sysctlSnapState.deferred = nil
 	return nil
 }
 
-func sysctlSnapshotTakeoverPending() bool {
+func sysctlSnapshotKeepsRestored(name string) bool {
 	if sysctlSnapPath != "" {
 		return false
 	}
 	sysctlSnapState.Lock()
 	defer sysctlSnapState.Unlock()
-	return !sysctlSnapState.done
+	if sysctlSnapState.done || !sysctlSnapState.held[name] {
+		return false
+	}
+	if sysctlSnapState.deferred == nil {
+		sysctlSnapState.deferred = map[string]bool{}
+	}
+	sysctlSnapState.deferred[name] = true
+	return true
+}
+
+func sysctlSnapshotInUse(name string) {
+	sysctlSnapState.Lock()
+	defer sysctlSnapState.Unlock()
+	delete(sysctlSnapState.deferred, name)
 }
 
 func readSysctlSnapshot() (map[string]string, error) {

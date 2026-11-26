@@ -398,7 +398,9 @@ func (s SysctlSetting) Apply() {
 		return
 	}
 	sysctlSnapForgetWarning("read " + s.Name)
-	if !isSysctlNumber(snap[s.Name]) {
+	if isSysctlNumber(snap[s.Name]) {
+		sysctlSnapshotInUse(s.Name)
+	} else {
 		cur := getSysctl(s.Name)
 		if !isSysctlNumber(cur) {
 			log.Infof("TABLES: leaving %s alone for now: reading it gave %q rather than a number, so b4 would have nothing to put back on exit. b4 tries again on its next rules pass", s.Name, cur)
@@ -445,7 +447,7 @@ func (s SysctlSetting) RevertBack() {
 	} else {
 		log.Warnf("TABLES: not putting %s back: the value b4 saved for it is %q, not a number", s.Name, v)
 	}
-	if sysctlSnapshotTakeoverPending() {
+	if sysctlSnapshotKeepsRestored(s.Name) {
 		return
 	}
 	delete(snap, s.Name)

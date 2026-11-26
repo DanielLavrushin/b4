@@ -1202,6 +1202,99 @@ func TestSysctlSnapshotKeepsARestoredValueWhileOlderCopiesRemain(t *testing.T) {
 	}
 }
 
+func TestSysctlSnapshotDropsAKeptValueOnceOlderCopiesAreGone(t *testing.T) {
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	writeSnapshotFile(t, filepath.Join(run, testSnapName), map[string]string{testChecksum: "1", testLiberal: "0"}, 0o600)
+	writeSnapshotFile(t, filepath.Join(tmp, testSnapName), map[string]string{testChecksum: "1", testLiberal: "1"}, 0o600)
+	s := stubConntrackSysctls(t, map[string]string{testChecksum: "0", testLiberal: "1"})
+	tmpIno := dirInode(t, tmp)
+	prev := sysctlSnapUnlink
+	t.Cleanup(func() { sysctlSnapUnlink = prev })
+	failures := 1
+	sysctlSnapUnlink = func(dirfd int, name string) error {
+		if failures > 0 && name == testSnapName && fdIsDir(dirfd, tmpIno) {
+			failures--
+			return syscall.EIO
+		}
+		return prev(dirfd, name)
+	}
+
+	revertAll()
+	if names := dirEntries(t, run); len(names) != 0 {
+		t.Fatalf("after a revert-only run that finished the takeover, %s holds %v", run, names)
+	}
+	s.cur[testChecksum] = "0"
+	forgetSysctlSnapshotState()
+	revertAll()
+	applyAll()
+	s.wrote = nil
+	revertAll()
+	want := testChecksum + "=0," + testLiberal + "=0"
+	if got := strings.Join(s.wrote, ","); got != want {
+		t.Fatalf("after the router's value changed while b4 was stopped, the next stop wrote %q, want %q", got, want)
+	}
+}
+
+func TestSysctlSnapshotKeepsAKeptValueARulesPassRelies(t *testing.T) {
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	writeSnapshotFile(t, filepath.Join(run, testSnapName), map[string]string{testChecksum: "1", testLiberal: "0"}, 0o600)
+	writeSnapshotFile(t, filepath.Join(tmp, testSnapName), map[string]string{testChecksum: "1", testLiberal: "1"}, 0o600)
+	s := stubConntrackSysctls(t, map[string]string{testChecksum: "0", testLiberal: "1"})
+	tmpIno := dirInode(t, tmp)
+	prev := sysctlSnapUnlink
+	t.Cleanup(func() { sysctlSnapUnlink = prev })
+	failures := 4
+	sysctlSnapUnlink = func(dirfd int, name string) error {
+		if failures > 0 && name == testSnapName && fdIsDir(dirfd, tmpIno) {
+			failures--
+			return syscall.EIO
+		}
+		return prev(dirfd, name)
+	}
+
+	revertAll()
+	applyAll()
+	s.wrote = nil
+	revertAll()
+	want := testChecksum + "=1," + testLiberal + "=0"
+	if got := strings.Join(s.wrote, ","); got != want {
+		t.Fatalf("with the takeover finishing only at stop, the stop wrote %q, want the originals %q", got, want)
+	}
+}
+
+func TestSysctlSnapshotForgetsARestoredValueNoOlderCopyHolds(t *testing.T) {
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	writeSnapshotFile(t, filepath.Join(tmp, testSnapName), map[string]string{testChecksum: "1", testLiberal: "0"}, 0o600)
+	acct := collectedAccounting.Name
+	s := stubConntrackSysctls(t, map[string]string{testChecksum: "0", testLiberal: "1", acct: "0"})
+	tmpIno := dirInode(t, tmp)
+	prev := sysctlSnapUnlink
+	t.Cleanup(func() { sysctlSnapUnlink = prev })
+	sysctlSnapUnlink = func(dirfd int, name string) error {
+		if name == testSnapName && fdIsDir(dirfd, tmpIno) {
+			return syscall.EIO
+		}
+		return prev(dirfd, name)
+	}
+
+	revertAll()
+	collectedAccounting.Apply()
+	revertCollectedAccounting()
+	s.cur[acct] = "1"
+	s.wrote = nil
+	revertCollectedAccounting()
+	revertCollectedAccounting()
+	if len(s.wrote) != 0 {
+		t.Fatalf("with collected sets off and an older copy that cannot be removed, rules passes wrote %v over the router's %s=1", s.wrote, acct)
+	}
+}
+
 func TestSysctlSnapshotTakesOverFromEveryOtherPlaceInOrder(t *testing.T) {
 	run := privateRunDir(t)
 	other := privateRunDir(t)
