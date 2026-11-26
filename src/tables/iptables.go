@@ -428,9 +428,14 @@ func (s SysctlSetting) RevertBack() {
 	}
 	snap, err := readSysctlSnapshot()
 	if err != nil {
-		log.Warnf("TABLES: not putting %s back now: the saved conntrack settings could not be read: %v", s.Name, err)
+		if sysctlSnapFirstWarning("revert read " + s.Name) {
+			log.Warnf("TABLES: not putting %s back now: the saved conntrack settings could not be read (%v). This is logged once until reading works again", s.Name, err)
+		} else {
+			log.Tracef("TABLES: still not putting %s back: %v", s.Name, err)
+		}
 		return
 	}
+	sysctlSnapForgetWarning("revert read " + s.Name)
 	v, ok := snap[s.Name]
 	if !ok {
 		return

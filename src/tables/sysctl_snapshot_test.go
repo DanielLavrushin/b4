@@ -1353,6 +1353,38 @@ func TestAnUnreadableSnapshotIsLoggedOnceForEachOutage(t *testing.T) {
 	}
 }
 
+func TestAnUnreadableSnapshotIsLoggedOnceForEachOutageWhenPuttingBack(t *testing.T) {
+	buf := captureTablesLog(t)
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	stubConntrackSysctls(t, map[string]string{testChecksum: "1", testLiberal: "0"})
+	applyAll()
+	prev := sysctlSnapOpenat
+	t.Cleanup(func() { sysctlSnapOpenat = prev })
+	failing := false
+	sysctlSnapOpenat = func(dirfd int, name string, flags int, mode uint32) (int, error) {
+		if failing && name == testSnapName {
+			return -1, syscall.EMFILE
+		}
+		return prev(dirfd, name, flags, mode)
+	}
+
+	failing = true
+	for range 3 {
+		revertAll()
+	}
+	failing = false
+	revertAll()
+	applyAll()
+	failing = true
+	revertAll()
+	revertAll()
+	if n := logLinesWith(buf.String(), "not putting "+testChecksum+" back now"); n != 2 {
+		t.Fatalf("%d warnings for %s over two read outages of several refreshes each, want 2:\n%s", n, testChecksum, buf.String())
+	}
+}
+
 func TestAnEmptySysctlSnapshotLeavesNoFile(t *testing.T) {
 	run := privateRunDir(t)
 	tmp := sharedTmp(t)
