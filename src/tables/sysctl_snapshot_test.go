@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"syscall"
@@ -1066,6 +1067,75 @@ func TestSysctlSnapshotTrustsOnlyRootOrB4(t *testing.T) {
 	if os.Geteuid() != 0 && sysctlSnapOwnerOK(uint32(os.Geteuid()+1)) {
 		t.Fatal("another user's files are trusted")
 	}
+}
+
+func TestTheQueueEngineNetnsRunKeepsItsTempDirAndBinaryInReach(t *testing.T) {
+	for _, tool := range []string{"make", "unshare", "sh"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skipf("no %s", tool)
+		}
+	}
+	if err := exec.Command("unshare", "-Urnm", "true").Run(); err != nil {
+		t.Skipf("no unprivileged user namespaces here: %v", err)
+	}
+	repo, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.HasPrefix(repo+"/", "/tmp/") {
+		t.Skip("the checkout itself is under /tmp")
+	}
+	outside := filepath.Join(repo, "out")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stubDir := func(t *testing.T, parent string) string {
+		t.Helper()
+		dir, err := os.MkdirTemp(parent, "netns-run-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(dir) })
+		stub := "#!/bin/sh\necho \"tmpdir=$TMPDIR\"\n[ -d \"$TMPDIR\" ] && echo tmpdir-ok\n[ -x \"$B4_WSREUSE_BINARY\" ] && echo relay-ok\nexit 0\n"
+		for _, name := range []string{"nfq.test", "b4-netns"} {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(stub), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return dir
+	}
+	runLine := func(t *testing.T, outDir string) (string, error) {
+		t.Helper()
+		recipe, err := exec.Command("make", "-s", "-n", "-C", repo, "test-netns", "OUT_DIR="+outDir).CombinedOutput()
+		if err != nil {
+			t.Fatalf("make -n test-netns: %v\n%s", err, recipe)
+		}
+		m := regexp.MustCompile(`unshare -Urnm sh -c '([^']*nfq\.test[^']*)'(?:\s+(/\S+))?`).FindStringSubmatch(string(recipe))
+		if m == nil {
+			t.Fatalf("no queue engine namespace line in make -n test-netns:\n%s", recipe)
+		}
+		args := []string{"-Urnm", "sh", "-c", m[1]}
+		if m[2] != "" {
+			args = append(args, m[2])
+		}
+		cmd := exec.Command("unshare", args...)
+		cmd.Env = append(os.Environ(), "TMPDIR="+t.TempDir())
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+
+	t.Run("output outside /tmp, TMPDIR inside it", func(t *testing.T) {
+		out, err := runLine(t, stubDir(t, outside))
+		if err != nil || !strings.Contains(out, "tmpdir-ok") || !strings.Contains(out, "relay-ok") {
+			t.Fatalf("the suite would start without its temporary directory or relay binary (err %v):\n%s", err, out)
+		}
+	})
+	t.Run("output under /tmp", func(t *testing.T) {
+		out, err := runLine(t, stubDir(t, "/tmp"))
+		if err == nil || !strings.Contains(out, "under /tmp") {
+			t.Fatalf("a build under /tmp ran in a namespace that hides it (err %v):\n%s", err, out)
+		}
+	})
 }
 
 func TestUninstallRemovesTheSysctlSnapshotWhereverB4KeepsIt(t *testing.T) {
