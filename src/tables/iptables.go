@@ -2,12 +2,9 @@ package tables
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -362,75 +359,11 @@ type SysctlSetting struct {
 	Desired string
 }
 
-const defaultSysctlSnapPath = "/tmp/b4_sysctl_snapshot.json"
-
-var sysctlSnapPath = defaultSysctlSnapPath
-
-var readNetnsLink = func() (string, error) {
-	return os.Readlink("/proc/self/ns/net")
-}
-
-func sysctlSnapshotPath() string {
-	if sysctlSnapPath != defaultSysctlSnapPath {
-		return sysctlSnapPath
-	}
-	link, err := readNetnsLink()
-	if err != nil {
-		return defaultSysctlSnapPath
-	}
-	id, ok := strings.CutPrefix(link, "net:[")
-	if !ok {
-		return defaultSysctlSnapPath
-	}
-	id, ok = strings.CutSuffix(id, "]")
-	if !ok {
-		return defaultSysctlSnapPath
-	}
-	ino, err := strconv.ParseUint(id, 10, 64)
-	if err != nil || ino == 0 {
-		return defaultSysctlSnapPath
-	}
-	return fmt.Sprintf("/tmp/b4_sysctl_snapshot.%d.json", ino)
-}
-
 func b4SysctlSettings() []SysctlSetting {
 	return []SysctlSetting{
 		{Name: "net.netfilter.nf_conntrack_checksum", Desired: "0"},
 		{Name: "net.netfilter.nf_conntrack_tcp_be_liberal", Desired: "1"},
 	}
-}
-
-func loadSysctlSnapshot() map[string]string {
-	b, err := os.ReadFile(sysctlSnapshotPath())
-	if err != nil {
-		return map[string]string{}
-	}
-	var m map[string]string
-	if json.Unmarshal(b, &m) != nil {
-		return map[string]string{}
-	}
-	return m
-}
-
-func saveSysctlSnapshot(m map[string]string) error {
-	b, err := json.Marshal(m)
-	if err != nil {
-		return err
-	}
-	path := sysctlSnapshotPath()
-	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*")
-	if err != nil {
-		return err
-	}
-	_, werr := f.Write(b)
-	cerr := f.Close()
-	if err = errors.Join(werr, cerr); err == nil {
-		err = os.Rename(f.Name(), path)
-	}
-	if err != nil {
-		_ = os.Remove(f.Name())
-	}
-	return err
 }
 
 func (ipt *IPTablesManager) buildNFQSpec(queueStart, threads int) []string {
@@ -464,7 +397,11 @@ func (s SysctlSetting) Apply() {
 		}
 		snap[s.Name] = cur
 		if err := saveSysctlSnapshot(snap); err != nil {
-			log.Errorf("TABLES: leaving %s at %q rather than setting it to %s: its current value could not be saved to %s (%v), so b4 could not put it back on exit", s.Name, snap[s.Name], s.Desired, sysctlSnapshotPath(), err)
+			if sysctlSnapFirstWarning("save " + s.Name) {
+				log.Errorf("TABLES: leaving %s at %q rather than setting it to %s: b4 could not save its current value to put back on exit (%v). It stays as it is until b4 can save that value, and this is logged once per run", s.Name, cur, s.Desired, err)
+			} else {
+				log.Tracef("TABLES: still leaving %s at %q: %v", s.Name, cur, err)
+			}
 			return
 		}
 	}
@@ -487,11 +424,11 @@ func (s SysctlSetting) RevertBack() {
 	if isSysctlNumber(v) {
 		setSysctl(s.Name, v)
 	} else {
-		log.Warnf("TABLES: not putting %s back: the value saved for it in %s is %q, not a number", s.Name, sysctlSnapshotPath(), v)
+		log.Warnf("TABLES: not putting %s back: the value b4 saved for it is %q, not a number", s.Name, v)
 	}
 	delete(snap, s.Name)
 	if err := saveSysctlSnapshot(snap); err != nil {
-		log.Warnf("TABLES: could not remove %s from %s: %v", s.Name, sysctlSnapshotPath(), err)
+		log.Warnf("TABLES: could not remove %s from the saved conntrack settings: %v", s.Name, err)
 	}
 }
 

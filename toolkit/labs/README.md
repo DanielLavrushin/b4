@@ -116,10 +116,11 @@ runs b4 inside that root filesystem, and the binary and config paths are then pa
 `scripts/b4-netns.sh` starts the binary in a network and mount namespace of its own inside
 the guest and stays in the foreground until b4 exits. It makes the mounts private first: on a
 guest this old `unshare -m` leaves them shared, and a tmpfs on `/run` would replace the
-guest's own. The run also gets a `/tmp` of its own, where b4 keeps `/tmp/b4_sysctl_snapshot.<netns-inode>.json`
-(or `/tmp/b4_sysctl_snapshot.json` on an older base build in `lab ab`) for the sysctl values
-it will put back. Keep the binary and its config outside `/tmp` for that reason; `netns-test.sh` does
-the same for a test binary. `lab run <name> <script>` pipes any local script into the instance as root, which
+guest's own. That `/run` has mode 0755, as on a router, and b4 keeps the sysctl values it
+will put back in `/run/b4_sysctl_snapshot.<netns-inode>.json`. The run also gets a `/tmp` of
+its own, where an older base build in `lab ab` keeps the same file
+(`/tmp/b4_sysctl_snapshot.json` before 1.93.0). Keep the binary and its config outside `/tmp`
+for that reason; `netns-test.sh` does the same for a test binary. `lab run <name> <script>` pipes any local script into the instance as root, which
 is the way to drive a longer scenario: interfaces, a proxy set, rules deleted by hand, counts
 read back.
 

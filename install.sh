@@ -4230,7 +4230,7 @@ action_remove() {
 
     rm -f /var/run/b4.pid /run/b4.pid /opt/var/run/b4.pid /tmp/b4.pid 2>/dev/null || true
     rm -f /var/run/b4-tun.state /run/b4-tun.state 2>/dev/null || true
-    _remove_sysctl_snapshot /tmp
+    _remove_sysctl_snapshots
     rm -f /var/log/b4.log /opt/var/log/b4.log /tmp/log/b4.log 2>/dev/null || true
     rm -rf /var/log/b4 2>/dev/null || true
 
@@ -4241,6 +4241,13 @@ action_remove() {
         log_warn "Nothing to remove: no b4 binary or service was found"
     fi
     echo ""
+}
+
+_remove_sysctl_snapshots() {
+    for _rss_d in /var/run /run /tmp/b4-run /tmp; do
+        _remove_sysctl_snapshot "$_rss_d"
+    done
+    rmdir /tmp/b4-run 2>/dev/null || true
 }
 
 _remove_sysctl_snapshot() {

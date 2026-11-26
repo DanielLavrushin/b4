@@ -16,6 +16,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	syscall.Umask(0o022)
 	dir, err := os.MkdirTemp("", "b4-tables-sysctl-")
 	if err != nil {
 		panic(err)
@@ -336,7 +337,7 @@ func TestIPTablesManager_BuildManifest_NoIPTables(t *testing.T) {
 func TestLoadSysctlSnapshot_NoFile(t *testing.T) {
 	// Temporarily change path to non-existent file
 	origPath := sysctlSnapPath
-	sysctlSnapPath = "/tmp/nonexistent_test_snapshot.json"
+	sysctlSnapPath = filepath.Join(t.TempDir(), "nonexistent_test_snapshot.json")
 	defer func() { sysctlSnapPath = origPath }()
 
 	snap := loadSysctlSnapshot()
@@ -348,37 +349,30 @@ func TestLoadSysctlSnapshot_NoFile(t *testing.T) {
 	}
 }
 
-func snapshotFileOfThisNamespace(t *testing.T) string {
-	t.Helper()
-	prev := sysctlSnapPath
-	sysctlSnapPath = defaultSysctlSnapPath
-	defer func() { sysctlSnapPath = prev }()
-	return sysctlSnapshotPath()
-}
-
 func TestSysctlSnapshotFileFollowsTheNetworkNamespace(t *testing.T) {
 	prevLink := readNetnsLink
 	t.Cleanup(func() { readNetnsLink = prevLink })
 
+	unkeyed := sysctlSnapBase + ".json"
 	cases := []struct {
 		name string
 		link string
 		err  error
 		want string
 	}{
-		{name: "namespace link", link: "net:[4026531992]", want: "/tmp/b4_sysctl_snapshot.4026531992.json"},
-		{name: "another namespace", link: "net:[4026532451]", want: "/tmp/b4_sysctl_snapshot.4026532451.json"},
-		{name: "a kernel before 3.8 has no namespace link", err: syscall.EINVAL, want: defaultSysctlSnapPath},
-		{name: "a kernel without network namespaces", err: syscall.ENOENT, want: defaultSysctlSnapPath},
-		{name: "not a network namespace", link: "mnt:[4026531841]", want: defaultSysctlSnapPath},
-		{name: "no closing bracket", link: "net:[4026531992", want: defaultSysctlSnapPath},
-		{name: "not a number", link: "net:[abc]", want: defaultSysctlSnapPath},
-		{name: "zero", link: "net:[0]", want: defaultSysctlSnapPath},
+		{name: "namespace link", link: "net:[4026531992]", want: "b4_sysctl_snapshot.4026531992.json"},
+		{name: "another namespace", link: "net:[4026532451]", want: "b4_sysctl_snapshot.4026532451.json"},
+		{name: "a kernel before 3.8 has no namespace link", err: syscall.EINVAL, want: unkeyed},
+		{name: "a kernel without network namespaces", err: syscall.ENOENT, want: unkeyed},
+		{name: "not a network namespace", link: "mnt:[4026531841]", want: unkeyed},
+		{name: "no closing bracket", link: "net:[4026531992", want: unkeyed},
+		{name: "not a number", link: "net:[abc]", want: unkeyed},
+		{name: "zero", link: "net:[0]", want: unkeyed},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			readNetnsLink = func() (string, error) { return c.link, c.err }
-			if got := snapshotFileOfThisNamespace(t); got != c.want {
+			if got := sysctlSnapshotName(); got != c.want {
 				t.Fatalf("snapshot file for link %q (err %v) = %q, want %q", c.link, c.err, got, c.want)
 			}
 		})
@@ -390,9 +384,9 @@ func TestSysctlSnapshotFileFollowsTheNetworkNamespace(t *testing.T) {
 		if err != nil {
 			t.Skipf("no network namespace link here: %v", err)
 		}
-		got := snapshotFileOfThisNamespace(t)
-		if got == defaultSysctlSnapPath {
-			t.Fatalf("snapshot file is still %q with namespace link %q; two network namespaces sharing /tmp overwrite each other's saved sysctls", got, link)
+		got := sysctlSnapshotName()
+		if got == unkeyed {
+			t.Fatalf("snapshot file is still %q with namespace link %q; two network namespaces sharing a run directory overwrite each other's saved sysctls", got, link)
 		}
 	})
 }
@@ -411,11 +405,11 @@ func TestUninstallKeepsAnotherNamespacesSysctlSnapshot(t *testing.T) {
 		ino := "4026531992"
 		prelude := ""
 		if stubNetns == "" {
-			path := snapshotFileOfThisNamespace(t)
-			if path == defaultSysctlSnapPath {
+			name := sysctlSnapshotName()
+			if name == sysctlSnapBase+".json" {
 				t.Skip("no network namespace link here")
 			}
-			ino = strings.TrimSuffix(strings.TrimPrefix(filepath.Base(path), "b4_sysctl_snapshot."), ".json")
+			ino = strings.TrimSuffix(strings.TrimPrefix(name, sysctlSnapBase+"."), ".json")
 		} else {
 			prelude = "readlink() { echo '" + stubNetns + "'; }; "
 		}
