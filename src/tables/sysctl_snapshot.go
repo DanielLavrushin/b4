@@ -40,6 +40,19 @@ var readNetnsLink = func() (string, error) {
 	return os.Readlink("/proc/self/ns/net")
 }
 
+var readInitNetnsLink = func() (string, error) {
+	return os.Readlink("/proc/1/ns/net")
+}
+
+func sameNetnsAsInit() bool {
+	own, err := readNetnsLink()
+	if err != nil {
+		return false
+	}
+	first, err := readInitNetnsLink()
+	return err == nil && own == first
+}
+
 var (
 	sysctlSnapOpen   = syscall.Open
 	sysctlSnapUnlink = syscall.Unlinkat
@@ -427,9 +440,10 @@ func sysctlSnapshotOrigins(cur *sysctlSnapDir, name string) ([]sysctlSnapOrigin,
 		add(dir, false, false, name)
 	}
 	add(sysctlSnapPrivateDir, true, false, name)
-	legacy := []string{sysctlSnapBase + ".json"}
-	if name != legacy[0] {
-		legacy = append(legacy, name)
+	unkeyed := sysctlSnapBase + ".json"
+	legacy := []string{name}
+	if name != unkeyed && sameNetnsAsInit() {
+		legacy = []string{unkeyed, name}
 	}
 	add(sysctlSnapLegacyDir, false, true, legacy...)
 	return origins, func() {

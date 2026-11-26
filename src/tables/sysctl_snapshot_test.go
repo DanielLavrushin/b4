@@ -23,13 +23,14 @@ const (
 func useSnapshotDirs(t *testing.T, runDirs []string, private, legacy string) {
 	t.Helper()
 	prevPath, prevRun, prevPrivate, prevLegacy := sysctlSnapPath, sysctlSnapRunDirs, sysctlSnapPrivateDir, sysctlSnapLegacyDir
-	prevOwner, prevLink := sysctlSnapOwnerOK, readNetnsLink
+	prevOwner, prevLink, prevInit := sysctlSnapOwnerOK, readNetnsLink, readInitNetnsLink
 	sysctlSnapPath, sysctlSnapRunDirs, sysctlSnapPrivateDir, sysctlSnapLegacyDir = "", runDirs, private, legacy
 	readNetnsLink = func() (string, error) { return "net:[4026531992]", nil }
+	readInitNetnsLink = func() (string, error) { return "net:[4026531992]", nil }
 	forgetSysctlSnapshotState()
 	t.Cleanup(func() {
 		sysctlSnapPath, sysctlSnapRunDirs, sysctlSnapPrivateDir, sysctlSnapLegacyDir = prevPath, prevRun, prevPrivate, prevLegacy
-		sysctlSnapOwnerOK, readNetnsLink = prevOwner, prevLink
+		sysctlSnapOwnerOK, readNetnsLink, readInitNetnsLink = prevOwner, prevLink, prevInit
 		forgetSysctlSnapshotState()
 	})
 }
@@ -424,6 +425,29 @@ func TestSysctlSnapshotTakesOverTheOldFileOnAKernelWithoutNetworkNamespaces(t *t
 	if names := dirEntries(t, tmp); len(names) != 0 {
 		t.Fatalf("shared tmp holds %v", names)
 	}
+}
+
+func TestSysctlSnapshotLeavesTheUnkeyedFileToTheInitialNamespace(t *testing.T) {
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	readInitNetnsLink = func() (string, error) { return "net:[4026531840]", nil }
+	hosts := filepath.Join(tmp, "b4_sysctl_snapshot.json")
+	writeSnapshotFile(t, hosts, map[string]string{testChecksum: "1", testLiberal: "0"}, 0o600)
+	own := filepath.Join(tmp, testSnapName)
+	writeSnapshotFile(t, own, map[string]string{testLiberal: "0"}, 0o600)
+	s := stubConntrackSysctls(t, map[string]string{testChecksum: "0", testLiberal: "1"})
+
+	revertAll()
+	if got := strings.Join(s.wrote, ","); got != testLiberal+"=0" {
+		t.Fatalf("a b4 outside the initial network namespace wrote %q, want only its own %s=0", got, testLiberal)
+	}
+	applyAll()
+	revertAll()
+	if got := readSnapshotJSON(t, hosts); got[testChecksum] != "1" || got[testLiberal] != "0" {
+		t.Fatalf("%s = %v: another namespace took the file of the initial one", hosts, got)
+	}
+	requireGone(t, own)
 }
 
 func TestSysctlSnapshotKeepsItsOwnValuesOverOlderOnes(t *testing.T) {
