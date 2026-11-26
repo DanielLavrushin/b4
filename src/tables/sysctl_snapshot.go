@@ -565,14 +565,9 @@ func takeOverEarlierSnapshots(cur *sysctlSnapDir, name string, m map[string]stri
 			continue
 		case errors.Is(err, fs.ErrNotExist):
 			continue
-		case transientSnapshotError(err):
+		default:
 			blocked = cmp.Or(blocked, err)
 			log.Tracef("TABLES: could not read the saved conntrack settings in %s: %v", path, err)
-			continue
-		default:
-			if sysctlSnapFirstWarning("origin " + path) {
-				log.Warnf("TABLES: ignoring the saved conntrack settings in %s: %v", path, err)
-			}
 			continue
 		}
 		f := sysctlSnapFound{dir: o.dir, name: o.name, id: *id}
