@@ -597,6 +597,15 @@ func takeOverEarlierSnapshots(cur *sysctlSnapDir, name string, m map[string]stri
 	return nil
 }
 
+func sysctlSnapshotTakeoverPending() bool {
+	if sysctlSnapPath != "" {
+		return false
+	}
+	sysctlSnapState.Lock()
+	defer sysctlSnapState.Unlock()
+	return !sysctlSnapState.done
+}
+
 func readSysctlSnapshot() (map[string]string, error) {
 	m := map[string]string{}
 	d, name, err := openSysctlSnapshot()

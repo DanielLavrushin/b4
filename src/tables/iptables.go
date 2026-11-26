@@ -445,6 +445,9 @@ func (s SysctlSetting) RevertBack() {
 	} else {
 		log.Warnf("TABLES: not putting %s back: the value b4 saved for it is %q, not a number", s.Name, v)
 	}
+	if sysctlSnapshotTakeoverPending() {
+		return
+	}
 	delete(snap, s.Name)
 	if err := saveSysctlSnapshot(snap); err != nil {
 		log.Warnf("TABLES: could not remove %s from the saved conntrack settings: %v", s.Name, err)

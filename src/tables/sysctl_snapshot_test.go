@@ -1170,6 +1170,38 @@ func TestSysctlSnapshotKeepsTheOriginalsWhenRemovingOldFilesStopsHalfway(t *test
 	}
 }
 
+func TestSysctlSnapshotKeepsARestoredValueWhileOlderCopiesRemain(t *testing.T) {
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	writeSnapshotFile(t, filepath.Join(run, testSnapName), map[string]string{testChecksum: "1", testLiberal: "0"}, 0o600)
+	writeSnapshotFile(t, filepath.Join(tmp, testSnapName), map[string]string{testChecksum: "0", testLiberal: "1"}, 0o600)
+	s := stubConntrackSysctls(t, map[string]string{testChecksum: "0", testLiberal: "1"})
+	tmpIno := dirInode(t, tmp)
+	prev := sysctlSnapUnlink
+	t.Cleanup(func() { sysctlSnapUnlink = prev })
+	failures := 1
+	sysctlSnapUnlink = func(dirfd int, name string) error {
+		if failures > 0 && name == testSnapName && fdIsDir(dirfd, tmpIno) {
+			failures--
+			return syscall.EIO
+		}
+		return prev(dirfd, name)
+	}
+
+	revertAll()
+	applyAll()
+	s.wrote = nil
+	revertAll()
+	want := testChecksum + "=1," + testLiberal + "=0"
+	if got := strings.Join(s.wrote, ","); got != want {
+		t.Fatalf("after one older copy could not be removed at start, stop wrote %q, want the originals %q from b4's own file", got, want)
+	}
+	if names := dirEntries(t, run); len(names) != 0 {
+		t.Fatalf("after the takeover finished and b4 stopped, %s holds %v", run, names)
+	}
+}
+
 func TestSysctlSnapshotTakesOverFromEveryOtherPlaceInOrder(t *testing.T) {
 	run := privateRunDir(t)
 	other := privateRunDir(t)
