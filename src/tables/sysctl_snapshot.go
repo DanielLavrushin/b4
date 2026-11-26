@@ -17,6 +17,7 @@ import (
 	"syscall"
 
 	"github.com/daniellavrushin/b4/log"
+	"golang.org/x/sys/unix"
 )
 
 const sysctlSnapBase = "b4_sysctl_snapshot"
@@ -39,12 +40,15 @@ var readNetnsLink = func() (string, error) {
 	return os.Readlink("/proc/self/ns/net")
 }
 
-var sysctlSnapUnlink = syscall.Unlinkat
+var (
+	sysctlSnapOpen   = syscall.Open
+	sysctlSnapUnlink = syscall.Unlinkat
+)
 
-var sysctlSnapTakeover struct {
+var sysctlSnapState struct {
 	sync.Mutex
-	done bool
-	took []string
+	pinned *sysctlSnapDir
+	done   bool
 }
 
 var sysctlSnapWarned struct {
@@ -53,10 +57,13 @@ var sysctlSnapWarned struct {
 }
 
 func forgetSysctlSnapshotState() {
-	sysctlSnapTakeover.Lock()
-	sysctlSnapTakeover.done = false
-	sysctlSnapTakeover.took = nil
-	sysctlSnapTakeover.Unlock()
+	sysctlSnapState.Lock()
+	if sysctlSnapState.pinned != nil {
+		sysctlSnapState.pinned.close()
+	}
+	sysctlSnapState.pinned = nil
+	sysctlSnapState.done = false
+	sysctlSnapState.Unlock()
 	sysctlSnapWarned.Lock()
 	sysctlSnapWarned.keys = nil
 	sysctlSnapWarned.Unlock()
@@ -72,6 +79,34 @@ func sysctlSnapFirstWarning(key string) bool {
 		sysctlSnapWarned.keys = map[string]bool{}
 	}
 	sysctlSnapWarned.keys[key] = true
+	return true
+}
+
+type sysctlSnapRefusal struct {
+	msg string
+}
+
+func (e sysctlSnapRefusal) Error() string {
+	return e.msg
+}
+
+func refuseSnapshot(format string, args ...any) error {
+	return sysctlSnapRefusal{msg: fmt.Sprintf(format, args...)}
+}
+
+func transientSnapshotError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var refusal sysctlSnapRefusal
+	if errors.As(err, &refusal) {
+		return false
+	}
+	for _, lasting := range []syscall.Errno{syscall.ENOENT, syscall.ENOTDIR, syscall.ELOOP, syscall.EACCES, syscall.EPERM, syscall.EROFS} {
+		if errors.Is(err, lasting) {
+			return false
+		}
+	}
 	return true
 }
 
@@ -114,6 +149,16 @@ func (d sysctlSnapDir) close() {
 	_ = syscall.Close(d.fd)
 }
 
+func (d sysctlSnapDir) dup() (sysctlSnapDir, error) {
+	fd, err := unix.FcntlInt(uintptr(d.fd), unix.F_DUPFD_CLOEXEC, 0)
+	if err != nil {
+		return sysctlSnapDir{}, &os.PathError{Op: "dup", Path: d.path, Err: err}
+	}
+	c := d
+	c.fd = fd
+	return c, nil
+}
+
 func (d sysctlSnapDir) file(name string) string {
 	return filepath.Join(d.path, name)
 }
@@ -124,23 +169,23 @@ func (d sysctlSnapDir) same(o sysctlSnapDir) bool {
 
 func trustSnapshotOwner(path string, st *syscall.Stat_t) error {
 	if !sysctlSnapOwnerOK(st.Uid) {
-		return fmt.Errorf("%s belongs to uid %d, not to root or to b4", path, st.Uid)
+		return refuseSnapshot("%s belongs to uid %d, not to root or to b4", path, st.Uid)
 	}
 	if st.Mode&0o022 != 0 {
-		return fmt.Errorf("%s can be written by other users (mode %04o)", path, st.Mode&0o7777)
+		return refuseSnapshot("%s can be written by other users (mode %04o)", path, st.Mode&0o7777)
 	}
 	return nil
 }
 
 func trustSnapshotFile(path string, st *syscall.Stat_t, shared bool) error {
 	if st.Mode&syscall.S_IFMT != syscall.S_IFREG {
-		return fmt.Errorf("%s is not a regular file", path)
+		return refuseSnapshot("%s is not a regular file", path)
 	}
 	if err := trustSnapshotOwner(path, st); err != nil {
 		return err
 	}
 	if shared && st.Nlink != 1 {
-		return fmt.Errorf("%s has %d hard links", path, st.Nlink)
+		return refuseSnapshot("%s has %d hard links", path, st.Nlink)
 	}
 	return nil
 }
@@ -150,10 +195,10 @@ func openSnapshotDir(path string, noFollow, shared bool) (sysctlSnapDir, error) 
 	if noFollow {
 		flags |= syscall.O_NOFOLLOW
 	}
-	fd, err := syscall.Open(path, flags, 0)
+	fd, err := sysctlSnapOpen(path, flags, 0)
 	if err != nil {
 		if fi, lerr := os.Lstat(path); noFollow && lerr == nil && fi.Mode()&os.ModeSymlink != 0 {
-			return sysctlSnapDir{}, fmt.Errorf("%s is a symbolic link", path)
+			return sysctlSnapDir{}, refuseSnapshot("%s is a symbolic link", path)
 		}
 		return sysctlSnapDir{}, &os.PathError{Op: "open", Path: path, Err: err}
 	}
@@ -190,55 +235,106 @@ func openPrivateSnapshotDir() (sysctlSnapDir, error) {
 	return openWritableSnapshotDir(sysctlSnapPrivateDir, true)
 }
 
+func chooseSysctlSnapshotDir() (sysctlSnapDir, error) {
+	var refused []string
+	for _, dir := range sysctlSnapRunDirs {
+		d, err := openWritableSnapshotDir(dir, false)
+		if err == nil {
+			return d, nil
+		}
+		if transientSnapshotError(err) {
+			return sysctlSnapDir{}, err
+		}
+		refused = append(refused, err.Error())
+	}
+	d, err := openPrivateSnapshotDir()
+	if err == nil {
+		return d, nil
+	}
+	if transientSnapshotError(err) {
+		return sysctlSnapDir{}, err
+	}
+	refused = append(refused, err.Error())
+	return sysctlSnapDir{}, refuseSnapshot("no directory that only b4 can write: %s", strings.Join(refused, "; "))
+}
+
 func openSysctlSnapshot() (sysctlSnapDir, string, error) {
 	if sysctlSnapPath != "" {
 		d, err := openSnapshotDir(filepath.Dir(sysctlSnapPath), false, false)
 		return d, filepath.Base(sysctlSnapPath), err
 	}
 	name := sysctlSnapshotName()
-	var refused []string
-	for _, dir := range sysctlSnapRunDirs {
-		d, err := openWritableSnapshotDir(dir, false)
-		if err == nil {
-			return d, name, nil
+	sysctlSnapState.Lock()
+	defer sysctlSnapState.Unlock()
+	if p := sysctlSnapState.pinned; p != nil {
+		var st syscall.Stat_t
+		if err := syscall.Fstat(p.fd, &st); err == nil && st.Nlink == 0 {
+			p.close()
+			sysctlSnapState.pinned = nil
+		} else {
+			d, err := p.dup()
+			return d, name, err
 		}
-		refused = append(refused, err.Error())
 	}
-	d, err := openPrivateSnapshotDir()
+	d, err := chooseSysctlSnapshotDir()
 	if err != nil {
-		refused = append(refused, err.Error())
-		return sysctlSnapDir{}, name, fmt.Errorf("no directory that only b4 can write: %s", strings.Join(refused, "; "))
+		return sysctlSnapDir{}, name, err
 	}
-	return d, name, nil
+	sysctlSnapState.pinned = &d
+	c, err := d.dup()
+	return c, name, err
 }
 
-func (d sysctlSnapDir) read(name string) (map[string]string, error) {
+type sysctlSnapID struct {
+	dev uint64
+	ino uint64
+}
+
+func lstatAt(dirfd int, name string) (sysctlSnapID, uint32, error) {
+	var st unix.Stat_t
+	if err := unix.Fstatat(dirfd, name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return sysctlSnapID{}, 0, err
+	}
+	return sysctlSnapID{dev: uint64(st.Dev), ino: uint64(st.Ino)}, uint32(st.Mode), nil
+}
+
+func (d sysctlSnapDir) read(name string) (map[string]string, *sysctlSnapID, error) {
 	path := d.file(name)
+	id, mode, err := lstatAt(d.fd, name)
+	if err != nil {
+		return nil, nil, &os.PathError{Op: "stat", Path: path, Err: err}
+	}
+	if mode&syscall.S_IFMT != syscall.S_IFREG {
+		return nil, &id, refuseSnapshot("%s is not a regular file", path)
+	}
 	fd, err := syscall.Openat(d.fd, name, sysctlSnapReadFlags, 0)
 	if err != nil {
-		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+		return nil, nil, &os.PathError{Op: "open", Path: path, Err: err}
 	}
 	f := os.NewFile(uintptr(fd), path)
 	defer f.Close()
 	var st syscall.Stat_t
 	if err := syscall.Fstat(fd, &st); err != nil {
-		return nil, &os.PathError{Op: "stat", Path: path, Err: err}
+		return nil, nil, &os.PathError{Op: "stat", Path: path, Err: err}
+	}
+	if uint64(st.Dev) != id.dev || uint64(st.Ino) != id.ino {
+		return nil, nil, fmt.Errorf("%s changed while b4 opened it", path)
 	}
 	if err := trustSnapshotFile(path, &st, d.shared); err != nil {
-		return nil, err
+		return nil, &id, err
 	}
 	b, err := io.ReadAll(f)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var m map[string]string
 	if err := json.Unmarshal(b, &m); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, &id, refuseSnapshot("%s: %v", path, err)
 	}
 	if m == nil {
 		m = map[string]string{}
 	}
-	return m, nil
+	return m, &id, nil
 }
 
 func (d sysctlSnapDir) remove(name string) error {
@@ -281,20 +377,47 @@ type sysctlSnapOrigin struct {
 	name string
 }
 
-func sysctlSnapshotOrigins(cur sysctlSnapDir, name string) ([]sysctlSnapOrigin, func()) {
+type sysctlSnapFound struct {
+	dir  sysctlSnapDir
+	name string
+	id   sysctlSnapID
+}
+
+func (f sysctlSnapFound) remove() error {
+	path := f.dir.file(f.name)
+	id, _, err := lstatAt(f.dir.fd, f.name)
+	if err != nil {
+		if errors.Is(err, syscall.ENOENT) {
+			return nil
+		}
+		return &os.PathError{Op: "stat", Path: path, Err: err}
+	}
+	if id != f.id {
+		return fmt.Errorf("%s changed after b4 read it", path)
+	}
+	return f.dir.remove(f.name)
+}
+
+func sysctlSnapshotOrigins(cur *sysctlSnapDir, name string) ([]sysctlSnapOrigin, func(), bool) {
 	var origins []sysctlSnapOrigin
 	var dirs []sysctlSnapDir
+	complete := true
 	add := func(path string, noFollow, shared bool, names ...string) {
 		d, err := openSnapshotDir(path, noFollow, shared)
 		if err != nil {
-			if !errors.Is(err, fs.ErrNotExist) && sysctlSnapFirstWarning("origin dir "+path) {
+			switch {
+			case errors.Is(err, fs.ErrNotExist):
+			case transientSnapshotError(err):
+				complete = false
+				log.Tracef("TABLES: could not look for saved conntrack settings in %v", err)
+			case sysctlSnapFirstWarning("origin dir " + path):
 				log.Tracef("TABLES: not looking for saved conntrack settings in %v", err)
 			}
 			return
 		}
 		dirs = append(dirs, d)
 		for _, n := range names {
-			if d.same(cur) && n == name {
+			if cur != nil && d.same(*cur) && n == name {
 				continue
 			}
 			origins = append(origins, sysctlSnapOrigin{dir: d, name: n})
@@ -313,27 +436,43 @@ func sysctlSnapshotOrigins(cur sysctlSnapDir, name string) ([]sysctlSnapOrigin, 
 		for _, d := range dirs {
 			d.close()
 		}
-	}
+	}, complete
 }
 
-func mergeEarlierSnapshots(cur sysctlSnapDir, name string, m map[string]string) {
-	sysctlSnapTakeover.Lock()
-	defer sysctlSnapTakeover.Unlock()
-	if sysctlSnapTakeover.done {
+func takeOverEarlierSnapshots(cur *sysctlSnapDir, name string, m map[string]string) {
+	sysctlSnapState.Lock()
+	defer sysctlSnapState.Unlock()
+	if sysctlSnapState.done {
 		return
 	}
-	origins, closeDirs := sysctlSnapshotOrigins(cur, name)
+	origins, closeDirs, complete := sysctlSnapshotOrigins(cur, name)
 	defer closeDirs()
+	var found []sysctlSnapFound
 	var took []string
 	for _, o := range origins {
 		path := o.dir.file(o.name)
-		om, err := o.dir.read(o.name)
-		if err != nil {
-			if !errors.Is(err, fs.ErrNotExist) && sysctlSnapFirstWarning("origin "+path) {
+		om, id, err := o.dir.read(o.name)
+		switch {
+		case err == nil:
+		case id != nil:
+			if sysctlSnapFirstWarning("origin " + path) {
+				log.Warnf("TABLES: ignoring the saved conntrack settings in %s: %v", path, err)
+			}
+			found = append(found, sysctlSnapFound{dir: o.dir, name: o.name, id: *id})
+			continue
+		case errors.Is(err, fs.ErrNotExist):
+			continue
+		case transientSnapshotError(err):
+			complete = false
+			log.Tracef("TABLES: could not read the saved conntrack settings in %s: %v", path, err)
+			continue
+		default:
+			if sysctlSnapFirstWarning("origin " + path) {
 				log.Warnf("TABLES: ignoring the saved conntrack settings in %s: %v", path, err)
 			}
 			continue
 		}
+		found = append(found, sysctlSnapFound{dir: o.dir, name: o.name, id: *id})
 		for _, k := range slices.Sorted(maps.Keys(om)) {
 			if _, have := m[k]; !have && isSysctlNumber(om[k]) {
 				m[k] = om[k]
@@ -341,43 +480,54 @@ func mergeEarlierSnapshots(cur sysctlSnapDir, name string, m map[string]string) 
 			}
 		}
 	}
-	sysctlSnapTakeover.took = took
-}
-
-func retireEarlierSnapshots(cur sysctlSnapDir, name string) {
-	sysctlSnapTakeover.Lock()
-	defer sysctlSnapTakeover.Unlock()
-	if sysctlSnapTakeover.done {
+	if cur == nil || !complete {
 		return
 	}
-	sysctlSnapTakeover.done = true
-	if len(sysctlSnapTakeover.took) > 0 {
-		log.Infof("TABLES: moved the conntrack settings an earlier b4 saved into %s: %s", cur.file(name), strings.Join(sysctlSnapTakeover.took, ", "))
+	if len(took) > 0 {
+		if err := cur.write(name, m); err != nil {
+			if sysctlSnapFirstWarning("move " + cur.file(name)) {
+				log.Errorf("TABLES: could not move the conntrack settings an earlier b4 saved into %s, so b4 reads them where that b4 left them until it can: %v", cur.file(name), err)
+			}
+			return
+		}
+		log.Infof("TABLES: moved the conntrack settings an earlier b4 saved into %s: %s", cur.file(name), strings.Join(took, ", "))
 	}
-	origins, closeDirs := sysctlSnapshotOrigins(cur, name)
-	defer closeDirs()
-	for _, o := range slices.Backward(origins) {
-		if err := o.dir.remove(o.name); err != nil {
-			log.Tracef("TABLES: could not remove %v", err)
+	for _, f := range slices.Backward(found) {
+		if err := f.remove(); err != nil {
+			log.Tracef("TABLES: keeping the earlier saved conntrack settings for now: %v", err)
+			return
 		}
 	}
+	sysctlSnapState.done = true
 }
 
 func loadSysctlSnapshot() map[string]string {
+	m := map[string]string{}
 	d, name, err := openSysctlSnapshot()
 	if err != nil {
-		return map[string]string{}
+		if sysctlSnapPath == "" && !transientSnapshotError(err) {
+			if sysctlSnapFirstWarning("no dir") {
+				log.Warnf("TABLES: the saved conntrack settings have nowhere safe to live, so b4 only reads what an earlier b4 left: %v", err)
+			}
+			takeOverEarlierSnapshots(nil, name, m)
+		}
+		return m
 	}
 	defer d.close()
-	m, err := d.read(name)
-	if err != nil {
-		if !errors.Is(err, fs.ErrNotExist) && sysctlSnapFirstWarning("read "+d.file(name)) {
+	cur, _, err := d.read(name)
+	switch {
+	case err == nil:
+		m = cur
+	case errors.Is(err, fs.ErrNotExist):
+	case transientSnapshotError(err):
+		return m
+	default:
+		if sysctlSnapFirstWarning("read " + d.file(name)) {
 			log.Warnf("TABLES: ignoring the saved conntrack settings: %v", err)
 		}
-		m = map[string]string{}
 	}
 	if sysctlSnapPath == "" {
-		mergeEarlierSnapshots(d, name, m)
+		takeOverEarlierSnapshots(&d, name, m)
 	}
 	return m
 }
@@ -388,11 +538,5 @@ func saveSysctlSnapshot(m map[string]string) error {
 		return err
 	}
 	defer d.close()
-	if err := d.write(name, m); err != nil {
-		return err
-	}
-	if sysctlSnapPath == "" {
-		retireEarlierSnapshots(d, name)
-	}
-	return nil
+	return d.write(name, m)
 }

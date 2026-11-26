@@ -491,7 +491,7 @@ func TestSysctlSnapshotTakesNothingFromAFileItCannotTrustInTmp(t *testing.T) {
 				})
 				return func() {}
 			},
-			want: "too many levels of symbolic links",
+			want: "not a regular file",
 		},
 		{
 			name: "a FIFO",
@@ -556,12 +556,10 @@ func TestSysctlSnapshotKeepsTheOriginalsUntilItCanSaveThem(t *testing.T) {
 		t.Fatal(err)
 	}
 	applyAll()
-	if b, err := os.ReadFile(blocker); err == nil {
-		var m map[string]string
-		if json.Unmarshal(b, &m) == nil && m[testChecksum] == "0" {
-			t.Fatalf("once saving worked again, b4 saved its own value as the original: %s", b)
-		}
+	if got := readSnapshotJSON(t, blocker); got[testChecksum] != "1" || got[testLiberal] != "0" {
+		t.Fatalf("once saving worked again, the snapshot holds %v, want the originals moved in at once", got)
 	}
+	requireGone(t, older)
 
 	forgetSysctlSnapshotState()
 	s.wrote = nil
@@ -569,7 +567,202 @@ func TestSysctlSnapshotKeepsTheOriginalsUntilItCanSaveThem(t *testing.T) {
 	if got := strings.Join(s.wrote, ","); got != want {
 		t.Fatalf("a restart after a crash wrote %q, want the originals %q", got, want)
 	}
-	requireGone(t, older)
+}
+
+func TestSysctlSnapshotNamesOnlyWhatTheFileHolds(t *testing.T) {
+	buf := captureTablesLog(t)
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	writeSnapshotFile(t, filepath.Join(tmp, "b4_sysctl_snapshot.json"), map[string]string{testChecksum: "1", testLiberal: "0"}, 0o600)
+
+	loadSysctlSnapshot()
+	path := filepath.Join(run, testSnapName)
+	if n := logLinesWith(buf.String(), "moved the conntrack settings", path, testChecksum+"=1", testLiberal+"=0"); n != 1 {
+		t.Fatalf("%d lines naming what moved into %s, want 1:\n%s", n, path, buf.String())
+	}
+	if got := readSnapshotJSON(t, path); got[testChecksum] != "1" || got[testLiberal] != "0" {
+		t.Fatalf("%s holds %v right after the line that names checksum=1 and liberal=0", path, got)
+	}
+}
+
+func TestSysctlSnapshotStaysInTheDirectoryItChoseFirst(t *testing.T) {
+	later := filepath.Join(t.TempDir(), "var-run")
+	tmp := sharedTmp(t)
+	private := filepath.Join(tmp, "b4-run")
+	useSnapshotDirs(t, []string{later}, private, tmp)
+	s := stubConntrackSysctls(t, map[string]string{testChecksum: "1", testLiberal: "0"})
+
+	revertAll()
+	applyAll()
+	if err := os.Mkdir(later, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	applyAll()
+	if names := dirEntries(t, later); len(names) != 0 {
+		t.Fatalf("%s got %v in the middle of a run; the saved values stay where b4 put them first", later, names)
+	}
+	s.wrote = nil
+	revertAll()
+	want := testChecksum + "=1," + testLiberal + "=0"
+	if got := strings.Join(s.wrote, ","); got != want {
+		t.Fatalf("stop wrote %q after a better directory appeared, want the originals %q", got, want)
+	}
+
+	if err := os.Remove(private); err != nil {
+		t.Fatal(err)
+	}
+	applyAll()
+	if got := readSnapshotJSON(t, filepath.Join(later, testSnapName)); got[testChecksum] != "1" {
+		t.Fatalf("after its directory was removed, b4 saved %v, want checksum=1 in %s", got, later)
+	}
+}
+
+func TestSysctlSnapshotDoesNotMoveOnAfterAPassingError(t *testing.T) {
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	private := filepath.Join(tmp, "b4-run")
+	useSnapshotDirs(t, []string{run}, private, tmp)
+	prev := sysctlSnapOpen
+	t.Cleanup(func() { sysctlSnapOpen = prev })
+	sysctlSnapOpen = func(path string, flags int, mode uint32) (int, error) {
+		if path == run {
+			return -1, syscall.EMFILE
+		}
+		return prev(path, flags, mode)
+	}
+
+	if err := saveSysctlSnapshot(map[string]string{testChecksum: "1"}); err == nil {
+		t.Fatal("a save went through while the run directory could not be opened")
+	}
+	requireGone(t, private)
+	sysctlSnapOpen = prev
+	if err := saveSysctlSnapshot(map[string]string{testChecksum: "1"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := readSnapshotJSON(t, filepath.Join(run, testSnapName)); got[testChecksum] != "1" {
+		t.Fatalf("snapshot = %v", got)
+	}
+	requireGone(t, private)
+}
+
+func TestSysctlSnapshotRemovesOnlyTheOldFilesItRead(t *testing.T) {
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	writeSnapshotFile(t, filepath.Join(run, testSnapName), map[string]string{testLiberal: "0"}, 0o600)
+	older := filepath.Join(tmp, "b4_sysctl_snapshot.json")
+	writeSnapshotFile(t, older, map[string]string{testChecksum: "1"}, 0o600)
+	s := stubConntrackSysctls(t, map[string]string{testChecksum: "0", testLiberal: "1"})
+	prev := sysctlSnapOpen
+	t.Cleanup(func() { sysctlSnapOpen = prev })
+	failures := 2
+	sysctlSnapOpen = func(path string, flags int, mode uint32) (int, error) {
+		if path == tmp && failures > 0 {
+			failures--
+			return -1, syscall.EMFILE
+		}
+		return prev(path, flags, mode)
+	}
+
+	revertAll()
+	if got := readSnapshotJSON(t, older); got[testChecksum] != "1" {
+		t.Fatalf("%s = %v after b4 could not open its directory", older, got)
+	}
+	applyAll()
+	s.wrote = nil
+	revertAll()
+	want := testChecksum + "=1," + testLiberal + "=0"
+	if got := strings.Join(s.wrote, ","); got != want {
+		t.Fatalf("stop wrote %q, want the originals %q", got, want)
+	}
+}
+
+func TestSysctlSnapshotKeepsTheOlderFilesWhenOneCannotBeRemoved(t *testing.T) {
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	writeSnapshotFile(t, filepath.Join(tmp, "b4_sysctl_snapshot.json"), map[string]string{testChecksum: "1", testLiberal: "0"}, 0o600)
+	writeSnapshotFile(t, filepath.Join(tmp, testSnapName), map[string]string{testChecksum: "0", testLiberal: "1"}, 0o600)
+	s := stubConntrackSysctls(t, map[string]string{testChecksum: "0", testLiberal: "1"})
+	var tmpIno uint64
+	if fi, err := os.Stat(tmp); err == nil {
+		tmpIno = fi.Sys().(*syscall.Stat_t).Ino
+	}
+	prev := sysctlSnapUnlink
+	t.Cleanup(func() { sysctlSnapUnlink = prev })
+	sysctlSnapUnlink = func(dirfd int, name string) error {
+		var st syscall.Stat_t
+		if name == testSnapName && syscall.Fstat(dirfd, &st) == nil && st.Ino == tmpIno {
+			return syscall.EPERM
+		}
+		return prev(dirfd, name)
+	}
+
+	revertAll()
+	applyAll()
+	revertAll()
+	forgetSysctlSnapshotState()
+	s.wrote = nil
+	revertAll()
+	want := testChecksum + "=1," + testLiberal + "=0"
+	if got := strings.Join(s.wrote, ","); got != want {
+		t.Fatalf("the next start wrote %q while the 1.93 file could not be removed, want the originals %q", got, want)
+	}
+}
+
+func TestSysctlSnapshotLeavesAnOldFileThatChangedAfterItWasRead(t *testing.T) {
+	run := privateRunDir(t)
+	tmp := sharedTmp(t)
+	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
+	unkeyed := filepath.Join(tmp, "b4_sysctl_snapshot.json")
+	writeSnapshotFile(t, unkeyed, map[string]string{testChecksum: "1"}, 0o600)
+	writeSnapshotFile(t, filepath.Join(tmp, testSnapName), map[string]string{testLiberal: "0"}, 0o600)
+	prev := sysctlSnapUnlink
+	t.Cleanup(func() { sysctlSnapUnlink = prev })
+	swapped := false
+	sysctlSnapUnlink = func(dirfd int, name string) error {
+		if !swapped && name == testSnapName {
+			swapped = true
+			if err := os.Remove(unkeyed); err != nil {
+				t.Error(err)
+			}
+			writeSnapshotFile(t, unkeyed, map[string]string{testChecksum: "1", "net.netfilter.nf_conntrack_acct": "0"}, 0o600)
+		}
+		return prev(dirfd, name)
+	}
+
+	loadSysctlSnapshot()
+	if got := readSnapshotJSON(t, unkeyed); got["net.netfilter.nf_conntrack_acct"] != "0" {
+		t.Fatalf("%s = %v: b4 removed a file that appeared after it read the old one", unkeyed, got)
+	}
+	sysctlSnapUnlink = prev
+	got := loadSysctlSnapshot()
+	if got["net.netfilter.nf_conntrack_acct"] != "0" || got[testChecksum] != "1" || got[testLiberal] != "0" {
+		t.Fatalf("snapshot = %v, want the new file taken over on the next look", got)
+	}
+	requireGone(t, unkeyed)
+}
+
+func TestSysctlSnapshotPutsBackWhatAnOlderB4LeftWhenItHasNowhereToSave(t *testing.T) {
+	tmp := sharedTmp(t)
+	private := filepath.Join(tmp, "b4-run")
+	if err := os.Symlink(t.TempDir(), private); err != nil {
+		t.Fatal(err)
+	}
+	useSnapshotDirs(t, []string{filepath.Join(t.TempDir(), "missing")}, private, tmp)
+	older := filepath.Join(tmp, testSnapName)
+	writeSnapshotFile(t, older, map[string]string{testChecksum: "1", testLiberal: "0"}, 0o600)
+	s := stubConntrackSysctls(t, map[string]string{testChecksum: "0", testLiberal: "1"})
+
+	revertAll()
+	want := testChecksum + "=1," + testLiberal + "=0"
+	if got := strings.Join(s.wrote, ","); got != want {
+		t.Fatalf("with nowhere safe to save, RevertBack wrote %q, want the originals %q from %s", got, want, older)
+	}
+	if got := readSnapshotJSON(t, older); len(got) != 2 {
+		t.Fatalf("%s = %v; with nowhere to move them b4 must leave the older values where they are", older, got)
+	}
 }
 
 func TestSysctlSnapshotKeepsTheOriginalsWhenRemovingOldFilesStopsHalfway(t *testing.T) {
