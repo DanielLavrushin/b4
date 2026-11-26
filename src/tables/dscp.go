@@ -362,7 +362,7 @@ func (im *IPTablesManager) applyDSCPChain(bin string, specs [][]string) (bool, e
 			}
 			if iptSpecTarget(spec) == "DSCP" {
 				kmodNoteRejected("xt_DSCP", bin, out)
-				return true, fmt.Errorf("the DSCP target was rejected (%s). %s", iptErrText(out, err), kmodMissingHint([]string{"xt_DSCP"}))
+				return true, fmt.Errorf("the DSCP target was rejected (%s). %s", iptErrText(out, err), kmodHintAfterRejection([]string{"xt_DSCP"}))
 			}
 			return true, fmt.Errorf("'%s' was rejected: %s", strings.Join(spec, " "), iptErrText(out, err))
 		}

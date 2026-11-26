@@ -21,3 +21,4 @@ export * from "./targets";
 export * from "./wssizeReuse";
 export * from "./firstByte";
 export * from "./setNotices";
+export * from "./capabilities";

@@ -78,13 +78,17 @@ func TestCtdirProbeRidesOnTheConnbytesProbe(t *testing.T) {
 		}
 	})
 
-	for _, loaded := range []bool{false, true} {
-		t.Run(fmt.Sprintf("a connbytes failure reads as before, module loaded %v", loaded), func(t *testing.T) {
+	for _, evidence := range []string{"none", "loaded", "registered in /proc without /lib/modules"} {
+		t.Run("a connbytes failure with module evidence "+evidence, func(t *testing.T) {
 			fx := newKmodFixture(t)
-			if loaded {
+			switch evidence {
+			case "loaded":
 				if err := os.MkdirAll(filepath.Join(fx.sysRoot, "xt_connbytes"), 0o755); err != nil {
 					t.Fatal(err)
 				}
+			case "registered in /proc without /lib/modules":
+				fx.noLibModules()
+				fx.proc("net/ip_tables_matches", "connbytes\n")
 			}
 			appended := stubProbeAppends(t, probeRejection)
 			im := NewIPTablesManager(&config.Config{}, false)
@@ -92,8 +96,8 @@ func TestCtdirProbeRidesOnTheConnbytesProbe(t *testing.T) {
 
 			plainErr := probeRejection(ctdirProbePlain)
 			want := fmt.Errorf("xt_connbytes kernel module is not available for %s (%v) - install it with: modprobe xt_connbytes (or apt install xtables-addons-common / linux-modules-extra-$(uname -r))", backendIPTables, plainErr)
-			if loaded {
-				want = fmt.Errorf("%s rejected the connbytes match although the xt_connbytes kernel module is loaded (%v) - the iptables match library is missing (OpenWrt/Entware: opkg install iptables-mod-conntrack-extra) or another program kept rewriting the filter table while b4 was probing it", backendIPTables, plainErr)
+			if evidence != "none" {
+				want = fmt.Errorf("%s rejected the connbytes match although the xt_connbytes kernel module is present (%v) - the iptables match library is missing (OpenWrt/Entware: opkg install iptables-mod-conntrack-extra) or another program kept rewriting the filter table while b4 was probing it", backendIPTables, plainErr)
 			}
 			if err == nil || err.Error() != want.Error() {
 				t.Fatalf("error = %v\nwant    %v", err, want)
