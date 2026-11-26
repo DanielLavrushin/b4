@@ -396,13 +396,13 @@ func TestSysctlSnapshotFinishesTheTakeoverPastAnEntryItCannotRemove(t *testing.T
 	}
 }
 
-func TestSysctlSnapshotRemovesAnEarlierFileItFoundButCouldNotOpen(t *testing.T) {
+func TestSysctlSnapshotWaitsForAnEarlierFileItFoundButCouldNotOpen(t *testing.T) {
 	run := privateRunDir(t)
 	tmp := sharedTmp(t)
 	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
 	older := filepath.Join(tmp, "b4_sysctl_snapshot.json")
-	writeSnapshotFile(t, older, map[string]string{testChecksum: "0", testLiberal: "1"}, 0o600)
-	s := stubConntrackSysctls(t, map[string]string{testChecksum: "1", testLiberal: "0"})
+	writeSnapshotFile(t, older, map[string]string{testChecksum: "1", testLiberal: "0"}, 0o600)
+	s := stubConntrackSysctls(t, map[string]string{testChecksum: "0", testLiberal: "1"})
 	prev := sysctlSnapOpenat
 	t.Cleanup(func() { sysctlSnapOpenat = prev })
 	sysctlSnapOpenat = func(dirfd int, name string, flags int, mode uint32) (int, error) {
@@ -413,59 +413,21 @@ func TestSysctlSnapshotRemovesAnEarlierFileItFoundButCouldNotOpen(t *testing.T) 
 	}
 
 	applyAll()
-	requireGone(t, older)
 	revertAll()
+	if len(s.wrote) != 0 {
+		t.Fatalf("while the 1.92 file could not be opened, b4 wrote %v", s.wrote)
+	}
+	if _, err := os.Lstat(older); err != nil {
+		t.Fatalf("the 1.92 file b4 could not open is gone: %v", err)
+	}
 	sysctlSnapOpenat = prev
 	forgetSysctlSnapshotState()
-	s.wrote = nil
-	revertAll()
-	if len(s.wrote) != 0 {
-		t.Fatalf("the next start wrote %v from an earlier file b4 could not open before", s.wrote)
-	}
-}
-
-func TestSysctlSnapshotFinishesTheTakeoverPastAFileItCanNeitherOpenNorRemove(t *testing.T) {
-	run := privateRunDir(t)
-	tmp := sharedTmp(t)
-	useSnapshotDirs(t, []string{run}, filepath.Join(tmp, "b4-run"), tmp)
-	older := filepath.Join(tmp, "b4_sysctl_snapshot.json")
-	writeSnapshotFile(t, older, map[string]string{testChecksum: "1", testLiberal: "0"}, 0o600)
-	writeSnapshotFile(t, filepath.Join(tmp, testSnapName), map[string]string{testChecksum: "0", testLiberal: "1"}, 0o600)
-	s := stubConntrackSysctls(t, map[string]string{testChecksum: "0", testLiberal: "1"})
-	tmpIno := dirInode(t, tmp)
-	prevOpen, prevUnlink := sysctlSnapOpenat, sysctlSnapUnlink
-	t.Cleanup(func() { sysctlSnapOpenat, sysctlSnapUnlink = prevOpen, prevUnlink })
-	sysctlSnapOpenat = func(dirfd int, name string, flags int, mode uint32) (int, error) {
-		if name == testSnapName && fdIsDir(dirfd, tmpIno) {
-			return -1, syscall.EACCES
-		}
-		return prevOpen(dirfd, name, flags, mode)
-	}
-	sysctlSnapUnlink = func(dirfd int, name string) error {
-		if name == testSnapName && fdIsDir(dirfd, tmpIno) {
-			return syscall.EPERM
-		}
-		return prevUnlink(dirfd, name)
-	}
-
-	revertAll()
-	want := testChecksum + "=1," + testLiberal + "=0"
-	if got := strings.Join(s.wrote, ","); got != want {
-		t.Fatalf("start wrote %q, want the originals %q", got, want)
-	}
-	requireGone(t, older)
 	applyAll()
 	revertAll()
-	if names := dirEntries(t, run); len(names) != 0 {
-		t.Fatalf("after a clean stop %s holds %v; a file b4 could neither open nor remove kept the takeover open", run, names)
+	if s.cur[testChecksum] != "1" || s.cur[testLiberal] != "0" {
+		t.Fatalf("the sysctls end at %v, want the originals checksum=1 liberal=0 from the 1.92 file", s.cur)
 	}
-	s.cur[testChecksum], s.cur[testLiberal] = "0", "1"
-	forgetSysctlSnapshotState()
-	s.wrote = nil
-	revertAll()
-	if len(s.wrote) != 0 {
-		t.Fatalf("the next start wrote %v over values set while b4 was stopped", s.wrote)
-	}
+	requireGone(t, older)
 }
 
 func TestSysctlSnapshotRefusesAFileOfAnotherUserBeforeOpeningIt(t *testing.T) {

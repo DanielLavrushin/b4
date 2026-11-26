@@ -367,21 +367,15 @@ func (d sysctlSnapDir) read(name string) (map[string]string, *sysctlSnapID, erro
 	if err := trustSnapshotFile(path, a, d.shared); err != nil {
 		return nil, &id, err
 	}
-	failed := func(err error) (map[string]string, *sysctlSnapID, error) {
-		if errors.Is(err, fs.ErrNotExist) || transientSnapshotError(err) {
-			return nil, nil, err
-		}
-		return nil, &id, err
-	}
 	fd, err := sysctlSnapOpenat(d.fd, name, sysctlSnapReadFlags, 0)
 	if err != nil {
-		return failed(&os.PathError{Op: "open", Path: path, Err: err})
+		return nil, nil, &os.PathError{Op: "open", Path: path, Err: err}
 	}
 	f := os.NewFile(uintptr(fd), path)
 	defer f.Close()
 	var st syscall.Stat_t
 	if err := syscall.Fstat(fd, &st); err != nil {
-		return failed(&os.PathError{Op: "stat", Path: path, Err: err})
+		return nil, nil, &os.PathError{Op: "stat", Path: path, Err: err}
 	}
 	opened := attrsOf(&st)
 	if opened.id != id {
@@ -392,7 +386,7 @@ func (d sysctlSnapDir) read(name string) (map[string]string, *sysctlSnapID, erro
 	}
 	b, err := io.ReadAll(f)
 	if err != nil {
-		return failed(err)
+		return nil, nil, err
 	}
 	var m map[string]string
 	if err := json.Unmarshal(b, &m); err != nil {
@@ -571,14 +565,9 @@ func takeOverEarlierSnapshots(cur *sysctlSnapDir, name string, m map[string]stri
 			continue
 		case errors.Is(err, fs.ErrNotExist):
 			continue
-		case transientSnapshotError(err):
+		default:
 			blocked = cmp.Or(blocked, err)
 			log.Tracef("TABLES: could not read the saved conntrack settings in %s: %v", path, err)
-			continue
-		default:
-			if sysctlSnapFirstWarning("origin " + path) {
-				log.Warnf("TABLES: ignoring the saved conntrack settings in %s: %v", path, err)
-			}
 			continue
 		}
 		f := sysctlSnapFound{dir: o.dir, name: o.name, id: *id}
