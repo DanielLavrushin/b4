@@ -107,6 +107,15 @@ func TestTheHubTestRefusesInTheUIsLanguage(t *testing.T) {
 			expectTranslatedField(t, body.Fields, c.field, c.params)
 		})
 	}
+
+	t.Run("a set without domains", func(t *testing.T) {
+		env := newHubEnv(t)
+		set := hubStrategySet("Addresses only")
+		set.Targets.IPs = []string{"203.0.113.0/24"}
+		cs, _ := hubtest.CatalogueSet(t, "addr-1", 1, &set, nil)
+		env.publish(t, cs)
+		expectCode(t, postJSON(t, env.mux, "/api/hub/sets/addr-1/test", HubTestRequest{}), http.StatusBadRequest, "no_domain")
+	})
 }
 
 func TestTheHubTestNamesAHubThatCannotServeItInTheUIsLanguage(t *testing.T) {
