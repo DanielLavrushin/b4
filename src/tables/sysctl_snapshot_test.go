@@ -1,8 +1,10 @@
 package tables
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -114,6 +116,8 @@ func releaseFIFO(path string) func() {
 	}
 }
 
+var finishesInTimeLimit = 10 * time.Second
+
 func finishesInTime(t *testing.T, what string, release func(), fn func()) {
 	t.Helper()
 	done := make(chan struct{})
@@ -124,15 +128,48 @@ func finishesInTime(t *testing.T, what string, release func(), fn func()) {
 	select {
 	case <-done:
 		return
-	case <-time.After(10 * time.Second):
+	case <-time.After(finishesInTimeLimit):
 	}
+	giveUp := time.After(2 * time.Second)
 	for {
 		release()
 		select {
 		case <-done:
-			t.Fatalf("%s was still blocked after 10s", what)
+			t.Fatalf("%s was still blocked after %v", what, finishesInTimeLimit)
+		case <-giveUp:
+			panic(fmt.Sprintf("%s was still blocked after %v, and releasing it did not help", what, finishesInTimeLimit))
 		case <-time.After(50 * time.Millisecond):
 		}
+	}
+}
+
+func TestFinishesInTimeGivesUpOnAGoroutineItCannotRelease(t *testing.T) {
+	if os.Getenv("B4_TEST_STUCK_HELPER") == "1" {
+		finishesInTimeLimit = 100 * time.Millisecond
+		finishesInTime(t, "a goroutine stuck on a channel", func() {}, func() { select {} })
+		return
+	}
+	var out bytes.Buffer
+	cmd := exec.Command(os.Args[0], "-test.run=^TestFinishesInTimeGivesUpOnAGoroutineItCannotRelease$", "-test.timeout=5m")
+	cmd.Env = append(os.Environ(), "B4_TEST_STUCK_HELPER=1")
+	cmd.Stdout, cmd.Stderr = &out, &out
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatalf("the helper passed with a goroutine stuck for good:\n%s", out.String())
+		}
+		if !strings.Contains(out.String(), "still blocked") {
+			t.Fatalf("the helper failed without saying what was stuck:\n%s", out.String())
+		}
+	case <-time.After(30 * time.Second):
+		_ = cmd.Process.Kill()
+		<-done
+		t.Fatal("the helper was still waiting 30s after its deadline, so a stuck test hangs until go test's own timeout")
 	}
 }
 
