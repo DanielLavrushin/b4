@@ -59,12 +59,19 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
       .finally(() => setLoading(false));
   }, [open]);
 
+  const moduleStatusLabels: Record<string, string> = {
+    loaded: t("settings.SystemInfo.moduleLoaded"),
+    "built-in": t("settings.SystemInfo.moduleBuiltIn"),
+    "not loaded": t("settings.SystemInfo.moduleNotLoaded"),
+    "not found as a module": t("settings.SystemInfo.moduleNotFound"),
+  };
+
   const statusChip = (status: string) => {
     const isOk = status === "loaded" || status === "built-in";
     return (
       <Chip
         size="small"
-        label={status}
+        label={moduleStatusLabels[status] ?? status}
         icon={isOk ? <CheckIcon /> : <WarningIcon />}
         sx={{
           bgcolor: isOk ? `${colors.secondary}22` : `${colors.quaternary}22`,

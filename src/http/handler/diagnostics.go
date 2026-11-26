@@ -50,15 +50,18 @@ func (api *API) buildDiagnostics() Diagnostics {
 func (api *API) collectDiagnostics() Diagnostics {
 	cfg := api.getCfg()
 	serviceManager := api.getServiceManager()
+	engine := collectEngineInfo(cfg)
+	tun := engine.Mode == "tun"
+	kernel := collectKernelModules(cfg, tun)
 
 	return Diagnostics{
 		System:    collectSystemInfo(),
 		B4:        collectB4Info(cfg.ConfigPath, serviceManager),
-		Kernel:    collectKernelModules(cfg),
+		Kernel:    kernel,
 		Tools:     collectTools(),
 		Network:   collectNetworkInterfaces(cfg),
-		Engine:    collectEngineInfo(cfg),
-		Firewall:  collectFirewallInfo(cfg),
+		Engine:    engine,
+		Firewall:  collectFirewallInfo(cfg, tun, packetQueueWorks(kernel)),
 		Geodata:   api.collectGeodataInfo(),
 		Upstreams: collectUpstreamHealth(),
 		Storage:   collectStorage(),
@@ -313,16 +316,17 @@ func collectNetworkInterfaces(cfg *config.Config) DiagNetwork {
 	return DiagNetwork{Interfaces: result}
 }
 
-func collectFirewallInfo(cfg *config.Config) DiagFirewall {
-	info := DiagFirewall{Backend: detectFirewallBackend()}
+func collectFirewallInfo(cfg *config.Config, tun, queueWorks bool) DiagFirewall {
+	info := DiagFirewall{Backend: detectFirewallBackend(), NFQueueWorks: queueWorks}
+	iptablesGroups := collectIptablesRuleGroups(info.Backend)
+	info.Backend = tunFirewallBackend(info.Backend, tun, iptablesGroups)
 
 	info.RuleGroups = append(info.RuleGroups, collectNftRuleGroups()...)
-	info.RuleGroups = append(info.RuleGroups, collectIptablesRuleGroups(info.Backend)...)
+	info.RuleGroups = append(info.RuleGroups, iptablesGroups...)
 	info.RuleGroups = append(info.RuleGroups, collectDSCPRuleGroup(cfg)...)
 	info.RuleGroups = append(info.RuleGroups, collectPolicyRuleGroup()...)
 	info.RuleGroups = append(info.RuleGroups, collectExposureRuleGroup()...)
 
-	info.NFQueueWorks = testNFQueue(info.Backend)
 	info.FlowOffload, info.FlowOffloadGuard = detectFlowOffload()
 	info.FlowOffloadSafe = flowOffloadSafe(info.FlowOffload, info.FlowOffloadGuard, cfg)
 	info.BridgeNetfilter, info.BridgeNetfilterSafe, info.BridgeNetfilterSysctls, info.BridgeNetfilterAttrs = bridgeNetfilterDiag(readBridgeNetfilter(), cfg)
@@ -507,6 +511,13 @@ func detectFirewallBackend() string {
 	}
 
 	return "none"
+}
+
+func tunFirewallBackend(backend string, tun bool, iptablesGroups []DiagRuleGroup) string {
+	if tun && backend == "none" && len(iptablesGroups) > 0 {
+		return "iptables"
+	}
+	return backend
 }
 
 func collectExposureRuleGroup() []DiagRuleGroup {
@@ -940,36 +951,14 @@ func flowOffloadSafe(mode string, guard int, cfg *config.Config) bool {
 	return guard > window
 }
 
-func testNFQueue(backend string) bool {
-	switch backend {
-	case "nftables":
-		if _, err := exec.Command("nft", "add", "table", "inet", "_b4_diag_test").CombinedOutput(); err != nil {
-			return false
-		}
-		defer exec.Command("nft", "delete", "table", "inet", "_b4_diag_test").CombinedOutput()
-		exec.Command("nft", "add", "chain", "inet", "_b4_diag_test", "test_chain").CombinedOutput()
-		_, err := exec.Command("nft", "add", "rule", "inet", "_b4_diag_test", "test_chain", "queue", "num", "0").CombinedOutput()
-		return err == nil
+const packetQueueCapability = "packet_queue"
 
-	case "iptables", "iptables-legacy":
-		bin := "iptables"
-		if backend == "iptables-legacy" {
-			bin = "iptables-legacy"
+func packetQueueWorks(k DiagKernel) bool {
+	for _, c := range k.Capabilities {
+		if c.Name == packetQueueCapability {
+			return c.Available
 		}
-		iptArgs := func(rest ...string) []string {
-			return append(append([]string{}, tables.WaitArgs(bin)...), rest...)
-		}
-		if _, err := exec.Command(bin, iptArgs("-t", "mangle", "-N", "B4_DIAG_TEST")...).CombinedOutput(); err != nil {
-			return false
-		}
-		defer func() {
-			exec.Command(bin, iptArgs("-t", "mangle", "-F", "B4_DIAG_TEST")...).CombinedOutput()
-			exec.Command(bin, iptArgs("-t", "mangle", "-X", "B4_DIAG_TEST")...).CombinedOutput()
-		}()
-		_, err := exec.Command(bin, iptArgs("-t", "mangle", "-A", "B4_DIAG_TEST", "-j", "NFQUEUE", "--queue-num", "0")...).CombinedOutput()
-		return err == nil
 	}
-
 	return false
 }
 
@@ -1037,50 +1026,12 @@ func kernelModuleNames(backend string, st tables.DNSQueryState) []string {
 	return modules
 }
 
-func collectKernelModules(cfg *config.Config) DiagKernel {
+func collectKernelModules(cfg *config.Config, tun bool) DiagKernel {
 	dnsQueries := tables.DNSQueryPlacement()
-	modules := kernelModuleNames(tables.DetectBackend(cfg), dnsQueries)
-	result := DiagKernel{Modules: make([]DiagModule, 0, len(modules))}
-
-	lsmodOutput := ""
-	if data, err := exec.Command("lsmod").Output(); err == nil {
-		lsmodOutput = string(data)
-	}
-
-	builtinPaths := []string{
-		"/lib/modules/" + unameRelease() + "/modules.builtin",
-		"/sys/module",
-	}
-
-	for _, mod := range modules {
-		dm := DiagModule{Name: mod}
-		modUnderscore := strings.ReplaceAll(mod, "-", "_")
-
-		if strings.Contains(lsmodOutput, modUnderscore) {
-			dm.Status = "loaded"
-		} else if isModuleBuiltin(mod, builtinPaths) {
-			dm.Status = "built-in"
-		} else {
-			dm.Status = "missing"
-		}
-
-		result.Modules = append(result.Modules, dm)
-	}
+	var result DiagKernel
 
 	queueOK, queueMissing, queuePkgs := tables.ProbeNFQueueCapability(cfg)
-	queueCap := DiagCapability{
-		Name:      "packet_queue",
-		Available: queueOK,
-		Missing:   queueMissing,
-		Packages:  queuePkgs,
-		Reasons:   tables.KernelModuleReasons(queueMissing),
-	}
-	if queueOK {
-		queueCap.Detail = "NFQUEUE interception available (b4 can inspect and rewrite matched traffic)"
-	} else {
-		queueCap.Detail = "NFQUEUE interception unavailable - b4 cannot intercept packets on this firewall backend; install the missing modules or switch to TUN mode"
-	}
-	result.Capabilities = append(result.Capabilities, queueCap)
+	result.Capabilities = append(result.Capabilities, packetQueueCapabilityRow(queueOK, queueMissing, queuePkgs, tables.KernelModuleReasons(queueMissing), tun))
 
 	tproxyOK, tproxyMissing, tproxyPkgs := tables.ProbeTProxyCapability(cfg)
 	tproxyCap := DiagCapability{
@@ -1119,7 +1070,32 @@ func collectKernelModules(cfg *config.Config) DiagKernel {
 	result.Capabilities = append(result.Capabilities, dnsQueryCapabilities(dnsQueries, listener)...)
 	markKeeneticHints(result.Capabilities, tables.KeeneticOS())
 
+	modules := kernelModuleNames(tables.DetectBackend(cfg), dnsQueries)
+	result.Modules = make([]DiagModule, 0, len(modules))
+	for _, mod := range modules {
+		result.Modules = append(result.Modules, DiagModule{Name: mod, Status: tables.KernelModuleStatus(mod)})
+	}
+
 	return result
+}
+
+func packetQueueCapabilityRow(ok bool, missing, pkgs, reasons []string, tun bool) DiagCapability {
+	c := DiagCapability{
+		Name:      packetQueueCapability,
+		Available: ok,
+		Missing:   missing,
+		Packages:  pkgs,
+		Reasons:   reasons,
+	}
+	switch {
+	case ok:
+		c.Detail = "NFQUEUE interception available (b4 can inspect and rewrite matched traffic)"
+	case tun:
+		c.Detail = "NFQUEUE interception unavailable on this firewall backend; the TUN engine in use does not need it"
+	default:
+		c.Detail = "NFQUEUE interception unavailable - b4 cannot intercept packets on this firewall backend; install the missing modules or switch to TUN mode"
+	}
+	return c
 }
 
 const keeneticNetfilterHint = "keenetic_netfilter"
@@ -1305,32 +1281,6 @@ func markKeeneticHints(caps []DiagCapability, keenetic bool) {
 		}
 		caps[i].Hint = keeneticNetfilterHint
 	}
-}
-
-func unameRelease() string {
-	var uts unix.Utsname
-	if err := unix.Uname(&uts); err != nil {
-		return ""
-	}
-	return unix.ByteSliceToString(uts.Release[:])
-}
-
-func isModuleBuiltin(mod string, paths []string) bool {
-	modUnderscore := strings.ReplaceAll(mod, "-", "_")
-	for _, p := range paths {
-		if strings.HasSuffix(p, "modules.builtin") {
-			if data, err := os.ReadFile(p); err == nil {
-				if strings.Contains(string(data), modUnderscore) {
-					return true
-				}
-			}
-		} else if strings.HasSuffix(p, "/sys/module") {
-			if _, err := os.Stat(p + "/" + modUnderscore); err == nil {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func collectTools() DiagTools {
