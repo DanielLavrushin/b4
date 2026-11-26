@@ -52,6 +52,7 @@ func (api *API) collectDiagnostics() Diagnostics {
 	serviceManager := api.getServiceManager()
 	engine := collectEngineInfo(cfg)
 	tun := engine.Mode == "tun"
+	tunRules := diagTUNRulesOf(cfg, engine.TUN)
 	kernel := collectKernelModules(cfg, tun)
 
 	return Diagnostics{
@@ -61,7 +62,7 @@ func (api *API) collectDiagnostics() Diagnostics {
 		Tools:     collectTools(),
 		Network:   collectNetworkInterfaces(cfg),
 		Engine:    engine,
-		Firewall:  collectFirewallInfo(cfg, tun, packetQueueWorks(kernel)),
+		Firewall:  collectFirewallInfo(cfg, tun, tunRules, packetQueueWorks(kernel)),
 		Geodata:   api.collectGeodataInfo(),
 		Upstreams: collectUpstreamHealth(),
 		Storage:   collectStorage(),
@@ -316,9 +317,8 @@ func collectNetworkInterfaces(cfg *config.Config) DiagNetwork {
 	return DiagNetwork{Interfaces: result}
 }
 
-func collectFirewallInfo(cfg *config.Config, tun, queueWorks bool) DiagFirewall {
+func collectFirewallInfo(cfg *config.Config, tun bool, tunRules diagTUNRules, queueWorks bool) DiagFirewall {
 	info := DiagFirewall{Backend: detectFirewallBackend(), NFQueueWorks: queueWorks}
-	tunRules := diagTUNRulesOf(cfg)
 	iptablesGroups := collectIptablesRuleGroups(info.Backend, tunRules.device)
 	info.Backend = tunFirewallBackend(info.Backend, tun, tunRules, iptablesGroups)
 
@@ -519,16 +519,11 @@ type diagTUNRules struct {
 	skipSetup bool
 }
 
-func diagTUNRulesOf(cfg *config.Config) diagTUNRules {
-	r := diagTUNRules{device: config.DefaultTUNDeviceName}
-	if cfg != nil {
-		r.device = cfg.Queue.TUN.Device()
-		r.skipSetup = cfg.System.Tables.SkipSetup
+func diagTUNRulesOf(cfg *config.Config, running *DiagTUN) diagTUNRules {
+	if running != nil && running.Running {
+		return diagTUNRules{device: running.DeviceName, skipSetup: running.skipTables}
 	}
-	if globalTUNEngine != nil && globalTUNEngine.DeviceName() != "" {
-		r.device = globalTUNEngine.DeviceName()
-	}
-	return r
+	return diagTUNRules{skipSetup: cfg != nil && cfg.System.Tables.SkipSetup}
 }
 
 func ruleOnDevice(l, device string) bool {
@@ -816,6 +811,7 @@ func collectTUNInfo(cfg *config.Config) *DiagTUN {
 	if globalTUNEngine != nil {
 		di := globalTUNEngine.DiagInfo()
 		t.Running = true
+		t.skipTables = di.SkipTables
 		t.SteerConflicts = di.SteerConflicts
 		if di.DeviceName != "" {
 			t.DeviceName = di.DeviceName

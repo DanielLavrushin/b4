@@ -80,15 +80,61 @@ func TestTUNFirewallBackendCountsOnlyTheTUNEnginesOwnRules(t *testing.T) {
 	}
 }
 
-func TestDiagTUNRulesFollowTheConfiguredDevice(t *testing.T) {
+func TestDiagTUNRulesFollowTheRunningEngine(t *testing.T) {
 	cfg := config.NewConfig()
-	if got := diagTUNRulesOf(&cfg); got != (diagTUNRules{device: config.DefaultTUNDeviceName}) {
-		t.Errorf("default config: %+v", got)
-	}
-	cfg.Queue.TUN.DeviceName = "tun0"
+	cfg.Queue.Mode = "tun"
+	cfg.Queue.TUN.DeviceName = "ppp0"
 	cfg.System.Tables.SkipSetup = true
-	if got := diagTUNRulesOf(&cfg); got != (diagTUNRules{device: "tun0", skipSetup: true}) {
-		t.Errorf("custom device with skip_setup: %+v", got)
+	for name, running := range map[string]*DiagTUN{
+		"no TUN section":          nil,
+		"the engine refused ppp0": {DeviceName: "ppp0"},
+	} {
+		if got := diagTUNRulesOf(&cfg, running); got != (diagTUNRules{skipSetup: true}) {
+			t.Errorf("%s: %+v, want no device: without a running engine no interface is known to be b4's", name, got)
+		}
+	}
+
+	running := &DiagTUN{Running: true, DeviceName: "tun7", skipTables: false}
+	if got := diagTUNRulesOf(&cfg, running); got != (diagTUNRules{device: "tun7"}) {
+		t.Errorf("running engine: %+v, want its device and the skip_setup it started with, not the saved one", got)
+	}
+	cfg.System.Tables.SkipSetup = false
+	running.skipTables = true
+	if got := diagTUNRulesOf(&cfg, running); got != (diagTUNRules{device: "tun7", skipSetup: true}) {
+		t.Errorf("engine started with skip_setup, switched off since: %+v", got)
+	}
+}
+
+func TestTUNFirewallBackendIgnoresRulesOnAnInterfaceTheEngineRefused(t *testing.T) {
+	cfg := config.NewConfig()
+	cfg.Queue.Mode = "tun"
+	cfg.Queue.TUN.DeviceName = "ppp0"
+	rules := diagTUNRulesOf(&cfg, &DiagTUN{DeviceName: "ppp0"})
+	firmware := []string{
+		"-A POSTROUTING -o ppp0 -j MASQUERADE",
+		"-A FORWARD -i ppp0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT",
+	}
+	for _, l := range firmware {
+		if isB4IptablesRule(l, rules.device) {
+			t.Errorf("a firmware rule on ppp0 is listed as b4's: %q", l)
+		}
+	}
+	groups := []DiagRuleGroup{{Title: "iptables nat (b4)", Rules: firmware}}
+	if got := tunFirewallBackend("none", true, rules, groups); got != "none" {
+		t.Errorf("backend = %q, want none: the TUN engine never started on ppp0", got)
+	}
+}
+
+func TestTUNFirewallBackendUsesTheSkipSetupTheEngineStartedWith(t *testing.T) {
+	defaultCapture := []DiagRuleGroup{
+		{Title: "iptables nat (b4)", Rules: []string{"-A POSTROUTING -o b4tun0 -j SNAT --to-source 172.17.0.2"}},
+		{Title: "iptables filter (b4)", Rules: []string{"-A FORWARD -o b4tun0 -j ACCEPT", "-A FORWARD -i b4tun0 -j ACCEPT"}},
+	}
+	cfg := config.NewConfig()
+	cfg.System.Tables.SkipSetup = true
+	rules := diagTUNRulesOf(&cfg, &DiagTUN{Running: true, DeviceName: "b4tun0"})
+	if got := tunFirewallBackend("none", true, rules, defaultCapture); got != "iptables" {
+		t.Errorf("engine started without skip_setup, which was switched on since, restart pending: backend = %q, want iptables", got)
 	}
 }
 
