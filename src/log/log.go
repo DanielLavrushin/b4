@@ -41,7 +41,7 @@ func (l Level) String() string {
 	}
 }
 
-const levelAlways Level = math.MinInt32
+const levelAlways = math.MinInt32
 
 const maxErrorFileSize = 1 << 20
 

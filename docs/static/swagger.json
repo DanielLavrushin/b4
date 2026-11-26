@@ -4500,7 +4500,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Sets every listed set's group to \"group\" (an empty group takes them out). The group's sets then stand together in the list: the block keeps the place of the group's first set from before the call, or, for a new group, of the first listed set. A group that a listed set left stays together too: a set taken out of its middle moves to just after it.",
+                "description": "Sets every listed set's group to \"group\" (an empty group takes them out). The group's sets then stand together in the list: the block keeps the place of the group's first set from before the call, or, for a new group, of the first listed set. A group that a listed set left stays together too: a set taken out of its middle moves to just after it. When no group has exactly this name but one differs only by case, the sets join that group and take its spelling.",
                 "consumes": [
                     "application/json"
                 ],
@@ -11088,15 +11088,13 @@
                 0,
                 1,
                 2,
-                3,
-                -2147483648
+                3
             ],
             "x-enum-varnames": [
                 "LevelError",
                 "LevelInfo",
                 "LevelTrace",
-                "LevelDebug",
-                "levelAlways"
+                "LevelDebug"
             ]
         },
         "metrics.Activity": {
