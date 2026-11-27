@@ -688,7 +688,7 @@ rules 88 and 89
 without its default route, the second in the uplink table, which holds the uplink's default
 route and is chosen from 97 down to 62 in the same way, or is `queue.tun.route_table`
 itself. Rules 88, 89 and 99 need an `ip` that accepts `suppress_prefixlength`; without it
-only rule 100 is added.
+only rule 100 is added, together with the rules at 87 and 98 below where they are needed.
 When no rule looks up the `local` table for every packet ahead of rule 88, as in RouterOS
 containers, b4 adds `fwmark 0x20000000/0x20000000 lookup local` at 87, and when none does
 ahead of rule 99, `fwmark 0x10000000/0x10000000 lookup local` at 98. Packets b4 sends to the
