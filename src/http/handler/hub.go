@@ -496,6 +496,7 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 			}
 			existing := next.Sets[index]
 			set.Id = existing.Id
+			set.Group = existing.Group
 			set.Enabled = existing.Enabled
 			set.Discovery = existing.Discovery
 			set.DSCP = existing.DSCP

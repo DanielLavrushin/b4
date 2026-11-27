@@ -108,7 +108,7 @@ function resetDisabledFeatures(cfg: Obj, defaults: Obj): void {
 export function exportSetJson(config: B4SetConfig, space?: number): string {
   const defaults = createDefaultSet(0);
   const alwaysInclude = new Set(["name", "enabled"]);
-  const skip = new Set(["id", "stats", "hub_state", "revision"]);
+  const skip = new Set(["id", "group", "stats", "hub_state", "revision"]);
   const configObj = structuredClone(config) as unknown as Record<
     string,
     unknown
@@ -152,4 +152,27 @@ export function exportSetJson(config: B4SetConfig, space?: number): string {
   delete result.escalate;
 
   return JSON.stringify(result, null, space);
+}
+
+export function exportSetGroupJson(
+  group: string,
+  sets: B4SetConfig[],
+  space?: number,
+): string {
+  const members = sets.map((set) => {
+    const { b4_version: _, ...rest } = JSON.parse(exportSetJson(set)) as Record<
+      string,
+      unknown
+    >;
+    return rest;
+  });
+  return JSON.stringify(
+    {
+      b4_version: import.meta.env.VITE_APP_VERSION || "dev",
+      group,
+      sets: members,
+    },
+    null,
+    space,
+  );
 }

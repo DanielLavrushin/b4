@@ -490,6 +490,7 @@ func (set *SetConfig) ResetToDefaults() {
 
 	id := set.Id
 	name := set.Name
+	group := set.Group
 	targets := set.Targets
 	discoveryURLs := append(make([]string, 0, len(set.Discovery.URLs)), set.Discovery.URLs...)
 	discoveryWatchdog := set.Discovery.Watchdog
@@ -498,6 +499,7 @@ func (set *SetConfig) ResetToDefaults() {
 
 	set.Id = id
 	set.Name = name
+	set.Group = group
 	set.Targets = targets
 	set.Discovery = SetDiscoveryConfig{URLs: discoveryURLs, Watchdog: discoveryWatchdog}
 

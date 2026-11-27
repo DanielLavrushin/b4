@@ -58,7 +58,9 @@ func SetRevision(set *config.SetConfig) string {
 	if set == nil {
 		return ""
 	}
-	return revisionOf(set)
+	ungrouped := *set
+	ungrouped.Group = ""
+	return revisionOf(&ungrouped)
 }
 
 func ConfigRevision(cfg *config.Config) string {

@@ -25,6 +25,7 @@ const (
 var Fields = map[string]Field{
 	"id":      {Class: Never},
 	"name":    {Class: Crosses},
+	"group":   {Class: Never},
 	"enabled": {Class: Never},
 	"hub":     {Class: Never},
 
@@ -184,6 +185,7 @@ var Fields = map[string]Field{
 
 var silentStrips = map[string]bool{
 	"id":      true,
+	"group":   true,
 	"enabled": true,
 	"hub":     true,
 }

@@ -18,7 +18,10 @@ import {
   Typography,
 } from "@mui/material";
 import {
+  AddIcon,
+  CategoryIcon,
   ClearIcon,
+  CloseIcon,
   CompareIcon,
   CopyIcon,
   DiscoveryIcon,
@@ -64,6 +67,7 @@ import {
 import { FacetDrawer, SignalRail } from "./SignalRail";
 
 const ROUTE_ICON = 14;
+const MENU_GROUPS = 6;
 
 interface EscalationLink {
   id: string;
@@ -79,6 +83,10 @@ interface SetCardProps {
   onCompare: () => void;
   onUseForNewSets: () => void;
   onDelete: () => void;
+  groups?: string[];
+  onMoveToGroup?: (group: string) => void;
+  onNewGroup?: () => void;
+  onRemoveFromGroup?: () => void;
   onToggleEnabled: (enabled: boolean) => void;
   syncing?: boolean;
   dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
@@ -108,6 +116,10 @@ export const SetCard = ({
   onCompare,
   onUseForNewSets,
   onDelete,
+  groups = [],
+  onMoveToGroup,
+  onNewGroup,
+  onRemoveFromGroup,
   onToggleEnabled,
   syncing,
   dragHandleProps,
@@ -405,6 +417,45 @@ export const SetCard = ({
                 <DiscoveryIcon fontSize="small" />
               </ListItemIcon>
               <ListItemText>{t("sets.card.findStrategy")}</ListItemText>
+            </MenuItem>
+          )}
+          {onNewGroup && <Divider />}
+          {onMoveToGroup &&
+            groups
+              .filter((group) => group !== set.group)
+              .slice(0, MENU_GROUPS)
+              .map((group) => (
+                <MenuItem
+                  key={group}
+                  onClick={() => handleAction(() => onMoveToGroup(group))}
+                >
+                  <ListItemIcon>
+                    <CategoryIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText
+                    sx={{ maxWidth: 260 }}
+                    slotProps={{ primary: { noWrap: true } }}
+                  >
+                    {t(set.group ? "sets.groups.moveTo" : "sets.groups.addTo", {
+                      group,
+                    })}
+                  </ListItemText>
+                </MenuItem>
+              ))}
+          {onNewGroup && (
+            <MenuItem onClick={() => handleAction(onNewGroup)}>
+              <ListItemIcon>
+                <AddIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>{t("sets.groups.newGroup")}</ListItemText>
+            </MenuItem>
+          )}
+          {set.group && onRemoveFromGroup && (
+            <MenuItem onClick={() => handleAction(onRemoveFromGroup)}>
+              <ListItemIcon>
+                <CloseIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>{t("sets.groups.removeFromGroup")}</ListItemText>
             </MenuItem>
           )}
           <Divider />

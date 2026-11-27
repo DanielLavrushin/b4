@@ -7,9 +7,11 @@ All notable changes to b4 are recorded in this file.
 ### Added
 
 - **Add to a set's resolvers** in the DNS results of the **DPI Detector** puts a working encrypted resolver into a set's **Resolvers**. If the set has **Enable DNS Redirect** off, the resolver goes first and the redirect is switched on. [#680](https://github.com/DanielLavrushin/b4/issues/680)
+- Sets can be grouped through **Select** and **Group**, through a set's menu, or by dragging a set onto a group. A group moves as one, and is enabled, renamed or exported as one file.
 
 ### Changed
 
+- **Import** on the sets page takes everything in one field: a set, several sets, a group or a shared set from b4, or a zapret or byedpi command line.
 - **Recommended DNS Servers** no longer list Mullvad, which announced the end of its public resolvers, or xbox-dns.ru, which its operator reports as not working. 94.140.14.140 is renamed from AdGuard Family to **AdGuard No Filter**. [#680](https://github.com/DanielLavrushin/b4/issues/680)
 - On a router whose DNS server may run on the router or elsewhere on its network, such as OpenWrt, the host name of a set's own `https://` resolver is looked up through the set's resolvers given by IP address, or, when there are none or none answers, through the resolver the device asked, even with **Fail closed when no resolver is reachable** on. **Traffic** marks a lookup passed on unchanged as `doh host`. [#680](https://github.com/DanielLavrushin/b4/issues/680)
 - **Start trace** on the **Logs** page records every log line down to debug whatever the **Log Level**, while the log itself keeps its level. A trace is capped at 8 MB, less when free memory or disk space runs short, and a longer one keeps its first and newest lines.
@@ -33,6 +35,7 @@ All notable changes to b4 are recorded in this file.
 - **Page hosts** in **Discovery** could call a host blocked even with a strategy that acts on the first packet of a connection, such as a fake SYN, because b4 did not know the host's address yet. [#642](https://github.com/DanielLavrushin/b4/issues/642)
 - In the Russian interface, **Test** on the **Community** page showed its errors and the status of each fetch in English.
 - **System Info** could report NFQUEUE as failed without testing it, show the firewall backend as `none` in TUN mode and list NFQUEUE modules and packages to install there, report built-in kernel modules as missing in a container, and leave out why iptables refused NFQUEUE. [#531](https://github.com/DanielLavrushin/b4/issues/531)
+- A set exported by b4 before 1.29.0 lost its **TCP Desync Attack** and **Window Manipulation** settings when imported in the set editor.
 
 ### Security
 
