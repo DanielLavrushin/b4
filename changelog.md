@@ -6,36 +6,47 @@ All notable changes to b4 are recorded in this file.
 
 ### Added
 
-- **Add to a set's resolvers** in the DNS results of the **DPI Detector** adds a working encrypted resolver to the **Resolvers** of a set; in a set with **Enable DNS Redirect** off it comes first and the redirect is turned on. [#680](https://github.com/DanielLavrushin/b4/issues/680)
+- **Add to a set's resolvers** in the DNS results of the **DPI Detector** puts a working encrypted resolver into a set's **Resolvers**. If the set has **Enable DNS Redirect** off, the resolver goes first and the redirect is switched on. [#680](https://github.com/DanielLavrushin/b4/issues/680)
+- Sets can be grouped through **Select** and **Group**, through a set's menu, or by dragging a set onto a group. A group moves as one, and is enabled, renamed or exported as one file.
 
 ### Changed
 
-- **Recommended DNS Servers** leave out Mullvad, which announced the end of its public resolvers, and xbox-dns.ru, which its operator reports as not working, and 94.140.14.140 is called **AdGuard No Filter** in place of AdGuard Family, as it blocks neither ads nor adult sites. [#680](https://github.com/DanielLavrushin/b4/issues/680)
-- Where the router's own DNS server may be on the router or on its network, as on OpenWrt, a lookup of the host name of a set's own `https://` resolver goes to the set's resolvers given by IP address and, when there are none or none of them answers, to the resolver the device asked, also with **Fail closed when no resolver is reachable**; **Traffic** marks a lookup passed on unchanged `doh host`. [#680](https://github.com/DanielLavrushin/b4/issues/680)
-- **Start trace** on the **Logs** page records every log line down to debug at any **Log Level**, and the log itself keeps its level. A trace takes at most 8 MB, less when free memory or disk space is short, and a longer one keeps its first and its newest lines.
+- **Import** on the sets page takes everything in one field: a set, several sets, a group or a shared set from b4, or a zapret or byedpi command line.
+- **Recommended DNS Servers** no longer list Mullvad, which announced the end of its public resolvers, or xbox-dns.ru, which its operator reports as not working. 94.140.14.140 is renamed from AdGuard Family to **AdGuard No Filter**. [#680](https://github.com/DanielLavrushin/b4/issues/680)
+- On a router whose DNS server may run on the router or elsewhere on its network, such as OpenWrt, the host name of a set's own `https://` resolver is looked up through the set's resolvers given by IP address, or, when there are none or none answers, through the resolver the device asked, even with **Fail closed when no resolver is reachable** on. **Traffic** marks a lookup passed on unchanged as `doh host`. [#680](https://github.com/DanielLavrushin/b4/issues/680)
+- **Start trace** on the **Logs** page records every log line down to debug whatever the **Log Level**, while the log itself keeps its level. A trace is capped at 8 MB, less when free memory or disk space runs short, and a longer one keeps its first and newest lines.
 - The note under **Settings, Integrations, Community Hub** lists what the hub receives with a sync and with a report.
-- Importing a shared set, or applying one on the **Community** page, tells when its DNS redirect is on but has no resolver.
+- Importing a shared set, or applying one on the **Community** page, warns when the set's DNS redirect is on but has no resolver.
 
 ### Fixed
 
-- A log trace being recorded was lost when b4 crashed or restarted, and a long one could fill a router's memory.
-- A set whose domains include the host name of its own `https://` resolver, such as a set for every name, resolved with 5-second pauses on a router with its own DNS forwarder, such as OpenWrt, and not at all with **Fail closed when no resolver is reachable**. [#680](https://github.com/DanielLavrushin/b4/issues/680)
-- After the router's WAN address changed, a set with a single `https://` resolver could go on for minutes without it: its names went to the device's resolver, or stopped resolving with **Fail closed when no resolver is reachable**. [#680](https://github.com/DanielLavrushin/b4/issues/680)
-- The **Traffic** page and the **Dashboard** could put a connection under a set that matched its address, although the set of its domain handled it. [#673](https://github.com/DanielLavrushin/b4/issues/673), [#674](https://github.com/DanielLavrushin/b4/issues/674)
-- The **Dashboard** could count a connection to an IP target of a **Route** set for another set that lists its domain, although it went through the tunnel of the **Route** set. [#674](https://github.com/DanielLavrushin/b4/issues/674)
-- A site could stay blocked in browsers when another set without a TCP strategy matched its address, because the strategy of the site's own set started too late. [#675](https://github.com/DanielLavrushin/b4/issues/675)
-- A set matched by address whose **TLS Version Filter** did not fit a TCP connection left its start alone but handled the rest of it. [#676](https://github.com/DanielLavrushin/b4/issues/676)
-- For up to two minutes after sets were moved or edited, the start of connections to addresses a device had just resolved could still go to the old set. [#677](https://github.com/DanielLavrushin/b4/issues/677)
-- The help for **QUIC Matching** and **TLS Version Filter** read as if they could keep a set away from QUIC to its own IP targets, and **Order of sets** left out that a domain match comes before an address match. [#678](https://github.com/DanielLavrushin/b4/issues/678)
+- A log trace being recorded was lost if b4 crashed or restarted, and a long trace could fill the router's memory.
+- On a router with its own DNS forwarder, such as OpenWrt, a set whose domains include the host name of its own `https://` resolver, a set for every name for example, resolved names with 5-second pauses, or not at all with **Fail closed when no resolver is reachable** on. [#680](https://github.com/DanielLavrushin/b4/issues/680)
+- After the router's WAN address changed, a set with a single `https://` resolver could lose it for minutes: its names went to the device's resolver, or stopped resolving with **Fail closed when no resolver is reachable** on. [#680](https://github.com/DanielLavrushin/b4/issues/680)
+- A set with **Fail closed when no resolver is reachable** passed DNS queries on to the device's own resolver while slow resolvers held 64 lookups in flight. ([#701](https://github.com/DanielLavrushin/b4/pull/701), thanks [@tlq5l](https://github.com/tlq5l); [#694](https://github.com/DanielLavrushin/b4/issues/694))
 - After a DNS-over-TCP query that b4 passed on unchanged, such as a name in no set, later queries on the same connection skipped their sets' resolvers, **Pinned addresses**, **Fail closed when no resolver is reachable** and blocking. ([#713](https://github.com/DanielLavrushin/b4/pull/713), thanks [@orshih6](https://github.com/orshih6); [#693](https://github.com/DanielLavrushin/b4/issues/693))
 - DNS-over-TCP answers for a set without its own resolvers taught the set no addresses for its routing, kept addresses that **IP Block Detection** found unreachable, and kept IPv6 addresses while **Enable IPv6 Support** was off.
+- After b4 stopped, a router could keep b4's connection-tracking settings instead of its own when a cleanup of `/tmp` removed the values b4 had saved there, when b4 was updated after a crash, or when b4 could not read those values for a moment. [#614](https://github.com/DanielLavrushin/b4/issues/614), [#702](https://github.com/DanielLavrushin/b4/issues/702)
+- The **Traffic** page and the **Dashboard** could show a connection under a set that matched its address, while the set that matched its domain was the one handling it. [#673](https://github.com/DanielLavrushin/b4/issues/673), [#674](https://github.com/DanielLavrushin/b4/issues/674)
+- The **Dashboard** could count a connection to an IP target of a **Route** set toward another set that lists its domain, even though the connection went through the **Route** set's tunnel. [#674](https://github.com/DanielLavrushin/b4/issues/674)
+- A site could stay blocked in browsers when another set without a TCP strategy matched its address, because the site's own set applied its strategy too late. [#675](https://github.com/DanielLavrushin/b4/issues/675)
+- A set that matched a TCP connection by address but not by its **TLS Version Filter** skipped the start of that connection and still handled the rest. [#676](https://github.com/DanielLavrushin/b4/issues/676)
+- For up to two minutes after sets were reordered or edited, the start of a connection to an address a device had just resolved could still go to the old set. [#677](https://github.com/DanielLavrushin/b4/issues/677)
+- The help for **QUIC Matching** and **TLS Version Filter** suggested they could keep a set from handling QUIC to its own IP targets, and the help for **Order of sets** did not say that a domain match comes before an address match. [#678](https://github.com/DanielLavrushin/b4/issues/678)
+- **Discovery** kept a DNS fix in the set it offered for a site whose link returns an error such as 404, even when the system resolver gave an address that serves the site. [#623](https://github.com/DanielLavrushin/b4/issues/623)
+- With **Enable IPv6 Support** off, or under the TUN engine, the **Watchdog**, **MCP** and **Test** on the **Community** page could fetch a site over IPv6, which b4 does not handle in that case, so their result said nothing about what b4 did. [#631](https://github.com/DanielLavrushin/b4/issues/631)
+- **Page hosts** in **Discovery** could call a host blocked even with a strategy that acts on the first packet of a connection, such as a fake SYN, because b4 did not know the host's address yet. [#642](https://github.com/DanielLavrushin/b4/issues/642)
+- In the Russian interface, **Test** on the **Community** page showed its errors and the status of each fetch in English.
+- **System Info** could report NFQUEUE as failed without testing it, show the firewall backend as `none` in TUN mode and list NFQUEUE modules and packages to install there, report built-in kernel modules as missing in a container, and leave out why iptables refused NFQUEUE. [#531](https://github.com/DanielLavrushin/b4/issues/531)
+- A set exported by b4 before 1.29.0 lost its **TCP Desync Attack** and **Window Manipulation** settings when imported in the set editor.
+- In TUN mode on a MikroTik RouterOS container without `xt_connbytes`, packets b4 sent to the router itself, such as answers to the router's own DNS lookups, could leave by the uplink instead of reaching the router. ([#711](https://github.com/DanielLavrushin/b4/pull/711), thanks [@orshih6](https://github.com/orshih6); [#630](https://github.com/DanielLavrushin/b4/issues/630))
 
 ### Security
 
-- The login or token in a custom geodata address was written to the log and shown under **Geo Databases** when a download failed.
-- The path of an `https://` resolver address, which can hold an account ID, was written to the log and log traces, and to the saved log and history of **Discovery**, which every account on the router could read.
-- A set published with **Publish to hub** or prepared with **Prepare shared set** carried the whole address of a custom geodata source, and of its first resolver when that was an `https://` one. Replace a login, token or account ID that was in a set, log or trace you gave to someone.
-- The safe copy of **Download Configuration** kept the user name and the password of an address whose host was left out, when the password was a long number.
+- When a download from a custom geodata address failed, the login or token in that address was written to the log and shown under **Geo Databases**.
+- The path of an `https://` resolver address, which can contain an account ID, was written to the log, to log traces and to the saved log and history of **Discovery**, which any account on the router could read.
+- A set published with **Publish to hub** or prepared with **Prepare shared set** carried the full address of a custom geodata source.
+- The safe copy from **Download Configuration** kept the user name and password of an address with no host when the password was a long number.
 
 ## [1.93.0] - 2026-11-21
 

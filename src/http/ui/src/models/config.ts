@@ -457,6 +457,7 @@ export interface IfaceCounts {
 export interface B4SetConfig {
   id: string;
   name: string;
+  group?: string;
   enabled: boolean;
 
   tcp: TcpConfig;

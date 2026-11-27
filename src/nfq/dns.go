@@ -551,6 +551,10 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 				case dnsResolveInflight <- struct{}{}:
 				default:
 					logDNSEvent("UDP", set, domain, clientIP, originalDst, clientPort, srcMac, dnsActionOverload)
+					if set.DNS.Strict {
+						vc.dropUnanswered()
+						return 0
+					}
 					return vc.accept()
 				}
 

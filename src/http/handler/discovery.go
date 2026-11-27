@@ -489,6 +489,7 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 		}
 		moved = api.releaseDomainsFromOtherSets(next.Sets, set.Id, set.Targets.SNIDomains)
 		next.Sets = append([]*config.SetConfig{&set}, next.Sets...)
+		config.SettleSetGroup(next.Sets, 0)
 		return nil
 	})
 	if err != nil {

@@ -80,6 +80,8 @@ A router keeps running the version it applied until **Update to version N** is c
 | FAIL | OK | The set breaks the domain. |
 | FAIL | FAIL | The address may be blocked outright, or the site is down. |
 
+Both fetches use only the IP versions b4 handles. A domain whose only public addresses are of another version is not fetched, and the test reports that instead of a verdict.
+
 ## Discovery and the catalogue {#discovery-and-the-catalogue}
 
 [Discovery](../discovery.md) has the option **Try community sets first**, shown while the Community Hub is on and enabled by default. A run with it first syncs the catalogue when the router's copy is older than ten minutes. It then takes up to three sets per site, best rated first, and tests them after the strategies remembered from earlier runs and before the built-in presets.

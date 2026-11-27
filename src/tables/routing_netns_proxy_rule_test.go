@@ -63,6 +63,7 @@ func netnsDialLoopOnce(addr string) bool {
 		return false
 	}
 	defer conn.Close()
+	_ = conn.(*net.TCPConn).SetLinger(0)
 	return netnsDialLoopExchange(conn)
 }
 

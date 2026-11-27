@@ -3307,7 +3307,7 @@
                         }
                     },
                     "400": {
-                        "description": "no_domain",
+                        "description": "no_domain, not_fetched",
                         "schema": {
                             "$ref": "#/definitions/handler.APIError"
                         }
@@ -3648,7 +3648,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Captures all log output to a file until stopped or the max duration elapses. The file is prefixed with build info and a full system diagnostics snapshot. Only one session may run at a time.",
+                "description": "Records every log line, down to debug, to a file until stopped or the max duration elapses; the log level setting and the other log outputs stay as they are. The file is prefixed with build info and a system diagnostics snapshot, cut when it would take more than a quarter of the trace. A trace that reaches its size limit (8 MB, less when free memory or disk space is short) keeps its first and its newest lines. Only one session may run at a time.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3684,6 +3684,15 @@
                                 "type": "string"
                             }
                         }
+                    },
+                    "507": {
+                        "description": "Not enough free memory or disk space for a trace",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 }
             }
@@ -3695,7 +3704,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Reports whether a trace is active, its captured line count and start time, and whether a finished trace is available to download.",
+                "description": "Reports whether a trace is active, its captured line count and start time, whether a finished trace is available to download and, in endReason, how it ended: user, time_limit, write_failed, shutdown or interrupted.",
                 "produces": [
                     "application/json"
                 ],
@@ -4368,7 +4377,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "A field the body leaves out takes b4's set default, the value a config file or a set export means when it leaves the field out. The new set template (/ui/new-set-template) does not apply here: only the web interface's Create Set reads it. A set created without \"enabled\" is enabled.",
+                "description": "A field the body leaves out takes b4's set default, the value a config file or a set export means when it leaves the field out. The new set template (/ui/new-set-template) does not apply here: only the web interface's Create Set reads it. A set created without \"enabled\" is enabled. A \"group\" in the body is kept only when the new set lands next to a set of that group, or when no other set has it; otherwise the set starts without a group.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4484,6 +4493,52 @@
                 }
             }
         },
+        "/sets/batch-set-group": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets every listed set's group to \"group\" (an empty group takes them out). The group's sets then stand together in the list: the block keeps the place of the group's first set from before the call, or, for a new group, of the first listed set. A group that a listed set left stays together too: a set taken out of its middle moves to just after it. When no group has exactly this name but one differs only by case, the sets join that group and take its spelling.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sets"
+                ],
+                "summary": "Put sets into a group, or take them out of one",
+                "parameters": [
+                    {
+                        "description": "ids and group",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/sets/check-domain": {
             "get": {
                 "security": [
@@ -4526,6 +4581,51 @@
                 }
             }
         },
+        "/sets/import": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates every set of the document in one write, at the top of the list and in the document's order, all in one group. A field a set leaves out takes b4's set default, as in POST /sets. A set name or group name already in use gets a number appended. Every set must have a name. Imported sets start with the watchdog and IP priority off, whatever the document says.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sets"
+                ],
+                "summary": "Import a group of sets",
+                "parameters": [
+                    {
+                        "description": "The group, as the web interface exports it",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.setGroupDocument"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ImportSetsResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/sets/reorder": {
             "post": {
                 "security": [
@@ -4533,6 +4633,7 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "\"set_ids\" lists every set in its new place. \"groups\" is optional: it maps a set ID to that set's new group, an empty string for none, and is saved in the same write as the order. The sets of each group are then brought together at the place of the group's first set, so an order that would leave a group in two places is adjusted.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4545,7 +4646,7 @@
                 "summary": "Reorder sets",
                 "parameters": [
                     {
-                        "description": "Ordered set IDs",
+                        "description": "Ordered set IDs, and optionally new groups by set ID",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -4636,7 +4737,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "The body replaces the whole set. It must carry \"name\", \"enabled\" and \"targets\", otherwise the write is refused with 400 validation_failed and the set is left as it was. Any other field the body leaves out takes its set default, not the value the set had. When the body carries the \"revision\" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before.",
+                "description": "The body replaces the whole set. It must carry \"name\", \"enabled\" and \"targets\", otherwise the write is refused with 400 validation_failed and the set is left as it was. Any other field the body leaves out takes its set default, not the value the set had. When the body carries the \"revision\" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before. The set keeps the group it is stored with whatever the body says, and a change of group does not change the revision: use POST /sets/batch-set-group to change it.",
                 "consumes": [
                     "application/json"
                 ],
@@ -6885,6 +6986,9 @@
                 "fragmentation": {
                     "$ref": "#/definitions/config.FragmentationConfig"
                 },
+                "group": {
+                    "type": "string"
+                },
                 "hub": {
                     "$ref": "#/definitions/config.HubOrigin"
                 },
@@ -8239,6 +8343,9 @@
                 },
                 "fragmentation": {
                     "$ref": "#/definitions/config.FragmentationConfig"
+                },
+                "group": {
+                    "type": "string"
                 },
                 "hub": {
                     "$ref": "#/definitions/config.HubOrigin"
@@ -10092,6 +10199,20 @@
                 }
             }
         },
+        "handler.ImportSetsResult": {
+            "type": "object",
+            "properties": {
+                "group": {
+                    "type": "string"
+                },
+                "sets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/config.SetConfig"
+                    }
+                }
+            }
+        },
         "handler.MetricsResetResponse": {
             "type": "object",
             "properties": {
@@ -10321,6 +10442,9 @@
                 "fragmentation": {
                     "$ref": "#/definitions/config.FragmentationConfig"
                 },
+                "group": {
+                    "type": "string"
+                },
                 "hub": {
                     "$ref": "#/definitions/config.HubOrigin"
                 },
@@ -10448,6 +10572,9 @@
                 },
                 "downloadReady": {
                     "type": "boolean"
+                },
+                "endReason": {
+                    "type": "string"
                 },
                 "level": {
                     "type": "string"
@@ -10733,6 +10860,9 @@
                     }
                 }
             }
+        },
+        "handler.setGroupDocument": {
+            "type": "object"
         },
         "hub.CatalogueStatus": {
             "type": "object",

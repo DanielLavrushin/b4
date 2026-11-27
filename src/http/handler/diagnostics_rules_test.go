@@ -23,7 +23,7 @@ func TestIsB4IptablesRuleKeepsTheRulesThatDecideTUNBehaviour(t *testing.T) {
 		"-A B4_PREROUTING_X -p udp --dport 53 -j NFQUEUE --queue-num 537",
 	}
 	for _, l := range keep {
-		if !isB4IptablesRule(l) {
+		if !isB4IptablesRule(l, config.DefaultTUNDeviceName) {
 			t.Errorf("dropped a b4 rule from the diagnostics dump: %q", l)
 		}
 	}
@@ -47,7 +47,7 @@ func TestIsB4IptablesRuleSkipsChainsDumpedSeparately(t *testing.T) {
 		"-A B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-num 537",
 	}
 	for _, l := range skip {
-		if isB4IptablesRule(l) {
+		if isB4IptablesRule(l, config.DefaultTUNDeviceName) {
 			t.Errorf("duplicated a rule already dumped as its own chain: %q", l)
 		}
 	}
@@ -60,8 +60,30 @@ func TestIsB4IptablesRuleIgnoresForeignRules(t *testing.T) {
 		"-P FORWARD DROP",
 	}
 	for _, l := range foreign {
-		if isB4IptablesRule(l) {
+		if isB4IptablesRule(l, config.DefaultTUNDeviceName) {
 			t.Errorf("picked up a rule b4 does not own: %q", l)
+		}
+	}
+}
+
+func TestIsB4IptablesRuleKeepsTheRulesOnACustomTUNDevice(t *testing.T) {
+	for _, l := range []string{
+		"-A FORWARD -o tun0 -j ACCEPT",
+		"-A FORWARD -i tun0 -j ACCEPT",
+		"-A POSTROUTING -o tun0 -j SNAT --to-source 10.0.0.2",
+		"-A POSTROUTING -o tun0 -j ACCEPT",
+	} {
+		if !isB4IptablesRule(l, "tun0") {
+			t.Errorf("dropped a rule on the TUN device tun0 from the diagnostics dump: %q", l)
+		}
+	}
+	for _, l := range []string{
+		"-A FORWARD -o tun01 -j ACCEPT",
+		"-A FORWARD -o wg0 -j ACCEPT",
+		"-A POSTROUTING -o eth0 -j MASQUERADE",
+	} {
+		if isB4IptablesRule(l, "tun0") {
+			t.Errorf("picked up a rule on another device as the TUN device's: %q", l)
 		}
 	}
 }

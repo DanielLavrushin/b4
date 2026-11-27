@@ -67,7 +67,7 @@ func TestNormalizeSetTemplateKeepsOnlyTheChangedFields(t *testing.T) {
 }
 
 func TestNormalizeSetTemplateDropsTheSetsOwnFields(t *testing.T) {
-	input := `{"id":"x","name":"YouTube","enabled":false,"targets":{"sni_domains":["youtube.com"]},"hub":{"id":"h"},"discovery":{"urls":["https://youtube.com/"]},"revision":"r","b4_version":"1.91.0"}`
+	input := `{"id":"x","name":"YouTube","group":"Video","enabled":false,"targets":{"sni_domains":["youtube.com"]},"hub":{"id":"h"},"discovery":{"urls":["https://youtube.com/"]},"revision":"r","b4_version":"1.91.0"}`
 	got, err := NormalizeSetTemplate(decodeTemplate(t, input))
 	if err != nil {
 		t.Fatalf("normalize: %v", err)

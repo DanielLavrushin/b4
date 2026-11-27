@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
@@ -176,7 +179,7 @@ func (ds *DiscoverySuite) settleAddresses(domain string) []string {
 	return out
 }
 
-func (ds *DiscoverySuite) settleConfig(stored *config.SetConfig, domains []string) *config.Config {
+func (ds *DiscoverySuite) settleConfig(stored *config.SetConfig, domains []string, addrs map[string][]string) *config.Config {
 	cfg := ds.confirmConfig(stored, domains)
 	if cfg == nil || len(cfg.Sets) == 0 {
 		return nil
@@ -184,6 +187,9 @@ func (ds *DiscoverySuite) settleConfig(stored *config.SetConfig, domains []strin
 	set := cfg.Sets[0]
 	set.DNS = config.DNSConfig{StripECH: set.DNS.StripECH}
 	set.TCP.IPBlockDetect = config.DefaultSetConfig.TCP.IPBlockDetect
+	for _, domain := range domains {
+		set.Targets.IpsToMatch = plusMatchIPs(set.Targets.IpsToMatch, asCIDRs(addrs[domain]))
+	}
 	return cfg
 }
 
@@ -196,7 +202,7 @@ func (ds *DiscoverySuite) checkSystemAddresses(presetName string, stored *config
 	for _, di := range inputs {
 		domains = append(domains, di.Domain)
 	}
-	cfg := ds.settleConfig(stored, domains)
+	cfg := ds.settleConfig(stored, domains, addrs)
 	if cfg == nil {
 		return served, true
 	}
@@ -210,9 +216,10 @@ func (ds *DiscoverySuite) checkSystemAddresses(presetName string, stored *config
 	for _, di := range inputs {
 		ips := addrs[di.Domain]
 		log.DiscoveryLogf("  Checking the system resolver's addresses %v of %s with '%s'", ips, di.Domain, presetName)
+		found := ds.foundStatuses(di.Domain, presetName)
 		ok := len(ips) > 0
 		for _, ip := range ips {
-			if !ds.systemAddressServes(di, timeout, ip) {
+			if !ds.systemAddressServes(di, timeout, ip, found) {
 				ok = false
 				break
 			}
@@ -225,7 +232,35 @@ func (ds *DiscoverySuite) checkSystemAddresses(presetName string, stored *config
 	return served, true
 }
 
-func (ds *DiscoverySuite) systemAddressServes(di DomainInput, timeout time.Duration, ip string) bool {
+func (ds *DiscoverySuite) foundStatuses(domain, preset string) []int {
+	ds.CheckSuite.mu.RLock()
+	defer ds.CheckSuite.mu.RUnlock()
+
+	dr, dnsResult := ds.domainResults[domain], ds.dnsResults[domain]
+	if dr == nil {
+		return nil
+	}
+	won := dr.Results[preset]
+	if won == nil || won.Status != CheckStatusComplete {
+		return nil
+	}
+	fromSystem := func(r *DomainPresetResult) bool {
+		return dnsResult != nil && containsString(dnsResult.systemIPs, r.usedIP)
+	}
+	var elsewhere []int
+	for _, r := range dr.Results {
+		if r != nil && r.Status == CheckStatusComplete && !fromSystem(r) && !slices.Contains(elsewhere, r.StatusCode) {
+			elsewhere = append(elsewhere, r.StatusCode)
+		}
+	}
+	if len(elsewhere) == 0 {
+		return []int{won.StatusCode}
+	}
+	slices.Sort(elsewhere)
+	return elsewhere
+}
+
+func (ds *DiscoverySuite) systemAddressServes(di DomainInput, timeout time.Duration, ip string, found []int) bool {
 	reason := ""
 	for try := 0; try < dnsSettleTries && !ds.canceled(); try++ {
 		r := ds.fetchUsingIPForDomain(di, timeout, ip)
@@ -233,7 +268,7 @@ func (ds *DiscoverySuite) systemAddressServes(di DomainInput, timeout time.Durat
 			reason = r.Error
 			continue
 		}
-		if reason = settleRefusal(r, di.Domain); reason == "" {
+		if reason = settleRefusal(r, di.Domain, found); reason == "" {
 			return true
 		}
 		break
@@ -244,14 +279,28 @@ func (ds *DiscoverySuite) systemAddressServes(di DomainInput, timeout time.Durat
 	return false
 }
 
-func settleRefusal(r CheckResult, domain string) string {
+func settleRefusal(r CheckResult, domain string, found []int) string {
 	switch {
-	case r.StatusCode < 200 || r.StatusCode >= 400:
+	case (r.StatusCode < 200 || r.StatusCode >= 400) && len(found) == 0:
 		return fmt.Sprintf("it answers HTTP %d", r.StatusCode)
+	case (r.StatusCode < 200 || r.StatusCode >= 400) && (!slices.Contains(found, r.StatusCode) || slices.ContainsFunc(found, loadedFine)):
+		return fmt.Sprintf("it answers HTTP %d, and the search loaded the site with HTTP %s", r.StatusCode, statusList(found))
 	case !certificateFor(r.firstTLS, domain):
 		return "the certificate of its first answer is not valid for " + domain
 	}
 	return ""
+}
+
+func loadedFine(status int) bool {
+	return status >= 200 && status < 400
+}
+
+func statusList(statuses []int) string {
+	parts := make([]string, 0, len(statuses))
+	for _, status := range statuses {
+		parts = append(parts, strconv.Itoa(status))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func certificateFor(state *tls.ConnectionState, domain string) bool {

@@ -10,11 +10,12 @@ import (
 )
 
 type kmodFixture struct {
-	sysRoot string
-	relDir  string
-	modDir  string
-	calls   []string
-	now     time.Time
+	sysRoot  string
+	procRoot string
+	relDir   string
+	modDir   string
+	calls    []string
+	now      time.Time
 }
 
 func newKmodFixture(t *testing.T) *kmodFixture {
@@ -22,6 +23,7 @@ func newKmodFixture(t *testing.T) *kmodFixture {
 	fx := &kmodFixture{now: time.Unix(1_700_000_000, 0)}
 	root := t.TempDir()
 	fx.sysRoot = filepath.Join(root, "sys")
+	fx.procRoot = filepath.Join(root, "proc")
 	lib := filepath.Join(root, "lib")
 	fx.relDir = filepath.Join(lib, "4.9-ndm-5")
 	fx.modDir = filepath.Join(fx.relDir, "kernel", "net", "netfilter")
@@ -32,8 +34,9 @@ func newKmodFixture(t *testing.T) *kmodFixture {
 		t.Fatal(err)
 	}
 
-	origSys, origLib, origRel, origRun, origDeps, origNow := kmodSysRoot, kmodLibRoot, kmodRelease, run, kmodDependsOf, kmodNow
+	origSys, origProc, origLib, origRel, origRun, origDeps, origNow := kmodSysRoot, kmodProcRoot, kmodLibRoot, kmodRelease, run, kmodDependsOf, kmodNow
 	kmodSysRoot = fx.sysRoot
+	kmodProcRoot = fx.procRoot
 	kmodLibRoot = lib
 	kmodRelease = func() string { return "4.9-ndm-5" }
 	kmodDependsOf = func(string) []string { return nil }
@@ -41,10 +44,36 @@ func newKmodFixture(t *testing.T) *kmodFixture {
 	kmodResetForTest()
 	stubDNSKernel(t, unaffectedDNSKernel)
 	t.Cleanup(func() {
-		kmodSysRoot, kmodLibRoot, kmodRelease, run, kmodDependsOf, kmodNow = origSys, origLib, origRel, origRun, origDeps, origNow
+		kmodSysRoot, kmodProcRoot, kmodLibRoot, kmodRelease, run, kmodDependsOf, kmodNow = origSys, origProc, origLib, origRel, origRun, origDeps, origNow
 		kmodResetForTest()
 	})
 	return fx
+}
+
+func (fx *kmodFixture) proc(rel, content string) {
+	path := filepath.Join(fx.procRoot, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o444); err != nil {
+		panic(err)
+	}
+}
+
+func (fx *kmodFixture) noLibModules() {
+	if err := os.RemoveAll(filepath.Dir(fx.relDir)); err != nil {
+		panic(err)
+	}
+}
+
+func (fx *kmodFixture) stubContainerModprobe() {
+	run = func(args ...string) (string, error) {
+		fx.calls = append(fx.calls, strings.Join(args, " "))
+		if args[0] == "modprobe" {
+			return "modprobe: can't change directory to '/lib/modules': No such file or directory", errors.New("exit status 1")
+		}
+		return "", nil
+	}
 }
 
 func kmodResetForTest() {
@@ -411,5 +440,135 @@ func TestKmodConntrackModulesNameTheirOpenWrtPackages(t *testing.T) {
 	fx.loaded("nf_conntrack_netlink")
 	if pkgs := KernelModulePackages([]string{"nf_conntrack_netlink"}); len(pkgs) != 0 {
 		t.Fatalf("a loaded nf_conntrack_netlink needs no package, got %v", pkgs)
+	}
+}
+
+func TestKmodRegisteredTargetCountsAsPresentWithoutLibModules(t *testing.T) {
+	fx := newKmodFixture(t)
+	fx.noLibModules()
+	fx.stubContainerModprobe()
+	fx.proc("net/ip_tables_targets", "MASQUERADE\nNFQUEUE\nmark\n")
+	if err := loadKernelModule("xt_NFQUEUE"); err != nil {
+		t.Fatalf("a target the kernel lists as registered failed to load: %v", err)
+	}
+	if got := kmodStateOf("xt_NFQUEUE"); got != kmodStatePresent {
+		t.Fatalf("state = %v, want present", got)
+	}
+	if got := KernelModuleStatus("xt_NFQUEUE"); got != KernelModuleBuiltin {
+		t.Fatalf("status = %q, want %q", got, KernelModuleBuiltin)
+	}
+	if got := KernelModuleReasons([]string{"xt_NFQUEUE"}); len(got) != 0 {
+		t.Fatalf("reasons = %v, want none", got)
+	}
+}
+
+func TestKmodProcEvidenceMatchesWholeCaseSensitiveNames(t *testing.T) {
+	fx := newKmodFixture(t)
+	fx.proc("net/ip_tables_matches", "connmark\nconnbytes2\n")
+	fx.proc("net/ip6_tables_matches", "multiport\n")
+	cases := map[string]string{
+		"xt_connmark":  KernelModuleBuiltin,
+		"xt_CONNMARK":  KernelModuleNotFound,
+		"xt_connbytes": KernelModuleNotFound,
+		"xt_multiport": KernelModuleBuiltin,
+	}
+	for mod, want := range cases {
+		if got := KernelModuleStatus(mod); got != want {
+			t.Errorf("%s: status = %q, want %q", mod, got, want)
+		}
+	}
+}
+
+func TestKmodNetfilterProcFilesShowQueueLogAndConntrack(t *testing.T) {
+	fx := newKmodFixture(t)
+	fx.proc("net/netfilter/nfnetlink_queue", "")
+	fx.proc("sys/net/netfilter/nf_conntrack_max", "65536\n")
+	cases := map[string]string{
+		"nfnetlink_queue": KernelModuleBuiltin,
+		"nfnetlink_log":   KernelModuleNotFound,
+		"nf_conntrack":    KernelModuleBuiltin,
+	}
+	for mod, want := range cases {
+		if got := KernelModuleStatus(mod); got != want {
+			t.Errorf("%s: status = %q, want %q", mod, got, want)
+		}
+	}
+}
+
+func TestKmodProcShowsTheModulesOfTheTUNEngine(t *testing.T) {
+	tunModules := []string{"tun", "xt_CT", "xt_mark"}
+	t.Run("registered", func(t *testing.T) {
+		fx := newKmodFixture(t)
+		fx.noLibModules()
+		fx.stubContainerModprobe()
+		fx.proc("misc", "130 watchdog\n 62 ppp\n200 tun\n")
+		fx.proc("net/ip_tables_targets", "CT\nSNAT\nMARK\n")
+		fx.proc("net/ip_tables_matches", "mark\nconntrack\n")
+		for _, mod := range tunModules {
+			if got := KernelModuleStatus(mod); got != KernelModuleBuiltin {
+				t.Errorf("%s: status = %q, want %q", mod, got, KernelModuleBuiltin)
+			}
+			if err := loadKernelModule(mod); err != nil {
+				t.Errorf("%s is registered in /proc, but loading it failed: %v", mod, err)
+			}
+		}
+	})
+	t.Run("only similar names", func(t *testing.T) {
+		fx := newKmodFixture(t)
+		fx.noLibModules()
+		fx.stubContainerModprobe()
+		fx.proc("misc", "130 watchdog\n201 tunnel\n")
+		fx.proc("net/ip_tables_targets", "CTMARK\n")
+		fx.proc("net/ip_tables_matches", "connmark\n")
+		for _, mod := range tunModules {
+			if got := KernelModuleStatus(mod); got != KernelModuleNotFound {
+				t.Errorf("%s: status = %q, want %q", mod, got, KernelModuleNotFound)
+			}
+			if err := loadKernelModule(mod); err == nil {
+				t.Errorf("%s: modprobe failed and /proc lists only similar names, but loading it succeeded", mod)
+			}
+		}
+	})
+}
+
+func TestKernelModuleStatusTellsLoadedBuiltinOnDiskAndNotFound(t *testing.T) {
+	fx := newKmodFixture(t)
+	fx.proc("modules", "xt_NFQUEUE 16384 1 - Live 0x0000000000000000\nnf_conntrack_netlink 49152 0 - Live 0x0000000000000000\n")
+	fx.loaded("xt_NFQUEUE")
+	fx.builtin("xt_conntrack")
+	fx.module("xt_socket.ko")
+	cases := map[string]string{
+		"xt_NFQUEUE":   KernelModuleLoaded,
+		"xt_conntrack": KernelModuleBuiltin,
+		"xt_socket":    KernelModuleNotLoaded,
+		"nf_conntrack": KernelModuleNotFound,
+		"xt_TPROXY":    KernelModuleNotFound,
+	}
+	for mod, want := range cases {
+		if got := KernelModuleStatus(mod); got != want {
+			t.Errorf("%s: status = %q, want %q", mod, got, want)
+		}
+	}
+}
+
+func TestKmodReasonsPutTheRejectionBeforeTheLoadError(t *testing.T) {
+	fx := newKmodFixture(t)
+	fx.noLibModules()
+	fx.stubContainerModprobe()
+	if err := loadKernelModule("xt_NFQUEUE"); err == nil {
+		t.Fatal("expected a load error without /lib/modules")
+	}
+	kmodNoteRejected("xt_NFQUEUE", "iptables", "iptables v1.8.7 (legacy): Couldn't load target `NFQUEUE':No such file or directory")
+	reasons := KernelModuleReasons([]string{"xt_NFQUEUE"})
+	if len(reasons) != 1 {
+		t.Fatalf("reasons = %v", reasons)
+	}
+	got := reasons[0]
+	if !strings.HasPrefix(got, "xt_NFQUEUE: iptables rejected the rule: iptables v1.8.7 (legacy): Couldn't load target `NFQUEUE'") {
+		t.Fatalf("the rejection does not come first: %q", got)
+	}
+	load := strings.Index(got, "; modprobe could not load it (modprobe: can't change directory to '/lib/modules'")
+	if load < 0 || !strings.Contains(got[load:], "there is no xt_NFQUEUE.ko under") {
+		t.Fatalf("the load error does not follow the rejection: %q", got)
 	}
 }

@@ -134,7 +134,7 @@ func fakeResolver(t *testing.T, answers map[uint16][][]byte) {
 	net.DefaultResolver = &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, "udp", pc.LocalAddr().String())
+			return (&net.Dialer{Resolver: &net.Resolver{}}).DialContext(ctx, "udp", pc.LocalAddr().String())
 		},
 	}
 	t.Cleanup(func() { net.DefaultResolver = previous })
@@ -272,7 +272,11 @@ func fakeNames(t *testing.T, names map[string][]string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { pc.Close() })
+	late := &lateReplies{}
+	t.Cleanup(func() {
+		late.wait()
+		pc.Close()
+	})
 
 	go func() {
 		buf := make([]byte, 1500)
@@ -302,7 +306,18 @@ func fakeNames(t *testing.T, names map[string][]string) {
 				resp[3] = 0x83
 			}
 			var rrs [][]byte
+			delay := time.Duration(0)
 			for _, s := range addrs {
+				switch {
+				case s == "servfail4" && qtype == 1:
+					resp[3] = 0x82
+					continue
+				case s == "late6" && qtype == 28:
+					delay = 4 * time.Second
+					continue
+				case s == "servfail4" || s == "late6":
+					continue
+				}
 				addr := netip.MustParseAddr(s)
 				switch {
 				case qtype == 1 && addr.Is4():
@@ -319,6 +334,10 @@ func fakeNames(t *testing.T, names map[string][]string) {
 				rr := []byte{0xC0, 0x0C, byte(qtype >> 8), byte(qtype), 0, 1, 0, 0, 0, 30, 0, byte(len(rdata))}
 				resp = append(append(resp, rr...), rdata...)
 			}
+			if delay > 0 {
+				late.send(delay, func() { pc.WriteTo(resp, from) })
+				continue
+			}
 			pc.WriteTo(resp, from)
 		}
 	}()
@@ -327,10 +346,38 @@ func fakeNames(t *testing.T, names map[string][]string) {
 	net.DefaultResolver = &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, "udp", pc.LocalAddr().String())
+			return (&net.Dialer{Resolver: &net.Resolver{}}).DialContext(ctx, "udp", pc.LocalAddr().String())
 		},
 	}
 	t.Cleanup(func() { net.DefaultResolver = previous })
+}
+
+type lateReplies struct {
+	mu      sync.Mutex
+	closing bool
+	wg      sync.WaitGroup
+}
+
+func (l *lateReplies) send(delay time.Duration, write func()) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closing {
+		write()
+		return
+	}
+	l.wg.Add(1)
+	go func() {
+		defer l.wg.Done()
+		time.Sleep(delay)
+		write()
+	}()
+}
+
+func (l *lateReplies) wait() {
+	l.mu.Lock()
+	l.closing = true
+	l.mu.Unlock()
+	l.wg.Wait()
 }
 
 type probeLab struct {

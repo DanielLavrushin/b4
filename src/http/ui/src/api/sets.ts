@@ -2,6 +2,7 @@ import { apiDelete, apiFetch, apiPost, apiPut } from "./apiClient";
 import { B4SetConfig } from "@b4.sets";
 import { DSCPPath } from "@models/discovery";
 import { DomainReassignment, SetDomainMatch } from "@models/sets";
+import { SetGroupDocument } from "@models/setGroups";
 
 export type { SetDomainMatch } from "@models/sets";
 
@@ -20,8 +21,8 @@ export const setsApi = {
   updateSet: (id: string, set: B4SetConfig) =>
     apiPut<B4SetConfig>(`/api/sets/${id}`, { ...set, id }),
   deleteSet: (id: string) => apiDelete(`/api/sets/${id}`),
-  reorderSets: (set_ids: string[]) =>
-    apiPost<void>("/api/sets/reorder", { set_ids }),
+  reorderSets: (set_ids: string[], groups?: Record<string, string>) =>
+    apiPost<void>("/api/sets/reorder", { set_ids, groups }),
   addDomainToSet: (setId: string, domain: string) =>
     apiPost<B4SetConfig>(`/api/sets/${setId}/add-domain`, { domain }),
   addDomainsToSet: (
@@ -41,6 +42,10 @@ export const setsApi = {
     apiPost<void>("/api/sets/batch-delete", { ids }),
   setEnabledForSets: (ids: string[], enabled: boolean) =>
     apiPost<void>("/api/sets/batch-set-enabled", { ids, enabled }),
+  setGroupForSets: (ids: string[], group: string) =>
+    apiPost<void>("/api/sets/batch-set-group", { ids, group }),
+  importSetGroup: (doc: SetGroupDocument) =>
+    apiPost<{ group?: string; sets: B4SetConfig[] }>("/api/sets/import", doc),
   checkDomain: (domain: string) =>
     apiFetch<SetDomainMatch[]>(
       `/api/sets/check-domain?domain=${encodeURIComponent(domain)}`,

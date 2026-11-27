@@ -16,7 +16,7 @@ const (
 	setTemplateScopeDevice = "02:00:00:00:00:00"
 )
 
-var SetTemplateOwnKeys = []string{"id", "name", "enabled", "targets", "hub", "discovery", "revision", "stats", "hub_state", "b4_version"}
+var SetTemplateOwnKeys = []string{"id", "name", "group", "enabled", "targets", "hub", "discovery", "revision", "stats", "hub_state", "b4_version"}
 
 func NormalizeSetTemplate(raw map[string]interface{}) (map[string]interface{}, error) {
 	if len(raw) == 0 {

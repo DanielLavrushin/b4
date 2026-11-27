@@ -236,7 +236,7 @@ func isStaleTunRule(line string, owned map[string]bool, queueMark uint) bool {
 	}
 	if isLocalLookup(lookup) {
 		prio, ok := rulePriority(line)
-		return ok && isLocalGuardPriority(prio) && markMatches(fw, engine.TunSteerMark)
+		return ok && (isLocalGuardPriority(prio) && markMatches(fw, engine.TunSteerMark) || isBypassGuardRule(prio, fw))
 	}
 	if owned[lookup] {
 		return isTunRuleMark(fw) || isLegacyTunRuleMark(fw, queueMark)

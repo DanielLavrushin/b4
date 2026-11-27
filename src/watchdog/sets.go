@@ -415,7 +415,7 @@ func (w *Watchdog) classifyOwnership(setId string, u *URLWatchStatus) bool {
 
 func (w *Watchdog) runSetChecks(cfg *config.Config, jobs []*setCheckJob, now time.Time) {
 	timeout := time.Duration(cfg.System.Checker.Watchdog.TimeoutSec) * time.Second
-	ipv6 := cfg.Queue.IPv6Enabled
+	network := cfg.HandledNetwork()
 	check := w.checkURL
 	if check == nil {
 		check = checkURLStrict
@@ -442,7 +442,7 @@ func (w *Watchdog) runSetChecks(cfg *config.Config, jobs []*setCheckJob, now tim
 			wg.Add(1)
 			go func(u *URLWatchStatus) {
 				defer wg.Done()
-				res := check(ctx, u.URL, ipv6, timeout)
+				res := check(ctx, u.URL, network, timeout)
 				u.Status = res.Status
 				u.StatusCode = res.StatusCode
 				u.BytesRead = res.BytesRead

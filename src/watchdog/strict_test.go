@@ -138,7 +138,7 @@ func TestStrictCheckRefusesReservedDestinations(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if res := checkURLStrict(context.Background(), srv.URL+"/", false, 3*time.Second); res.Status != URLStatusUnusable {
+	if res := checkURLStrict(context.Background(), srv.URL+"/", "tcp4", 3*time.Second); res.Status != URLStatusUnusable {
 		t.Errorf("a loopback destination is never probed: %+v", res)
 	}
 
@@ -170,7 +170,7 @@ func TestStrictCheckCertificateErrorsAreUnusable(t *testing.T) {
 
 func TestStrictCheckRejectsNonHTTPURLs(t *testing.T) {
 	for _, raw := range []string{"", "ftp://example.com/", "example.com"} {
-		if res := checkURLStrict(context.Background(), raw, false, time.Second); res.Status != URLStatusFailed {
+		if res := checkURLStrict(context.Background(), raw, "", time.Second); res.Status != URLStatusFailed {
 			t.Errorf("%q: %+v", raw, res)
 		}
 	}

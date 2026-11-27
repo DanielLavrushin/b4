@@ -164,7 +164,7 @@ test-netns:
 	printf '{"Replace":{"%s":"%s"}}\n' "$(abspath $(SRC_DIR))/http/ui/dist/index.html" "$(abspath $(OUT_DIR))/netns-ui.html" > $(OUT_DIR)/netns-ui.json; \
 	if go -C $(SRC_DIR) test -c -o ../$(OUT_DIR)/nfq.test ./nfq/ && go -C $(SRC_DIR) build -overlay $(abspath $(OUT_DIR))/netns-ui.json -o ../$(OUT_DIR)/b4-netns .; then \
 		echo "Running the queue engine tests in a private network namespace..."; \
-		unshare -Urnm sh -c 'B4_NETNS_TEST=1 B4_WSREUSE_BINARY=$(abspath $(OUT_DIR))/b4-netns exec $(OUT_DIR)/nfq.test -test.run TestNetns -test.v' || nfq=$$?; \
+		unshare -Urnm sh -c 'case "$$0/" in /tmp/*) echo "test-netns: $$0 is under /tmp, which the queue engine tests replace with a /tmp of their own: keep the checkout outside /tmp" >&2; exit 1 ;; esac; mount -t tmpfs -o mode=0755 tmpfs /run && mount -t tmpfs -o mode=1777 tmpfs /tmp && TMPDIR=/tmp B4_NETNS_TEST=1 B4_WSREUSE_BINARY="$$0/b4-netns" exec "$$0/nfq.test" -test.run TestNetns -test.v' $(abspath $(OUT_DIR)) || nfq=$$?; \
 	else \
 		nfq=1; \
 	fi; \

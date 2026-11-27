@@ -496,6 +496,7 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 			}
 			existing := next.Sets[index]
 			set.Id = existing.Id
+			set.Group = existing.Group
 			set.Enabled = existing.Enabled
 			set.Discovery = existing.Discovery
 			set.DSCP = existing.DSCP
@@ -811,7 +812,7 @@ func (api *API) stampHubOrigin(localID, hubID string, version int, hash string) 
 // @Param id path string true "Hub set id"
 // @Param body body HubTestRequest true "Domain to fetch"
 // @Success 200 {object} HubTestResponse
-// @Failure 400 {object} APIError "no_domain"
+// @Failure 400 {object} APIError "no_domain, not_fetched"
 // @Security BearerAuth
 // @Router /hub/sets/{id}/test [post]
 func (api *API) handleHubTest(w http.ResponseWriter, r *http.Request) {
@@ -841,13 +842,43 @@ func (api *API) handleHubTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if watchdog.IsReservedHost(domain) {
-		writeAPIError(w, ErrBadRequest(domain+" is a private or local address"))
+		e := ErrBadRequest(domain + " is a private or local address")
+		e.Fields = hubDomainField("private_host", e.Message, map[string]any{"host": domain})
+		writeAPIError(w, e)
 		return
 	}
 	cfg := api.getCfg()
 	log.Infof("Hub: probing %s for set %s", domain, res.Set.ID)
 	through, bypassed := probeDomainBothWays(r.Context(), cfg, domain, mcpProbeTimeout(0))
+	if mcpProbeUnfetched(&through) {
+		writeAPIError(w, hubNotFetched(&through))
+		return
+	}
 	sendResponse(w, HubTestResponse{Domain: domain, ThroughB4: hubProbeResultOf(through), Bypassed: hubProbeResultOf(bypassed)})
+}
+
+func hubDomainField(code, msg string, params map[string]any) []FieldError {
+	return []FieldError{{Path: "domain", Code: code, Message: msg, Params: params}}
+}
+
+func hubNotFetched(r *mcpProbeResult) *APIError {
+	e := &APIError{Status: http.StatusBadRequest, Code: "not_fetched", Message: r.Error}
+	var unhandled *watchdog.ErrUnhandledFamily
+	var unprobeable *watchdog.ErrUnprobeableHost
+	switch {
+	case errors.As(r.err, &unhandled):
+		code, params := "unhandled_family_"+strings.ToLower(unhandled.Family), map[string]any{"host": unhandled.Host}
+		if unhandled.From != "" {
+			code += "_redirect"
+			params["from"] = unhandled.From
+		}
+		e.Fields = hubDomainField(code, r.Error, params)
+	case errors.As(r.err, &unprobeable) && unprobeable.Problem == watchdog.HostNotBare:
+		e.Fields = hubDomainField("invalid_host", r.Error, map[string]any{"value": unprobeable.Host})
+	case errors.As(r.err, &unprobeable) && unprobeable.Problem == watchdog.HostNotASCII:
+		e.Fields = hubDomainField("host_not_ascii", r.Error, map[string]any{"value": unprobeable.Host})
+	}
+	return e
 }
 
 // @Summary Hub identity

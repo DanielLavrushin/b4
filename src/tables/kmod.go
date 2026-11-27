@@ -62,9 +62,48 @@ const (
 	kmodStatePresent
 )
 
+const (
+	KernelModuleLoaded    = "loaded"
+	KernelModuleBuiltin   = "built-in"
+	KernelModuleNotLoaded = "not loaded"
+	KernelModuleNotFound  = "not found as a module"
+)
+
+type kmodProcEvidence struct {
+	files []string
+	entry string
+}
+
+var (
+	kmodProcTargets = []string{"net/ip_tables_targets", "net/ip6_tables_targets"}
+	kmodProcMatches = []string{"net/ip_tables_matches", "net/ip6_tables_matches"}
+)
+
+var kmodProcRegistry = map[string]kmodProcEvidence{
+	"xt_NFQUEUE":   {files: kmodProcTargets, entry: "NFQUEUE"},
+	"xt_TPROXY":    {files: kmodProcTargets, entry: "TPROXY"},
+	"xt_CONNMARK":  {files: kmodProcTargets, entry: "CONNMARK"},
+	"xt_DSCP":      {files: kmodProcTargets, entry: "DSCP"},
+	"xt_NFLOG":     {files: kmodProcTargets, entry: "NFLOG"},
+	"xt_CT":        {files: kmodProcTargets, entry: "CT"},
+	"xt_mark":      {files: kmodProcMatches, entry: "mark"},
+	"xt_connbytes": {files: kmodProcMatches, entry: "connbytes"},
+	"xt_conntrack": {files: kmodProcMatches, entry: "conntrack"},
+	"xt_multiport": {files: kmodProcMatches, entry: "multiport"},
+	"xt_socket":    {files: kmodProcMatches, entry: "socket"},
+	"xt_connmark":  {files: kmodProcMatches, entry: "connmark"},
+	"xt_addrtype":  {files: kmodProcMatches, entry: "addrtype"},
+
+	"tun":             {files: []string{"misc"}, entry: "200 tun"},
+	"nfnetlink_queue": {files: []string{"net/netfilter/nfnetlink_queue"}},
+	"nfnetlink_log":   {files: []string{"net/netfilter/nfnetlink_log"}},
+	"nf_conntrack":    {files: []string{"sys/net/netfilter/nf_conntrack_count", "sys/net/netfilter/nf_conntrack_max"}},
+}
+
 var (
 	kmodSysRoot   = "/sys/module"
 	kmodLibRoot   = "/lib/modules"
+	kmodProcRoot  = "/proc"
 	kmodRelease   = unameRelease
 	kmodDependsOf = kmodDepends
 	kmodNow       = time.Now
@@ -95,6 +134,69 @@ func kmodCanonical(name string) string {
 func kmodLoaded(name string) bool {
 	_, err := os.Stat(filepath.Join(kmodSysRoot, kmodCanonical(name)))
 	return err == nil
+}
+
+func kmodRegistered(name string) bool {
+	ev, ok := kmodProcRegistry[kmodCanonical(name)]
+	if !ok {
+		return false
+	}
+	for _, f := range ev.files {
+		path := filepath.Join(kmodProcRoot, f)
+		if ev.entry == "" {
+			if _, err := os.Stat(path); err == nil {
+				return true
+			}
+			continue
+		}
+		if kmodFileHasLine(path, ev.entry) {
+			return true
+		}
+	}
+	return false
+}
+
+func kmodFileHasLine(path, want string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	for line := range strings.SplitSeq(string(data), "\n") {
+		if strings.TrimSpace(line) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func kmodListedInProcModules(name string) bool {
+	data, err := os.ReadFile(filepath.Join(kmodProcRoot, "modules"))
+	if err != nil {
+		return false
+	}
+	key := kmodCanonical(name)
+	for line := range strings.SplitSeq(string(data), "\n") {
+		if f := strings.Fields(line); len(f) > 0 && f[0] == key {
+			return true
+		}
+	}
+	return false
+}
+
+func kmodPresent(name string) bool {
+	return kmodLoaded(name) || kmodBuiltin(name) || kmodRegistered(name)
+}
+
+func KernelModuleStatus(name string) string {
+	switch {
+	case kmodListedInProcModules(name):
+		return KernelModuleLoaded
+	case kmodPresent(name):
+		return KernelModuleBuiltin
+	case KernelModuleOnDisk(name):
+		return KernelModuleNotLoaded
+	}
+	return KernelModuleNotFound
 }
 
 func kmodModulesDir() string {
@@ -243,7 +345,7 @@ func loadKernelModuleAt(name string, depth int) error {
 		return nil
 	}
 	probeOut, probeErr := run("modprobe", "-q", name)
-	if probeErr == nil || kmodLoaded(name) || kmodBuiltin(name) {
+	if probeErr == nil || kmodPresent(name) {
 		return nil
 	}
 	path := kmodPath(name)
@@ -322,7 +424,7 @@ func kmodStateOf(name string) kmodState {
 	kmodStateMu.Lock()
 	attempted, loadErr := kmodAttempted[key], kmodLoadErrs[key]
 	kmodStateMu.Unlock()
-	if kmodLoaded(name) || kmodBuiltin(name) {
+	if kmodPresent(name) {
 		return kmodStatePresent
 	}
 	onDisk := KernelModuleOnDisk(name)
@@ -362,32 +464,49 @@ func KernelModulePackages(missing []string) []string {
 }
 
 func KernelModuleReasons(missing []string) []string {
+	return kmodReasons(missing, true)
+}
+
+func kmodReasons(missing []string, withRejection bool) []string {
 	reasons := make([]string, 0, len(missing))
 	for _, m := range missing {
 		key := kmodCanonical(m)
 		kmodStateMu.Lock()
 		loadErr, rejected := kmodLoadErrs[key], kmodRejected[key]
 		kmodStateMu.Unlock()
+		present := rejected != "" && kmodStateOf(m) == kmodStatePresent
 		switch {
+		case present && withRejection:
+			reasons = append(reasons, m+": the kernel module is present, but "+rejected)
+		case present:
+			reasons = append(reasons, m+": the kernel module is present")
+		case rejected != "" && withRejection && loadErr != "":
+			reasons = append(reasons, m+": "+rejected+"; "+loadErr)
+		case rejected != "" && withRejection:
+			reasons = append(reasons, m+": "+rejected)
 		case loadErr != "":
 			reasons = append(reasons, m+": "+loadErr)
-		case rejected != "" && kmodStateOf(m) == kmodStatePresent:
-			reasons = append(reasons, m+": the kernel module is present, but "+rejected)
-		case rejected != "":
-			reasons = append(reasons, m+": "+rejected)
 		}
 	}
 	return reasons
 }
 
 func kmodMissingHint(missing []string) string {
+	return kmodHint(missing, true)
+}
+
+func kmodHintAfterRejection(missing []string) string {
+	return kmodHint(missing, false)
+}
+
+func kmodHint(missing []string, withRejection bool) string {
 	var parts []string
 	if pkgs := kmodPkgsFor(missing); len(pkgs) > 0 {
 		parts = append(parts, "Package(s) that may provide it: "+strings.Join(pkgs, " "))
 	} else if len(missing) > 0 && dnsKernelFacts().KeeneticOS {
 		parts = append(parts, kmodKeeneticHint)
 	}
-	parts = append(parts, KernelModuleReasons(missing)...)
+	parts = append(parts, kmodReasons(missing, withRejection)...)
 	if len(parts) == 0 {
 		return "The running kernel offers no such module"
 	}
