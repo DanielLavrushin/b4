@@ -279,7 +279,7 @@ func writeHubGroupShareError(w http.ResponseWriter, err error, members []*config
 	switch {
 	case errors.Is(err, hub.ErrRecordTooBig):
 		writeAPIError(w, &APIError{Status: http.StatusBadRequest, Code: "group_too_large", Message: "The group is too large to publish at once: publish fewer sets, or sets without custom payloads"})
-	case errors.As(err, &he) && he.Status == http.StatusBadRequest && he.Code == "bad_record":
+	case errors.As(err, &he) && he.Status == http.StatusBadRequest && he.Code == "bad_record" && he.Message == hubwire.ErrUnknownKind.Error():
 		writeAPIError(w, &APIError{Status: http.StatusBadRequest, Code: "hub_no_groups", Message: "The hub does not accept set groups yet"})
 	case errors.As(err, &he) && he.Member != nil && *he.Member >= 0 && *he.Member < len(members):
 		set := members[*he.Member]

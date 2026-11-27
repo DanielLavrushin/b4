@@ -179,6 +179,12 @@ func TestHubGroupShareErrorsKeepTheConfig(t *testing.T) {
 	unchanged("older hub")
 
 	env.hub.SetAnswer(func(*hubwire.Record) hubtest.Answer {
+		return hubtest.Answer{Status: http.StatusBadRequest, Body: map[string]interface{}{"code": "bad_record", "error": "group body does not decode: unexpected end of JSON input"}}
+	})
+	expectCode(t, postJSON(t, env.mux, "/api/hub/groups/share", HubGroupShareRequest{Group: "video"}), http.StatusBadRequest, "bad_record")
+	unchanged("a group record the hub could not read")
+
+	env.hub.SetAnswer(func(*hubwire.Record) hubtest.Answer {
 		return hubtest.Answer{Status: http.StatusConflict, Body: map[string]interface{}{"code": "duplicate_group", "error": "unchanged", "group_id": "g-1", "version": 2}}
 	})
 	rec = postJSON(t, env.mux, "/api/hub/groups/share", HubGroupShareRequest{Group: "video"})
@@ -595,12 +601,15 @@ func TestHubSingleSetWritesKeepTheGroupStamp(t *testing.T) {
 		t.Errorf("updating one member keeps it in its group copy, got %q %+v", set.Group, set.Hub)
 	}
 
+	env.hub.SetAnswer(func(*hubwire.Record) hubtest.Answer {
+		return hubtest.Answer{Status: http.StatusAccepted, Body: map[string]interface{}{"set_id": "s1", "version": 3, "status": hubwire.SetStatusPending}}
+	})
 	rec := postJSON(t, env.mux, "/api/hub/share", HubShareRequest{SetID: "local"})
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("expected 202, got %d (%s)", rec.Code, rec.Body.String())
 	}
-	if set := env.localSet("local"); set.Hub.GroupID != "g-video" || set.Hub.GroupVersion != 4 {
-		t.Errorf("sharing one member keeps its group stamp, got %+v", set.Hub)
+	if set := env.localSet("local"); set.Hub.Version != 3 || set.Hub.GroupID != "g-video" || set.Hub.GroupVersion != 4 {
+		t.Errorf("sharing one member as a new version of its hub set keeps its group stamp, got %+v", set.Hub)
 	}
 }
 

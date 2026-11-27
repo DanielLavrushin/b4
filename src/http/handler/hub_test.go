@@ -1170,6 +1170,28 @@ func TestHubShareRoundTrip(t *testing.T) {
 	}
 }
 
+func TestHubShareAloneKeepsTheGroupStampOnlyForTheSameHubSet(t *testing.T) {
+	env := newHubEnv(t)
+	local := hubGroupStamp(hubGroupLocalSet("local-1", "Member", "video", "a.example"), "s1", 1, "g-video", 1)
+	env.update(func(cfg *config.Config) { cfg.Sets = []*config.SetConfig{local} })
+	for _, c := range []struct {
+		hubID   string
+		version int
+		group   string
+	}{{"s1", 2, "g-video"}, {"n1", 1, ""}} {
+		env.hub.SetAnswer(func(*hubwire.Record) hubtest.Answer {
+			return hubtest.Answer{Status: http.StatusAccepted, Body: map[string]interface{}{"set_id": c.hubID, "version": c.version, "status": hubwire.SetStatusPending}}
+		})
+		rec := postJSON(t, env.mux, "/api/hub/share", HubShareRequest{SetID: "local-1"})
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("expected 202, got %d (%s)", rec.Code, rec.Body.String())
+		}
+		if got := env.localSet("local-1").Hub; got.ID != c.hubID || got.Version != c.version || got.GroupID != c.group {
+			t.Errorf("shared as %s v%d, the group stamp must be %q, got %+v", c.hubID, c.version, c.group, got)
+		}
+	}
+}
+
 func TestHubTestNeedsAPlainDomain(t *testing.T) {
 	env := newHubEnv(t)
 	set := hubStrategySet("Regex only", "regexp:^.*\\.example\\.com$")

@@ -853,8 +853,10 @@ func (api *API) stampHubOrigin(localID, hubID string, version int, hash string) 
 		origin := &config.HubOrigin{ID: hubID, Version: version, Hash: hash}
 		if set.Hub != nil {
 			origin.AppliedAt = set.Hub.AppliedAt
-			origin.GroupID = set.Hub.GroupID
-			origin.GroupVersion = set.Hub.GroupVersion
+			if set.Hub.ID == hubID {
+				origin.GroupID = set.Hub.GroupID
+				origin.GroupVersion = set.Hub.GroupVersion
+			}
 		}
 		set.Hub = origin
 		if err := api.saveAndPushConfig(newCfg); err != nil {
