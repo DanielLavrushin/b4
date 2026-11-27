@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -20,9 +21,12 @@ import (
 )
 
 const (
-	dnsTCPMaxMessage  = 65535
-	dnsTCPMinQueryLen = 12
+	dnsTCPMaxMessage    = 65535
+	dnsTCPMinQueryLen   = 12
+	dnsTCPRelayParallel = 8
 )
+
+var errDNSTCPOtherAnswer = errors.New("answer to another query")
 
 type dnsTCPServer struct {
 	port     int
@@ -226,17 +230,29 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 	upstream := &dnsTCPUpstream{server: s, ip: origIP, port: origPort, err: origErr}
 	defer upstream.close()
 
-	var scope *ingressScope
-	relayOne := func(cfg *config.Config, set *config.SetConfig, domain string, query []byte) bool {
-		resp := upstream.exchange(cfg, query)
-		if resp == nil {
-			return false
-		}
-		if cfg.IPFamilyEnabled(v6) && set != nil && len(set.DNS.PinnedAddresses(domain)) > 0 {
-			if unaliased, actor := s.worker.unaliasPinnedAnswer(cfg, set, true, domain, srcMac, resp, true, scope); unaliased != nil {
-				s.logEvent(actor, domain, clientIP, origIP, clientPort, srcMac, dnsActionAliasStripped)
-				resp = unaliased
+	var inflight sync.WaitGroup
+	defer inflight.Wait()
+	slots := make(chan struct{}, dnsTCPRelayParallel)
+	var writeMu sync.Mutex
+	answer := func(resp []byte, timeout time.Duration) bool {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		return writeDNSTCPMessage(client, resp, timeout) == nil
+	}
+
+	relayed := func(cfg *config.Config, set *config.SetConfig, domain string, resp []byte, scope *ingressScope) []byte {
+		matcher := s.worker.matcherIn(scope)
+		if set != nil && cfg.IPFamilyEnabled(v6) {
+			s.worker.learnAnswerAddresses(cfg, set, matcher, clientIP, domain, dns.ParseResponseIPs(resp), scope.learns(domain), s.ctx.Done())
+			if filtered, action, actor := s.worker.filterDNSAnswer(cfg, set, domain, srcMac, resp, true, scope); filtered != nil {
+				s.logEvent(actor, domain, clientIP, origIP, clientPort, srcMac, action)
+				s.worker.learnAnswerAddresses(cfg, set, matcher, clientIP, domain, addedAnswerIPs(resp, filtered), scope.learns(domain), s.ctx.Done())
+				return filtered
 			}
+			return resp
+		}
+		if set == nil && cfg.IPFamilyEnabled(v6) {
+			observeDNSNames(clientIP, domain, dns.ParseResponseIPs(resp))
 		}
 		if echless, actor := s.worker.stripECHKeys(cfg, set, domain, srcMac, resp, true, srcMac == "" && !cfg.IPFamilyEnabled(v6), scope); echless != nil {
 			s.logEvent(actor, domain, clientIP, origIP, clientPort, srcMac, dnsActionECHStripped)
@@ -245,19 +261,44 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		if s.worker.bans.any() && set != nil {
 			if healed := s.worker.healDeadAddresses(cfg, set, domain, resp, true); healed != nil {
 				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionHeal)
-				s.worker.learnAnswerAddresses(cfg, set, s.worker.matcherIn(scope), clientIP, domain, addedAnswerIPs(resp, healed), scope.learns(domain), s.ctx.Done())
+				s.worker.learnAnswerAddresses(cfg, set, matcher, clientIP, domain, addedAnswerIPs(resp, healed), scope.learns(domain), s.ctx.Done())
 				resp = healed
 			}
 		}
-		return writeDNSTCPMessage(client, resp, cfg.DNSTCPIOTimeout()) == nil
+		return resp
 	}
-	relay := func(cfg *config.Config, set *config.SetConfig, domain string, query []byte) bool {
+	relayOne := func(cfg *config.Config, set *config.SetConfig, domain string, query []byte, scope *ingressScope) {
+		slots <- struct{}{}
+		inflight.Add(1)
+		go func() {
+			defer func() {
+				<-slots
+				inflight.Done()
+			}()
+			resp := upstream.exchange(cfg, query)
+			if s.ctx.Err() != nil {
+				return
+			}
+			if resp == nil {
+				log.Tracef("DNS TCP: %s got no answer from %s, the client gets SERVFAIL", dns.SafeName(domain), origIP)
+				resp = dns.BuildServfailResponse(query)
+			} else {
+				resp = relayed(cfg, set, domain, resp, scope)
+			}
+			if len(resp) == 0 || !answer(resp, cfg.DNSTCPIOTimeout()) {
+				_ = client.Close()
+			}
+		}()
+	}
+	relay := func(cfg *config.Config, set *config.SetConfig, domain string, query []byte, scope *ingressScope) bool {
 		if qtype, _ := dns.QuestionType(query); cfg.Queue.IsDiscovery || !standardQuery(query) || qtype == dnsTypeAXFR || qtype == dnsTypeIXFR {
+			inflight.Wait()
 			upstream.close()
 			s.passthrough(client, origIP, origPort, origErr, query)
 			return false
 		}
-		return relayOne(cfg, set, domain, query)
+		relayOne(cfg, set, domain, query, scope)
+		return true
 	}
 
 	for {
@@ -273,12 +314,12 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		cfg := s.worker.getConfig()
 		ioTimeout := cfg.DNSTCPIOTimeout()
 		matcher := s.worker.getMatcher()
-		scope = clientScopeIn(matcher, clientIP, srcMac).orSnapshot(matcher)
+		scope := clientScopeIn(matcher, clientIP, srcMac).orSnapshot(matcher)
 		keep := scope.filter()
 
 		domain, ok := dns.ParseQueryDomain(query)
 		if !ok {
-			if relay(cfg, nil, "", query) {
+			if relay(cfg, nil, "", query, scope) {
 				continue
 			}
 			return
@@ -286,7 +327,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		domain = strings.ToLower(domain)
 
 		if !cfg.IPFamilyEnabled(v6) {
-			if relay(cfg, s.worker.echMatchSet(domain, srcMac, srcMac == "", scope), domain, query) {
+			if relay(cfg, s.worker.echMatchSet(domain, srcMac, srcMac == "", scope), domain, query, scope) {
 				continue
 			}
 			return
@@ -294,7 +335,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		matched, set := matcher.MatchSNIWithSource(domain, srcMac, keep)
 		if !matched {
 			log.Tracef("DNS TCP: %s matched no set (src %s), forwarding unchanged", dns.SafeName(domain), srcMac)
-			if relay(cfg, nil, domain, query) {
+			if relay(cfg, nil, domain, query, scope) {
 				continue
 			}
 			return
@@ -309,7 +350,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			if resp := dns.BuildBlockResponse(query); resp != nil {
 				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionSinkhole)
 				recordBlockedDNS(cfg, set, domain, srcMac)
-				if writeDNSTCPMessage(client, resp, ioTimeout) != nil {
+				if !answer(resp, ioTimeout) {
 					return
 				}
 				continue
@@ -322,7 +363,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			action, routeWaits := s.worker.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned, scope.learns(domain))
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, action)
 			s.worker.waitRoutesInline(routeWaits, s.ctx.Done())
-			if writeDNSTCPMessage(client, pinned, ioTimeout) != nil {
+			if !answer(pinned, ioTimeout) {
 				return
 			}
 			continue
@@ -335,7 +376,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			} else {
 				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionPassthrough)
 			}
-			if relay(cfg, set, domain, query) {
+			if relay(cfg, set, domain, query, scope) {
 				continue
 			}
 			return
@@ -344,7 +385,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		if queryFromTarget(servers, clientIP) {
 			log.Tracef("DNS TCP: %s comes from %s, the set's own resolver passing a lookup upstream, forwarding it unchanged (set %s)", dns.SafeName(domain), clientIP, set.Name)
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionFromTarget)
-			if relay(cfg, set, domain, query) {
+			if relay(cfg, set, domain, query, scope) {
 				continue
 			}
 			return
@@ -353,10 +394,8 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		if s.worker.resolversNeed(cfg, set, domain, query, srcMac, keep) {
 			log.Tracef("DNS TCP: the resolvers of set %s are reached through %s, forwarding its lookup unchanged", set.Name, dns.SafeName(domain))
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionDoHHost)
-			if relayOne(cfg, set, domain, query) {
-				continue
-			}
-			return
+			relayOne(cfg, set, domain, query, scope)
+			continue
 		}
 
 		named := namedServer(servers)
@@ -416,7 +455,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			if alt, aerr := s.answerVia(next, cfg, query, domain, clientIP, scope); aerr == nil && len(alt) > 0 {
 				s.logEvent(next, domain, clientIP, origIP, clientPort, srcMac, dnsActionEscalatePrefix+next.Name)
 				s.worker.learnAnswerAddresses(cfg, next, matcher, clientIP, domain, dns.ParseResponseIPs(alt), scope.learns(domain), s.ctx.Done())
-				if writeDNSTCPMessage(client, alt, ioTimeout) != nil {
+				if !answer(alt, ioTimeout) {
 					return
 				}
 				continue
@@ -435,7 +474,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			rememberDNSAnswer(domain, query, resp)
 		}
 
-		if writeDNSTCPMessage(client, resp, ioTimeout) != nil {
+		if !answer(resp, ioTimeout) {
 			return
 		}
 	}
@@ -532,7 +571,8 @@ type dnsTCPUpstream struct {
 	ip     net.IP
 	port   int
 	err    error
-	conn   net.Conn
+	mu     sync.Mutex
+	idle   []net.Conn
 }
 
 func (u *dnsTCPUpstream) exchange(cfg *config.Config, query []byte) []byte {
@@ -540,48 +580,74 @@ func (u *dnsTCPUpstream) exchange(cfg *config.Config, query []byte) []byte {
 		return nil
 	}
 	for {
-		fresh := u.conn == nil
+		conn := u.take()
+		fresh := conn == nil
 		if fresh {
-			conn, err := dialDNSTCPUpstream(u.server.ctx, cfg, net.JoinHostPort(u.ip.String(), fmt.Sprintf("%d", u.port)))
+			dialed, err := dialDNSTCPUpstream(u.server.ctx, cfg, net.JoinHostPort(u.ip.String(), fmt.Sprintf("%d", u.port)))
 			if err != nil {
 				log.Tracef("DNS TCP: relay dial %s:%d failed: %v", u.ip, u.port, err)
 				return nil
 			}
-			u.conn = conn
+			conn = dialed
 		}
-		if resp := u.roundTrip(cfg, query); resp != nil {
+		resp, err := u.roundTrip(cfg, conn, query)
+		if err == nil {
+			u.put(conn)
 			return resp
 		}
-		u.close()
-		if fresh {
+		_ = conn.Close()
+		if fresh || errors.Is(err, os.ErrDeadlineExceeded) {
 			return nil
 		}
 	}
 }
 
-func (u *dnsTCPUpstream) roundTrip(cfg *config.Config, query []byte) []byte {
+func (u *dnsTCPUpstream) roundTrip(cfg *config.Config, conn net.Conn, query []byte) ([]byte, error) {
 	ioTimeout := cfg.DNSTCPIOTimeout()
-	if writeDNSTCPMessage(u.conn, query, ioTimeout) != nil {
-		return nil
+	if err := writeDNSTCPMessage(conn, query, ioTimeout); err != nil {
+		return nil, err
 	}
-	if u.conn.SetReadDeadline(time.Now().Add(ioTimeout)) != nil {
-		return nil
+	if err := conn.SetReadDeadline(time.Now().Add(ioTimeout)); err != nil {
+		return nil, err
 	}
-	resp, err := readDNSTCPMessage(u.conn)
+	stop := context.AfterFunc(u.server.ctx, func() { _ = conn.SetReadDeadline(time.Unix(1, 0)) })
+	defer stop()
+	resp, err := readDNSTCPMessage(conn)
 	if err != nil {
 		log.Tracef("DNS TCP: relay read from %s:%d failed: %v", u.ip, u.port, err)
-		return nil
+		return nil, err
 	}
 	if len(resp) < 2 || resp[0] != query[0] || resp[1] != query[1] {
+		return nil, errDNSTCPOtherAnswer
+	}
+	return resp, nil
+}
+
+func (u *dnsTCPUpstream) take() net.Conn {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	n := len(u.idle)
+	if n == 0 {
 		return nil
 	}
-	return resp
+	conn := u.idle[n-1]
+	u.idle = u.idle[:n-1]
+	return conn
+}
+
+func (u *dnsTCPUpstream) put(conn net.Conn) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.idle = append(u.idle, conn)
 }
 
 func (u *dnsTCPUpstream) close() {
-	if u.conn != nil {
-		_ = u.conn.Close()
-		u.conn = nil
+	u.mu.Lock()
+	idle := u.idle
+	u.idle = nil
+	u.mu.Unlock()
+	for _, conn := range idle {
+		_ = conn.Close()
 	}
 }
 

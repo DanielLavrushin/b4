@@ -19,6 +19,8 @@ With **Enable IPv6 Support** off, these rules cover IPv4 only. The exception is 
 
 TCP interception needs `REDIRECT` in the `nat` table. Where the kernel does not provide it, b4 logs a warning, and DNS over TCP stays with the client's resolver for that address family.
 
+b4 handles each query on an intercepted TCP connection on its own. A query it passes on unchanged goes to the resolver the client asked, up to 8 queries of one connection at a time, so their answers can come back in a different order. When that resolver does not answer within **Read/write timeout**, the client gets SERVFAIL. A zone transfer (AXFR or IXFR), or a message other than a standard query, hands the rest of the connection to that resolver.
+
 ```mermaid
 flowchart TB
     C["Device or router"] -->|"UDP 53"| Q["Packet queue"]
@@ -153,7 +155,7 @@ A URL that names its server by IP address needs no lookup. A pin for the host na
   - An answer whose alias leads to no record of the type asked becomes empty, except an A or AAAA answer, which then passes unchanged so that a resolver can still follow the alias. A resolver that resolves names itself rather than forwarding them, and gets only an alias into another zone, therefore gets an empty answer for record types other than A and AAAA.
   - Answers without such an alias, such as the MX records of a pinned domain or an SRV record under it, pass unchanged, and so do answers for other names whose alias chain runs through a pinned name.
   - b4 takes the set from the device's request, so a device the pinning set leaves out, or that has a set of its own without pins, keeps its answers. An answer b4 cannot match to its request is left alone when the pinning set lists source devices.
-  - This covers forwarded replies, the set's own resolvers and DNS over TCP while it is intercepted, but not TUN mode while b4 sees no replies. While any enabled set has pins, intercepted DNS over TCP is relayed one message at a time, as with ECH key removal or banned addresses, so its **Idle timeout** and **Read/write timeout** apply to each connection.
+  - This covers forwarded replies, the set's own resolvers and DNS over TCP while it is intercepted, but not TUN mode while b4 sees no replies.
 - Pinned answers have a 60 second TTL.
 - In a set without routing, b4 connects to every pin on TCP port 443 when it starts, when a set is saved and at the **Retest interval (seconds)** of IP block detection, and leaves out of the answer the addresses that do not answer. The pins of a set with routing are not checked, since the check connects straight from the router while the set's connections leave through its route.
 - When every pin of a family fails the check, the pins are answered anyway, so a pinned host that does not listen on port 443 keeps its pin. When every pin of the family is marked unreachable by the set's IP block detection or is [banned](../sets/tcp/general.md#banned-addresses), the query goes to the resolver instead. Otherwise a banned pin is left out of the answer.

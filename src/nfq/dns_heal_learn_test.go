@@ -112,6 +112,11 @@ func TestAHealedAnswerWaitsForTheAddressItWasGiven(t *testing.T) {
 			answered := dscpTCPAsk(t, w, query)
 			return func(d time.Duration) ([]byte, bool) { return receive(answered, d) }
 		}},
+		{"a forwarded TCP answer", func(t *testing.T, w *Worker, _ *config.Config, _ *config.SetConfig) healedAnswer {
+			plainTCPUpstream(t, answerWith(healDeadIP), false)
+			answered := dscpTCPAsk(t, w, query)
+			return func(d time.Duration) ([]byte, bool) { return receive(answered, d) }
+		}},
 	} {
 		t.Run(site.name, func(t *testing.T) {
 			set := dscpHookSet("heal", "example.com", true, true)

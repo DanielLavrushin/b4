@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/binary"
 	"net"
+	"reflect"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -31,7 +33,20 @@ func (r *plainTCPResolver) received() [][]byte {
 	return append([][]byte(nil), r.queries...)
 }
 
-func plainTCPUpstream(t *testing.T, closeAfterAnswer bool) *plainTCPResolver {
+func plainEcho(query []byte) []byte {
+	echo := append([]byte(nil), query...)
+	echo[2] |= 0x80
+	return echo
+}
+
+func plainReply(query []byte) []byte {
+	if reply := answerWith(plainAnswer)(query); reply != nil {
+		return reply
+	}
+	return plainEcho(query)
+}
+
+func plainTCPUpstream(t *testing.T, reply func([]byte) []byte, closeAfterAnswer bool) *plainTCPResolver {
 	t.Helper()
 	ln, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
@@ -65,12 +80,11 @@ func plainTCPUpstream(t *testing.T, closeAfterAnswer bool) *plainTCPResolver {
 					r.mu.Lock()
 					r.queries = append(r.queries, query)
 					r.mu.Unlock()
-					reply := answerWith(plainAnswer)(query)
-					if reply == nil {
-						reply = append([]byte(nil), query...)
-						reply[2] |= 0x80
+					answer := reply(query)
+					if answer == nil {
+						continue
 					}
-					if writeDNSTCPMessage(conn, reply, time.Second) != nil || closeAfterAnswer {
+					if writeDNSTCPMessage(conn, answer, time.Second) != nil || closeAfterAnswer {
 						return
 					}
 				}
@@ -136,33 +150,45 @@ func tcpSession(t *testing.T, w *Worker, from string, queries [][]byte, pipeline
 		defer close(handled)
 		s.handle(remoteAddrConn{Conn: serverEnd, remote: &net.TCPAddr{IP: net.ParseIP(from), Port: 40000}})
 	}()
+	defer clientEnd.Close()
 
 	_ = clientEnd.SetDeadline(time.Now().Add(10 * time.Second))
-	send := func(q []byte) {
-		if err := writeDNSTCPMessage(clientEnd, q, 5*time.Second); err != nil {
-			t.Errorf("write: %v", err)
-		}
-	}
 	if pipelined {
+		sent := make(chan error, 1)
 		go func() {
+			var err error
 			for _, q := range queries {
-				send(q)
+				if err = writeDNSTCPMessage(clientEnd, q, 5*time.Second); err != nil {
+					break
+				}
+			}
+			sent <- err
+		}()
+		defer func() {
+			clientEnd.Close()
+			if err := <-sent; err != nil && !t.Failed() {
+				t.Errorf("write: %v", err)
 			}
 		}()
 	}
-	var answers [][]byte
+
+	answers := make([][]byte, len(queries))
 	for i, q := range queries {
 		if !pipelined {
-			send(q)
+			if err := writeDNSTCPMessage(clientEnd, q, 5*time.Second); err != nil {
+				t.Fatalf("query %d: write: %v", i, err)
+			}
 		}
 		resp, err := readDNSTCPMessage(clientEnd)
 		if err != nil {
-			t.Fatalf("query %d: no answer on the same connection: %v", i, err)
+			t.Fatalf("answer %d: none on the same connection: %v", i, err)
 		}
-		if !bytes.Equal(resp[:2], q[:2]) {
-			t.Fatalf("query %d: answer id %#x, want %#x", i, resp[:2], q[:2])
+		id := binary.BigEndian.Uint16(resp[:2])
+		at := slices.IndexFunc(queries, func(q []byte) bool { return binary.BigEndian.Uint16(q[:2]) == id })
+		if at < 0 || answers[at] != nil || (!pipelined && at != i) {
+			t.Fatalf("answer %d carries id %#x, which answers no query still waiting", i, id)
 		}
-		answers = append(answers, resp)
+		answers[at] = resp
 	}
 	clientEnd.Close()
 	select {
@@ -173,21 +199,34 @@ func tcpSession(t *testing.T, w *Worker, from string, queries [][]byte, pipeline
 	return answers
 }
 
-func answeredBy(t *testing.T, resp []byte) string {
+func answeredBy(t *testing.T, query, resp []byte) string {
 	t.Helper()
-	if rcode, _ := dns.ResponseRcode(resp); rcode == dns.RcodeNXDomain {
+	if bytes.Equal(resp, plainEcho(query)) {
+		return "plain"
+	}
+	switch rcode, _ := dns.ResponseRcode(resp); rcode {
+	case dns.RcodeNXDomain:
 		return "NXDOMAIN"
+	case dns.RcodeServFail:
+		return "SERVFAIL"
 	}
 	ips := dns.ParseResponseIPs(resp)
 	switch {
-	case len(ips) == 0 && resp[2]&0x80 != 0:
-		return "plain"
 	case len(ips) == 1 && ips[0].Equal(net.ParseIP(plainAnswer)):
 		return "plain"
 	case len(ips) == 1 && ips[0].Equal(net.ParseIP(setAnswer)):
 		return "set"
 	}
 	return "other"
+}
+
+func expectAnswers(t *testing.T, queries, answers [][]byte, want ...string) {
+	t.Helper()
+	for i, w := range want {
+		if got := answeredBy(t, queries[i], answers[i]); got != w {
+			t.Fatalf("answer %d came from %s, want %s", i, got, w)
+		}
+	}
 }
 
 func rootDNSKEYQuery(t *testing.T) []byte {
@@ -216,23 +255,19 @@ func TestDNSOverTCPForwardsEachUnchangedQueryOnItsOwn(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := relayWorker(t)
-			plain := plainTCPUpstream(t, false)
-			first := tc.first(t)
-
-			answers := tcpSession(t, w, tc.from, [][]byte{
-				first,
+			plain := plainTCPUpstream(t, plainReply, false)
+			queries := [][]byte{
+				tc.first(t),
 				dns.BuildQuery("a.secret.example", 2, dnsTypeA),
 				dns.BuildQuery("blocked.example", 3, dnsTypeA),
-			}, false)
-
-			for i, want := range []string{"plain", "set", "NXDOMAIN"} {
-				if got := answeredBy(t, answers[i]); got != want {
-					t.Fatalf("answer %d came from %s, want %s", i, got, want)
-				}
 			}
+
+			answers := tcpSession(t, w, tc.from, queries, false)
+
+			expectAnswers(t, queries, answers, "plain", "set", "NXDOMAIN")
 			got := plain.received()
-			if len(got) != 1 || !bytes.Equal(got[0], first) {
-				t.Fatalf("the asked resolver got %x, want only the first query unchanged %x", got, first)
+			if len(got) != 1 || !bytes.Equal(got[0], queries[0]) {
+				t.Fatalf("the asked resolver got %x, want only the first query unchanged %x", got, queries[0])
 			}
 		})
 	}
@@ -240,36 +275,210 @@ func TestDNSOverTCPForwardsEachUnchangedQueryOnItsOwn(t *testing.T) {
 
 func TestDNSOverTCPRedialsAResolverThatClosesAfterEachAnswer(t *testing.T) {
 	w := relayWorker(t)
-	plain := plainTCPUpstream(t, true)
-
-	answers := tcpSession(t, w, "192.0.2.10", [][]byte{
+	plain := plainTCPUpstream(t, plainReply, true)
+	queries := [][]byte{
 		dns.BuildQuery("www.other.test", 1, dnsTypeA),
 		dns.BuildQuery("www.another.test", 2, dnsTypeA),
 		dns.BuildQuery("www.third.test", 3, dnsTypeA),
-	}, false)
-	for i, resp := range answers {
-		if got := answeredBy(t, resp); got != "plain" {
-			t.Fatalf("answer %d came from %s, want plain", i, got)
-		}
 	}
+
+	answers := tcpSession(t, w, "192.0.2.10", queries, false)
+
+	expectAnswers(t, queries, answers, "plain", "plain", "plain")
 	if n := plain.conns.Load(); n != 3 {
 		t.Fatalf("%d upstream connections, want one per query", n)
 	}
 }
 
-func TestDNSOverTCPAnswersPipelinedQueriesInOrder(t *testing.T) {
+func TestDNSOverTCPAnswersPipelinedQueries(t *testing.T) {
 	w := relayWorker(t)
-	plainTCPUpstream(t, false)
-
-	answers := tcpSession(t, w, "192.0.2.10", [][]byte{
+	plain := plainTCPUpstream(t, plainReply, false)
+	queries := [][]byte{
 		dns.BuildQuery("www.other.test", 1, dnsTypeA),
 		dns.BuildQuery("a.secret.example", 2, dnsTypeA),
 		dns.BuildQuery("www.another.test", 3, dnsTypeA),
 		dns.BuildQuery("blocked.example", 4, dnsTypeA),
-	}, true)
-	for i, want := range []string{"plain", "set", "plain", "NXDOMAIN"} {
-		if got := answeredBy(t, answers[i]); got != want {
-			t.Fatalf("answer %d came from %s, want %s", i, got, want)
+	}
+
+	answers := tcpSession(t, w, "192.0.2.10", queries, true)
+
+	expectAnswers(t, queries, answers, "plain", "set", "plain", "NXDOMAIN")
+	got := plain.received()
+	if len(got) != 2 || !slices.ContainsFunc(got, func(q []byte) bool { return bytes.Equal(q, queries[0]) }) ||
+		!slices.ContainsFunc(got, func(q []byte) bool { return bytes.Equal(q, queries[2]) }) {
+		t.Fatalf("the asked resolver got %x, want the two names in no set unchanged", got)
+	}
+}
+
+func TestDNSOverTCPAnswersAForwardedQueryWithoutWaitingForASlowOne(t *testing.T) {
+	w := relayWorker(t)
+	slow := dns.BuildQuery("www.slow.test", 1, dnsTypeA)
+	fast := dns.BuildQuery("www.fast.test", 2, dnsTypeA)
+	release := make(chan struct{})
+	free := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(free)
+	plainTCPUpstream(t, func(q []byte) []byte {
+		if bytes.Equal(q, slow) {
+			select {
+			case <-release:
+			case <-time.After(3 * time.Second):
+			}
 		}
+		return plainReply(q)
+	}, false)
+	s := newDNSTCPServer(w, 0)
+	clientEnd, serverEnd := net.Pipe()
+	handled := make(chan struct{})
+	go func() {
+		defer close(handled)
+		s.handle(remoteAddrConn{Conn: serverEnd, remote: &net.TCPAddr{IP: net.ParseIP("192.0.2.10"), Port: 40000}})
+	}()
+	sent := make(chan error, 1)
+	t.Cleanup(func() {
+		s.cancel()
+		clientEnd.Close()
+		<-sent
+		<-handled
+	})
+	_ = clientEnd.SetDeadline(time.Now().Add(10 * time.Second))
+	go func() {
+		err := writeDNSTCPMessage(clientEnd, slow, 5*time.Second)
+		if err == nil {
+			err = writeDNSTCPMessage(clientEnd, fast, 5*time.Second)
+		}
+		sent <- err
+	}()
+
+	var order []uint16
+	for i := range 2 {
+		resp, err := readDNSTCPMessage(clientEnd)
+		if err != nil {
+			t.Fatalf("answer %d: none on the same connection: %v", i, err)
+		}
+		order = append(order, binary.BigEndian.Uint16(resp[:2]))
+		free()
+	}
+	if !reflect.DeepEqual(order, []uint16{2, 1}) {
+		t.Fatalf("answers came in the order %v, want the fast query answered while the slow one is still with the resolver", order)
+	}
+}
+
+func TestDNSOverTCPAnswersSERVFAILWhenTheResolverStaysSilent(t *testing.T) {
+	w := relayWorker(t)
+	w.getConfig().System.DNS.TCPIOSec = 1
+	silent := dns.BuildQuery("www.silent.test", 2, dnsTypeA)
+	plain := plainTCPUpstream(t, func(q []byte) []byte {
+		if bytes.Equal(q, silent) {
+			return nil
+		}
+		return plainReply(q)
+	}, false)
+	queries := [][]byte{
+		dns.BuildQuery("www.other.test", 1, dnsTypeA),
+		silent,
+		dns.BuildQuery("www.after.test", 3, dnsTypeA),
+	}
+
+	answers := tcpSession(t, w, "192.0.2.10", queries, false)
+
+	expectAnswers(t, queries, answers, "plain", "SERVFAIL", "plain")
+	asked := 0
+	for _, q := range plain.received() {
+		if bytes.Equal(q, silent) {
+			asked++
+		}
+	}
+	if asked != 1 {
+		t.Fatalf("the resolver got the unanswered query %d times, want once", asked)
+	}
+}
+
+func TestDNSOverTCPStopEndsAForwardedQueryAtOnce(t *testing.T) {
+	w := relayWorker(t)
+	w.getConfig().System.DNS.TCPIOSec = 5
+	plain := plainTCPUpstream(t, func([]byte) []byte { return nil }, false)
+	s := newDNSTCPServer(w, 0)
+	clientEnd, serverEnd := net.Pipe()
+	defer clientEnd.Close()
+	handled := make(chan struct{})
+	go func() {
+		defer close(handled)
+		s.handle(remoteAddrConn{Conn: serverEnd, remote: &net.TCPAddr{IP: net.ParseIP("192.0.2.10"), Port: 40000}})
+	}()
+	if err := writeDNSTCPMessage(clientEnd, dns.BuildQuery("www.silent.test", 1, dnsTypeA), time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if !waitFor(t, func() bool { return len(plain.received()) == 1 }) {
+		t.Fatal("the query never reached the resolver")
+	}
+
+	s.cancel()
+	select {
+	case <-handled:
+	case <-time.After(time.Second):
+		t.Fatal("the connection handler still waits for the resolver after the server stopped")
+	}
+}
+
+func TestDNSOverTCPForwardedAnswerTeachesItsSet(t *testing.T) {
+	names := withDNSNames(t, true)
+	w, _ := dscpHookWorker(t, dscpHookSet("bare", "bare.example", true, true))
+	learned := stubHealLearning(t, nil)
+	plainTCPUpstream(t, plainReply, false)
+
+	dscpWithin(t, dscpTCPAsk(t, w, dns.BuildQuery("www.bare.example", 1, dnsTypeA)), "the set's name got no answer")
+	dscpWithin(t, dscpTCPAsk(t, w, dns.BuildQuery("www.other.test", 2, dnsTypeA)), "the name in no set got no answer")
+
+	for _, want := range []string{"dscp " + plainAnswer, "route " + plainAnswer} {
+		if !slices.Contains(learned(), want) {
+			t.Errorf("%s was never learned, learned %v", want, learned())
+		}
+	}
+	if _, host, ok := w.hostHints.Lookup(rigDevice, plainAnswer); !ok || host != "www.bare.example" {
+		t.Errorf("the host hint for %s names %q, want www.bare.example", plainAnswer, host)
+	}
+	if got := names.Lookup(net.ParseIP(rigDevice), net.ParseIP(plainAnswer)).Own; !slices.Contains(got, "www.other.test") {
+		t.Errorf("the name in no set was not recorded for its address, got %v", got)
+	}
+}
+
+func TestDNSOverTCPForwardedAnswerDropsIPv6WhileIPv6IsOff(t *testing.T) {
+	w := relayWorker(t)
+	plainTCPUpstream(t, answerWith("2001:db8::7"), false)
+	queries := [][]byte{dns.BuildQuery("www.bare.example", 1, dnsTypeAAAA)}
+
+	answers := tcpSession(t, w, "192.0.2.10", queries, false)
+
+	if ips := dns.ParseResponseIPs(answers[0]); len(ips) != 0 {
+		t.Fatalf("the answer still carries %v while IPv6 support is off", ips)
+	}
+}
+
+func TestDNSOverTCPAnswersPassedOnForASetDropIPv6WhileIPv6IsOff(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		worker func(t *testing.T) *Worker
+		from   string
+		query  []byte
+	}{
+		{"a query from the set's own resolver", relayWorker, "192.0.2.5", dns.BuildQuery("www.example.com", 1, dnsTypeAAAA)},
+		{"a lookup of the set's DoH host", func(t *testing.T) *Worker {
+			thisHost(t)
+			return redirectWorker(t, false, strictSet(dohByName("all", "https://dns.invalid/dns-query", "regexp:.*")))
+		}, "192.0.2.1", dns.BuildQuery("dns.invalid", 1, dnsTypeAAAA)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := tc.worker(t)
+			plain := plainTCPUpstream(t, answerWith("2001:db8::7"), false)
+
+			answers := tcpSession(t, w, tc.from, [][]byte{tc.query}, false)
+
+			if got := plain.received(); len(got) != 1 || !bytes.Equal(got[0], tc.query) {
+				t.Fatalf("the asked resolver got %x, want the query unchanged", got)
+			}
+			if ips := dns.ParseResponseIPs(answers[0]); len(ips) != 0 {
+				t.Fatalf("the answer still carries %v while IPv6 support is off, as an answer over UDP would not", ips)
+			}
+		})
 	}
 }
