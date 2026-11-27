@@ -26,6 +26,7 @@ import { hubApi } from "@api/hub";
 import { ApiError } from "@api/apiClient";
 import {
   collectPayloadRefs,
+  convertLegacySetShape,
   copyText,
   exportSetJson,
   isPlainObject,
@@ -161,28 +162,6 @@ export const ImportExportSettings = ({
     const tcp = set.tcp as Record<string, unknown> | undefined;
 
     if (tcp) {
-      if ("win_mode" in tcp && !tcp.win) {
-        tcp.win = {
-          mode: tcp.win_mode || "off",
-          values: tcp.win_values || [0, 1460, 8192, 65535],
-        };
-        delete tcp.win_mode;
-        delete tcp.win_values;
-      }
-
-      if ("desync_mode" in tcp && !tcp.desync) {
-        tcp.desync = {
-          mode: tcp.desync_mode || "off",
-          ttl: tcp.desync_ttl || 3,
-          count: tcp.desync_count || 3,
-          post_desync: tcp.post_desync || false,
-        };
-        delete tcp.desync_mode;
-        delete tcp.desync_ttl;
-        delete tcp.desync_count;
-        delete tcp.post_desync;
-      }
-
       if (!tcp.incoming) {
         tcp.incoming = {
           mode: "off",
@@ -291,10 +270,10 @@ export const ImportExportSettings = ({
       const { b4_version: _, ...configFields } = raw;
 
       const defaults = createDefaultSet(0);
-      const fullConfig = mergeWithDefaults(configFields, defaults) as Record<
-        string,
-        unknown
-      >;
+      const fullConfig = mergeWithDefaults(
+        convertLegacySetShape(configFields),
+        defaults,
+      ) as Record<string, unknown>;
 
       const parsed = migrateSetConfig(fullConfig);
 

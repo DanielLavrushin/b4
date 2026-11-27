@@ -46,6 +46,7 @@ import { HubWarning, formatWarningParam } from "@models/hub";
 import { SetsImport, parseSetsImport } from "@models/setGroups";
 import { captureApi } from "@api/capture";
 import {
+  convertLegacySetShape,
   mergeHubLink,
   missingPayloadRefs,
   reportSaveError,
@@ -230,7 +231,9 @@ export function ImportToolDialog({
       } else {
         doc = {
           group: parsed.group,
-          sets: parsed.sets.map(withAdoptedHubLink),
+          sets: parsed.sets.map((set) =>
+            withAdoptedHubLink(convertLegacySetShape(set)),
+          ),
         };
       }
       const created = await setsApi.importSetGroup(doc);
