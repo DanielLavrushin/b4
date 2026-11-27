@@ -578,7 +578,7 @@ func (api *API) getSet(w http.ResponseWriter, id string) {
 }
 
 // @Summary Create a new set
-// @Description A field the body leaves out takes b4's set default, the value a config file or a set export means when it leaves the field out. The new set template (/ui/new-set-template) does not apply here: only the web interface's Create Set reads it. A set created without "enabled" is enabled.
+// @Description A field the body leaves out takes b4's set default, the value a config file or a set export means when it leaves the field out. The new set template (/ui/new-set-template) does not apply here: only the web interface's Create Set reads it. A set created without "enabled" is enabled. A "group" in the body is kept only when the new set lands next to a set of that group, or when no other set has it; otherwise the set starts without a group.
 // @Tags Sets
 // @Accept json
 // @Produce json
@@ -606,6 +606,7 @@ func (api *API) createSet(w http.ResponseWriter, r *http.Request) {
 	oldCfg, newCfg, err := api.editConfig(func(next *config.Config) error {
 		api.reloadTargetsIfGeoMoved(&set, geoBefore, next)
 		next.Sets = insertSetAfter(next.Sets, &set, after)
+		config.SettleSetGroup(next.Sets, slices.Index(next.Sets, &set))
 		return nil
 	})
 	if err != nil {

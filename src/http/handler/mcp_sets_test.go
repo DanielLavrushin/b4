@@ -151,6 +151,10 @@ func TestMCPManageSetKeepsEveryGroupInOneBlock(t *testing.T) {
 		return strings.Join(out, " ")
 	}
 
+	if res := callSetValue(t, session, ctx, "sets[other].group", "YouTube"); !res.IsError {
+		t.Errorf("a write of sets[other].group was accepted: %s, want it refused, since it would split the group", groups())
+	}
+
 	if res := callManageSet(t, session, ctx, map[string]any{"action": "duplicate", "set": "yt-a", "name": "copy"}); res.IsError {
 		t.Fatalf("duplicate failed: %+v", res.Content)
 	}

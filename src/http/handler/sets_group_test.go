@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
@@ -138,6 +139,43 @@ func TestReorderSetsSavesGroupsWithTheOrder(t *testing.T) {
 	}
 	if got, want := setOrder(api), []string{"a:yt", "g1:yt", "g2:yt", "b:"}; !slices.Equal(got, want) {
 		t.Errorf("sets = %v, want them untouched after a refusal: %v", got, want)
+	}
+}
+
+func setGroupsByName(api *API) string {
+	var out []string
+	for _, set := range api.getCfg().Sets {
+		out = append(out, set.Name+":"+set.Group)
+	}
+	return strings.Join(out, " ")
+}
+
+func TestACreatedSetKeepsItsGroupOnlyNextToTheGroup(t *testing.T) {
+	api, mux := asnAPI(t, groupedSet("c", ""), groupedSet("a", "YouTube"), groupedSet("b", "YouTube"))
+	api.RegisterDiscoveryApi()
+
+	body := `{"name":"far","enabled":true,"group":"YouTube","targets":{"sni_domains":["far.example.org"]}}`
+	if rec := serve(mux, http.MethodPost, "/api/sets", body); rec.Code != http.StatusCreated {
+		t.Fatalf("create = %d %s", rec.Code, rec.Body.String())
+	}
+	if got, want := setGroupsByName(api), "far: c: a:YouTube b:YouTube"; got != want {
+		t.Errorf("after a create at the top: %s, want the new set outside the group: %s", got, want)
+	}
+
+	body = `{"name":"twin","enabled":true,"group":"YouTube","targets":{"sni_domains":["twin.example.org"]}}`
+	if rec := serve(mux, http.MethodPost, "/api/sets?after=a", body); rec.Code != http.StatusCreated {
+		t.Fatalf("create after a = %d %s", rec.Code, rec.Body.String())
+	}
+	if got, want := setGroupsByName(api), "far: c: a:YouTube twin:YouTube b:YouTube"; got != want {
+		t.Errorf("after a create next to its source: %s, want the copy in the group: %s", got, want)
+	}
+
+	body = `{"name":"found","group":"YouTube","targets":{"sni_domains":["found.example.org"]}}`
+	if rec := serve(mux, http.MethodPost, "/api/discovery/add", body); rec.Code != http.StatusAccepted {
+		t.Fatalf("discovery add = %d %s", rec.Code, rec.Body.String())
+	}
+	if got, want := setGroupsByName(api), "found: far: c: a:YouTube twin:YouTube b:YouTube"; got != want {
+		t.Errorf("after Discovery added a set: %s, want it outside the group: %s", got, want)
 	}
 }
 
