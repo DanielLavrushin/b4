@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -36,14 +35,14 @@ type URLCheck struct {
 }
 
 type strictOptions struct {
-	IPv6       bool
+	Network    string
 	Timeout    time.Duration
 	RootCAs    *x509.CertPool
 	isReserved func(netip.Addr) bool
 }
 
-func checkURLStrict(ctx context.Context, rawURL string, ipv6Enabled bool, timeout time.Duration) URLCheck {
-	return strictCheck(ctx, rawURL, strictOptions{IPv6: ipv6Enabled, Timeout: timeout})
+func checkURLStrict(ctx context.Context, rawURL, network string, timeout time.Duration) URLCheck {
+	return strictCheck(ctx, rawURL, strictOptions{Network: network, Timeout: timeout})
 }
 
 func strictCheck(parent context.Context, rawURL string, opt strictOptions) URLCheck {
@@ -67,17 +66,6 @@ func strictCheck(parent context.Context, rawURL string, opt strictOptions) URLCh
 		return URLCheck{Status: URLStatusUnusable, Error: refusal.Error()}
 	}
 
-	dialer := guard.dialer(markThroughEngine, timeout)
-	dial := dialer.DialContext
-	if !opt.IPv6 {
-		dial = func(ctx context.Context, network, address string) (net.Conn, error) {
-			if network == "tcp" {
-				network = "tcp4"
-			}
-			return dialer.DialContext(ctx, network, address)
-		}
-	}
-
 	roots, verify := opt.RootCAs, true
 	if roots == nil {
 		roots, verify = netprobe.TLSRoots()
@@ -91,7 +79,7 @@ func strictCheck(parent context.Context, rawURL string, opt strictOptions) URLCh
 		ForceAttemptHTTP2:     true,
 		ResponseHeaderTimeout: timeout,
 		IdleConnTimeout:       timeout,
-		DialContext:           dial,
+		DialContext:           guard.dialContext(markThroughEngine, timeout, opt.Network),
 	}
 	defer transport.CloseIdleConnections()
 
@@ -196,6 +184,10 @@ func bodyClosesHTML(body []byte) bool {
 func classifyStrictError(err error, guard *dialGuard) URLCheck {
 	if refused := guard.refusal(); refused != nil {
 		return URLCheck{Status: URLStatusUnusable, Error: refused.Error()}
+	}
+	var unhandled *ErrUnhandledFamily
+	if errors.As(err, &unhandled) {
+		return URLCheck{Status: URLStatusUnusable, Error: unhandled.Error()}
 	}
 	if isCertificateError(err) {
 		return URLCheck{Status: URLStatusUnusable, Error: "certificate verification failed: " + err.Error()}

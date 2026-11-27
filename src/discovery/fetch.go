@@ -174,6 +174,10 @@ func (ds *DiscoverySuite) dialNetwork() string {
 	return ""
 }
 
+func (ds *DiscoverySuite) lookupNetwork() string {
+	return "ip" + strings.TrimPrefix(ds.dialNetwork(), "tcp")
+}
+
 // dialContext builds the probe dialer: it forces the address family from
 // dialNetwork and pins pinnedIP when DNS discovery already resolved one.
 func (ds *DiscoverySuite) dialContext(timeout time.Duration, pinnedHost, pinnedIP string) func(context.Context, string, string) (net.Conn, error) {

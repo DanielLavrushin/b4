@@ -6,7 +6,7 @@ description: How a set answers DNS for its domains - another resolver, DNS over 
 
 A set can answer DNS for the domains it targets: send them to another resolver, answer them with fixed addresses, or remove parts of the answers. Names that no set targets go to the resolver the device chose, unchanged.
 
-The options are on the set's **DNS & Routing** tab, under **DNS Redirect**, see [DNS & Routing](sets/routing.md#dns-redirect).
+The options are under **DNS Redirect** on the set's [DNS & Routing](sets/routing.md#dns-redirect) tab.
 
 ## What b4 sees {#what-b4-intercepts}
 
@@ -16,7 +16,7 @@ An encrypted forwarder on the router is not a problem, since devices still ask t
 
 ## How a set handles a query
 
-A query name matches a set the way a server name does: a domain covers its subdomains, and a domain listed in one set wins over a `regexp:` entry in another. A [block set](sets/blocking.md) answers first, then the set's [pins](#pinned-addresses), then the [set's resolvers](#resolver-types) while **Enable DNS Redirect** is on. Otherwise the query goes to the device's resolver unchanged. b4 can then remove [ECH keys](#removing-ech-keys) and [IPv6 addresses](#the-ipv4-fallback) from the answer, see [the full sequence](internals/dns.md#how-a-set-handles-a-query).
+A query name matches a set the way a server name does: a domain covers its subdomains, and a domain listed in one set wins over a `regexp:` entry in another. A [block set](sets/blocking.md) answers first, then the set's [pins](#pinned-addresses), then the [set's resolvers](#resolver-types) while **Enable DNS Redirect** is on. Otherwise the query goes to the device's resolver unchanged. b4 can then remove [ECH keys](#removing-ech-keys) and [IPv6 addresses](#the-ipv4-fallback) from the answer (see [the full sequence](internals/dns.md#how-a-set-handles-a-query)).
 
 ## Sending a set's domains to another resolver {#resolver-types}
 
@@ -32,9 +32,9 @@ A set's resolver helps when the provider's DNS answers the set's domains with wr
 | An IP address | b4 asks the resolver over plain DNS. It fits when plain DNS to other servers arrives intact. **Fragment DNS Queries** splits each query to such a resolver into IP fragments, for DPI that reads the names in DNS queries. |
 | An `https://` URL | b4 asks the resolver over DNS over HTTPS (DoH), and the queries leave encrypted. It fits when the provider tampers with plain DNS to other servers too, or the resolver serves only DoH. A URL entered without a path gets `/dns-query` added. |
 
-Queries that come from the address of one of the set's resolvers go on unchanged, so a resolver on the local network can serve a set. A resolver on the router itself has one more condition, see [When it does not work](#when-it-does-not-work).
+Queries that come from the address of one of the set's resolvers go on unchanged, so a resolver on the local network can serve a set. A resolver on the router itself has one more condition (see [When it does not work](#when-it-does-not-work)).
 
-A service that checks the address a connection comes from needs another exit rather than another resolver, see [Routing sites through a VPN](guides/vpn.md).
+A service that checks the address a connection comes from needs another exit rather than another resolver (see [Routing sites through a VPN](guides/vpn.md)).
 
 ### A set with more than one resolver {#more-resolvers}
 
@@ -46,13 +46,13 @@ Dragging an entry changes the order. A click on a server under **Recommended DNS
 
 ### Lookups b4 makes itself {#lookups-b4-makes-itself}
 
-When b4 looks up a set's names itself, for routing, a [DSCP value](sets/routing.md#dscp) or a proxy upstream, it asks the set's resolvers in the same order while **Enable DNS Redirect** is on, and the router's resolver otherwise, see [How b4 handles DNS](internals/dns.md#lookups-b4-makes-itself).
+When b4 looks up a set's names itself, for routing, a [DSCP value](sets/routing.md#dscp) or a proxy upstream, it asks the set's resolvers in the same order while **Enable DNS Redirect** is on, and the router's resolver otherwise (see [How b4 handles DNS](internals/dns.md#lookups-b4-makes-itself)).
 
 ## When no resolver answers {#when-the-resolver-fails}
 
 When no resolver of the set answers, b4 answers from the last good reply it holds for the name, or else asks the resolver the device was addressing. **Query timeout** under [Settings > Core > DNS](settings/core.md#dns) sets how long b4 waits for each resolver.
 
-**Fail closed when no resolver is reachable** turns the fallback off. The device then gets an error (SERVFAIL), and the set's names resolve through its resolvers or not at all. The host name of the set's own DoH resolver is the exception, see [How b4 handles DNS](internals/dns.md#doh-host-names).
+**Fail closed when no resolver is reachable** turns the fallback off. The device then gets an error (SERVFAIL), and the set's names resolve through its resolvers or not at all. The host name of the set's own DoH resolver is the exception (see [How b4 handles DNS](internals/dns.md#doh-host-names)).
 
 :::warning
 With fail closed on, every name of the set stops resolving while none of its resolvers is reachable, even while the bypass strategy works. On a censored connection, a DoH server itself can get blocked.
@@ -168,9 +168,9 @@ The [log](logs.md) records the same decisions, as `dns-doh->`, `dns-pin` and so 
 | The site still goes to the old address | The device keeps an answer it already has until the answer expires. |
 | A pinned site opens on the router, but devices behind a resolver on the network still get the old address | The resolver keeps the name's earlier answer, often an alias valid for up to an hour, until it expires. Clearing that resolver's cache brings in the pins at once. |
 | `servfail`, `fallback-cache` or `fallback-upstream` | None of the set's resolvers is reachable from this connection. Another resolver, or DoH in place of plain DNS, is the next try. A DoH resolver given by host name also fails when the router's resolver has no address or a wrong one for that name; a URL with the server's IP address needs no lookup. |
-| The set's names resolve slowly or not at all, with a resolver on the router among the set's resolvers | A resolver on the router, at any place in **Resolvers**, and the router's resolver when a resolver on the network uses it upstream, has to reach its own upstream over DoH or DoT, which b4 does not intercept. The router's own resolver does not need a place in **Resolvers**: a set without **Fail closed when no resolver is reachable** falls back to the resolver the device asked. |
-| A browser still uses ECH, with a resolver on the network that checks DNSSEC, such as BIND or Unbound | The resolver gets the original answer on a path b4 does not see: DoT or DoH to its upstream, an interface left out of **Capture Interfaces**, or TCP while **Intercept DNS over TCP** is off. With **Intercept DNS over TCP** on, plain DNS through a captured interface closes these paths, see [ECH keys](internals/dns.md#ech-keys). |
+| The set's names resolve slowly or not at all, with a resolver on the router among the set's resolvers | A resolver on the router has to reach its own upstream over DoH or DoT, which b4 does not intercept. This holds wherever it stands in **Resolvers**, and also for the router's resolver when a resolver on the network uses it as its upstream. The router's own resolver does not need a place in **Resolvers**: a set without **Fail closed when no resolver is reachable** falls back to the resolver the device asked. |
+| A browser still uses ECH, with a resolver on the network that checks DNSSEC, such as BIND or Unbound | The resolver gets the original answer on a path b4 does not see: DoT or DoH to its upstream, an interface left out of **Capture Interfaces**, or TCP while **Intercept DNS over TCP** is off. With **Intercept DNS over TCP** on, plain DNS through a captured interface closes these paths (see [ECH keys](internals/dns.md#ech-keys)). |
 
 ### On KeeneticOS and older kernels {#copied-requests}
 
-On KeeneticOS and some other routers with an older kernel, b4 works on copies of DNS requests and replaces the resolver's reply with the set's answer. The row **DNS queries copied, not held (NFLOG)** in [System Info](settings/system.md#system-info) shows when. The resolver the device asked then still receives every request, and a resolver outside the router has to reply before the device gets the set's answer. Requests that a `nat` rule moves to another port, or that NAT sends from another source port, get no set handling, see [Copied requests](internals/dns.md#copied-requests).
+On KeeneticOS and some other routers with an older kernel, b4 works on copies of DNS requests and replaces the resolver's reply with the set's answer. The row **DNS queries copied, not held (NFLOG)** in [System Info](settings/system.md#system-info) shows when. The resolver the device asked then still receives every request, and a resolver outside the router has to reply before the device gets the set's answer. Requests that a `nat` rule moves to another port, or that NAT sends from another source port, get no set handling (see [Copied requests](internals/dns.md#copied-requests)).

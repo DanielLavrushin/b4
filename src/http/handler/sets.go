@@ -37,6 +37,8 @@ func (api *API) RegisterSetsApi() {
 	api.mux.HandleFunc("/api/sets/{id}/add-domain", api.handleSetDomains)
 	api.mux.HandleFunc("/api/sets/batch-delete", api.handleBatchDeleteSets)
 	api.mux.HandleFunc("/api/sets/batch-set-enabled", api.handleBatchSetEnabled)
+	api.mux.HandleFunc("/api/sets/batch-set-group", api.handleBatchSetGroup)
+	api.mux.HandleFunc("/api/sets/import", api.handleImportSets)
 }
 
 // @Summary List all targeted domains from enabled sets
@@ -576,7 +578,7 @@ func (api *API) getSet(w http.ResponseWriter, id string) {
 }
 
 // @Summary Create a new set
-// @Description A field the body leaves out takes b4's set default, the value a config file or a set export means when it leaves the field out. The new set template (/ui/new-set-template) does not apply here: only the web interface's Create Set reads it. A set created without "enabled" is enabled.
+// @Description A field the body leaves out takes b4's set default, the value a config file or a set export means when it leaves the field out. The new set template (/ui/new-set-template) does not apply here: only the web interface's Create Set reads it. A set created without "enabled" is enabled. A "group" in the body is kept only when the new set lands next to a set of that group, or when no other set has it; otherwise the set starts without a group.
 // @Tags Sets
 // @Accept json
 // @Produce json
@@ -604,6 +606,7 @@ func (api *API) createSet(w http.ResponseWriter, r *http.Request) {
 	oldCfg, newCfg, err := api.editConfig(func(next *config.Config) error {
 		api.reloadTargetsIfGeoMoved(&set, geoBefore, next)
 		next.Sets = insertSetAfter(next.Sets, &set, after)
+		config.SettleSetGroup(next.Sets, slices.Index(next.Sets, &set))
 		return nil
 	})
 	if err != nil {
@@ -634,7 +637,7 @@ func insertSetAfter(sets []*config.SetConfig, set *config.SetConfig, afterID str
 }
 
 // @Summary Update a set
-// @Description The body replaces the whole set. It must carry "name", "enabled" and "targets", otherwise the write is refused with 400 validation_failed and the set is left as it was. Any other field the body leaves out takes its set default, not the value the set had. When the body carries the "revision" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before.
+// @Description The body replaces the whole set. It must carry "name", "enabled" and "targets", otherwise the write is refused with 400 validation_failed and the set is left as it was. Any other field the body leaves out takes its set default, not the value the set had. When the body carries the "revision" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before. The set keeps the group it is stored with whatever the body says, and a change of group does not change the revision: use POST /sets/batch-set-group to change it.
 // @Tags Sets
 // @Accept json
 // @Produce json
@@ -714,6 +717,7 @@ func (api *API) updateSet(w http.ResponseWriter, r *http.Request, id string) {
 		found := false
 		for i, set := range next.Sets {
 			if set.Id == id {
+				updated.Group = set.Group
 				next.Sets[i] = &updated
 				found = true
 				break
@@ -797,10 +801,11 @@ func (api *API) deleteSet(w http.ResponseWriter, id string) {
 }
 
 // @Summary Reorder sets
+// @Description "set_ids" lists every set in its new place. "groups" is optional: it maps a set ID to that set's new group, an empty string for none, and is saved in the same write as the order. The sets of each group are then brought together at the place of the group's first set, so an order that would leave a group in two places is adjusted.
 // @Tags Sets
 // @Accept json
 // @Produce json
-// @Param body body object true "Ordered set IDs"
+// @Param body body object true "Ordered set IDs, and optionally new groups by set ID"
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @Router /sets/reorder [post]
@@ -811,7 +816,8 @@ func (api *API) handleReorderSets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		SetIds []string `json:"set_ids"`
+		SetIds []string          `json:"set_ids"`
+		Groups map[string]string `json:"groups"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, ErrInvalidJSON())
@@ -824,15 +830,29 @@ func (api *API) handleReorderSets(w http.ResponseWriter, r *http.Request) {
 			setMap[set.Id] = set
 		}
 		reordered := make([]*config.SetConfig, 0, len(req.SetIds))
+		listed := make(map[string]bool, len(req.SetIds))
 		for _, id := range req.SetIds {
-			if set, ok := setMap[id]; ok {
-				reordered = append(reordered, set)
+			set, ok := setMap[id]
+			if !ok {
+				continue
 			}
+			if listed[id] {
+				return ErrBadRequest("Invalid set IDs")
+			}
+			listed[id] = true
+			reordered = append(reordered, set)
 		}
 		if len(reordered) != len(next.Sets) {
 			return ErrBadRequest("Invalid set IDs")
 		}
-		next.Sets = reordered
+		for id, group := range req.Groups {
+			set, ok := setMap[id]
+			if !ok {
+				return ErrBadRequest("Invalid set IDs")
+			}
+			set.Group = config.NormalizeSetGroup(group)
+		}
+		next.Sets = config.GatherSetGroups(reordered)
 		return nil
 	})
 	if err != nil {

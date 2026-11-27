@@ -28,7 +28,7 @@ CONFIG="${2:-}"
 shift 2
 exec unshare -n -m sh -ec '
 	mount --make-rprivate /
-	mount -t tmpfs tmpfs /run
+	mount -t tmpfs -o mode=0755 tmpfs /run
 	mount -t tmpfs tmpfs /tmp
 	mount -t sysfs sysfs /sys
 	ip link set lo up
@@ -57,7 +57,7 @@ exec unshare -n -m sh -ec '
 	if [ -L "$root/run" ]; then
 		mkdir -p "$root/tmp/run"
 	else
-		mount -t tmpfs tmpfs "$root/run"
+		mount -t tmpfs -o mode=0755 tmpfs "$root/run"
 	fi
 	[ -x "$root$bin" ] && [ -f "$root$config" ] || {
 		echo "b4-netns.sh: $bin or $config is not inside $root, or is under its /tmp" >&2

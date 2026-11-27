@@ -197,6 +197,7 @@ type DomainPresetResult struct {
 	ConfirmTries int               `json:"confirm_tries,omitempty"`
 	Set          *config.SetConfig `json:"set,omitempty"`
 	cutShort     bool
+	usedIP       string
 }
 
 type StrategyGroup struct {

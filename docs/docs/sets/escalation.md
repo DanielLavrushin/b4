@@ -16,13 +16,13 @@ A typical pair is a light set for most sites and a heavier one for the sites tha
 | --- | --- | --- |
 | **Escalate to set** | The backup set. **None** turns escalation off. A disabled set is marked **disabled**: the link stays and sits idle until the set is enabled again. A [set that handles only calls](./udp.md#protocol-selection) is not offered. | **None** |
 
-Sets can form a chain, A to B to C: b4 moves a site along it as each set fails, up to eight steps. A backup set limited to source devices is used only for those devices, and other devices stay on the original set.
+Sets can form a chain, A to B to C, of up to eight steps. b4 moves a site one step along it each time a set fails. A backup set limited to source devices is used only for those devices, and other devices stay on the original set.
 
 The tab suggests turning on [RST Injection Protection](./tcp/rst-protection.md) in this set. It keeps the current page working while b4 detects the block.
 
 ## Triggers
 
-Each trigger counts on its own, and whichever reaches its limit first switches the site over.
+Each trigger counts on its own. The first one to reach its limit switches the site over.
 
 | Field | What it counts | Default |
 | --- | --- | --- |
@@ -32,9 +32,9 @@ Each trigger counts on its own, and whichever reaches its limit first switches t
 | **Reset counting window** | Resets count only within this time. | `30` s |
 | **Unusable DNS answers** | NXDOMAIN, SERVFAIL or answers without an address for the same domain, after which the backup set resolves it. | `2` |
 
-A fourth trigger has no field: connection attempts to an address go unanswered, and the address does not answer the router either when b4 tests it. No bypass strategy helps such an address, while a backup set that routes the site elsewhere or pins another address does.
+A fourth trigger has no field: connection attempts to an address go unanswered, and the address does not answer the router either when b4 tests it. A bypass strategy cannot help such an address. A backup set that routes the site elsewhere or pins another address can.
 
-For DNS, IPv4 and IPv6 lookups count separately, and an empty answer to an IPv6 (AAAA) lookup does not count, since a site without IPv6 answers that way. Lookups other than A and AAAA are not counted.
+For DNS, IPv4 and IPv6 lookups count separately. An empty answer to an IPv6 (AAAA) lookup does not count, because a site without IPv6 answers that way. Lookups other than A and AAAA are not counted.
 
 ## Tuning
 
@@ -50,7 +50,7 @@ For DNS, IPv4 and IPv6 lookups count separately, and an empty answer to an IPv6 
 - **The failed request is lost, the next one works.** For the DNS trigger, the lookup that trips the switch is already answered by the backup set.
 - **The site comes back** after **Remember switch for**. **Clear** on the dashboard's [Active Escalations](../dashboard.md#active-escalations) panel sends every site back at once and forgets the counted resets and DNS failures. **Reset counters** on the dashboard leaves the switches as they are.
 
-Escalation reacts to failures only, so the first failure of a site is still a failure. It does not replace [Discovery](../discovery.md), which finds a working strategy in advance.
+Escalation reacts only after a site has failed, so the first failures still reach the user. [Discovery](../discovery.md) is the way to find a working strategy in advance.
 
 The log records each switch with its reason, for example:
 

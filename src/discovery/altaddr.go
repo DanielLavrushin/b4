@@ -572,6 +572,7 @@ func (ds *DiscoverySuite) recordPlainFix(domain string, domainResult *DomainDisc
 		BytesRead:  result.BytesRead,
 		StatusCode: result.StatusCode,
 		Set:        ds.plainFixSet(name, family),
+		usedIP:     result.UsedIP,
 	}
 	domainResult.BaselineWorks = false
 	domainResult.BestPreset = name

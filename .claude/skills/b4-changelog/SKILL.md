@@ -185,6 +185,12 @@ marker filed off, and it goes too.
 ### Voice
 
 - Plain language, no marketing. No exclamation, no "seamlessly", no "powerful".
+- Impersonal, as in the docs (`docs/STYLE.md`). A bullet says what b4 or the interface does;
+  it never tells the reader what to do. No "you", "your" or "we", and no imperative: write
+  "Sets can be grouped through **Select** and **Group**", not "**Select** them and press
+  **Group**". The same in Russian: no «вы» and no «нажмите», «выберите», «отметьте». The one
+  exception is the sentence about what a user must do after updating (run Discovery again,
+  set a login), which may use the imperative.
 - No em-dash anywhere. Plain hyphen with spaces where a dash is needed.
 - Describe behaviour, not code. "a set bound to a manually added source device stopped
   taking its route" beats "fixed nil deref in buildDeviceMatch".
@@ -268,7 +274,8 @@ stacked participle phrases. UI names are bold, as in English, with the label exa
    defect. Security beats Fixed when users or their data were exposed.
 4. Write the English bullet. Scan it for "now" and for a present-tense verb that states the
    fixed behaviour as a closer (works, loads, stays, shows, stops, applies, saves) and
-   delete that clause.
+   delete that clause. Scan it for an instruction to the reader (select, press, pick, drag,
+   open) and reword it to say what the interface does.
 5. Add issue links and contributor credit if they apply.
 6. Write the Russian bullet at the mirrored position in `changelog_ru.md` and scan it the
    same way ("Теперь", работает, загружается, остаётся, показывается).
@@ -302,7 +309,8 @@ prerelease never gets a heading of its own: `## [1.91.0rc1]` fails the pre-merge
 
 If changelog writing is delegated to a subagent, its brief must carry verbatim: the
 short-sentence rule, the Fixed-describes-only-the-problem rule, the promise-closer ban, the
-"what earns a bullet" lists, and the rule that no issue link or credit is dropped. A brief
+impersonal-voice rule, the "what earns a bullet" lists, and the rule that no issue link or
+credit is dropped. A brief
 that carried only the closer ban produced four-to-six-sentence bullets.
 
 ## Hub changelog

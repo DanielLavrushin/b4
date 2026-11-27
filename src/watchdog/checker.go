@@ -3,6 +3,7 @@ package watchdog
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,7 +14,11 @@ import (
 	"github.com/daniellavrushin/b4/netprobe"
 )
 
-func checkDomain(parent context.Context, input string, mark uint, timeout time.Duration) CheckResult {
+func checkDomain(parent context.Context, input, network string, mark uint, timeout time.Duration) CheckResult {
+	return guardedCheck(parent, input, network, mark, timeout, newDialGuard(nil))
+}
+
+func guardedCheck(parent context.Context, input, network string, mark uint, timeout time.Duration, guard *dialGuard) CheckResult {
 	checkURL := input
 	if !strings.HasPrefix(input, "http://") && !strings.HasPrefix(input, "https://") {
 		checkURL = "https://" + input + "/"
@@ -25,9 +30,6 @@ func checkDomain(parent context.Context, input string, mark uint, timeout time.D
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
-	guard := newDialGuard(nil)
-	dialer := guard.dialer(mark, timeout)
-
 	roots, verify := netprobe.TLSRoots()
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
@@ -37,7 +39,7 @@ func checkDomain(parent context.Context, input string, mark uint, timeout time.D
 		},
 		ResponseHeaderTimeout: timeout,
 		IdleConnTimeout:       timeout,
-		DialContext:           dialer.DialContext,
+		DialContext:           guard.dialContext(mark, timeout, network),
 	}
 	defer transport.CloseIdleConnections()
 
@@ -71,6 +73,10 @@ func checkDomain(parent context.Context, input string, mark uint, timeout time.D
 	if err != nil {
 		if refused := guard.refusal(); refused != nil {
 			return CheckResult{Error: refused.Error(), Verdict: netprobe.DomainError, Unusable: true}
+		}
+		var unhandled *ErrUnhandledFamily
+		if errors.As(err, &unhandled) {
+			return CheckResult{Error: unhandled.Error(), Verdict: netprobe.DomainError, Unusable: true}
 		}
 		status, detail := netprobe.ClassifyTLSError(err)
 		return CheckResult{Error: detail, Verdict: status}
@@ -134,7 +140,7 @@ evaluate:
 	}
 }
 
-func checkAllConcurrently(ctx context.Context, domains []string, mark uint, timeout time.Duration) map[string]CheckResult {
+func checkAllConcurrently(ctx context.Context, domains []string, network string, mark uint, timeout time.Duration) map[string]CheckResult {
 	results := make(map[string]CheckResult, len(domains))
 	type result struct {
 		domain string
@@ -144,7 +150,7 @@ func checkAllConcurrently(ctx context.Context, domains []string, mark uint, time
 
 	for _, d := range domains {
 		go func(domain string) {
-			r := checkDomain(ctx, domain, mark, timeout)
+			r := checkDomain(ctx, domain, network, mark, timeout)
 			ch <- result{domain: domain, check: r}
 		}(d)
 	}

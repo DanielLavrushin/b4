@@ -19,17 +19,20 @@ import { useCaptures } from "@b4.capture";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useTranslation, Trans } from "react-i18next";
 
-import { B4SetConfig, FakingPayloadType } from "@models/config";
+import { B4SetConfig } from "@models/config";
 import { createDefaultSet } from "@models/defaults";
 import { HubWarning, formatWarningParam, isHubEnvelope } from "@models/hub";
 import { hubApi } from "@api/hub";
 import { ApiError } from "@api/apiClient";
 import {
+  collectPayloadRefs,
+  convertLegacySetShape,
   copyText,
   exportSetJson,
   isPlainObject,
   keepLocalDscp,
   mergeHubLink,
+  payloadBaseName,
   sanitizeProbeUrls,
 } from "@utils";
 
@@ -85,25 +88,6 @@ function compactJson(text: string): string {
   } catch {
     return text;
   }
-}
-
-function payloadBaseName(path: string): string {
-  return path.split(/[\\/]/).pop() ?? path;
-}
-
-function collectPayloadRefs(cfg: B4SetConfig): string[] {
-  const refs: string[] = [];
-  if (
-    cfg.faking?.sni_type === FakingPayloadType.CAPTURE &&
-    cfg.faking.payload_file
-  ) {
-    refs.push(cfg.faking.payload_file);
-  }
-  const udpFile = cfg.udp?.fake_payload_file ?? "";
-  if (cfg.udp?.mode === "fake" && udpFile && !udpFile.startsWith("@")) {
-    refs.push(udpFile);
-  }
-  return [...new Set(refs)];
 }
 
 interface ImportExportSettingsProps {
@@ -178,28 +162,6 @@ export const ImportExportSettings = ({
     const tcp = set.tcp as Record<string, unknown> | undefined;
 
     if (tcp) {
-      if ("win_mode" in tcp && !tcp.win) {
-        tcp.win = {
-          mode: tcp.win_mode || "off",
-          values: tcp.win_values || [0, 1460, 8192, 65535],
-        };
-        delete tcp.win_mode;
-        delete tcp.win_values;
-      }
-
-      if ("desync_mode" in tcp && !tcp.desync) {
-        tcp.desync = {
-          mode: tcp.desync_mode || "off",
-          ttl: tcp.desync_ttl || 3,
-          count: tcp.desync_count || 3,
-          post_desync: tcp.post_desync || false,
-        };
-        delete tcp.desync_mode;
-        delete tcp.desync_ttl;
-        delete tcp.desync_count;
-        delete tcp.post_desync;
-      }
-
       if (!tcp.incoming) {
         tcp.incoming = {
           mode: "off",
@@ -260,6 +222,7 @@ export const ImportExportSettings = ({
       const parsed = {
         ...result.set,
         id: config.id,
+        group: config.group,
         enabled: config.enabled,
         hub: link.hub,
         discovery: config.discovery ?? result.set.discovery,
@@ -307,10 +270,10 @@ export const ImportExportSettings = ({
       const { b4_version: _, ...configFields } = raw;
 
       const defaults = createDefaultSet(0);
-      const fullConfig = mergeWithDefaults(configFields, defaults) as Record<
-        string,
-        unknown
-      >;
+      const fullConfig = mergeWithDefaults(
+        convertLegacySetShape(configFields),
+        defaults,
+      ) as Record<string, unknown>;
 
       const parsed = migrateSetConfig(fullConfig);
 
@@ -327,6 +290,7 @@ export const ImportExportSettings = ({
       }
 
       parsed.id = config.id;
+      parsed.group = config.group;
       parsed.targets = {
         ...parsed.targets,
         ip_priority: config.targets.ip_priority ?? false,

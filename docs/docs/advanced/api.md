@@ -49,7 +49,7 @@ The watchdog reports why a set is in its state, or how its last heal ended, as o
 | --- | --- |
 | `not_owned` | The set's addresses are handled by another set or by none, so a strategy written into this set does not affect them |
 | `escalated` | An escalation sends the addresses to another set |
-| `unusable` | A certificate error, a required client certificate, or a private or local destination. Never healed |
+| `unusable` | A certificate error, a required client certificate, a private or local destination, or no address of an IP version b4 handles. Never healed |
 | `current_works` | Tested alone, the set's own strategy loads the addresses, yet the live check fails |
 | `not_needed` | Tested alone, the addresses load without a bypass, yet the live check fails |
 | `partial` | The search found a strategy for only some of the addresses, so nothing was written |

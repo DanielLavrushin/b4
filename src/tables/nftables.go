@@ -259,7 +259,7 @@ func (n *NFTablesManager) checkQueueSupport() error {
 	}
 	n.socketKey = caps.socketKey
 	if caps.socketKey == "" && n.cfg.Queue.Mark != 0 {
-		warnOwnReplySocketMissing("NFTABLES", "the socket expression", caps.socketErr, kmodMissingHint([]string{"nft_socket"}))
+		warnOwnReplySocketMissing("NFTABLES", "the socket expression", caps.socketErr, kmodHintAfterRejection([]string{"nft_socket"}))
 	}
 	return nil
 }

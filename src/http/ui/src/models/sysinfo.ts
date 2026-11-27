@@ -34,7 +34,7 @@ interface DiagModule {
   status: string;
 }
 
-interface DiagCapability {
+export interface DiagCapability {
   name: string;
   available: boolean;
   missing?: string[];

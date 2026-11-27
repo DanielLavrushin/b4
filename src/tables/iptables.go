@@ -2,12 +2,9 @@ package tables
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -80,8 +77,8 @@ func (im *IPTablesManager) checkConnbytesSupport(ipt string) error {
 	}
 
 	err := fmt.Errorf("xt_connbytes kernel module is not available for %s (%v) - install it with: modprobe xt_connbytes (or apt install xtables-addons-common / linux-modules-extra-$(uname -r))", ipt, probeErr)
-	if kmodLoaded("xt_connbytes") {
-		err = fmt.Errorf("%s rejected the connbytes match although the xt_connbytes kernel module is loaded (%v) - the iptables match library is missing (OpenWrt/Entware: opkg install iptables-mod-conntrack-extra) or another program kept rewriting the filter table while b4 was probing it", ipt, probeErr)
+	if kmodPresent("xt_connbytes") {
+		err = fmt.Errorf("%s rejected the connbytes match although the xt_connbytes kernel module is present (%v) - the iptables match library is missing (OpenWrt/Entware: opkg install iptables-mod-conntrack-extra) or another program kept rewriting the filter table while b4 was probing it", ipt, probeErr)
 	}
 	im.connbytesSupport[ipt] = err
 	return err
@@ -362,75 +359,11 @@ type SysctlSetting struct {
 	Desired string
 }
 
-const defaultSysctlSnapPath = "/tmp/b4_sysctl_snapshot.json"
-
-var sysctlSnapPath = defaultSysctlSnapPath
-
-var readNetnsLink = func() (string, error) {
-	return os.Readlink("/proc/self/ns/net")
-}
-
-func sysctlSnapshotPath() string {
-	if sysctlSnapPath != defaultSysctlSnapPath {
-		return sysctlSnapPath
-	}
-	link, err := readNetnsLink()
-	if err != nil {
-		return defaultSysctlSnapPath
-	}
-	id, ok := strings.CutPrefix(link, "net:[")
-	if !ok {
-		return defaultSysctlSnapPath
-	}
-	id, ok = strings.CutSuffix(id, "]")
-	if !ok {
-		return defaultSysctlSnapPath
-	}
-	ino, err := strconv.ParseUint(id, 10, 64)
-	if err != nil || ino == 0 {
-		return defaultSysctlSnapPath
-	}
-	return fmt.Sprintf("/tmp/b4_sysctl_snapshot.%d.json", ino)
-}
-
 func b4SysctlSettings() []SysctlSetting {
 	return []SysctlSetting{
 		{Name: "net.netfilter.nf_conntrack_checksum", Desired: "0"},
 		{Name: "net.netfilter.nf_conntrack_tcp_be_liberal", Desired: "1"},
 	}
-}
-
-func loadSysctlSnapshot() map[string]string {
-	b, err := os.ReadFile(sysctlSnapshotPath())
-	if err != nil {
-		return map[string]string{}
-	}
-	var m map[string]string
-	if json.Unmarshal(b, &m) != nil {
-		return map[string]string{}
-	}
-	return m
-}
-
-func saveSysctlSnapshot(m map[string]string) error {
-	b, err := json.Marshal(m)
-	if err != nil {
-		return err
-	}
-	path := sysctlSnapshotPath()
-	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*")
-	if err != nil {
-		return err
-	}
-	_, werr := f.Write(b)
-	cerr := f.Close()
-	if err = errors.Join(werr, cerr); err == nil {
-		err = os.Rename(f.Name(), path)
-	}
-	if err != nil {
-		_ = os.Remove(f.Name())
-	}
-	return err
 }
 
 func (ipt *IPTablesManager) buildNFQSpec(queueStart, threads int) []string {
@@ -455,8 +388,19 @@ func isSysctlNumber(v string) bool {
 }
 
 func (s SysctlSetting) Apply() {
-	snap := loadSysctlSnapshot()
-	if !isSysctlNumber(snap[s.Name]) {
+	snap, err := readSysctlSnapshot()
+	if err != nil {
+		if sysctlSnapFirstWarning("read " + s.Name) {
+			log.Errorf("TABLES: leaving %s as it is: the saved conntrack settings could not be read (%v), and b4 does not record a new original value over them. It stays as it is until b4 can read them, and this is logged once until reading works again", s.Name, err)
+		} else {
+			log.Tracef("TABLES: still leaving %s as it is: %v", s.Name, err)
+		}
+		return
+	}
+	sysctlSnapForgetWarning("read " + s.Name)
+	if isSysctlNumber(snap[s.Name]) {
+		sysctlSnapshotInUse(s.Name)
+	} else {
 		cur := getSysctl(s.Name)
 		if !isSysctlNumber(cur) {
 			log.Infof("TABLES: leaving %s alone for now: reading it gave %q rather than a number, so b4 would have nothing to put back on exit. b4 tries again on its next rules pass", s.Name, cur)
@@ -464,9 +408,14 @@ func (s SysctlSetting) Apply() {
 		}
 		snap[s.Name] = cur
 		if err := saveSysctlSnapshot(snap); err != nil {
-			log.Errorf("TABLES: leaving %s at %q rather than setting it to %s: its current value could not be saved to %s (%v), so b4 could not put it back on exit", s.Name, snap[s.Name], s.Desired, sysctlSnapshotPath(), err)
+			if sysctlSnapFirstWarning("save " + s.Name) {
+				log.Errorf("TABLES: leaving %s at %q rather than setting it to %s: b4 could not save its current value to put back on exit (%v). It stays as it is until b4 can save that value, and this is logged once until saving works again", s.Name, cur, s.Desired, err)
+			} else {
+				log.Tracef("TABLES: still leaving %s at %q: %v", s.Name, cur, err)
+			}
 			return
 		}
+		sysctlSnapForgetWarning("save " + s.Name)
 	}
 	setSysctl(s.Name, s.Desired)
 	if s.Name == conntrackLiberalSysctl {
@@ -479,7 +428,16 @@ func (s SysctlSetting) RevertBack() {
 		log.Warnf("TABLES: b4 is leaving %s at 1 rather than putting this router's 0 back: this firewall drops what strict TCP window tracking marks invalid, so restoring it would stop a large download finishing. A reboot resets it and b4 sets it again on the way up", conntrackLiberalSysctl)
 		return
 	}
-	snap := loadSysctlSnapshot()
+	snap, err := readSysctlSnapshot()
+	if err != nil {
+		if sysctlSnapFirstWarning("revert read " + s.Name) {
+			log.Warnf("TABLES: not putting %s back now: the saved conntrack settings could not be read (%v). This is logged once until reading works again", s.Name, err)
+		} else {
+			log.Tracef("TABLES: still not putting %s back: %v", s.Name, err)
+		}
+		return
+	}
+	sysctlSnapForgetWarning("revert read " + s.Name)
 	v, ok := snap[s.Name]
 	if !ok {
 		return
@@ -487,11 +445,14 @@ func (s SysctlSetting) RevertBack() {
 	if isSysctlNumber(v) {
 		setSysctl(s.Name, v)
 	} else {
-		log.Warnf("TABLES: not putting %s back: the value saved for it in %s is %q, not a number", s.Name, sysctlSnapshotPath(), v)
+		log.Warnf("TABLES: not putting %s back: the value b4 saved for it is %q, not a number", s.Name, v)
+	}
+	if sysctlSnapshotKeepsRestored(s.Name) {
+		return
 	}
 	delete(snap, s.Name)
 	if err := saveSysctlSnapshot(snap); err != nil {
-		log.Warnf("TABLES: could not remove %s from %s: %v", s.Name, sysctlSnapshotPath(), err)
+		log.Warnf("TABLES: could not remove %s from the saved conntrack settings: %v", s.Name, err)
 	}
 }
 

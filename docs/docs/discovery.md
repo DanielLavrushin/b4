@@ -37,7 +37,7 @@ The defaults are the usual choice.
 
 ## A run
 
-**Start** begins a run through six steps: **DNS**, **Without bypass**, **Strategies**, **Tuning**, **Combining** and **Confirming**. A run that finds a strategy goes on to a seventh step, **Page hosts**, see [Page hosts](#page-hosts). A row per site shows what has been found so far, with the quickest strategy yet as **Fastest so far**, and the [probed addresses](#probed-addresses). The card at the end can offer another strategy, see [Results](#results). **Show log** opens the log. A run takes from one to ten minutes, depending on the network.
+**Start** begins a run through six steps: **DNS**, **Without bypass**, **Strategies**, **Tuning**, **Combining** and **Confirming**. A run that finds a strategy goes on to a seventh step, [Page hosts](#page-hosts). A row per site shows what has been found so far, with the quickest strategy yet as **Fastest so far**, and the [probed addresses](#probed-addresses). The card at the end can offer another strategy (see [Results](#results)). **Show log** opens the log. A run takes from one to ten minutes, depending on the network.
 
 ![A run in progress](/img/discovery/20261116120100.png)
 
@@ -61,7 +61,7 @@ The engine that counts is the one b4 is running. A new choice under **Settings >
 
 A run for a set ends with one verdict for the whole set, above **Results per address**. The set's own strategy is tested first, as **Current strategy of the set**, and a strategy is confirmed on all addresses together.
 
-For a set with its own [DSCP value](./sets/routing.md#dscp), the probes carry that value, as the set's traffic does, and take the set's route through the router in front of b4. The progress and the results show **DSCP &lt;value&gt;, as the set's traffic**. Under the [TUN engine](#tun), such a run does not start. With the NFQUEUE engine, the probes of any other run carry the value of **Set DSCP** under [Settings > Core > Firewall](./settings/core.md#dscp) while it is on, or none, also to the addresses of such a set. Under TUN they carry the same, except that to the addresses of such a set they carry its value.
+For a set with its own [DSCP value](./sets/routing.md#dscp), the probes carry that value, as the set's traffic does, and take the set's route through the router in front of b4. The progress and the results show **DSCP &lt;value&gt;, as the set's traffic**. Under the [TUN engine](#tun), such a run does not start. The probes of any other run carry the **Set DSCP** value from [Settings > Core > Firewall](./settings/core.md#dscp) while that option is on, and no value while it is off. With the NFQUEUE engine this includes probes to the addresses of such a set; under TUN those probes carry the set's own value.
 
 | Verdict | Meaning and what the card offers |
 | --- | --- |
@@ -90,7 +90,7 @@ Every site gets one card, under **Results per address** in a run for a set.
 | **link answers 400** | The link answers HTTP 400 even without b4. A link to a page or a file the site serves is needed. |
 | **nothing found** | No strategy worked. A new run with **TLS 1.2** or a generated ClientHello sometimes helps. |
 
-Sites that one strategy loaded share one card and one set. The card offers the strategy that loaded the most sites. Speed does not decide, see [Which strategy a card offers](./internals/discovery.md#which-strategy-a-card-offers). **N other strategies worked** lists up to twelve other strategies that loaded every site of the card, fastest first, each with **Use instead**.
+Sites that one strategy loaded share one card and one set. The card offers the strategy that loaded the most sites, whatever its speed: [Which strategy a card offers](./internals/discovery.md#which-strategy-a-card-offers) explains why. **N other strategies worked** lists up to twelve other strategies that loaded every site of the card, fastest first, each with **Use instead**.
 
 When the last run to end was started from this page, reloading the page or opening it again within 30 minutes of the end shows its results again. **New search** clears them in the browser where it is clicked. The [history](#history) keeps them, also after b4 restarts.
 
@@ -98,7 +98,7 @@ When the last run to end was started from this page, reloading the page or openi
 
 Under each site, the card lists the addresses the probes connected to. A check mark follows each address the site loaded from. A search with **Check DNS for tampering** off lists no addresses.
 
-Next to an address stands the network that announces it, such as **AS15169 GOOGLE**, when a set's [ASN targets](./sets/targets.md#asn) already cover the address. **Look up ASN** asks [RIPEstat](https://stat.ripe.net/) for the networks of the other addresses.
+When a set's [ASN targets](./sets/targets.md#asn) already cover an address, the network that announces it, such as **AS15169 GOOGLE**, is shown next to it. **Look up ASN** asks [RIPEstat](https://stat.ripe.net/) for the networks of the other addresses.
 
 ### Page hosts {#page-hosts}
 

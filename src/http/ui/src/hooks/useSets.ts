@@ -85,6 +85,21 @@ export function useSets() {
     []
   );
 
+  const setGroupForSets = useCallback(
+    async (ids: string[], group: string): Promise<ApiResponse<void>> => {
+      setLoading(true);
+      try {
+        await setsApi.setGroupForSets(ids, group);
+        return { success: true };
+      } catch (e) {
+        return { success: false, error: e };
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
+
   const duplicateSet = useCallback(
     async (set: B4SetConfig): Promise<ApiResponse<B4SetConfig>> => {
       const { id: _, revision: _revision, ...rest } = structuredClone(set);
@@ -96,10 +111,13 @@ export function useSets() {
   );
 
   const reorderSets = useCallback(
-    async (setIds: string[]): Promise<ApiResponse<void>> => {
+    async (
+      setIds: string[],
+      groups?: Record<string, string>,
+    ): Promise<ApiResponse<void>> => {
       setLoading(true);
       try {
-        await setsApi.reorderSets(setIds);
+        await setsApi.reorderSets(setIds, groups);
         return { success: true };
       } catch (e) {
         return { success: false, error: e };
@@ -152,6 +170,7 @@ export function useSets() {
     deleteSet,
     deleteSets,
     setEnabledForSets,
+    setGroupForSets,
     duplicateSet,
     reorderSets,
     addDomainToSet,
