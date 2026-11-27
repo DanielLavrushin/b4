@@ -23,6 +23,7 @@ All notable changes to b4 are recorded in this file.
 - A log trace being recorded was lost if b4 crashed or restarted, and a long trace could fill the router's memory.
 - On a router with its own DNS forwarder, such as OpenWrt, a set whose domains include the host name of its own `https://` resolver, a set for every name for example, resolved names with 5-second pauses, or not at all with **Fail closed when no resolver is reachable** on. [#680](https://github.com/DanielLavrushin/b4/issues/680)
 - After the router's WAN address changed, a set with a single `https://` resolver could lose it for minutes: its names went to the device's resolver, or stopped resolving with **Fail closed when no resolver is reachable** on. [#680](https://github.com/DanielLavrushin/b4/issues/680)
+- A set with **Fail closed when no resolver is reachable** passed DNS queries on to the device's own resolver while slow resolvers held 64 lookups in flight. ([#701](https://github.com/DanielLavrushin/b4/pull/701), thanks [@tlq5l](https://github.com/tlq5l); [#694](https://github.com/DanielLavrushin/b4/issues/694))
 - After b4 stopped, a router could keep b4's connection-tracking settings instead of its own when a cleanup of `/tmp` removed the values b4 had saved there, when b4 was updated after a crash, or when b4 could not read those values for a moment. [#614](https://github.com/DanielLavrushin/b4/issues/614), [#702](https://github.com/DanielLavrushin/b4/issues/702)
 - The **Traffic** page and the **Dashboard** could show a connection under a set that matched its address, while the set that matched its domain was the one handling it. [#673](https://github.com/DanielLavrushin/b4/issues/673), [#674](https://github.com/DanielLavrushin/b4/issues/674)
 - The **Dashboard** could count a connection to an IP target of a **Route** set toward another set that lists its domain, even though the connection went through the **Route** set's tunnel. [#674](https://github.com/DanielLavrushin/b4/issues/674)
@@ -36,8 +37,6 @@ All notable changes to b4 are recorded in this file.
 - In the Russian interface, **Test** on the **Community** page showed its errors and the status of each fetch in English.
 - **System Info** could report NFQUEUE as failed without testing it, show the firewall backend as `none` in TUN mode and list NFQUEUE modules and packages to install there, report built-in kernel modules as missing in a container, and leave out why iptables refused NFQUEUE. [#531](https://github.com/DanielLavrushin/b4/issues/531)
 - A set exported by b4 before 1.29.0 lost its **TCP Desync Attack** and **Window Manipulation** settings when imported in the set editor.
-
-- A set with **Fail closed when no resolver is reachable** sent DNS queries unencrypted when slow resolvers left 64 lookups in flight. [#694](https://github.com/DanielLavrushin/b4/issues/694)
 
 ### Security
 
