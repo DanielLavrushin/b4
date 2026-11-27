@@ -4,7 +4,7 @@ import { B4Dialog } from "@b4.elements";
 import { CategoryIcon } from "@b4.icons";
 import { colors } from "@design";
 import { HubGroup } from "@models/hub";
-import { hubGroupAction } from "@models/hubGroups";
+import { hubGroupAction, hubGroupTakenOver } from "@models/hubGroups";
 
 export interface HubGroupOffer {
   hubGroup: HubGroup;
@@ -33,6 +33,7 @@ export const HubGroupApplyDialog = ({
     .filter((m) => m.set.id !== offer?.hubSetId)
     .map((m) => m.set.title);
   const replace = Boolean(hubGroup && hubGroupAction(hubGroup) !== "apply");
+  const takenOver = hubGroup ? hubGroupTakenOver(hubGroup) : [];
 
   return (
     <B4Dialog
@@ -79,6 +80,14 @@ export const HubGroupApplyDialog = ({
           <Typography variant="body2" sx={{ color: colors.text.secondary }}>
             {t("discovery.results.hubGroupReplace", {
               group: hubGroup?.applied.group ?? "",
+            })}
+          </Typography>
+        )}
+        {takenOver.length > 0 && (
+          <Typography variant="body2" sx={{ color: colors.text.secondary }}>
+            {t("hub.group.apply.takeOver", {
+              count: takenOver.length,
+              sets: takenOver.join(", "),
             })}
           </Typography>
         )}

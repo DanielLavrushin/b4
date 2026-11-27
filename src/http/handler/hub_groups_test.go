@@ -490,6 +490,88 @@ func TestHubGroupUpdateKeepsALocalEscalationOutOfTheGroup(t *testing.T) {
 	}
 }
 
+func TestHubGroupApplyTakesOverASetAppliedOnItsOwn(t *testing.T) {
+	env := newHubEnv(t)
+	countTableRefreshes(t)
+	a := hubCatalogueMember(t, "a", 1, "alice", "a.example")
+	c := hubCatalogueMember(t, "c", 1, "alice", "c.example", "c2.example")
+	d := hubCatalogueMember(t, "d", 1, "alice", "d.example")
+	g := hubwire.CatalogueGroup{ID: "G", Version: 1, Title: "video", Author: "alice", Members: []hubwire.CatalogueGroupMember{{SetID: "a"}, {SetID: "c"}, {SetID: "d"}}}
+	env.publishCatalogue(t, 1, []hubwire.CatalogueSet{a, c, d}, []hubwire.CatalogueGroup{g})
+	env.update(func(cfg *config.Config) {
+		cfg.Sets = []*config.SetConfig{hubGroupLocalSet("other", "Other", "", "other.example")}
+	})
+	single := hubApplyOK(t, env, "c", map[string]interface{}{})
+	mine := hubApplyOK(t, env, "a", map[string]interface{}{})
+	off := hubApplyOK(t, env, "d", map[string]interface{}{})
+	env.update(func(cfg *config.Config) {
+		cfg.GetSetById(mine.ID).Group = "mine"
+		cfg.GetSetById(off.ID).Enabled = false
+	})
+
+	var view HubGroup
+	decodeInto(t, getJSON(t, env.mux, "/api/hub/groups/G"), &view)
+	if view.Members[0].Replaces != nil || view.Members[1].Replaces == nil || view.Members[1].Replaces.SetID != single.ID || view.Members[2].Replaces != nil {
+		t.Errorf("the group names the enabled set outside any group that it takes over, and only that one: %+v", view.Members)
+	}
+
+	resp := hubApplyGroupOK(t, env, "G", nil)
+	if len(resp.Created) != 2 || resp.Sets[1].ID != single.ID || resp.Sets[1].Created || len(resp.Sets[1].Moved) != 0 {
+		t.Fatalf("the set applied on its own becomes the member instead of a second copy: %+v", resp)
+	}
+	want := []string{resp.Created[0], single.ID, resp.Created[1], off.ID, mine.ID, "other"}
+	if ids := hubGroupIDs(env.api.getCfg().Sets); !slices.Equal(ids, want) {
+		t.Fatalf("expected %v, got %v", want, ids)
+	}
+	taken := env.localSet(single.ID)
+	if taken.Group != resp.Group || taken.Hub.GroupID != "G" || taken.Hub.GroupVersion != 1 || !slices.Equal(taken.Targets.SNIDomains, []string{"c.example", "c2.example"}) {
+		t.Errorf("the taken over set joins the group with its domains: %q %+v %v", taken.Group, taken.Hub, taken.Targets.SNIDomains)
+	}
+	if kept := env.localSet(mine.ID); kept.Group != "mine" || kept.Hub.GroupID != "" {
+		t.Errorf("a copy in another local group stays there: %q %+v", kept.Group, kept.Hub)
+	}
+	if kept := env.localSet(off.ID); kept.Enabled || kept.Group != "" || kept.Hub.GroupID != "" || !slices.Equal(kept.Targets.SNIDomains, []string{"d.example"}) {
+		t.Errorf("a switched off copy is left as it is, domains included, and the group gets its own: %v %q %+v %v", kept.Enabled, kept.Group, kept.Hub, kept.Targets.SNIDomains)
+	}
+}
+
+func TestHubGroupUpdateTakesOverTheCopiesOfAddedMembers(t *testing.T) {
+	env := newHubEnv(t)
+	countTableRefreshes(t)
+	a := hubCatalogueMember(t, "a", 1, "alice", "a.example")
+	c := hubCatalogueMember(t, "c", 1, "bob", "c.example")
+	d := hubCatalogueMember(t, "d", 1, "bob", "d.example")
+	v1 := hubwire.CatalogueGroup{ID: "G", Version: 1, Title: "video", Author: "alice", Members: []hubwire.CatalogueGroupMember{{SetID: "a"}}}
+	env.publishCatalogue(t, 1, []hubwire.CatalogueSet{a, c, d}, []hubwire.CatalogueGroup{v1})
+	first := hubApplyGroupOK(t, env, "G", nil)
+	inLabel := hubApplyOK(t, env, "c", map[string]interface{}{})
+	outside := hubApplyOK(t, env, "d", map[string]interface{}{})
+	env.update(func(cfg *config.Config) { cfg.GetSetById(inLabel.ID).Group = first.Group })
+
+	v2 := hubwire.CatalogueGroup{ID: "G", Version: 2, Title: "video", Author: "alice", Members: []hubwire.CatalogueGroupMember{{SetID: "a"}, {SetID: "c"}, {SetID: "d"}}}
+	env.publishCatalogue(t, 2, []hubwire.CatalogueSet{a, c, d}, []hubwire.CatalogueGroup{v2})
+	var view HubGroup
+	decodeInto(t, getJSON(t, env.mux, "/api/hub/groups/G"), &view)
+	if view.Members[0].Replaces != nil || view.Members[1].Replaces == nil || view.Members[1].Replaces.SetID != inLabel.ID || view.Members[2].Replaces == nil || view.Members[2].Replaces.SetID != outside.ID {
+		t.Errorf("the update names the sets it takes over: %+v", view.Members)
+	}
+
+	resp := hubApplyGroupOK(t, env, "G", map[string]interface{}{"replace": true})
+	if len(resp.Created) != 0 {
+		t.Fatalf("no second copy is made of a member already on the router: %+v", resp)
+	}
+	cfg := env.api.getCfg()
+	want := []string{first.Sets[0].ID, inLabel.ID, outside.ID}
+	if ids := hubGroupIDs(cfg.Sets); !slices.Equal(ids, want) {
+		t.Fatalf("expected %v, got %v", want, ids)
+	}
+	for i, set := range cfg.Sets {
+		if set.Group != first.Group || set.Hub.GroupID != "G" || set.Hub.GroupVersion != 2 || len(set.Targets.SNIDomains) != 1 {
+			t.Errorf("set %d is a member of the updated group with its domain: %q %+v %v", i, set.Group, set.Hub, set.Targets.SNIDomains)
+		}
+	}
+}
+
 func hubApplyGroupOK(t *testing.T, env *hubEnv, id string, body map[string]interface{}) HubGroupApplyResponse {
 	t.Helper()
 	if body == nil {

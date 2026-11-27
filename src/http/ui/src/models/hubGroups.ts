@@ -16,6 +16,19 @@ export function hubGroupAction(hubGroup: HubGroup): HubGroupAction {
   }
 }
 
+export function hubGroupTakenOver(hubGroup: HubGroup): string[] {
+  return hubGroup.members.flatMap((m) =>
+    m.replaces ? [m.replaces.set_name] : [],
+  );
+}
+
+export function hubGroupUndo(
+  res: HubGroupApplyResponse,
+  replace: boolean,
+): string[] {
+  return replace || res.created.length < res.sets.length ? [] : res.created;
+}
+
 export function hubGroupDescriptionOf(
   hubGroups: HubGroup[] | undefined,
   group: string,

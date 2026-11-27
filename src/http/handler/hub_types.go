@@ -56,6 +56,12 @@ type HubSetsResponse struct {
 type HubGroupMember struct {
 	Set      HubSet                   `json:"set"`
 	Escalate *hubwire.GroupEscalation `json:"escalate,omitempty"`
+	Replaces *HubGroupReplaced        `json:"replaces,omitempty"`
+}
+
+type HubGroupReplaced struct {
+	SetID   string `json:"set_id"`
+	SetName string `json:"set_name"`
 }
 
 type HubGroupApplied struct {

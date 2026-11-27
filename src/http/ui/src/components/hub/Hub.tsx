@@ -26,6 +26,7 @@ import {
   useHubVote,
   useLocalSetsEnabled,
 } from "@hooks/useHub";
+import { useLastTarget } from "@hooks/useLastTarget";
 import { CoveredSet, DomainReassignment } from "@models/sets";
 import {
   HubApplyResponse,
@@ -39,6 +40,8 @@ import {
   hubGroupAction,
   hubGroupCovered,
   hubGroupMoved,
+  hubGroupTakenOver,
+  hubGroupUndo,
   hubGroupWarnings,
 } from "@models/hubGroups";
 import {
@@ -230,7 +233,7 @@ export const HubBrowser = () => {
         warnings: hubGroupWarnings(res).map(
           ({ name, warning }) => `${name}: ${importWarning(warning)}`,
         ),
-        undo: replace ? [] : res.created,
+        undo: hubGroupUndo(res, replace),
         open: { label: t("hub.group.apply.openSets"), path: "/sets" },
       },
       [
@@ -372,6 +375,10 @@ export const HubBrowser = () => {
   const list = sets.data?.sets ?? [];
   const hubGroups = sets.data?.groups ?? [];
   const total = sets.data?.total ?? list.length;
+  const shownHubGroup = useLastTarget(updateHubGroup);
+  const firstHubGroupApply =
+    shownHubGroup !== null && hubGroupAction(shownHubGroup) === "apply";
+  const takenOver = shownHubGroup ? hubGroupTakenOver(shownHubGroup) : [];
 
   let resultsLine = "";
   if (sets.data) {
@@ -457,7 +464,10 @@ export const HubBrowser = () => {
               key={`${hubGroup.id}:${hubGroup.version}`}
               hubGroup={hubGroup}
               busy={busy}
-              onApply={(g) => void handleHubGroupApply(g)}
+              onApply={(g) => {
+                if (hubGroupTakenOver(g).length > 0) setUpdateHubGroup(g);
+                else void handleHubGroupApply(g);
+              }}
               onUpdate={setUpdateHubGroup}
               onDetails={openDetails}
             />
@@ -535,8 +545,12 @@ export const HubBrowser = () => {
 
       <B4Dialog
         open={Boolean(updateHubGroup)}
-        title={t("hub.group.apply.confirmTitle")}
-        subtitle={updateHubGroup?.title}
+        title={
+          firstHubGroupApply
+            ? t("hub.group.apply.confirmApplyTitle")
+            : t("hub.group.apply.confirmTitle")
+        }
+        subtitle={shownHubGroup?.title}
         icon={<WarningIcon />}
         onClose={() => setUpdateHubGroup(null)}
         actions={
@@ -552,16 +566,28 @@ export const HubBrowser = () => {
                 if (updateHubGroup) void handleHubGroupApply(updateHubGroup);
               }}
             >
-              {t("hub.apply.replace")}
+              {firstHubGroupApply
+                ? t("hub.group.card.apply")
+                : t("hub.apply.replace")}
             </Button>
           </>
         }
       >
-        <Typography sx={{ mt: 2 }}>
-          {t("hub.group.apply.confirmReplace", {
-            group: updateHubGroup?.applied.group ?? "",
-          })}
-        </Typography>
+        {!firstHubGroupApply && (
+          <Typography sx={{ mt: 2 }}>
+            {t("hub.group.apply.confirmReplace", {
+              group: shownHubGroup?.applied.group ?? "",
+            })}
+          </Typography>
+        )}
+        {takenOver.length > 0 && (
+          <Typography sx={{ mt: 2 }}>
+            {t("hub.group.apply.takeOver", {
+              count: takenOver.length,
+              sets: takenOver.join(", "),
+            })}
+          </Typography>
+        )}
       </B4Dialog>
 
       <CoveredDialog

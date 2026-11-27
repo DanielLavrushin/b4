@@ -4,7 +4,9 @@ import type {
   HubGroup,
   HubGroupApplyResponse,
   HubGroupAppliedSet,
+  HubGroupMember,
   HubGroupState,
+  HubSet,
 } from "./hub";
 import {
   hubGroupAction,
@@ -12,6 +14,8 @@ import {
   hubGroupDescriptionOf,
   hubGroupMemberOf,
   hubGroupMoved,
+  hubGroupTakenOver,
+  hubGroupUndo,
   hubGroupWarnings,
 } from "./hubGroups";
 
@@ -127,4 +131,28 @@ void test("the publish description starts from the hub group this local group is
   assert.equal(hubGroupDescriptionOf(groups, "music"), "");
   assert.equal(hubGroupDescriptionOf(groups, "games"), "");
   assert.equal(hubGroupDescriptionOf(undefined, "video"), "");
+});
+
+void test("the sets a group apply takes over are named before it runs", () => {
+  const listed = (title: string, extra: Partial<HubGroupMember> = {}): HubGroupMember => ({
+    set: { id: `hub-${title}`, title } as HubSet,
+    ...extra,
+  });
+  const hubGroup: HubGroup = {
+    ...hubGroupIn("none"),
+    members: [
+      listed("a"),
+      listed("c", { replaces: { set_id: "local-c", set_name: "My C" } }),
+      listed("d", { replaces: { set_id: "local-d", set_name: "D" } }),
+    ],
+  };
+  assert.deepEqual(hubGroupTakenOver(hubGroup), ["My C", "D"]);
+  assert.deepEqual(hubGroupTakenOver(hubGroupIn("none")), []);
+});
+
+void test("only a first apply that created every set can be undone", () => {
+  const created = answer([member("a"), member("c")]);
+  assert.deepEqual(hubGroupUndo(created, false), ["local-a", "local-c"]);
+  assert.deepEqual(hubGroupUndo({ ...created, created: ["local-a"] }, false), []);
+  assert.deepEqual(hubGroupUndo(created, true), []);
 });

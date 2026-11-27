@@ -3076,7 +3076,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Fetches every member's payloads, opens each member as POST /hub/sets/{id}/apply does and saves them in one write as one block at the top of the list, in member order, under the group's title (a number appended when the name is taken), with escalation links between members pointed at the new local sets. Domains are taken only from sets outside the block. With replace, the local copy of the group is updated instead: each member replaces its earlier copy in place, keeping the local group name, a new member joins the block at its position, and a set the group no longer lists leaves the group and stays as a set after it.",
+                "description": "Fetches every member's payloads, opens each member as POST /hub/sets/{id}/apply does and saves them in one write as one block at the top of the list, in member order, under the group's title (a number appended when the name is taken), with escalation links between members pointed at their local sets. A member with an enabled local copy outside any group takes that copy over: it is replaced in place, keeps its id, and moves into the block. Domains are taken only from sets outside the block. With replace, the local copy of the group is updated instead: each member replaces its earlier copy in place, keeping the local group name, a new member takes over its copy in the group or an enabled one outside any group, or else joins the block at its position as a new set, and a set the group no longer lists leaves the group and stays as a set after it.",
                 "consumes": [
                     "application/json"
                 ],
@@ -10179,8 +10179,22 @@
                 "escalate": {
                     "$ref": "#/definitions/hubwire.GroupEscalation"
                 },
+                "replaces": {
+                    "$ref": "#/definitions/handler.HubGroupReplaced"
+                },
                 "set": {
                     "$ref": "#/definitions/handler.HubSet"
+                }
+            }
+        },
+        "handler.HubGroupReplaced": {
+            "type": "object",
+            "properties": {
+                "set_id": {
+                    "type": "string"
+                },
+                "set_name": {
+                    "type": "string"
                 }
             }
         },

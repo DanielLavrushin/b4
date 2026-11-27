@@ -156,6 +156,7 @@ export interface HubSetsResponse {
 export interface HubGroupMember {
   set: HubSet;
   escalate?: { to: number };
+  replaces?: { set_id: string; set_name: string };
 }
 
 export type HubGroupState = "none" | "applied" | "update" | "modified";

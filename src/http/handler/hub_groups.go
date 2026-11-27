@@ -75,6 +75,32 @@ func (c hubGroupCopy) version() int {
 	return version
 }
 
+func hubGroupTakenSets(sets []*config.SetConfig, g *hubwire.CatalogueGroup, found hubGroupCopy, replace bool) (taken, extras []*config.SetConfig) {
+	var pools [][]*config.SetConfig
+	if replace {
+		for _, set := range sets {
+			if set != nil && set.Group == found.label && !slices.Contains(found.sets, set) {
+				extras = append(extras, set)
+			}
+		}
+		pools = append(pools, found.sets, extras)
+	}
+	pools = append(pools, slices.DeleteFunc(slices.Clone(sets), func(set *config.SetConfig) bool { return set == nil || set.Group != "" || !set.Enabled }))
+	taken = make([]*config.SetConfig, len(g.Members))
+	used := map[*config.SetConfig]bool{}
+	for _, pool := range pools {
+		for i, m := range g.Members {
+			if taken[i] != nil {
+				continue
+			}
+			if k := slices.IndexFunc(pool, func(s *config.SetConfig) bool { return !used[s] && s.Hub != nil && s.Hub.ID == m.SetID }); k >= 0 {
+				taken[i], used[pool[k]] = pool[k], true
+			}
+		}
+	}
+	return taken, extras
+}
+
 func hubGroupDerivedFrom(sets, members []*config.SetConfig, label string) *hubwire.Origin {
 	var best hubGroupCopy
 	bestID := ""
@@ -153,12 +179,18 @@ func hubGroupView(svc *hub.Service, cfg *config.Config, g *hubwire.CatalogueGrou
 		UpdatedAt:   g.UpdatedAt,
 		Members:     make([]HubGroupMember, 0, len(g.Members)),
 	}
-	for _, m := range g.Members {
+	found := hubGroupCopyOf(cfg.Sets, g.ID)
+	taken, _ := hubGroupTakenSets(cfg.Sets, g, found, len(found.sets) > 0)
+	for i, m := range g.Members {
 		res, ok := svc.Get(m.SetID)
 		if !ok {
 			return HubGroup{}, false
 		}
-		view.Members = append(view.Members, HubGroupMember{Set: hubSetView(res, applied), Escalate: m.Escalate})
+		member := HubGroupMember{Set: hubSetView(res, applied), Escalate: m.Escalate}
+		if local := taken[i]; local != nil && !slices.Contains(found.sets, local) {
+			member.Replaces = &HubGroupReplaced{SetID: local.Id, SetName: local.Name}
+		}
+		view.Members = append(view.Members, member)
 	}
 	view.Applied = hubGroupAppliedOf(cfg, g, view.Members)
 	return view, true
@@ -433,30 +465,26 @@ func (api *API) placeHubGroup(next *config.Config, g *hubwire.CatalogueGroup, pr
 		place.warnings[i] = append([]hubwire.Warning{}, p.warnings...)
 	}
 	found := hubGroupCopyOf(next.Sets, g.ID)
+	if replace && len(found.sets) == 0 {
+		return nil, &APIError{Status: http.StatusConflict, Code: "not_applied", Message: "No local copy of this hub group was found"}
+	}
+	taken, extras := hubGroupTakenSets(next.Sets, g, found, replace)
+	used := map[*config.SetConfig]bool{}
+	for i, set := range place.block {
+		if taken[i] == nil {
+			place.created = append(place.created, set.Id)
+			continue
+		}
+		used[taken[i]] = true
+		place.warnings[i] = append(place.warnings[i], hubReplaceInPlace(next, taken[i], set)...)
+	}
+	isUsed := func(set *config.SetConfig) bool { return used[set] }
 	if replace {
-		if len(found.sets) == 0 {
-			return nil, &APIError{Status: http.StatusConflict, Code: "not_applied", Message: "No local copy of this hub group was found"}
-		}
 		place.label = found.label
-		used := map[*config.SetConfig]bool{}
-		for i, set := range place.block {
-			existing := slices.IndexFunc(found.sets, func(s *config.SetConfig) bool { return !used[s] && s.Hub.ID == g.Members[i].SetID })
-			if existing < 0 {
-				place.created = append(place.created, set.Id)
-				continue
-			}
-			used[found.sets[existing]] = true
-			place.warnings[i] = append(place.warnings[i], hubReplaceInPlace(next, found.sets[existing], set)...)
-		}
-		var dropped, extras []*config.SetConfig
+		var dropped []*config.SetConfig
 		for _, set := range found.sets {
 			if !used[set] {
 				dropped = append(dropped, set)
-			}
-		}
-		for _, set := range next.Sets {
-			if set != nil && set.Group == found.label && !slices.Contains(found.sets, set) {
-				extras = append(extras, set)
 			}
 		}
 		for _, set := range dropped {
@@ -465,17 +493,17 @@ func (api *API) placeHubGroup(next *config.Config, g *hubwire.CatalogueGroup, pr
 			set.Hub.GroupVersion = 0
 			place.ungrouped = append(place.ungrouped, set.Id)
 		}
-		moving := func(set *config.SetConfig) bool {
+		inCopy := func(set *config.SetConfig) bool {
 			return slices.Contains(found.sets, set) || slices.Contains(extras, set)
 		}
-		anchor := slices.IndexFunc(next.Sets, moving)
+		anchor := slices.IndexFunc(next.Sets, inCopy)
 		out := make([]*config.SetConfig, 0, len(next.Sets)+n)
-		out = append(out, next.Sets[:anchor]...)
+		out = append(out, slices.DeleteFunc(slices.Clone(next.Sets[:anchor]), isUsed)...)
 		out = append(out, place.block...)
-		out = append(out, extras...)
+		out = append(out, slices.DeleteFunc(slices.Clone(extras), isUsed)...)
 		out = append(out, dropped...)
 		for _, set := range next.Sets[anchor:] {
-			if !moving(set) {
+			if !inCopy(set) && !used[set] {
 				out = append(out, set)
 			}
 		}
@@ -486,10 +514,7 @@ func (api *API) placeHubGroup(next *config.Config, g *hubwire.CatalogueGroup, pr
 			label = g.ID
 		}
 		place.label = config.UniqueSetGroup(label, next.Sets)
-		for _, set := range place.block {
-			place.created = append(place.created, set.Id)
-		}
-		next.Sets = append(slices.Clone(place.block), next.Sets...)
+		next.Sets = append(slices.Clone(place.block), slices.DeleteFunc(slices.Clone(next.Sets), isUsed)...)
 	}
 	for i, set := range place.block {
 		set.Group = place.label
@@ -566,7 +591,7 @@ func hubGroupJointIdle(before, after []*config.SetConfig, block []*config.SetCon
 }
 
 // @Summary Apply a hub set group
-// @Description Fetches every member's payloads, opens each member as POST /hub/sets/{id}/apply does and saves them in one write as one block at the top of the list, in member order, under the group's title (a number appended when the name is taken), with escalation links between members pointed at the new local sets. Domains are taken only from sets outside the block. With replace, the local copy of the group is updated instead: each member replaces its earlier copy in place, keeping the local group name, a new member joins the block at its position, and a set the group no longer lists leaves the group and stays as a set after it.
+// @Description Fetches every member's payloads, opens each member as POST /hub/sets/{id}/apply does and saves them in one write as one block at the top of the list, in member order, under the group's title (a number appended when the name is taken), with escalation links between members pointed at their local sets. A member with an enabled local copy outside any group takes that copy over: it is replaced in place, keeps its id, and moves into the block. Domains are taken only from sets outside the block. With replace, the local copy of the group is updated instead: each member replaces its earlier copy in place, keeping the local group name, a new member takes over its copy in the group or an enabled one outside any group, or else joins the block at its position as a new set, and a set the group no longer lists leaves the group and stays as a set after it.
 // @Tags Hub
 // @Accept json
 // @Produce json

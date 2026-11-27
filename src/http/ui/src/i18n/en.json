@@ -4827,6 +4827,9 @@
         "memberFailed": "Set {{name}} of the group could not be applied, so nothing was applied: {{error}}",
         "confirmTitle": "Update the local group",
         "confirmReplace": "Replaces the strategy and targets of the sets in group {{group}} with the published ones and adds the sets the group gained. Edits made to those sets on this router are lost. A set the group no longer holds stays in the list, outside the group.",
+        "confirmApplyTitle": "Apply the group",
+        "takeOver_one": "Set {{sets}} is already on this router, so the published version replaces it and it moves into the group. Edits made to it on this router are lost.",
+        "takeOver_other": "These sets are already on this router, so the published versions replace them and they move into the group: {{sets}}. Edits made to them on this router are lost.",
         "coveredIntro": "The sets of the applied group {{name}} are higher in the list, so they now handle these targets instead of the sets below.",
         "coveredIdle": "These sets now handle nothing, because the group's sets above them cover every target they list: {{sets}}."
       },
