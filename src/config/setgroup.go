@@ -46,6 +46,19 @@ func GatherSetGroup(sets []*SetConfig, group, anchorID string) []*SetConfig {
 	return out
 }
 
+func GatherSetGroups(sets []*SetConfig) []*SetConfig {
+	done := make(map[string]bool)
+	for i := 0; i < len(sets); i++ {
+		set := sets[i]
+		if set == nil || set.Group == "" || done[set.Group] {
+			continue
+		}
+		done[set.Group] = true
+		sets = GatherSetGroup(sets, set.Group, set.Id)
+	}
+	return sets
+}
+
 func UniqueSetGroup(group string, sets []*SetConfig) string {
 	taken := make(map[string]bool)
 	for _, set := range sets {

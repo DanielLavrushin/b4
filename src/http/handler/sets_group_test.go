@@ -196,6 +196,33 @@ func TestSavingASetKeepsItsGroupAndARegroupKeepsItsRevision(t *testing.T) {
 	}
 }
 
+func TestReorderSetsKeepsEveryGroupTogether(t *testing.T) {
+	api, mux := asnAPI(t, groupedSet("a", "yt"), groupedSet("b", "yt"), groupedSet("c", ""), groupedSet("d", "dc"), groupedSet("e", "dc"))
+	rec := serve(mux, http.MethodPost, "/api/sets/reorder", `{"set_ids":["a","c","b","d","e"]}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reorder = %d %s", rec.Code, rec.Body.String())
+	}
+	if got, want := setOrder(api), []string{"a:yt", "b:yt", "c:", "d:dc", "e:dc"}; !slices.Equal(got, want) {
+		t.Errorf("an order from a view that did not know b's group: %v, want the group kept together: %v", got, want)
+	}
+
+	rec = serve(mux, http.MethodPost, "/api/sets/reorder", `{"set_ids":["d","a","e","b","c"],"groups":{"c":"dc"}}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reorder = %d %s", rec.Code, rec.Body.String())
+	}
+	if got, want := setOrder(api), []string{"d:dc", "e:dc", "c:dc", "a:yt", "b:yt"}; !slices.Equal(got, want) {
+		t.Errorf("two groups sent interleaved: %v, want each in one place: %v", got, want)
+	}
+
+	rec = serve(mux, http.MethodPost, "/api/sets/reorder", `{"set_ids":["a","b","d","e","c"]}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reorder = %d %s", rec.Code, rec.Body.String())
+	}
+	if got, want := setOrder(api), []string{"a:yt", "b:yt", "d:dc", "e:dc", "c:dc"}; !slices.Equal(got, want) {
+		t.Errorf("an order that keeps the groups whole: %v, want it saved as sent: %v", got, want)
+	}
+}
+
 func TestReorderSetsRefusesARepeatedID(t *testing.T) {
 	api, mux := asnAPI(t, groupedSet("a", ""), groupedSet("b", ""), groupedSet("c", ""))
 	rec := serve(mux, http.MethodPost, "/api/sets/reorder", `{"set_ids":["a","a","c"]}`)

@@ -801,7 +801,7 @@ func (api *API) deleteSet(w http.ResponseWriter, id string) {
 }
 
 // @Summary Reorder sets
-// @Description "set_ids" lists every set in its new place. "groups" is optional: it maps a set ID to that set's new group, an empty string for none, and is saved in the same write as the order.
+// @Description "set_ids" lists every set in its new place. "groups" is optional: it maps a set ID to that set's new group, an empty string for none, and is saved in the same write as the order. The sets of each group are then brought together at the place of the group's first set, so an order that would leave a group in two places is adjusted.
 // @Tags Sets
 // @Accept json
 // @Produce json
@@ -852,7 +852,7 @@ func (api *API) handleReorderSets(w http.ResponseWriter, r *http.Request) {
 			}
 			set.Group = config.NormalizeSetGroup(group)
 		}
-		next.Sets = reordered
+		next.Sets = config.GatherSetGroups(reordered)
 		return nil
 	})
 	if err != nil {

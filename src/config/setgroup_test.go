@@ -109,6 +109,34 @@ func TestSettleSetGroupReadsANameTheWayItIsSaved(t *testing.T) {
 	}
 }
 
+func TestGatherSetGroupsPullsEveryGroupTogether(t *testing.T) {
+	for in, want := range map[string]string{
+		"a:yt c b:yt":                "a b c",
+		"m:two n:one o:two p:one":    "m o n p",
+		"a b:yt c d:yt e:dc f g:dc":  "a b d c e g f",
+		"a:yt b:yt c d:dc e:dc":      "a b c d e",
+		"a b c":                      "a b c",
+		"x:yt a:dc y:yt b:dc z:yt c": "x y z a b c",
+	} {
+		var sets []*SetConfig
+		for _, item := range strings.Fields(in) {
+			id, group, _ := strings.Cut(item, ":")
+			sets = append(sets, &SetConfig{Id: id, Group: group})
+		}
+		before := slices.Clone(sets)
+		var got []string
+		for _, set := range GatherSetGroups(sets) {
+			got = append(got, set.Id)
+		}
+		if strings.Join(got, " ") != want {
+			t.Errorf("GatherSetGroups(%q) = %q, want %q", in, strings.Join(got, " "), want)
+		}
+		if !slices.Equal(sets, before) {
+			t.Errorf("GatherSetGroups(%q) changed the list it was given", in)
+		}
+	}
+}
+
 func TestGatherSetGroupKeepsEveryOtherSetInPlace(t *testing.T) {
 	mk := func(spec string) []*SetConfig {
 		var out []*SetConfig
