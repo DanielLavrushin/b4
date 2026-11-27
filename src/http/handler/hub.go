@@ -591,6 +591,7 @@ func hubReplaceInPlace(next *config.Config, existing, set *config.SetConfig) []h
 	set.Enabled = existing.Enabled
 	set.Discovery = existing.Discovery
 	set.DSCP = existing.DSCP
+	set.Escalate = existing.Escalate
 	if existing.Hub != nil && set.Hub != nil && existing.Hub.ID == set.Hub.ID {
 		set.Hub.GroupID = existing.Hub.GroupID
 		set.Hub.GroupVersion = existing.Hub.GroupVersion

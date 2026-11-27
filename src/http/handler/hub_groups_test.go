@@ -454,6 +454,36 @@ func TestHubGroupUpdateReplacesTheCopyInPlace(t *testing.T) {
 	}
 }
 
+func TestHubGroupUpdateKeepsALocalEscalationOutOfTheGroup(t *testing.T) {
+	env := newHubEnv(t)
+	s1 := hubCatalogueMember(t, "s1", 1, "alice", "a.example")
+	s2 := hubCatalogueMember(t, "s2", 1, "alice", "b.example")
+	v1 := hubwire.CatalogueGroup{ID: "g-video", Version: 1, Title: "video", Author: "alice", Members: []hubwire.CatalogueGroupMember{{SetID: "s1", Escalate: &hubwire.GroupEscalation{To: 1}}, {SetID: "s2"}}}
+	env.publishCatalogue(t, 1, []hubwire.CatalogueSet{s1, s2}, []hubwire.CatalogueGroup{v1})
+	hubApplyGroupOK(t, env, "g-video", nil)
+
+	var first, second string
+	env.update(func(cfg *config.Config) {
+		first, second = cfg.Sets[0].Id, cfg.Sets[1].Id
+		cfg.Sets[1].Escalate = config.EscalateConfig{To: "fallback", RstThreshold: 5}
+		cfg.Sets = append(cfg.Sets, hubGroupLocalSet("fallback", "Fallback", "", "f.example"))
+	})
+	if got := env.localSet(first).Escalate.To; got != second {
+		t.Fatalf("the applied group links its first set to its second, got %q", got)
+	}
+
+	v2 := hubwire.CatalogueGroup{ID: "g-video", Version: 2, Title: "video", Author: "alice", Members: []hubwire.CatalogueGroupMember{{SetID: "s1"}, {SetID: "s2"}}}
+	env.publishCatalogue(t, 2, []hubwire.CatalogueSet{s1, s2}, []hubwire.CatalogueGroup{v2})
+	hubApplyGroupOK(t, env, "g-video", map[string]interface{}{"replace": true})
+
+	if got := env.localSet(second).Escalate; got != (config.EscalateConfig{To: "fallback", RstThreshold: 5}) {
+		t.Errorf("a member keeps its own escalation link to a set outside the group, got %+v", got)
+	}
+	if got := env.localSet(first).Escalate; got != config.DefaultSetConfig.Escalate {
+		t.Errorf("a link inside the group that the new version dropped is cleared, got %+v", got)
+	}
+}
+
 func hubApplyGroupOK(t *testing.T, env *hubEnv, id string, body map[string]interface{}) HubGroupApplyResponse {
 	t.Helper()
 	if body == nil {

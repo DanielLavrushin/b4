@@ -36,6 +36,7 @@ All notable changes to b4 are recorded in this file.
 - **Page hosts** in **Discovery** could call a host blocked even with a strategy that acts on the first packet of a connection, such as a fake SYN, because b4 did not know the host's address yet. [#642](https://github.com/DanielLavrushin/b4/issues/642)
 - In the Russian interface, **Test** on the **Community** page showed its errors and the status of each fetch in English.
 - **Undo** after applying a set on the **Community** page removed the set without giving back the domains it had taken from other sets.
+- Updating or replacing a set from the **Community** page dropped its link to another set on the **Escalation** tab.
 - **System Info** could report NFQUEUE as failed without testing it, show the firewall backend as `none` in TUN mode and list NFQUEUE modules and packages to install there, report built-in kernel modules as missing in a container, and leave out why iptables refused NFQUEUE. [#531](https://github.com/DanielLavrushin/b4/issues/531)
 - A set exported by b4 before 1.29.0 lost its **TCP Desync Attack** and **Window Manipulation** settings when imported in the set editor.
 

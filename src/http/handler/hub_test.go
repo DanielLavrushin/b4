@@ -910,6 +910,30 @@ func hubDSCPOffWarning(ws []hubwire.Warning) (hubwire.Warning, bool) {
 	return hubwire.Warning{}, false
 }
 
+func TestHubApplyReplaceKeepsTheLocalEscalation(t *testing.T) {
+	env := newHubEnv(t)
+	shared := hubStrategySet("Shared video", "youtube.com")
+	cs, _ := hubtest.CatalogueSet(t, "yt-9", 1, &shared, nil)
+	env.publish(t, cs)
+
+	local := hubStrategySet("Video here", "youtube.com")
+	local.Id = "local-1"
+	local.Targets.DomainsToMatch = []string{"youtube.com"}
+	local.Escalate = config.EscalateConfig{To: "fallback", RstThreshold: 5}
+	fallback := hubStrategySet("Fallback", "fallback.example")
+	fallback.Id = "fallback"
+	fallback.Targets.DomainsToMatch = []string{"fallback.example"}
+	env.update(func(cfg *config.Config) { cfg.Sets = []*config.SetConfig{&local, &fallback} })
+
+	rec := postJSON(t, env.mux, "/api/hub/sets/yt-9/apply", map[string]interface{}{"replace": "local-1"})
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if got := env.localSet("local-1").Escalate; got != (config.EscalateConfig{To: "fallback", RstThreshold: 5}) {
+		t.Errorf("the replaced set must keep its own escalation link, got %+v", got)
+	}
+}
+
 func TestHubApplyReplaceKeepsTheLocalDSCP(t *testing.T) {
 	env := newHubEnv(t)
 	shared := hubStrategySet("Shared video", "youtube.com")

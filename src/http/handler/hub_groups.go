@@ -495,8 +495,11 @@ func (api *API) placeHubGroup(next *config.Config, g *hubwire.CatalogueGroup, pr
 		set.Group = place.label
 		set.Hub.GroupID = g.ID
 		set.Hub.GroupVersion = g.Version
-		if esc := g.Members[i].Escalate; esc != nil {
+		switch esc := g.Members[i].Escalate; {
+		case esc != nil:
 			set.Escalate = esc.Config(place.block[esc.To].Id)
+		case slices.ContainsFunc(place.block, func(b *config.SetConfig) bool { return b.Id == set.Escalate.To }):
+			set.Escalate = config.DefaultSetConfig.Escalate
 		}
 	}
 	outside := slices.DeleteFunc(slices.Clone(next.Sets), func(set *config.SetConfig) bool { return slices.Contains(place.block, set) })
