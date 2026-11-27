@@ -4633,7 +4633,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "\"set_ids\" lists every set in its new place. \"groups\" is optional: it maps a set ID to that set's new group, an empty string for none, and is saved in the same write as the order.",
+                "description": "\"set_ids\" lists every set in its new place. \"groups\" is optional: it maps a set ID to that set's new group, an empty string for none, and is saved in the same write as the order. The sets of each group are then brought together at the place of the group's first set, so an order that would leave a group in two places is adjusted.",
                 "consumes": [
                     "application/json"
                 ],
