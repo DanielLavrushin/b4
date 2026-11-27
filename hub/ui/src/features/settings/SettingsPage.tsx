@@ -17,6 +17,7 @@ type LimitField = keyof LimitsView;
 
 const fields: { key: LimitField; per: "day" | "hour" }[] = [
   { key: "shares_per_day", per: "day" },
+  { key: "groups_per_day", per: "day" },
   { key: "votes_per_day", per: "day" },
   { key: "reports_per_day", per: "day" },
   { key: "mirrors_per_day", per: "day" },
@@ -28,6 +29,7 @@ type Draft = Record<LimitField, string>;
 
 const toDraft = (limits: LimitsView): Draft => ({
   shares_per_day: String(limits.shares_per_day),
+  groups_per_day: String(limits.groups_per_day),
   votes_per_day: String(limits.votes_per_day),
   reports_per_day: String(limits.reports_per_day),
   mirrors_per_day: String(limits.mirrors_per_day),

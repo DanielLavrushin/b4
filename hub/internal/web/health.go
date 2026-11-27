@@ -52,9 +52,10 @@ type HealthManifestView struct {
 }
 
 type HealthPendingView struct {
-	Count  int         `json:"count"`
-	Oldest *SetRefView `json:"oldest,omitempty"`
-	Since  *time.Time  `json:"since,omitempty"`
+	Count       int           `json:"count"`
+	Oldest      *SetRefView   `json:"oldest,omitempty"`
+	OldestGroup *GroupRefView `json:"oldest_group,omitempty"`
+	Since       *time.Time    `json:"since,omitempty"`
 }
 
 type HealthMirrorsView struct {
@@ -125,17 +126,13 @@ func (s *Server) healthView(ctx context.Context) (HealthView, error) {
 	v.Pending.Count = badges.Pending
 	v.ReportsOpen = badges.ReportsOpen
 	if badges.Pending > 0 {
-		pending, err := s.Store.PendingVersions(ctx)
+		since, err := s.oldestPending(ctx, &v.Pending)
 		if err != nil {
 			return v, err
 		}
-		if len(pending) > 0 {
-			oldest := pending[0]
-			v.Pending.Oldest = &SetRefView{SetID: oldest.SetID, Version: oldest.Version, Title: oldest.Title}
-			v.Pending.Since = optionalTime(oldest.CreatedAt)
-			if age := now.Sub(oldest.CreatedAt); age > queueOld {
-				add(IssueQueueOld, SeverityWarning, map[string]interface{}{"hours": int(age.Hours()), "count": badges.Pending})
-			}
+		v.Pending.Since = optionalTime(since)
+		if age := now.Sub(since); !since.IsZero() && age > queueOld {
+			add(IssueQueueOld, SeverityWarning, map[string]interface{}{"hours": int(age.Hours()), "count": badges.Pending})
 		}
 	}
 	if badges.ReportsOpen > 0 {
@@ -189,6 +186,38 @@ func (s *Server) healthView(ctx context.Context) (HealthView, error) {
 		v.Worst = "ok"
 	}
 	return v, nil
+}
+
+func (s *Server) oldestPending(ctx context.Context, view *HealthPendingView) (time.Time, error) {
+	pending, err := s.Store.PendingVersions(ctx)
+	if err != nil {
+		return time.Time{}, err
+	}
+	folded, err := s.Store.FoldedVersions(ctx)
+	if err != nil {
+		return time.Time{}, err
+	}
+	groups, err := s.Store.PendingGroupVersions(ctx)
+	if err != nil {
+		return time.Time{}, err
+	}
+	var set *store.Version
+	for i := range pending {
+		if !folded[pending[i].SetID][pending[i].Version] {
+			set = &pending[i]
+			break
+		}
+	}
+	switch {
+	case len(groups) > 0 && (set == nil || !groups[0].CreatedAt.After(set.CreatedAt)):
+		g := groups[0]
+		view.OldestGroup = &GroupRefView{GroupID: g.GroupID, Version: g.Version, Title: g.Title}
+		return g.CreatedAt, nil
+	case set != nil:
+		view.Oldest = &SetRefView{SetID: set.SetID, Version: set.Version, Title: set.Title}
+		return set.CreatedAt, nil
+	}
+	return time.Time{}, nil
 }
 
 func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {

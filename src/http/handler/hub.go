@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -67,6 +69,10 @@ func (api *API) RegisterHubApi() {
 	api.mux.HandleFunc("/api/hub/sets/{id}/report", api.handleHubReport)
 	api.mux.HandleFunc("/api/hub/sets/{id}/test", api.handleHubTest)
 	api.mux.HandleFunc("/api/hub/share", api.handleHubShare)
+	api.mux.HandleFunc("/api/hub/groups", api.handleHubGroups)
+	api.mux.HandleFunc("/api/hub/groups/share", api.handleHubGroupShare)
+	api.mux.HandleFunc("/api/hub/groups/{id}", api.handleHubGroupByID)
+	api.mux.HandleFunc("/api/hub/groups/{id}/apply", api.handleHubGroupApply)
 	api.mux.HandleFunc("/api/hub/identity", api.handleHubIdentity)
 	api.mux.HandleFunc("/api/hub/identity/recovery", api.handleHubIdentityRecovery)
 	api.mux.HandleFunc("/api/hub/identity/restore", api.handleHubIdentityRestore)
@@ -334,7 +340,7 @@ func (api *API) handleHubSync(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary List hub sets
-// @Description Without a domain lists every active set in the catalogue, ranked; with one, only the sets that cover it.
+// @Description Without a domain lists every active set in the catalogue, ranked; with one, only the sets that cover it. groups lists the catalogue's set groups the same way, a group covering the domain when any member does; a member set whose author is the group's author is left out of sets while its group is listed, and total counts sets after that.
 // @Tags Hub
 // @Produce json
 // @Param domain query string false "Domain to look up"
@@ -350,14 +356,26 @@ func (api *API) handleHubSets(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	domain := r.URL.Query().Get("domain")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	results, total := svc.Search(r.URL.Query().Get("domain"), limit)
-	applied := hubAppliedIndex(api.getCfg())
+	if limit <= 0 {
+		limit = hub.DefaultSearchLimit
+	}
+	cfg := api.getCfg()
+	applied := hubAppliedIndex(cfg)
+	groups := hubGroupViews(svc, cfg, svc.Groups(domain), applied)
+	folded := hubFoldedSets(groups)
+	results, _ := svc.Search(domain, math.MaxInt)
+	results = slices.DeleteFunc(results, func(res hub.Result) bool { return folded[res.Set.ID] })
+	total := len(results)
+	if len(results) > limit {
+		results = results[:limit]
+	}
 	sets := make([]HubSet, 0, len(results))
 	for _, res := range results {
 		sets = append(sets, hubSetView(res, applied))
 	}
-	sendResponse(w, HubSetsResponse{Sets: sets, Total: total})
+	sendResponse(w, HubSetsResponse{Sets: sets, Groups: groups, Total: total})
 }
 
 // @Summary Get one hub set
@@ -426,62 +444,15 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, refusal)
 		return
 	}
-	env := cs.ToEnvelope()
-	for _, ref := range cs.Payloads {
-		data, err := svc.FetchBlob(r.Context(), ref)
-		if err != nil {
-			writeHubBlobError(w, ref, err)
-			return
-		}
-		env.Payloads = append(env.Payloads, hubwire.Payload{SHA256: ref.SHA256, Protocol: ref.Protocol, Domain: ref.Domain, Size: len(data), Data: data})
-	}
-	imp, err := hubwire.Open(env, hubwire.OpenOptions{B4Version: Version})
-	if err != nil {
-		writeAPIError(w, hubOpenError(err))
-		return
-	}
-
-	set := imp.Set
-	installed, err := api.installHubPayloads(&set, imp.Payloads)
+	prepared, err := api.prepareHubSet(r.Context(), svc, cs)
 	if err != nil {
 		writeAPIError(w, err)
 		return
 	}
-	warnings := append(imp.Warnings, api.hubGeoWarnings(&set)...)
-	asnWarnings := hubASNWarnings(&set)
-	warnings = append(warnings, asnWarnings...)
-
-	set.Id = uuid.New().String()
-	if set.Name == "" {
-		set.Name = cs.Title
-	}
-	if set.Name == "" {
-		set.Name = firstPlainDomain(set.Targets.SNIDomains)
-	}
-	if set.Name == "" {
-		set.Name = cs.ID
-	}
-	if len(set.Targets.GeoSiteCategories) > 0 && !api.geodataManager.IsGeositeConfigured() {
-		log.Warnf("Set '%s': dropping geosite categories %v, no geosite database is installed", set.Name, set.Targets.GeoSiteCategories)
-		set.Targets.GeoSiteCategories = []string{}
-	}
-	if len(set.Targets.GeoIpCategories) > 0 && !api.geodataManager.IsGeoipConfigured() {
-		log.Warnf("Set '%s': dropping geoip categories %v, no geoip database is installed", set.Name, set.Targets.GeoIpCategories)
-		set.Targets.GeoIpCategories = []string{}
-	}
-	if len(set.Targets.SNIDomains) == 0 && len(set.Targets.IPs) == 0 && len(set.Targets.GeoSiteCategories) == 0 && len(set.Targets.GeoIpCategories) == 0 && len(set.Targets.ASNs) == 0 {
-		switch {
-		case !config.SelectsKnownL7(set.UDP.FilterL7):
-			writeAPIError(w, &APIError{Status: http.StatusBadRequest, Code: "no_targets", Message: "The set targets nothing this device can match"})
-			return
-		case set.TCP.DPortFilter != "":
-			writeAPIError(w, &APIError{Status: http.StatusBadRequest, Code: "udp_l7_tcp_ports", Message: "The set handles only calls and has no targets, so its TCP port filter would apply it to every TCP connection on those ports"})
-			return
-		}
-	}
-
-	api.loadTargetsForSetCached(&set)
-	config.ApplySetDefaults(&set)
+	set := prepared.set
+	installed := prepared.installed
+	warnings := prepared.warnings
+	asnWarnings := prepared.asnWarnings
 
 	replaced := false
 	moved := []DomainReassignment{}
@@ -494,17 +465,7 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 			if index < 0 {
 				return ErrNotFound("Set not found")
 			}
-			existing := next.Sets[index]
-			set.Id = existing.Id
-			set.Group = existing.Group
-			set.Enabled = existing.Enabled
-			set.Discovery = existing.Discovery
-			set.DSCP = existing.DSCP
-			if reason := next.DSCPRefusal(existing); existing.DSCP.Enabled && reason != "" {
-				set.DSCP.Enabled = false
-				warnings = append(warnings, hubwire.Warning{Code: "dscp_off", Params: map[string]interface{}{"value": existing.DSCP.Value}})
-				log.Infof("Hub: set '%s' kept its own DSCP value %d switched off, because the value did not apply to the set before the replace (%s) and the hub version could apply it more widely", existing.Name, existing.DSCP.Value, reason)
-			}
+			warnings = append(warnings, hubReplaceInPlace(next, next.Sets[index], &set)...)
 			next.Sets[index] = &set
 			replaced = true
 		}
@@ -544,6 +505,102 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 	setJsonHeader(w)
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(HubApplyResponse{ID: set.Id, Name: set.Name, Moved: moved, Covered: covered, Warnings: warnings, Payloads: installed})
+}
+
+type hubPreparedSet struct {
+	set         config.SetConfig
+	payloads    []hubwire.Payload
+	installed   []HubInstalledPayload
+	warnings    []hubwire.Warning
+	asnWarnings []hubwire.Warning
+}
+
+func (api *API) prepareHubSet(ctx context.Context, svc *hub.Service, cs *hubwire.CatalogueSet) (*hubPreparedSet, error) {
+	p, err := api.openHubSet(ctx, svc, cs)
+	if err != nil {
+		return nil, err
+	}
+	if err := api.installHubSet(p); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+func (api *API) installHubSet(p *hubPreparedSet) error {
+	installed, err := api.installHubPayloads(&p.set, p.payloads)
+	if err != nil {
+		return err
+	}
+	p.installed = installed
+	api.loadTargetsForSetCached(&p.set)
+	config.ApplySetDefaults(&p.set)
+	return nil
+}
+
+func (api *API) openHubSet(ctx context.Context, svc *hub.Service, cs *hubwire.CatalogueSet) (*hubPreparedSet, error) {
+	env := cs.ToEnvelope()
+	for _, ref := range cs.Payloads {
+		data, err := svc.FetchBlob(ctx, ref)
+		if err != nil {
+			return nil, hubBlobError(ref, err)
+		}
+		env.Payloads = append(env.Payloads, hubwire.Payload{SHA256: ref.SHA256, Protocol: ref.Protocol, Domain: ref.Domain, Size: len(data), Data: data})
+	}
+	imp, err := hubwire.Open(env, hubwire.OpenOptions{B4Version: Version})
+	if err != nil {
+		return nil, hubOpenError(err)
+	}
+
+	set := imp.Set
+	warnings := append(imp.Warnings, api.hubGeoWarnings(&set)...)
+	asnWarnings := hubASNWarnings(&set)
+	warnings = append(warnings, asnWarnings...)
+
+	set.Id = uuid.New().String()
+	if set.Name == "" {
+		set.Name = cs.Title
+	}
+	if set.Name == "" {
+		set.Name = firstPlainDomain(set.Targets.SNIDomains)
+	}
+	if set.Name == "" {
+		set.Name = cs.ID
+	}
+	if len(set.Targets.GeoSiteCategories) > 0 && !api.geodataManager.IsGeositeConfigured() {
+		log.Warnf("Set '%s': dropping geosite categories %v, no geosite database is installed", set.Name, set.Targets.GeoSiteCategories)
+		set.Targets.GeoSiteCategories = []string{}
+	}
+	if len(set.Targets.GeoIpCategories) > 0 && !api.geodataManager.IsGeoipConfigured() {
+		log.Warnf("Set '%s': dropping geoip categories %v, no geoip database is installed", set.Name, set.Targets.GeoIpCategories)
+		set.Targets.GeoIpCategories = []string{}
+	}
+	if len(set.Targets.SNIDomains) == 0 && len(set.Targets.IPs) == 0 && len(set.Targets.GeoSiteCategories) == 0 && len(set.Targets.GeoIpCategories) == 0 && len(set.Targets.ASNs) == 0 {
+		switch {
+		case !config.SelectsKnownL7(set.UDP.FilterL7):
+			return nil, &APIError{Status: http.StatusBadRequest, Code: "no_targets", Message: "The set targets nothing this device can match"}
+		case set.TCP.DPortFilter != "":
+			return nil, &APIError{Status: http.StatusBadRequest, Code: "udp_l7_tcp_ports", Message: "The set handles only calls and has no targets, so its TCP port filter would apply it to every TCP connection on those ports"}
+		}
+	}
+	return &hubPreparedSet{set: set, payloads: imp.Payloads, warnings: warnings, asnWarnings: asnWarnings}, nil
+}
+
+func hubReplaceInPlace(next *config.Config, existing, set *config.SetConfig) []hubwire.Warning {
+	set.Id = existing.Id
+	set.Group = existing.Group
+	set.Enabled = existing.Enabled
+	set.Discovery = existing.Discovery
+	set.DSCP = existing.DSCP
+	if existing.Hub != nil && set.Hub != nil && existing.Hub.ID == set.Hub.ID {
+		set.Hub.GroupID = existing.Hub.GroupID
+		set.Hub.GroupVersion = existing.Hub.GroupVersion
+	}
+	if reason := next.DSCPRefusal(existing); existing.DSCP.Enabled && reason != "" {
+		set.DSCP.Enabled = false
+		log.Infof("Hub: set '%s' kept its own DSCP value %d switched off, because the value did not apply to the set before the replace (%s) and the hub version could apply it more widely", existing.Name, existing.DSCP.Value, reason)
+		return []hubwire.Warning{{Code: "dscp_off", Params: map[string]interface{}{"value": existing.DSCP.Value}}}
+	}
+	return nil
 }
 
 func hubDiscardRefusal(cfg *config.Config, replace, discard, hubID string) *APIError {
@@ -795,6 +852,8 @@ func (api *API) stampHubOrigin(localID, hubID string, version int, hash string) 
 		origin := &config.HubOrigin{ID: hubID, Version: version, Hash: hash}
 		if set.Hub != nil {
 			origin.AppliedAt = set.Hub.AppliedAt
+			origin.GroupID = set.Hub.GroupID
+			origin.GroupVersion = set.Hub.GroupVersion
 		}
 		set.Hub = origin
 		if err := api.saveAndPushConfig(newCfg); err != nil {

@@ -11,6 +11,7 @@ import (
 
 const (
 	metaSharesPerDay    = "settings.shares_per_day"
+	metaGroupsPerDay    = "settings.groups_per_day"
 	metaVotesPerDay     = "settings.votes_per_day"
 	metaReportsPerDay   = "settings.reports_per_day"
 	metaMirrorsPerDay   = "settings.mirrors_per_day"
@@ -22,6 +23,7 @@ const (
 
 type Settings struct {
 	SharesPerDay    int
+	GroupsPerDay    int
 	VotesPerDay     int
 	ReportsPerDay   int
 	MirrorsPerDay   int
@@ -32,6 +34,7 @@ type Settings struct {
 func DefaultSettings() Settings {
 	return Settings{
 		SharesPerDay:    ratelimit.SharesPerDay,
+		GroupsPerDay:    ratelimit.GroupsPerDay,
 		VotesPerDay:     ratelimit.VotesPerDay,
 		ReportsPerDay:   ratelimit.ReportsPerDay,
 		MirrorsPerDay:   ratelimit.MirrorsPerDay,
@@ -43,6 +46,7 @@ func DefaultSettings() Settings {
 func (s *Settings) fields() []settingsField {
 	return []settingsField{
 		{metaSharesPerDay, "shares_per_day", &s.SharesPerDay},
+		{metaGroupsPerDay, "groups_per_day", &s.GroupsPerDay},
 		{metaVotesPerDay, "votes_per_day", &s.VotesPerDay},
 		{metaReportsPerDay, "reports_per_day", &s.ReportsPerDay},
 		{metaMirrorsPerDay, "mirrors_per_day", &s.MirrorsPerDay},

@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { get, post } from "@/api/client";
 import { useAdminMutation } from "@/api/mutations";
 import { qk } from "@/api/queryKeys";
-import type { ActionResult, KeyAction, KeyImpactView, ModerationRequest, ModerationView, ReportAction, SetAction } from "@/models/api";
+import type { ActionResult, GroupActionRequest, GroupModerationView, KeyAction, KeyImpactView, ModerationRequest, ModerationView, ReportAction, SetAction } from "@/models/api";
 
 const setPath = (id: string) => `/sets/${encodeURIComponent(id)}`;
 const versionPath = (id: string, version: number) => `${setPath(id)}/${String(version)}`;
@@ -45,6 +45,29 @@ export const usePreview = (request: ModerationRequest | null) =>
 export const useModerate = () =>
   useAdminMutation({
     mutationFn: (request: ModerationRequest) => post<ModerationView>("/moderation", request),
+    invalidates: () => afterModeration,
+  });
+
+export interface GroupTarget {
+  group_id: string;
+  version: number;
+  action: SetAction;
+}
+
+const groupActionPath = ({ group_id, version, action }: GroupTarget) => `/groups/${encodeURIComponent(group_id)}/${String(version)}/${action}`;
+
+export const useGroupPreview = (target: GroupTarget | null, body: GroupActionRequest) =>
+  useQuery({
+    queryKey: target ? [...qk.preview.all, "group", target, body] : qk.preview.all,
+    queryFn: () => post<GroupModerationView>(groupActionPath(target as GroupTarget), { ...body, dry_run: true }),
+    enabled: target !== null,
+    retry: false,
+    staleTime: 0,
+  });
+
+export const useGroupAction = () =>
+  useAdminMutation({
+    mutationFn: ({ target, body }: { target: GroupTarget; body: GroupActionRequest }) => post<GroupModerationView>(groupActionPath(target), body),
     invalidates: () => afterModeration,
   });
 

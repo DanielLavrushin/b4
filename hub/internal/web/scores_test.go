@@ -51,26 +51,26 @@ func TestEveryAuthorOfAStrategyIsMarkedAsOne(t *testing.T) {
 	}
 	f.build()
 
-	evidence := func(group, id string) EvidenceView {
+	evidence := func(tab, id string) EvidenceView {
 		t.Helper()
 		var rows SetRowsView
-		f.admin(http.MethodGet, PathAPI+"/sets/rows?group="+group, nil).decode(t, &rows)
+		f.admin(http.MethodGet, PathAPI+"/sets/rows?tab="+tab, nil).decode(t, &rows)
 		for _, row := range rows.Rows {
 			if row.SetID == id {
 				return row.Evidence
 			}
 		}
-		t.Fatalf("no row of %s in %s", id, group)
+		t.Fatalf("no row of %s in %s", id, tab)
 		return EvidenceView{}
 	}
 	cards := func(name string) {
 		t.Helper()
 		for _, id := range []string{listed, same} {
-			if ev := evidence(GroupListed, id); ev.Author.Works != 1 || ev.Author.Broken != 1 || ev.Author.Devices != 2 || ev.Independent.Works != 2 || ev.Independent.Broken != 0 || ev.Independent.Devices != 2 {
+			if ev := evidence(TabListed, id); ev.Author.Works != 1 || ev.Author.Broken != 1 || ev.Author.Devices != 2 || ev.Independent.Works != 2 || ev.Independent.Broken != 0 || ev.Independent.Devices != 2 {
 				t.Errorf("%s: both authors stand apart from the voter and the author of the rejected set: %+v", name, ev)
 			}
 		}
-		if ev := evidence(GroupRejected, dropped); ev.Author.Works != 2 || ev.Author.Broken != 1 || ev.Author.Devices != 3 || ev.Independent.Devices != 1 {
+		if ev := evidence(TabRejected, dropped); ev.Author.Works != 2 || ev.Author.Broken != 1 || ev.Author.Devices != 3 || ev.Independent.Devices != 1 {
 			t.Errorf("%s: a rejected set's own author is no independent device on its card: %+v", name, ev)
 		}
 	}

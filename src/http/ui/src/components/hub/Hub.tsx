@@ -17,6 +17,7 @@ import { ApiError } from "@api/apiClient";
 import { SnackbarAction, useSnackbar } from "@context/SnackbarProvider";
 import {
   useHubApply,
+  useHubGroupApply,
   useHubSet,
   useHubSets,
   useHubStatus,
@@ -26,10 +27,28 @@ import {
   useLocalSetsEnabled,
 } from "@hooks/useHub";
 import { CoveredSet, DomainReassignment } from "@models/sets";
-import { HubApplyResponse, HubSet, HubVoteKind } from "@models/hub";
-import { describeApiError, describeHubError } from "@utils";
+import {
+  HubApplyResponse,
+  HubGroup,
+  HubGroupApplyResponse,
+  HubSet,
+  HubVoteKind,
+  HubWarning,
+} from "@models/hub";
+import {
+  hubGroupAction,
+  hubGroupCovered,
+  hubGroupMoved,
+  hubGroupWarnings,
+} from "@models/hubGroups";
+import {
+  describeApiError,
+  describeHubError,
+  describeHubGroupApplyError,
+} from "@utils";
 import { CoveredDialog, CoveredReport } from "./CoveredDialog";
 import { DetailsDialog } from "./DetailsDialog";
+import { HubGroupCard } from "./HubGroupCard";
 import { HubSetCard } from "./HubSetCard";
 import { ReportDialog } from "./ReportDialog";
 import { StatusPanel } from "./StatusPanel";
@@ -38,6 +57,17 @@ import { defaultTestDomain, warningText } from "./text";
 
 const SEARCH_DEBOUNCE_MS = 400;
 const PAGE_LIMIT = 50;
+
+interface AppliedNotice {
+  set: HubSet | null;
+  localId: string;
+  name: string;
+  moved: DomainReassignment[];
+  covered: CoveredSet[];
+  warnings: string[];
+  undo: string[];
+  open: { label: string; path: string };
+}
 
 const normalizeDomain = (raw: string): string =>
   raw
@@ -57,6 +87,7 @@ export const HubBrowser = () => {
   const [testSet, setTestSet] = useState<HubSet | null>(null);
   const [reportSet, setReportSet] = useState<HubSet | null>(null);
   const [updateSet, setUpdateSet] = useState<HubSet | null>(null);
+  const [updateHubGroup, setUpdateHubGroup] = useState<HubGroup | null>(null);
   const [report, setReport] = useState<CoveredReport | null>(null);
 
   useEffect(() => {
@@ -72,6 +103,7 @@ export const HubBrowser = () => {
   const sets = useHubSets(domain, PAGE_LIMIT, ready);
   const sync = useHubSync();
   const apply = useHubApply();
+  const hubGroupApply = useHubGroupApply();
   const undo = useHubUndoApply();
   const enable = useLocalSetsEnabled();
   const vote = useHubVote();
@@ -97,10 +129,17 @@ export const HubBrowser = () => {
     });
   };
 
-  const undoApply = async (localSetId: string): Promise<boolean> => {
+  const undoApply = async (
+    localSetIds: string[],
+    moved: DomainReassignment[],
+  ): Promise<boolean> => {
     try {
-      await undo.mutateAsync(localSetId);
-      showSuccess(t("hub.apply.undone"));
+      await undo.mutateAsync({ ids: localSetIds, moved });
+      showSuccess(
+        localSetIds.length > 1
+          ? t("hub.group.apply.undone", { count: localSetIds.length })
+          : t("hub.apply.undone"),
+      );
       return true;
     } catch (e) {
       showError(t("hub.apply.undoFailed", { error: describeApiError(e) }));
@@ -116,54 +155,108 @@ export const HubBrowser = () => {
       : t("hub.apply.failed", { error: describeApiError(e) });
   };
 
-  const announce = (
-    set: HubSet,
-    res: HubApplyResponse,
-    message: string,
-    undoable: boolean,
-  ) => {
-    const covered = res.covered ?? [];
+  const importWarning = (w: HubWarning): string =>
+    warningText(t, "sets.importExport.warnings", w);
+
+  const announce = (notice: AppliedNotice, message: string) => {
+    const { covered, undo: undoIds } = notice;
     const actions: SnackbarAction[] = [];
     if (covered.length === 0) {
       actions.push({
-        label: t("hub.apply.openSet"),
+        label: notice.open.label,
         onClick: () => {
-          void navigate(`/sets/${res.id}`);
+          void navigate(notice.open.path);
         },
       });
-      if (undoable) {
+      if (undoIds.length > 0) {
         actions.push({
           label: t("hub.apply.undo"),
           onClick: () => {
-            void undoApply(res.id);
+            void undoApply(undoIds, notice.moved);
           },
         });
       }
     }
     showSuccess(
-      [message, describeMoved(res.moved)].filter(Boolean).join(" "),
+      [message, describeMoved(notice.moved)].filter(Boolean).join(" "),
       actions,
     );
-    if (res.warnings?.length) {
-      showSnackbar(
-        res.warnings
-          .map((w) => warningText(t, "sets.importExport.warnings", w))
-          .join(" "),
-        "warning",
-      );
+    if (notice.warnings.length > 0) {
+      showSnackbar(notice.warnings.join(" "), "warning");
     }
     setReport(
       covered.length > 0
         ? {
-            set,
-            localId: res.id,
-            name: res.name,
+            set: notice.set,
+            localId: notice.localId,
+            name: notice.name,
             covered,
-            undoable,
+            undo: undoIds,
+            moved: notice.moved,
             disabled: [],
           }
         : null,
     );
+  };
+
+  const announceSet = (
+    set: HubSet,
+    res: HubApplyResponse,
+    message: string,
+    undoable: boolean,
+  ) =>
+    announce(
+      {
+        set,
+        localId: res.id,
+        name: res.name,
+        moved: res.moved ?? [],
+        covered: res.covered ?? [],
+        warnings: (res.warnings ?? []).map(importWarning),
+        undo: undoable ? [res.id] : [],
+        open: { label: t("hub.apply.openSet"), path: `/sets/${res.id}` },
+      },
+      message,
+    );
+
+  const announceHubGroup = (res: HubGroupApplyResponse, replace: boolean) =>
+    announce(
+      {
+        set: null,
+        localId: res.sets[0]?.id ?? "",
+        name: res.group,
+        moved: hubGroupMoved(res),
+        covered: hubGroupCovered(res),
+        warnings: hubGroupWarnings(res).map(
+          ({ name, warning }) => `${name}: ${importWarning(warning)}`,
+        ),
+        undo: replace ? [] : res.created,
+        open: { label: t("hub.group.apply.openSets"), path: "/sets" },
+      },
+      [
+        replace
+          ? t("hub.group.apply.updated", { group: res.group })
+          : t("hub.group.apply.done", {
+              group: res.group,
+              count: res.sets.length,
+            }),
+        res.ungrouped.length > 0
+          ? t("hub.group.apply.ungrouped", { count: res.ungrouped.length })
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+
+  const handleHubGroupApply = async (hubGroup: HubGroup) => {
+    const replace = hubGroupAction(hubGroup) !== "apply";
+    setUpdateHubGroup(null);
+    try {
+      const res = await hubGroupApply.mutateAsync({ id: hubGroup.id, replace });
+      announceHubGroup(res, replace);
+    } catch (e) {
+      showError(describeHubGroupApplyError(e, t));
+    }
   };
 
   const handleUpdate = async (set: HubSet) => {
@@ -172,7 +265,7 @@ export const HubBrowser = () => {
     if (!applied) return;
     try {
       const res = await apply.mutateAsync({ set, replace: applied.set_id });
-      announce(
+      announceSet(
         set,
         res,
         t("hub.apply.updated", { name: res.name, version: set.version }),
@@ -186,7 +279,7 @@ export const HubBrowser = () => {
   const handleApply = async (set: HubSet) => {
     try {
       const res = await apply.mutateAsync({ set });
-      announce(set, res, t("hub.apply.done", { name: res.name }), true);
+      announceSet(set, res, t("hub.apply.done", { name: res.name }), true);
     } catch (e) {
       showError(applyFailure(e));
     }
@@ -211,7 +304,7 @@ export const HubBrowser = () => {
   };
 
   const handleCoveredReplace = async (covered: CoveredSet) => {
-    if (!report) return;
+    if (!report?.set) return;
     const { set, localId } = report;
     try {
       const res = await apply.mutateAsync({
@@ -219,7 +312,7 @@ export const HubBrowser = () => {
         replace: covered.set_id,
         discard: localId,
       });
-      announce(
+      announceSet(
         set,
         res,
         t("hub.apply.covered.replaced", { name: covered.set_name }),
@@ -243,7 +336,7 @@ export const HubBrowser = () => {
       }
       setReport((current) => current && { ...current, disabled: [] });
     }
-    if (await undoApply(report.localId)) setReport(null);
+    if (await undoApply(report.undo, report.moved)) setReport(null);
   };
 
   const handleVote = async (set: HubSet, kind: HubVoteKind) => {
@@ -271,23 +364,33 @@ export const HubBrowser = () => {
   };
 
   const busy =
-    apply.isPending || undo.isPending || vote.isPending || enable.isPending;
+    apply.isPending ||
+    hubGroupApply.isPending ||
+    undo.isPending ||
+    vote.isPending ||
+    enable.isPending;
   const list = sets.data?.sets ?? [];
+  const hubGroups = sets.data?.groups ?? [];
   const total = sets.data?.total ?? list.length;
 
   let resultsLine = "";
   if (sets.data) {
-    if (domain) {
-      resultsLine =
-        total > 0
-          ? t("hub.search.results", { count: total, domain })
-          : t("hub.search.noResults", { domain });
-    } else {
-      resultsLine =
-        total > 0
-          ? t("hub.search.all", { count: total })
-          : t("hub.search.empty");
-    }
+    const parts = domain
+      ? [
+          total > 0 ? t("hub.search.results", { count: total, domain }) : "",
+          hubGroups.length > 0
+            ? t("hub.search.groupResults", { count: hubGroups.length, domain })
+            : "",
+        ]
+      : [
+          total > 0 ? t("hub.search.all", { count: total }) : "",
+          hubGroups.length > 0
+            ? t("hub.search.groupsAll", { count: hubGroups.length })
+            : "",
+        ];
+    resultsLine =
+      parts.filter(Boolean).join(" · ") ||
+      (domain ? t("hub.search.noResults", { domain }) : t("hub.search.empty"));
   }
 
   return (
@@ -349,6 +452,16 @@ export const HubBrowser = () => {
               {t("hub.search.failed", { error: describeApiError(sets.error) })}
             </B4Alert>
           )}
+          {hubGroups.map((hubGroup) => (
+            <HubGroupCard
+              key={`${hubGroup.id}:${hubGroup.version}`}
+              hubGroup={hubGroup}
+              busy={busy}
+              onApply={(g) => void handleHubGroupApply(g)}
+              onUpdate={setUpdateHubGroup}
+              onDetails={openDetails}
+            />
+          ))}
           {list.map((set) => (
             <HubSetCard
               key={`${set.id}:${set.version}`}
@@ -416,6 +529,37 @@ export const HubBrowser = () => {
           {t("hub.apply.confirmReplace", {
             name: updateSet?.applied?.set_name ?? "",
             version: updateSet?.version ?? 0,
+          })}
+        </Typography>
+      </B4Dialog>
+
+      <B4Dialog
+        open={Boolean(updateHubGroup)}
+        title={t("hub.group.apply.confirmTitle")}
+        subtitle={updateHubGroup?.title}
+        icon={<WarningIcon />}
+        onClose={() => setUpdateHubGroup(null)}
+        actions={
+          <>
+            <Button onClick={() => setUpdateHubGroup(null)}>
+              {t("core.cancel")}
+            </Button>
+            <Box sx={{ flex: 1 }} />
+            <Button
+              variant="contained"
+              disabled={busy}
+              onClick={() => {
+                if (updateHubGroup) void handleHubGroupApply(updateHubGroup);
+              }}
+            >
+              {t("hub.apply.replace")}
+            </Button>
+          </>
+        }
+      >
+        <Typography sx={{ mt: 2 }}>
+          {t("hub.group.apply.confirmReplace", {
+            group: updateHubGroup?.applied.group ?? "",
           })}
         </Typography>
       </B4Dialog>

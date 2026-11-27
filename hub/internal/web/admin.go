@@ -89,6 +89,8 @@ func (s *Server) mountAPI(mux *http.ServeMux) {
 	mux.Handle("POST "+PathAPI+"/sets/{id}/reinstate", s.guard(s.setReinstate))
 	mux.Handle("POST "+PathAPI+"/sets/{id}/delete", s.guard(s.setDelete))
 	mux.Handle("POST "+PathAPI+"/moderation", s.guard(s.moderate))
+	mux.Handle("GET "+PathAPI+"/groups/{id}", s.guard(s.groupDetail))
+	mux.Handle("POST "+PathAPI+"/groups/{id}/{version}/{action}", s.guard(s.groupAction))
 	mux.Handle("GET "+PathAPI+"/keys", s.guard(s.keyList))
 	mux.Handle("GET "+PathAPI+"/keys/notable", s.guard(s.notableKeys))
 	mux.Handle("GET "+PathAPI+"/keys/{key}", s.guard(s.keyDetail))
@@ -193,7 +195,7 @@ func (s *Server) readJSON(w http.ResponseWriter, r *http.Request, into interface
 	return true
 }
 
-type versionGroups struct {
+type versionTabs struct {
 	pending    []store.Version
 	listed     []store.Version
 	withheld   []store.Version
@@ -204,8 +206,8 @@ type versionGroups struct {
 	versions   map[string][]int
 }
 
-func (s *Server) groups(ctx context.Context) (*versionGroups, error) {
-	g := &versionGroups{}
+func (s *Server) tabs(ctx context.Context) (*versionTabs, error) {
+	g := &versionTabs{}
 	var err error
 	if g.pending, err = s.Store.PendingVersions(ctx); err != nil {
 		return nil, err
@@ -245,7 +247,7 @@ func (s *Server) groups(ctx context.Context) (*versionGroups, error) {
 	return g, nil
 }
 
-func (g *versionGroups) supersededBy(v store.Version) (int, *time.Time) {
+func (g *versionTabs) supersededBy(v store.Version) (int, *time.Time) {
 	current := g.newest[v.SetID]
 	if current.Version < v.Version {
 		return 0, nil
@@ -280,7 +282,7 @@ func (s *Server) entries(versions []store.Version, ec *entryContext, limit int) 
 
 func (s *Server) sets(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	g, err := s.groups(ctx)
+	g, err := s.tabs(ctx)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -361,6 +363,15 @@ func (s *Server) setDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	sort.SliceStable(view.Votes, func(i, j int) bool { return view.Votes[i].ReceivedAt.After(view.Votes[j].ReceivedAt) })
+	memberships, err := s.Store.Memberships(ctx, id)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	view.Groups = make([]SetMembershipView, 0, len(memberships))
+	for _, m := range memberships {
+		view.Groups = append(view.Groups, SetMembershipView{GroupID: m.GroupID, Version: m.GroupVersion, Title: m.Title, Status: m.Status, SetVersion: m.SetVersion, Brought: m.Brought})
+	}
 	writeJSON(w, http.StatusOK, view)
 }
 
@@ -584,6 +595,7 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 func limitsMap(l LimitsView) map[string]interface{} {
 	return map[string]interface{}{
 		"shares_per_day":    l.SharesPerDay,
+		"groups_per_day":    l.GroupsPerDay,
 		"votes_per_day":     l.VotesPerDay,
 		"reports_per_day":   l.ReportsPerDay,
 		"mirrors_per_day":   l.MirrorsPerDay,
@@ -681,7 +693,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view.Build = *s.buildState(ctx)
-	g, err := s.groups(ctx)
+	g, err := s.tabs(ctx)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -699,6 +711,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	view.Counts.Pending = badges.Pending
 	view.Counts.Keys = badges.Keys
 	view.Counts.Banned = badges.Banned
 	mirrors, err := s.Store.Mirrors(ctx)

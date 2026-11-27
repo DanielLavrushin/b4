@@ -35,6 +35,7 @@ type Ref struct {
 	SetID        string
 	Version      int
 	ExpectStatus string
+	ExpectKept   *bool
 }
 
 type Options struct {
@@ -45,6 +46,7 @@ type Options struct {
 	Partial     bool
 	DryRun      bool
 	edited      bool
+	grouped     bool
 }
 
 type Effect struct {
@@ -259,10 +261,11 @@ func (s *Service) apply(ctx context.Context, t *store.Tx, a Actor, action string
 			}
 		}
 	}
-	switch action {
-	case ActionReject:
+	switch {
+	case opts.grouped:
+	case action == ActionReject:
 		err = t.TouchReason(ctx, store.ScopeReject, reason, now)
-	case ActionHide:
+	case action == ActionHide:
 		err = t.TouchReason(ctx, store.ScopeHide, reason, now)
 	}
 	if err != nil {

@@ -9,6 +9,7 @@ import {
 import { useTranslation } from "react-i18next";
 import {
   AddIcon,
+  CategoryIcon,
   CollapseIcon,
   ExpandIcon,
   LogsIcon,
@@ -17,6 +18,8 @@ import {
 import { colors } from "@design";
 import { B4Alert, B4Badge, B4ResultCard } from "@b4.elements";
 import { B4SetConfig } from "@models/config";
+import { useHubGroupsOf, useHubStatus } from "@hooks/useHub";
+import { hubGroupAction } from "@models/hubGroups";
 import {
   DiscoverySuite,
   HistoryEntry,
@@ -44,6 +47,7 @@ import {
   unresolvedLabel,
 } from "@utils";
 import { AlternatesList } from "./AlternatesList";
+import { HubGroupOffer } from "./HubGroupApplyDialog";
 import { CardPageHosts } from "./PageHostsPicker";
 import { ProbeAddresses } from "./ProbeAddresses";
 import { RunNote } from "./RunNote";
@@ -59,6 +63,7 @@ interface ResultsPanelProps {
   setName?: string;
   runSet?: B4SetConfig;
   onApply: (target: ApplyTarget) => void;
+  onApplyHubGroup: (offer: HubGroupOffer) => void;
   onApplyVerdict: (req: VerdictApply) => Promise<boolean>;
   onSaveSetUrls: (
     setId: string,
@@ -79,6 +84,7 @@ export const ResultsPanel = ({
   setName,
   runSet,
   onApply,
+  onApplyHubGroup,
   onApplyVerdict,
   onSaveSetUrls,
   onShowLog,
@@ -188,6 +194,7 @@ export const ResultsPanel = ({
                 history={history}
                 applying={applying}
                 onApply={onApply}
+                onApplyHubGroup={onApplyHubGroup}
               />
             );
           }
@@ -218,6 +225,7 @@ interface FoundCardProps {
   history: HistoryEntry[];
   applying: boolean;
   onApply: (target: ApplyTarget) => void;
+  onApplyHubGroup: (offer: HubGroupOffer) => void;
 }
 
 const FoundCard = ({
@@ -226,6 +234,7 @@ const FoundCard = ({
   history,
   applying,
   onApply,
+  onApplyHubGroup,
 }: FoundCardProps) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
@@ -239,6 +248,15 @@ const FoundCard = ({
   const [hostPicks, setHostPicks] = useState<Record<string, boolean>>({});
   const hosts = group.set ? offeredHosts(group.results, group.preset) : [];
   const probed = group.results.some((dr) => !!dr.addresses?.length);
+  const hubSetId = group.set?.hub?.id ?? "";
+  const hubStatus = useHubStatus(Boolean(hubSetId));
+  const hubGroupsOf = useHubGroupsOf(
+    hubSetId,
+    Boolean(hubStatus.data?.enabled && hubStatus.data?.configured),
+  );
+  const hubGroupOffers = (hubGroupsOf.data?.groups ?? []).filter(
+    (hubGroup) => hubGroupAction(hubGroup) !== "applied",
+  );
 
   let badge = (
     <B4Badge
@@ -472,6 +490,21 @@ const FoundCard = ({
           >
             {t("discovery.results.apply")}
           </Button>
+          {hubGroupOffers.map((hubGroup) => (
+            <Button
+              key={hubGroup.id}
+              variant="outlined"
+              startIcon={<CategoryIcon />}
+              disabled={applying}
+              onClick={() => onApplyHubGroup({ hubGroup, hubSetId })}
+              sx={{ maxWidth: 260, textAlign: "right" }}
+            >
+              {t("discovery.results.hubGroupApply", {
+                title: hubGroup.title,
+                count: hubGroup.members.length,
+              })}
+            </Button>
+          ))}
           <Button
             size="small"
             endIcon={expanded ? <CollapseIcon /> : <ExpandIcon />}

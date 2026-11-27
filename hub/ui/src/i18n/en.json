@@ -331,7 +331,7 @@
     "hidden": "Hidden",
     "rejected": "Rejected",
     "searchPlaceholder": "Title, id, domain, author, technique",
-    "empty": "No set in this group.",
+    "empty": "No set in this tab.",
     "noMatch": "No set matches the search.",
     "sort": {
       "label": "Sort by",
@@ -421,6 +421,9 @@
     "versions": "Versions",
     "votes": "Votes ({{count}})",
     "noVotes": "This set has no votes.",
+    "groups": "Set groups ({{count}})",
+    "groupBrought": "v{{version}} was sent with this group",
+    "groupLinked": "links v{{version}}",
     "voteColumns": {
       "when": "When",
       "kind": "Kind",
@@ -524,6 +527,7 @@
     },
     "kinds": {
       "share": "shares",
+      "group": "set groups",
       "vote": "votes",
       "report": "reports",
       "mirror": "mirror announcements"
@@ -754,6 +758,7 @@
     "limitsText": "Per-key limits count records signed by one router key; per-network limits count by the sender's /24 (IPv6: /48). Changes apply to the next request; counters already spent today are kept.",
     "fields": {
       "shares_per_day": "Shares per key",
+      "groups_per_day": "Groups per key",
       "votes_per_day": "Votes per key",
       "reports_per_day": "Reports per key",
       "mirrors_per_day": "Mirror announcements per key",
@@ -864,6 +869,12 @@
       "saved": "Preset saved",
       "deleted": "Preset deleted",
       "moved": "Preset moved"
+    },
+    "group": {
+      "approved": "Approved group {{title}}. Set versions changed: {{members}}",
+      "rejected": "Rejected group {{title}}. Set versions changed: {{members}}",
+      "hidden": "Hid group {{title}}",
+      "restored": "Restored group {{title}}"
     }
   },
   "errors": {
@@ -954,7 +965,50 @@
     },
     "withdrawToo": "Also withdraw the whole set, so no other version is listed instead",
     "keepReports": "Keep the open reports open",
-    "reasonHint": "Stored on the hub, never sent to routers."
+    "reasonHint": "Stored on the hub, never sent to routers.",
+    "group": {
+      "approve": {
+        "title": "Approve group {{title}}",
+        "text": "The group version becomes active in one step, together with every set version sent with it that is pending or rejected, and every pending set version an earlier version of this group sent. Other linked sets keep their own state.",
+        "confirm": "Approve group"
+      },
+      "reject": {
+        "title": "Reject group {{title}}",
+        "text": "The group version and the pending set versions sent with it are rejected in one step. A set version that a newer pending or active version of the group still includes is kept. The reason stays on the hub and is shown only in this console.",
+        "confirm": "Reject group"
+      },
+      "hide": {
+        "title": "Hide group {{title}}",
+        "text": "Only the group version is hidden. Its sets keep their own state: the sets of a pending group go back to the queue as separate items. A hidden group can be restored.",
+        "confirm": "Hide group"
+      },
+      "restore": {
+        "title": "Restore group {{title}}",
+        "text": "The group version returns to the state it was hidden from. Its sets are not changed.",
+        "confirm": "Restore group"
+      },
+      "columns": {
+        "set": "Set",
+        "change": "Change"
+      },
+      "becomes": "becomes {{status}}",
+      "untouched": "Not changed",
+      "linked": "Not changed: a linked set keeps its own state",
+      "kept_newer_group_version": "Not changed: group version {{group_version}} still includes it",
+      "refused": "Nothing is applied while the group or one of its sets cannot be changed."
+    },
+    "groupEffect": {
+      "none": "No catalogue change: the group is not listed before or after.",
+      "unchanged": "No catalogue change: group v{{version}} stays listed.",
+      "leaves": "The group leaves the catalogue: v{{version}} is no longer listed.",
+      "joins": "Group v{{version}} joins the catalogue.",
+      "replaces": "Group v{{version}} is listed instead of v{{previous}}.",
+      "notListed": "A group is listed only while every one of its sets is listed.",
+      "withheld": {
+        "set_withdrawn": "The group is withdrawn, so it is not listed.",
+        "author_banned": "The author is banned, so the group is not listed."
+      }
+    }
   },
   "reports": {
     "filter": {
@@ -1270,6 +1324,12 @@
       "notify": {
         "save": "notifications changed",
         "test": "test notification sent"
+      },
+      "group": {
+        "approve": "group approved",
+        "reject": "group rejected",
+        "hide": "group hidden",
+        "restore": "group restored"
       }
     },
     "all": "All",
@@ -1294,7 +1354,8 @@
       "report": "Report",
       "catalogue": "Catalogue",
       "settings": "Settings",
-      "notify": "Notifications"
+      "notify": "Notifications",
+      "group": "Group"
     }
   },
   "emitted": {
@@ -1340,6 +1401,7 @@
     "inDays": "in {{count}} d",
     "waiting": "shared {{when}}",
     "queueEmpty": "The queue is empty",
+    "oldestGroup": "group {{title}}",
     "mirrorsLine": "{{announced}} of {{approved}} announced, {{failing}} failing, {{stale}} behind",
     "fact": {
       "expires": "Manifest expires",
@@ -1359,7 +1421,7 @@
       "build_failed": "The last build failed: {{message}}. Routers keep the previous catalogue.",
       "build_overdue": "No successful build for {{hours}} h. The scheduled rebuild has not run.",
       "manifest_expiring": "The manifest expires in {{days}} d. The next build renews it.",
-      "queue_old": "Sets waiting for a decision: {{count}}. The oldest has waited {{hours}} h.",
+      "queue_old": "Waiting for a decision: {{count}}. The oldest has waited {{hours}} h.",
       "mirror_failing": "Mirrors failing the health check: {{count}}.",
       "mirror_stale": "Mirrors serving an older catalogue: {{count}}.",
       "mirror_pending": "Mirrors waiting for approval: {{count}}.",
@@ -1484,5 +1546,29 @@
       "failing": "Failing, attempts: {{count}}, last {{when}}: {{error}}"
     },
     "stored": "Stored. Type a new value to replace it."
+  },
+  "groups": {
+    "label": "Set group",
+    "heading_one": "{{title}} · {{count}} set",
+    "heading_few": "{{title}} · {{count}} sets",
+    "heading_many": "{{title}} · {{count}} sets",
+    "heading_other": "{{title}} · {{count}} sets",
+    "position": "#{{position}}",
+    "approve": "Approve group",
+    "reject": "Reject group",
+    "hide": "Hide group",
+    "restore": "Restore group",
+    "member": {
+      "brought": "sent with this group",
+      "broughtIn": "sent with v{{version}} of this group",
+      "linked": "links an existing set",
+      "listed": "listed as v{{version}}",
+      "notListed": "not listed"
+    },
+    "escalates": "escalates to #{{position}} {{title}}",
+    "derived": "Derived from group {{id}} v{{version}}",
+    "authorBanned": "The author is banned. The group is not listed until the ban is lifted.",
+    "listedBanner": "Listed in the catalogue as v{{version}}.",
+    "notListedBanner": "Not listed: no version of this group is in the published catalogue."
   }
 }

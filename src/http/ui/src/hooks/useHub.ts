@@ -6,12 +6,20 @@ import {
 import { hubApi } from "@api/hub";
 import { setsApi } from "@api/sets";
 import { HubSet, HubVoteKind } from "@models/hub";
+import { DomainReassignment } from "@models/sets";
 
 export const hubKeys = {
   all: ["hub"] as const,
   status: ["hub", "status"] as const,
   sets: (domain: string) => ["hub", "sets", domain] as const,
   set: (id: string) => ["hub", "set", id] as const,
+  groupsOf: (setId: string) => ["hub", "groups", setId] as const,
+};
+
+const invalidateHubLists = (client: ReturnType<typeof useQueryClient>) => {
+  void client.invalidateQueries({ queryKey: ["hub", "sets"] });
+  void client.invalidateQueries({ queryKey: ["hub", "set"] });
+  void client.invalidateQueries({ queryKey: ["hub", "groups"] });
 };
 
 export function useHubStatus(enabled = true) {
@@ -44,6 +52,26 @@ export function useHubSet(id: string | null) {
   });
 }
 
+export function useHubGroupsOf(setId: string, enabled = true) {
+  return useQuery({
+    queryKey: hubKeys.groupsOf(setId),
+    queryFn: () => hubApi.groups(setId),
+    enabled: enabled && Boolean(setId),
+    staleTime: 30 * 1000,
+    retry: false,
+  });
+}
+
+export function useHubGroups(enabled = true) {
+  return useQuery({
+    queryKey: hubKeys.groupsOf(""),
+    queryFn: () => hubApi.groups(),
+    enabled,
+    staleTime: 30 * 1000,
+    retry: false,
+  });
+}
+
 export function useHubInvalidate() {
   const client = useQueryClient();
   return () => client.invalidateQueries({ queryKey: hubKeys.all });
@@ -55,8 +83,7 @@ export function useHubSync() {
     mutationFn: hubApi.sync,
     onSuccess: (status) => {
       client.setQueryData(hubKeys.status, status);
-      void client.invalidateQueries({ queryKey: ["hub", "sets"] });
-      void client.invalidateQueries({ queryKey: ["hub", "set"] });
+      invalidateHubLists(client);
     },
   });
 }
@@ -80,14 +107,33 @@ export function useHubApply() {
   });
 }
 
+export function useHubGroupApply() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, replace }: { id: string; replace?: boolean }) =>
+      hubApi.applyGroup(id, replace),
+    onSettled: () => invalidateHubLists(client),
+  });
+}
+
+export function useHubGroupShare() {
+  return useMutation({
+    mutationFn: ({
+      group,
+      description,
+    }: {
+      group: string;
+      description?: string;
+    }) => hubApi.shareGroup(group, description),
+  });
+}
+
 export function useHubUndoApply() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (localSetId: string) => setsApi.deleteSet(localSetId),
-    onSettled: () => {
-      void client.invalidateQueries({ queryKey: ["hub", "sets"] });
-      void client.invalidateQueries({ queryKey: ["hub", "set"] });
-    },
+    mutationFn: ({ ids, moved }: { ids: string[]; moved: DomainReassignment[] }) =>
+      setsApi.deleteSets(ids, moved),
+    onSettled: () => invalidateHubLists(client),
   });
 }
 

@@ -149,7 +149,76 @@ export interface HubSet {
 
 export interface HubSetsResponse {
   sets: HubSet[];
+  groups: HubGroup[];
   total: number;
+}
+
+export interface HubGroupMember {
+  set: HubSet;
+  escalate?: { to: number };
+}
+
+export type HubGroupState = "none" | "applied" | "update" | "modified";
+
+export interface HubGroupApplied {
+  state: HubGroupState;
+  group?: string;
+  version?: number;
+  set_ids: string[];
+}
+
+export interface HubGroup {
+  id: string;
+  version: number;
+  title: string;
+  description?: string;
+  author: string;
+  created_at: string;
+  updated_at: string;
+  members: HubGroupMember[];
+  applied: HubGroupApplied;
+}
+
+export interface HubGroupsResponse {
+  groups: HubGroup[];
+}
+
+export type HubGroupShareResult = "new_set" | "new_version" | "linked";
+
+export interface HubGroupShareMember {
+  set_id: string;
+  name: string;
+  hub_id: string;
+  version: number;
+  status: string;
+  linked: boolean;
+  result: HubGroupShareResult;
+}
+
+export interface HubGroupShareResponse {
+  group_id: string;
+  version: number;
+  status: string;
+  members: HubGroupShareMember[];
+}
+
+export interface HubGroupAppliedSet {
+  id: string;
+  name: string;
+  hub_id: string;
+  version: number;
+  created: boolean;
+  moved: DomainReassignment[];
+  covered: CoveredSet[];
+  warnings: HubWarning[];
+  payloads: HubInstalledPayload[];
+}
+
+export interface HubGroupApplyResponse {
+  group: string;
+  sets: HubGroupAppliedSet[];
+  created: string[];
+  ungrouped: string[];
 }
 
 export interface HubCatalogueStatus {

@@ -24,7 +24,7 @@ func (s *Service) outboxDir() string {
 }
 
 func (s *Service) enqueue(rec *hubwire.Record) error {
-	if rec.Kind == hubwire.RecordShare {
+	if rec.Kind == hubwire.RecordShare || rec.Kind == hubwire.RecordGroup {
 		return ErrShareNotQueued
 	}
 	id := rec.ID()

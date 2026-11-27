@@ -57,6 +57,8 @@ type Service struct {
 	manifest      *hubwire.Manifest
 	catalogue     *hubwire.Catalogue
 	byID          map[string]*hubwire.CatalogueSet
+	groups        []*hubwire.CatalogueGroup
+	groupByID     map[string]*hubwire.CatalogueGroup
 	lastSync      time.Time
 	lastError     string
 	preferredBase string
@@ -259,6 +261,8 @@ func (s *Service) dropUntrusted(trusted []string) {
 	s.manifest = nil
 	s.catalogue = nil
 	s.byID = nil
+	s.groups = nil
+	s.groupByID = nil
 }
 
 func (s *Service) install(m *hubwire.Manifest, cat *hubwire.Catalogue) {
@@ -266,10 +270,17 @@ func (s *Service) install(m *hubwire.Manifest, cat *hubwire.Catalogue) {
 	for i := range cat.Sets {
 		byID[cat.Sets[i].ID] = &cat.Sets[i]
 	}
+	groups := listedGroups(cat, byID)
+	groupByID := make(map[string]*hubwire.CatalogueGroup, len(groups))
+	for _, g := range groups {
+		groupByID[g.ID] = g
+	}
 	s.mu.Lock()
 	s.manifest = m
 	s.catalogue = cat
 	s.byID = byID
+	s.groups = groups
+	s.groupByID = groupByID
 	s.mu.Unlock()
 }
 

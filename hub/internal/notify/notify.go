@@ -18,6 +18,7 @@ import (
 
 const (
 	EventShare       = store.NotifyShare
+	EventGroup       = store.NotifyGroup
 	EventReport      = store.NotifyReport
 	EventAutoHide    = store.NotifyAutoHide
 	EventBuildFailed = store.NotifyBuildFailed
@@ -85,6 +86,13 @@ type WebhookConfig struct {
 	Enabled bool   `json:"enabled"`
 	URL     string `json:"-"`
 	Secret  string `json:"-"`
+}
+
+func sourcesOf(event string) []string {
+	if event == EventShare {
+		return []string{EventShare, EventGroup}
+	}
+	return []string{event}
 }
 
 func (c Config) EventEnabled(kind string) bool {
@@ -571,7 +579,7 @@ func (s *Service) jumpCursors(ctx context.Context, prev, next Config) error {
 		}
 		for _, kind := range next.Events {
 			if !prev.EventEnabled(kind) {
-				jumps[channel] = append(jumps[channel], kind)
+				jumps[channel] = append(jumps[channel], sourcesOf(kind)...)
 			}
 		}
 	}

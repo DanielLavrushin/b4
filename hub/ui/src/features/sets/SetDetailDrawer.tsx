@@ -27,6 +27,8 @@ import { HistoryList } from "@/features/audit/HistoryList";
 import { useTargetHistory } from "@/features/audit/api";
 import { QueryView } from "@/shared/components/QueryView";
 import { KeyRef } from "@/shared/components/KeyRef";
+import { SetRef } from "@/shared/components/SetRef";
+import { groupPath } from "@/features/groups/GroupDrawerHost";
 import { statusTone } from "@/shared/components/StatusChip";
 import { StatusDot, statusToneColor } from "@/shared/components/StatusDot";
 import { formatAgo, formatStamp } from "@/shared/utils/format";
@@ -272,6 +274,21 @@ function Detail({ data, focusVersion, onClose, moderation }: { data: SetDetailVi
           <VersionActions entry={v} authorBanned={data.author_banned === true} moderation={moderation} />
         </Box>
       ))}
+      {data.groups.length > 0 && (
+        <>
+          <Typography variant="sectionHeader">{t("detail.groups", { count: data.groups.length })}</Typography>
+          <Stack spacing={0.75}>
+            {data.groups.map((g) => (
+              <Box key={`${g.group_id}/${String(g.version)}`} sx={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", columnGap: 1 }}>
+                <SetRef id={g.group_id} version={g.version} title={g.title} status={g.status} href={groupPath(g.group_id, g.version)} />
+                <Typography variant="caption" sx={{ color: colors.text.secondary }}>
+                  {t(g.brought ? "detail.groupBrought" : "detail.groupLinked", { version: g.set_version })}
+                </Typography>
+              </Box>
+            ))}
+          </Stack>
+        </>
+      )}
       <Typography variant="sectionHeader">{t("detail.votes", { count: data.votes.length })}</Typography>
       <Votes votes={data.votes} />
       <Typography variant="sectionHeader">{t("audit.history")}</Typography>

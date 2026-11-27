@@ -5,7 +5,7 @@ import WarningIcon from "@mui/icons-material/Warning";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { colors, spacing } from "@design";
-import type { AttentionCode, SetGroupName, SetRowView } from "@/models/api";
+import type { AttentionCode, SetRowView, SetTabName } from "@/models/api";
 import { useKnownKey } from "@/features/keys/KnownKeys";
 import { ScoreSummary } from "@/features/sets/components/ScoreSummary";
 import { setPath } from "@/features/sets/SetDrawerHost";
@@ -23,7 +23,7 @@ const attentionRank: Record<string, number> = { low_score: 0, reports: 1, weak: 
 
 const rankOf = (code: string) => attentionRank[code] ?? Object.keys(attentionRank).length;
 
-const unscored = new Set<SetGroupName>(["hidden", "rejected"]);
+const unscored = new Set<SetTabName>(["hidden", "rejected"]);
 
 const attentionBadge = (t: TFunction, codes: readonly AttentionCode[]): CardBadge | null => {
   const sorted = [...codes].sort((a, b) => rankOf(a) - rankOf(b));
@@ -53,14 +53,14 @@ interface Note {
   tip: string;
 }
 
-const rowNote = (t: TFunction, row: SetRowView, group: SetGroupName): Note | null => {
-  if (group === "superseded" && row.superseded_by !== undefined) {
+const rowNote = (t: TFunction, row: SetRowView, tab: SetTabName): Note | null => {
+  if (tab === "superseded" && row.superseded_by !== undefined) {
     const at = (when: string) => t("sets.supersededBy", { version: row.superseded_by, when });
     return { text: at(formatAgo(t, row.superseded_at)), tip: at(formatStamp(row.superseded_at)) };
   }
   let text = "";
-  if (group === "hidden" || group === "rejected") text = t("sets.reasonLine", { reason: reasonText(t, row.status_reason, row.independent_reports) });
-  if (group === "withheld" && row.withheld) text = t("sets.reasonLine", { reason: t(`sets.withheldReason.${row.withheld}`) });
+  if (tab === "hidden" || tab === "rejected") text = t("sets.reasonLine", { reason: reasonText(t, row.status_reason, row.independent_reports) });
+  if (tab === "withheld" && row.withheld) text = t("sets.reasonLine", { reason: t(`sets.withheldReason.${row.withheld}`) });
   return text ? { text, tip: text } : null;
 };
 
@@ -87,23 +87,23 @@ function RowNote({ note }: Readonly<{ note: Note }>) {
 
 interface RowCardProps {
   row: SetRowView;
-  group: SetGroupName;
+  tab: SetTabName;
   selection?: CardSelection;
   panel: string | null;
   onPanelChange: (panel: string | null) => void;
 }
 
-export function RowCard({ row, group, selection, panel, onPanelChange }: Readonly<RowCardProps>) {
+export function RowCard({ row, tab, selection, panel, onPanelChange }: Readonly<RowCardProps>) {
   const { t } = useTranslation();
   const overlay = useOverlay();
   const known = useKnownKey(row.author_hmac);
   const open = () => overlay.open(setPath(row.set_id, row.version));
   const config = asSetConfig(row.config);
-  const awaiting = group === "hidden" && row.status_reason === "reports" && row.open_reports > 0;
+  const awaiting = tab === "hidden" && row.status_reason === "reports" && row.open_reports > 0;
   const attention = row.open_reports > 0 ? row.attention.filter((code) => code !== "reports") : row.attention;
-  const note = rowNote(t, row, group);
+  const note = rowNote(t, row, tab);
   const hiddenFrom: CardBadge | null = row.hidden_from === "pending" ? { key: "hidden-from", label: t("detail.hiddenFromPending") } : null;
-  const withheldTab = group === "withheld";
+  const withheldTab = tab === "withheld";
   const badges = [
     ...flagBadges(t, row.flags),
     row.author_banned && !(withheldTab && row.withheld === "author_banned") ? bannedBadge(t) : null,
@@ -148,7 +148,7 @@ export function RowCard({ row, group, selection, panel, onPanelChange }: Readonl
       ])}
       extra={note ? <RowNote note={note} /> : undefined}
       badges={badges}
-      badgesEnd={unscored.has(group) ? undefined : <ScoreSummary published={row.published} live={row.live} evidence={row.evidence} />}
+      badgesEnd={unscored.has(tab) ? undefined : <ScoreSummary published={row.published} live={row.live} evidence={row.evidence} />}
       panel={panel}
       onPanelChange={onPanelChange}
       menu={menu}

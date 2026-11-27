@@ -13,6 +13,7 @@ export const qk = {
     queue: ["sets", "queue"] as const,
     rows: (params: Record<string, unknown>) => ["sets", "rows", params] as const,
     detail: (id: string) => ["sets", "detail", id] as const,
+    group: (id: string) => ["sets", "group", id] as const,
   },
   preview: {
     all: ["preview"] as const,

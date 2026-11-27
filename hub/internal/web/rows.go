@@ -7,25 +7,26 @@ import (
 	"strings"
 	"time"
 
+	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
 	"github.com/daniellavrushin/b4hub/internal/score"
 	"github.com/daniellavrushin/b4hub/internal/store"
 )
 
 const (
-	GroupPending    = "pending"
-	GroupListed     = "listed"
-	GroupSuperseded = "superseded"
-	GroupWithheld   = "withheld"
-	GroupHidden     = "hidden"
-	GroupRejected   = "rejected"
+	TabPending    = "pending"
+	TabListed     = "listed"
+	TabSuperseded = "superseded"
+	TabWithheld   = "withheld"
+	TabHidden     = "hidden"
+	TabRejected   = "rejected"
 
 	rowsDefault = 50
 	rowsMax     = 500
 	domainsShow = 4
 )
 
-var setGroups = []string{GroupPending, GroupListed, GroupSuperseded, GroupWithheld, GroupHidden, GroupRejected}
+var setTabs = []string{TabPending, TabListed, TabSuperseded, TabWithheld, TabHidden, TabRejected}
 
 type TargetsBriefView struct {
 	Domains      []string `json:"domains"`
@@ -73,15 +74,16 @@ type SetRowView struct {
 }
 
 type SetRowsView struct {
-	Group     string         `json:"group"`
+	Tab       string         `json:"tab"`
 	Total     int            `json:"total"`
-	Groups    map[string]int `json:"groups"`
+	Tabs      map[string]int `json:"tabs"`
 	Attention int            `json:"attention"`
 	Rows      []SetRowView   `json:"rows"`
 }
 
 type QueueView struct {
-	Items []EntryView `json:"items"`
+	Items  []EntryView        `json:"items"`
+	Groups []GroupVersionView `json:"groups"`
 }
 
 func briefTargets(v store.Version) TargetsBriefView {
@@ -152,16 +154,16 @@ func rowSortKey(row SetRowView, by string) (float64, string, bool) {
 
 func (s *Server) setRows(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	group := q.Get("group")
-	if group == "" {
-		group = GroupListed
+	tab := q.Get("tab")
+	if tab == "" {
+		tab = TabListed
 	}
 	valid := false
-	for _, g := range setGroups {
-		valid = valid || g == group
+	for _, name := range setTabs {
+		valid = valid || name == tab
 	}
 	if !valid {
-		writeError(w, http.StatusBadRequest, codeBadRequest, "unknown group")
+		writeError(w, http.StatusBadRequest, codeBadRequest, "unknown tab")
 		return
 	}
 	offset, _ := strconv.Atoi(q.Get("offset"))
@@ -176,7 +178,7 @@ func (s *Server) setRows(w http.ResponseWriter, r *http.Request) {
 		limit = min(n, rowsMax)
 	}
 	ctx := r.Context()
-	g, err := s.groups(ctx)
+	g, err := s.tabs(ctx)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -197,35 +199,29 @@ func (s *Server) setRows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var versions []store.Version
-	switch group {
-	case GroupPending:
+	switch tab {
+	case TabPending:
 		versions = g.pending
-	case GroupListed:
+	case TabListed:
 		versions = g.listed
-	case GroupSuperseded:
+	case TabSuperseded:
 		versions = g.superseded
-	case GroupWithheld:
+	case TabWithheld:
 		versions = g.withheld
-	case GroupHidden:
+	case TabHidden:
 		versions = g.hidden
-	case GroupRejected:
+	case TabRejected:
 		versions = g.rejected
 	}
 	latest := s.latest()
-	now := s.now().UTC()
-	at := now
-	if latest != nil {
-		if t := parseDay(latest.Catalogue.GeneratedAt); !t.IsZero() {
-			at = t
-		}
-	}
+	at, now := s.rowClock()
 	needle := strings.ToLower(strings.TrimSpace(q.Get("q")))
 	filter := q.Get("filter")
 	rows := make([]SetRowView, 0, len(versions))
 	projections := make(map[string]map[string]interface{}, len(versions))
 	for _, v := range versions {
 		row := s.setRow(v, ec, pool, at, now)
-		if group == GroupListed {
+		if tab == TabListed {
 			if latest != nil {
 				if cs, ok := latest.ByID[v.SetID]; ok && cs.Version == v.Version {
 					published := scoreView(cs.Scores.Global)
@@ -235,7 +231,7 @@ func (s *Server) setRows(w http.ResponseWriter, r *http.Request) {
 			row.Attention = orEmpty(attention[v.SetID])
 			row.Versions = g.versions[v.SetID]
 		}
-		if group == GroupSuperseded {
+		if tab == TabSuperseded {
 			row.SupersededBy, row.SupersededAt = g.supersededBy(v)
 		}
 		if !rowMatches(row, v, needle) {
@@ -276,16 +272,16 @@ func (s *Server) setRows(w http.ResponseWriter, r *http.Request) {
 		return less
 	})
 	view := SetRowsView{
-		Group:     group,
+		Tab:       tab,
 		Total:     len(rows),
 		Attention: len(attention),
-		Groups: map[string]int{
-			GroupPending:    len(g.pending),
-			GroupListed:     len(g.listed),
-			GroupSuperseded: len(g.superseded),
-			GroupWithheld:   len(g.withheld),
-			GroupHidden:     len(g.hidden),
-			GroupRejected:   len(g.rejected),
+		Tabs: map[string]int{
+			TabPending:    len(g.pending),
+			TabListed:     len(g.listed),
+			TabSuperseded: len(g.superseded),
+			TabWithheld:   len(g.withheld),
+			TabHidden:     len(g.hidden),
+			TabRejected:   len(g.rejected),
 		},
 	}
 	if offset < len(rows) {
@@ -354,7 +350,7 @@ func (s *Server) setRow(v store.Version, ec *entryContext, pool map[string][]sto
 
 func (s *Server) queue(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	g, err := s.groups(ctx)
+	g, err := s.tabs(ctx)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -364,9 +360,42 @@ func (s *Server) queue(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	view := QueueView{Items: s.entries(g.pending, ec, 0)}
-	for i := range view.Items {
-		view.Items[i].Lineage = lineage(g.pending[i], g.newest)
+	histories, err := s.Store.PendingGroupHistories(ctx)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	inside, err := s.Store.FoldedVersions(ctx)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	view := QueueView{Items: make([]EntryView, 0, len(g.pending)), Groups: make([]GroupVersionView, 0, len(histories))}
+	for _, v := range g.pending {
+		if inside[v.SetID][v.Version] {
+			continue
+		}
+		e := s.entry(v, ec)
+		e.Lineage = lineage(v, g.newest)
+		view.Items = append(view.Items, e)
+	}
+	if len(histories) > 0 {
+		gc, err := s.groupContext(ctx, g, ec, histories)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		for _, gv := range histories {
+			if gv.Status != hubwire.SetStatusPending {
+				continue
+			}
+			item, err := s.groupVersionView(ctx, gv, gc)
+			if err != nil {
+				s.fail(w, err)
+				return
+			}
+			view.Groups = append(view.Groups, item)
+		}
 	}
 	writeJSON(w, http.StatusOK, view)
 }

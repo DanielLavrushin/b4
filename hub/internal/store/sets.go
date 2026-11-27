@@ -188,12 +188,12 @@ func encodeVersion(v *Version) (encodedVersion, error) {
 	return enc, nil
 }
 
-func insertVersionTx(ctx context.Context, tx *sql.Tx, v *Version) error {
+func insertVersionTx(ctx context.Context, q querier, v *Version) error {
 	enc, err := encodeVersion(v)
 	if err != nil {
 		return err
 	}
-	res, err := tx.ExecContext(ctx, `INSERT INTO set_versions(set_id, version, fp, targets_key, title, description, projection_json, payloads_json, flags_json, geo_json,
+	res, err := q.ExecContext(ctx, `INSERT INTO set_versions(set_id, version, fp, targets_key, title, description, projection_json, payloads_json, flags_json, geo_json,
 		b4_min, b4_version, engine, family, status, status_reason, record_id, uploader_hmac, asn_observed, country_observed, asn_hint, country_hint, created_at, updated_at,
 		original_projection_json, edited_at, edit_note, original_title, original_description)
 		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -303,50 +303,46 @@ func (s *Store) ReferencedBlobs(ctx context.Context) (map[string]struct{}, error
 }
 
 func (s *Store) CreateSet(ctx context.Context, set Set, v *Version) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO sets(id, author_hmac, current_version, derived_from_id, derived_from_version, created_at, updated_at) VALUES(?, ?, 0, ?, ?, ?, ?)`,
+	return s.Update(ctx, func(t *Tx) error {
+		return createSetTx(ctx, t.tx, set, v)
+	})
+}
+
+func createSetTx(ctx context.Context, q querier, set Set, v *Version) error {
+	if _, err := q.ExecContext(ctx, `INSERT INTO sets(id, author_hmac, current_version, derived_from_id, derived_from_version, created_at, updated_at) VALUES(?, ?, 0, ?, ?, ?, ?)`,
 		set.ID, set.AuthorHMAC, set.DerivedFromID, set.DerivedFromVersion, formatTime(set.CreatedAt), formatTime(set.UpdatedAt)); err != nil {
 		return err
 	}
 	v.SetID = set.ID
 	v.Version = 1
-	if err := insertVersionTx(ctx, tx, v); err != nil {
+	if err := insertVersionTx(ctx, q, v); err != nil {
 		return err
 	}
-	if err := markDirtyTx(ctx, tx); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return markDirtyTx(ctx, q)
 }
 
 func (s *Store) AddVersion(ctx context.Context, v *Version) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
+	return s.Update(ctx, func(t *Tx) error {
+		return addVersionTx(ctx, t.tx, v)
+	})
+}
+
+func addVersionTx(ctx context.Context, q querier, v *Version) error {
 	var highest int
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(version), 0) FROM set_versions WHERE set_id = ?`, v.SetID).Scan(&highest); err != nil {
+	if err := q.QueryRowContext(ctx, `SELECT COALESCE(MAX(version), 0) FROM set_versions WHERE set_id = ?`, v.SetID).Scan(&highest); err != nil {
 		return err
 	}
 	if highest == 0 {
 		return ErrNotFound
 	}
 	v.Version = highest + 1
-	if err := insertVersionTx(ctx, tx, v); err != nil {
+	if err := insertVersionTx(ctx, q, v); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE sets SET updated_at = ? WHERE id = ?`, formatTime(v.CreatedAt), v.SetID); err != nil {
+	if _, err := q.ExecContext(ctx, `UPDATE sets SET updated_at = ? WHERE id = ?`, formatTime(v.CreatedAt), v.SetID); err != nil {
 		return err
 	}
-	if err := markDirtyTx(ctx, tx); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return markDirtyTx(ctx, q)
 }
 
 func scanSet(row rowScanner) (*Set, error) {
@@ -435,6 +431,12 @@ func (s *Store) FindDuplicateExcept(ctx context.Context, fp, targetsKey string, 
 		return nil, ErrNotFound
 	}
 	return v, err
+}
+
+func currentMatchesTx(ctx context.Context, q querier, fp, targetsKey string) ([]Version, error) {
+	return queryVersions(ctx, q, `SELECT `+versionColumns+` FROM set_versions sv WHERE fp = ?1 AND targets_key = ?2 AND status IN (?3, ?4)
+		AND version = (SELECT MAX(o.version) FROM set_versions o WHERE o.set_id = sv.set_id AND o.status IN (?3, ?4))
+		ORDER BY CASE status WHEN ?3 THEN 0 ELSE 1 END, created_at, set_id`, fp, targetsKey, hubwire.SetStatusActive, hubwire.SetStatusPending)
 }
 
 func (s *Store) queryVersions(ctx context.Context, query string, args ...interface{}) ([]Version, error) {

@@ -16,12 +16,13 @@ interface SetRefProps {
   title?: string;
   status?: string;
   maxTitle?: number;
+  href?: string;
 }
 
 export const setHref = (id: string, version?: number) =>
   version ? `/sets/${encodeURIComponent(id)}/v/${String(version)}` : `/sets/${encodeURIComponent(id)}`;
 
-export function SetRef({ id, version, title, status, maxTitle = 48 }: Readonly<SetRefProps>) {
+export function SetRef({ id, version, title, status, maxTitle = 48, href }: Readonly<SetRefProps>) {
   const { t } = useTranslation();
   const overlay = useOverlay();
   const shown = title && title.length > maxTitle ? title.slice(0, maxTitle - 1) + "…" : title;
@@ -32,7 +33,7 @@ export function SetRef({ id, version, title, status, maxTitle = 48 }: Readonly<S
         component="button"
         type="button"
         underline="hover"
-        onClick={() => overlay.open(setHref(id, version))}
+        onClick={() => overlay.open(href ?? setHref(id, version))}
         sx={{ display: "inline-flex", alignItems: "baseline", gap: 0.75, textAlign: "left", maxWidth: "100%", minWidth: 0 }}
       >
         {status && <Box component="span" sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: statusColor[status] ?? colors.text.disabled, flexShrink: 0, alignSelf: "center" }} />}

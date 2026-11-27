@@ -11,6 +11,7 @@ import { setRef } from "@/shared/utils/format";
 import { useModerationContext } from "@/features/moderation/ModerationProvider";
 import { BulkDialog } from "@/features/moderation/BulkDialog";
 import { QueueCard } from "./QueueCard";
+import { QueueGroup } from "./QueueGroup";
 
 const keyOf = (e: EntryView) => setRef(e.set_id, e.version);
 
@@ -26,8 +27,13 @@ export function QueuePage() {
   const sets = useQueue();
   const moderation = useModerationContext();
   const pending = useMemo(() => sets.data?.items ?? [], [sets.data]);
+  const groups = useMemo(() => sets.data?.groups ?? [], [sets.data]);
   const keys = useMemo(() => pending.map(keyOf), [pending]);
-  const panels = useCardPanels(keys);
+  const cardKeys = useMemo(
+    () => [...groups.flatMap((g) => g.members.flatMap((m) => (m.entry ? [keyOf(m.entry)] : []))), ...keys],
+    [groups, keys],
+  );
+  const panels = useCardPanels(cardKeys);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulk, setBulk] = useState<SetAction | null>(null);
 
@@ -50,7 +56,7 @@ export function QueuePage() {
     <Box sx={{ display: "flex", flexDirection: "column" }}>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap", mb: 2 }}>
         <Typography variant="sectionHeader" sx={{ flex: 1 }}>
-          {t("queue.title", { count: pending.length })}
+          {t("queue.title", { count: pending.length + groups.length })}
         </Typography>
         {pending.length > 0 && (
           <Button size="small" onClick={() => setSelected(allSelected ? new Set() : new Set(keys))}>
@@ -93,12 +99,18 @@ export function QueuePage() {
           </Stack>
         </Paper>
       )}
-      {pending.length > 1 && (
+      {cardKeys.length > 1 && (
         <FacetCompareBar active={panels.compare} onPick={panels.pickCompare} toggle={panels.toggle} onToggle={panels.toggleAll} keys={HUB_FACETS} t={t} />
       )}
-      {pending.length === 0 ? (
-        <EmptyState text={t("queue.empty")} />
-      ) : (
+      {groups.length > 0 && (
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 3, mb: pending.length > 0 ? 3 : 0 }}>
+          {groups.map((g) => (
+            <QueueGroup key={setRef(g.group_id, g.version)} group={g} moderation={moderation} panelOf={panels.panelOf} setPanel={panels.setPanel} />
+          ))}
+        </Box>
+      )}
+      {pending.length === 0 && groups.length === 0 && <EmptyState text={t("queue.empty")} />}
+      {pending.length > 0 && (
         <Grid container spacing={3}>
           {pending.map((entry) => {
             const key = keyOf(entry);

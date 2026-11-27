@@ -49,6 +49,8 @@ type HubError struct {
 	Scope      string
 	Limit      int
 	Window     string
+	GroupID    string
+	Member     *int
 }
 
 func (e *HubError) Error() string {
@@ -91,6 +93,10 @@ type MessageResponse struct {
 	Scope      string `json:"scope,omitempty"`
 	Limit      int    `json:"limit,omitempty"`
 	Window     string `json:"window,omitempty"`
+
+	GroupID string                      `json:"group_id,omitempty"`
+	Members []hubwire.GroupMemberResult `json:"members,omitempty"`
+	Member  *int                        `json:"member,omitempty"`
 }
 
 func (s *Service) userAgent() string {
@@ -282,7 +288,7 @@ func (s *Service) Send(ctx context.Context, rec *hubwire.Record) (*MessageRespon
 			}
 			return &resp, nil
 		}
-		return nil, &HubError{Status: status, Code: resp.Code, Message: resp.Error, SetID: resp.SetID, Version: resp.Version, RetryAfter: resp.RetryAfter, Scope: resp.Scope, Limit: resp.Limit, Window: resp.Window}
+		return nil, &HubError{Status: status, Code: resp.Code, Message: resp.Error, SetID: resp.SetID, Version: resp.Version, RetryAfter: resp.RetryAfter, Scope: resp.Scope, Limit: resp.Limit, Window: resp.Window, GroupID: resp.GroupID, Member: resp.Member}
 	}
 	if lastErr == nil {
 		return nil, ErrUnreachable

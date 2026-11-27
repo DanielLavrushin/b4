@@ -20,7 +20,7 @@ import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import { useTranslation } from "react-i18next";
 import { FacetCompareBar, colors, radius } from "@design";
-import type { SetAction, SetGroupName, SetRowView } from "@/models/api";
+import type { SetAction, SetRowView, SetTabName } from "@/models/api";
 import { PAGE_SIZES, useTableState } from "@/shared/table/useTableState";
 import type { SortDir } from "@/shared/table/sort";
 import { SearchField, fieldSx } from "@/shared/components/SearchField";
@@ -32,9 +32,9 @@ import { HUB_FACETS } from "./card/SetCard";
 import { SetCardSkeleton } from "./card/SetCardSkeleton";
 import { useCardPanels } from "./card/useCardPanels";
 
-const groups: SetGroupName[] = ["listed", "superseded", "withheld", "hidden", "rejected"];
+const tabs: SetTabName[] = ["listed", "superseded", "withheld", "hidden", "rejected"];
 
-const bulkActions: Partial<Record<SetGroupName, SetAction[]>> = {
+const bulkActions: Partial<Record<SetTabName, SetAction[]>> = {
   listed: ["hide"],
   superseded: ["hide"],
   hidden: ["restore"],
@@ -43,9 +43,9 @@ const bulkActions: Partial<Record<SetGroupName, SetAction[]>> = {
 
 const allSorts = ["updated", "created", "title", "author", "score", "n", "devices", "reports"];
 const plainSorts = ["updated", "created", "title", "author", "reports"];
-const unscored = new Set<SetGroupName>(["hidden", "rejected"]);
+const unscored = new Set<SetTabName>(["hidden", "rejected"]);
 
-const filterFor = (group: SetGroupName, filter: string) => (filter === "attention" && group !== "listed" ? "" : filter);
+const filterFor = (tab: SetTabName, filter: string) => (filter === "attention" && tab !== "listed" ? "" : filter);
 
 const gridItem = { xs: 12, sm: 6, lg: 4, xl: 3 } as const;
 const skeletons = [0, 1, 2, 3, 4, 5, 6, 7];
@@ -109,19 +109,19 @@ function FilterToggle({ value, active, label, onToggle }: Readonly<{ value: stri
 export function SetsPage() {
   const { t } = useTranslation();
   const table = useTableState({ sort: "updated", dir: "desc", pageSize: 50 });
-  const group = (groups.includes(table.param("group") as SetGroupName) ? table.param("group") : "listed") as SetGroupName;
-  const filter = filterFor(group, table.param("filter"));
-  const sortOptions = unscored.has(group) ? plainSorts : allSorts;
+  const tab = (tabs.includes(table.param("tab") as SetTabName) ? table.param("tab") : "listed") as SetTabName;
+  const filter = filterFor(tab, table.param("filter"));
+  const sortOptions = unscored.has(tab) ? plainSorts : allSorts;
   const sort = sortOptions.includes(table.sort) ? table.sort : "updated";
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulk, setBulk] = useState<SetAction | null>(null);
-  const view = `${group}|${String(table.page)}|${String(table.pageSize)}|${table.query}|${filter}|${sort}|${table.dir}`;
+  const view = `${tab}|${String(table.page)}|${String(table.pageSize)}|${table.query}|${filter}|${sort}|${table.dir}`;
   useEffect(() => {
     setSelected(new Set());
   }, [view]);
-  const rows = useSetRows({ group, q: table.query, sort, dir: table.dir, offset: table.page * table.pageSize, limit: table.pageSize, filter });
+  const rows = useSetRows({ tab, q: table.query, sort, dir: table.dir, offset: table.page * table.pageSize, limit: table.pageSize, filter });
   const data = rows.data;
-  const shown = data?.group ?? group;
+  const shown = data?.tab ?? tab;
   const list = useMemo(() => data?.rows ?? [], [data]);
   const keys = useMemo(() => list.map(rowKey), [list]);
   const panels = useCardPanels(keys);
@@ -146,7 +146,7 @@ export function SetsPage() {
   const targets = list.filter((r) => selected.has(rowKey(r))).map((r) => ({ set_id: r.set_id, version: r.version, title: r.title, status: r.status }));
   const allSelected = list.length > 0 && list.every((r) => selected.has(rowKey(r)));
   const filtered = table.query !== "" || filter !== "";
-  const tabLabel = (g: SetGroupName) => (data ? t("sets.tabCount", { label: t(`sets.${g}`), count: data.groups[g] ?? 0 }) : t(`sets.${g}`));
+  const tabLabel = (name: SetTabName) => (data ? t("sets.tabCount", { label: t(`sets.${name}`), count: data.tabs[name] ?? 0 }) : t(`sets.${name}`));
   const toggleFilter = (name: string) => table.setParam("filter", filter === name ? null : name);
   const toggleRow = (key: string) =>
     setSelected((prev) => {
@@ -178,7 +178,7 @@ export function SetsPage() {
             <Grid key={key} size={gridItem}>
               <RowCard
                 row={row}
-                group={shown}
+                tab={shown}
                 selection={actions.length > 0 ? { selected: selected.has(key), onToggle: () => toggleRow(key), label: t("card.select", { title: row.title }) } : undefined}
                 panel={panels.panelOf(key)}
                 onPanelChange={(next) => panels.setPanel(key, next)}
@@ -193,23 +193,23 @@ export function SetsPage() {
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
       <Tabs
-        value={group}
+        value={tab}
         variant="scrollable"
         allowScrollButtonsMobile
-        onChange={(_e, v: SetGroupName) => {
+        onChange={(_e, v: SetTabName) => {
           setSelected(new Set());
-          table.setParam("group", v === "listed" ? null : v);
+          table.setParam("tab", v === "listed" ? null : v);
         }}
         sx={tabsSx}
       >
-        {groups.map((g) => (
-          <Tab key={g} value={g} label={tabLabel(g)} />
+        {tabs.map((name) => (
+          <Tab key={name} value={name} label={tabLabel(name)} />
         ))}
       </Tabs>
       <Box sx={{ display: "flex", gap: 1.5, alignItems: "center", flexWrap: "wrap" }}>
         <SearchField value={table.q} onChange={table.setQ} placeholder={t("sets.searchPlaceholder")} />
         <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 1.5 }}>
-          {group === "listed" && (
+          {tab === "listed" && (
             <FilterToggle value="attention" active={filter === "attention"} label={t("sets.needsAttention", { count: data?.attention ?? 0 })} onToggle={() => toggleFilter("attention")} />
           )}
           <FilterToggle value="reports" active={filter === "reports"} label={t("sets.withReports")} onToggle={() => toggleFilter("reports")} />

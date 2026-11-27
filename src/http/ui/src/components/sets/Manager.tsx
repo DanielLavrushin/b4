@@ -60,6 +60,7 @@ import {
   SetGroupNameDialog,
   groupTraySx,
 } from "./SetGroups";
+import { SetGroupPublishDialog } from "./SetGroupPublish";
 import { EditorSection } from "./facets";
 import { FacetCompareBar } from "./SignalRail";
 
@@ -67,6 +68,7 @@ import { colors, fonts, radius, radiusPx } from "@design";
 import { configApi } from "@api/settings";
 import { formatSetTemplate, setTemplateFromSet } from "@models/setTemplate";
 import { useSets } from "@hooks/useSets";
+import { useHubStatus } from "@hooks/useHub";
 import { useSetFacetSelection } from "@hooks/useSetFacetSelection";
 import { useWatchdogSetStatuses } from "@hooks/useWatchdog";
 import { B4Config, B4SetConfig } from "@models/config";
@@ -283,6 +285,10 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
     group: string;
     sets: B4SetConfig[];
   } | null>(null);
+  const [publishBlock, setPublishBlock] = useState<{
+    group: string;
+    sets: B4SetConfig[];
+  } | null>(null);
   const [compareDialog, setCompareDialog] = useState<{
     open: boolean;
     setId: string | null;
@@ -348,6 +354,10 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
   );
   const facetSelection = useSetFacetSelection(sets.map((s) => s.id));
   const watchdogOn = !!config.system?.checker?.watchdog?.enabled;
+  const hubStatus = useHubStatus(Boolean(config.system?.hub?.enabled));
+  const hubReady = Boolean(
+    hubStatus.data?.enabled && hubStatus.data?.configured,
+  );
   const deviceFilter = deviceFilterSelects(config.queue?.devices);
   const anyWatched = sets.some((s) => !!s.discovery?.watchdog);
   const watchStatuses = useWatchdogSetStatuses(anyWatched && watchdogOn);
@@ -826,6 +836,15 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                   }
                   onExport={() =>
                     setExportBlock({ group: block.group, sets: block.all })
+                  }
+                  onPublish={
+                    hubReady && !block.all.some((s) => isTempId(s.id))
+                      ? () =>
+                          setPublishBlock({
+                            group: block.group,
+                            sets: block.all,
+                          })
+                      : undefined
                   }
                   onUngroup={() =>
                     applyGroup(
@@ -1350,6 +1369,15 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
         sets={exportBlock?.sets ?? []}
         onClose={() => setExportBlock(null)}
       />
+
+      {publishBlock && (
+        <SetGroupPublishDialog
+          group={publishBlock.group}
+          sets={publishBlock.sets}
+          onPublished={onRefresh}
+          onClose={() => setPublishBlock(null)}
+        />
+      )}
 
       <ImportToolDialog
         open={importToolOpen}

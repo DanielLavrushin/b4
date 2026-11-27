@@ -1,13 +1,14 @@
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSnackbar } from "@/app/SnackbarProvider";
-import type { ActionResult, EntryView, MirrorView, SetAction } from "@/models/api";
+import type { ActionResult, EntryView, GroupVersionView, MirrorView, SetAction } from "@/models/api";
 import { useMirrorAction } from "@/features/mirrors/api";
 import { EditSetDialog } from "@/features/sets/EditSetDialog";
 import { EditTextDialog } from "@/features/sets/EditTextDialog";
 import { ReasonDialog, type ReasonPrompt } from "@/shared/components/ReasonDialog";
 import { setRef } from "@/shared/utils/format";
 import { useKeyAction, useReinstate, useSetDelete, useVersionReports, useWithdraw } from "./api";
+import { GroupActionDialog } from "./GroupActionDialog";
 import { KeyImpactSummary } from "./KeyImpactSummary";
 import { VersionActionDialog, type VersionTarget } from "./VersionActionDialog";
 
@@ -17,11 +18,17 @@ interface VersionPrompt {
   reason?: string;
 }
 
+interface GroupPrompt {
+  action: SetAction;
+  group: GroupVersionView;
+}
+
 export function useModeration() {
   const { t } = useTranslation();
   const { notifyResult, notifyError } = useSnackbar();
   const [prompt, setPrompt] = useState<ReasonPrompt | null>(null);
   const [versionPrompt, setVersionPrompt] = useState<VersionPrompt | null>(null);
+  const [groupPrompt, setGroupPrompt] = useState<GroupPrompt | null>(null);
   const [editing, setEditing] = useState<EntryView | null>(null);
   const [retitling, setRetitling] = useState<EntryView | null>(null);
   const keyAction = useKeyAction();
@@ -53,6 +60,8 @@ export function useModeration() {
   const reject = version("reject");
   const hide = version("hide");
   const restore = version("restore");
+
+  const moderateGroup = useCallback((action: SetAction, group: GroupVersionView) => setGroupPrompt({ action, group }), []);
 
   const edit = useCallback((e: EntryView) => setEditing(e), []);
   const editText = useCallback((e: EntryView) => setRetitling(e), []);
@@ -214,6 +223,7 @@ export function useModeration() {
         initialReason={versionPrompt?.reason}
         onClose={() => setVersionPrompt(null)}
       />
+      <GroupActionDialog action={groupPrompt?.action ?? "approve"} group={groupPrompt?.group ?? null} onClose={() => setGroupPrompt(null)} />
       <EditSetDialog entry={editing} onClose={() => setEditing(null)} />
       <EditTextDialog entry={retitling} onClose={() => setRetitling(null)} />
     </>
@@ -231,6 +241,7 @@ export function useModeration() {
     reject,
     hide,
     restore,
+    moderateGroup,
     edit,
     editText,
     withdraw,

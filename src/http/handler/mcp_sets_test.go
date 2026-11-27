@@ -184,6 +184,31 @@ func TestMCPManageSetKeepsEveryGroupInOneBlock(t *testing.T) {
 	}
 }
 
+func TestMCPManageSetDuplicateDropsTheHubGroupStamp(t *testing.T) {
+	cfg := writableCfg(t)
+	member := groupedSet("yt-a", "YouTube")
+	member.Hub = &config.HubOrigin{ID: "s1", Version: 2, Hash: "h", GroupID: "g-video", GroupVersion: 3}
+	cfg.Sets = []*config.SetConfig{member, groupedSet("yt-b", "YouTube")}
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	if res := callManageSet(t, session, ctx, map[string]any{"action": "duplicate", "set": "yt-a", "name": "twin", "position": "after:yt-a"}); res.IsError {
+		t.Fatalf("duplicate failed: %+v", res.Content)
+	}
+	for _, set := range api.getCfg().Sets {
+		switch set.Name {
+		case "twin":
+			if set.Group != "YouTube" || set.Hub == nil || set.Hub.ID != "s1" || set.Hub.Version != 2 || set.Hub.GroupID != "" || set.Hub.GroupVersion != 0 {
+				t.Errorf("the copy keeps its local group and hub set but not the hub group stamp, got %q %+v", set.Group, set.Hub)
+			}
+		case "yt-a":
+			if set.Hub.GroupID != "g-video" || set.Hub.GroupVersion != 3 {
+				t.Errorf("the source keeps its stamp, got %+v", set.Hub)
+			}
+		}
+	}
+}
+
 func TestMCPManageSetDuplicateDoesNotCarrySecrets(t *testing.T) {
 	cfg := mcpSecretsCfg()
 	cfg.System.WebServer.MCP.AllowWrites = true

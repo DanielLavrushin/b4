@@ -4,6 +4,9 @@ import {
   HubApplyResponse,
   HubEnvelope,
   HubEnvelopeResponse,
+  HubGroupApplyResponse,
+  HubGroupShareResponse,
+  HubGroupsResponse,
   HubImportResponse,
   HubReportResponse,
   HubSet,
@@ -54,6 +57,20 @@ export const hubApi = {
   test: (id: string, domain?: string) =>
     apiPost<HubTestResponse>(`/api/hub/sets/${encodeURIComponent(id)}/test`, {
       ...(domain ? { domain } : {}),
+    }),
+  groups: (setId?: string) =>
+    apiGet<HubGroupsResponse>(
+      `/api/hub/groups${setId ? `?set=${encodeURIComponent(setId)}` : ""}`,
+    ),
+  applyGroup: (id: string, replace?: boolean) =>
+    apiPost<HubGroupApplyResponse>(
+      `/api/hub/groups/${encodeURIComponent(id)}/apply`,
+      replace ? { replace: true } : {},
+    ),
+  shareGroup: (group: string, description?: string) =>
+    apiPost<HubGroupShareResponse>("/api/hub/groups/share", {
+      group,
+      ...(description ? { description } : {}),
     }),
   share: (setId: string, description?: string) =>
     apiPost<HubShareResponse>("/api/hub/share", {

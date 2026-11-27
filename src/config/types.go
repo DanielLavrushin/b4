@@ -786,12 +786,14 @@ type SetDiscoveryConfig struct {
 }
 
 type HubOrigin struct {
-	ID        string `json:"id,omitempty"`
-	Version   int    `json:"version,omitempty"`
-	Hash      string `json:"hash,omitempty"`
-	AppliedAt string `json:"applied_at,omitempty"`
-	Vote      string `json:"vote,omitempty"`
-	VotedAt   string `json:"voted_at,omitempty"`
+	ID           string `json:"id,omitempty"`
+	Version      int    `json:"version,omitempty"`
+	Hash         string `json:"hash,omitempty"`
+	AppliedAt    string `json:"applied_at,omitempty"`
+	Vote         string `json:"vote,omitempty"`
+	VotedAt      string `json:"voted_at,omitempty"`
+	GroupID      string `json:"group_id,omitempty"`
+	GroupVersion int    `json:"group_version,omitempty"`
 }
 
 type EscalateConfig struct {

@@ -23,6 +23,7 @@ import {
   DragIcon,
   EditIcon,
   ImportExportIcon,
+  PublishIcon,
 } from "@b4.icons";
 import { B4Dialog, B4TextField } from "@b4.elements";
 import { useSnackbar } from "@context/SnackbarProvider";
@@ -76,6 +77,7 @@ interface SetGroupHeaderProps {
   onToggleEnabled: (enabled: boolean) => void;
   onRename: () => void;
   onExport: () => void;
+  onPublish?: () => void;
   onUngroup: () => void;
 }
 
@@ -88,6 +90,7 @@ export const SetGroupHeader = ({
   onToggleEnabled,
   onRename,
   onExport,
+  onPublish,
   onUngroup,
 }: SetGroupHeaderProps) => {
   const { t } = useTranslation();
@@ -201,6 +204,14 @@ export const SetGroupHeader = ({
               </ListItemIcon>
               <ListItemText>{t("sets.groups.export")}</ListItemText>
             </MenuItem>
+            {onPublish && (
+              <MenuItem onClick={() => run(onPublish)}>
+                <ListItemIcon>
+                  <PublishIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{t("sets.groups.publish.menu")}</ListItemText>
+              </MenuItem>
+            )}
             <MenuItem onClick={() => run(onUngroup)}>
               <ListItemIcon>
                 <CloseIcon fontSize="small" />

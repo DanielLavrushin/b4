@@ -11,6 +11,7 @@ import (
 
 const (
 	SharesPerDay    = 5
+	GroupsPerDay    = 3
 	VotesPerDay     = 20
 	ReportsPerDay   = 20
 	MirrorsPerDay   = 48
@@ -21,6 +22,7 @@ const (
 	Hour = time.Hour
 
 	ScopeShare   = "share"
+	ScopeGroup   = "group"
 	ScopeVote    = "vote"
 	ScopeReport  = "report"
 	ScopeMirror  = "mirror"

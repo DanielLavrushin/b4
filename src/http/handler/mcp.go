@@ -585,6 +585,7 @@ type mcpSetSummary struct {
 	Domains       int    `json:"domain_count"`
 	ManualDomains int    `json:"manual_domain_count"`
 	Strategy      string `json:"strategy,omitempty"`
+	Group         string `json:"group,omitempty"`
 }
 
 type mcpSetsOut struct {
@@ -835,7 +836,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_list_sets",
 		Title:       "List strategy sets",
-		Description: "Summarise the configured DPI-bypass strategy sets in priority order: id, name, whether enabled, how many domains each targets, and the primary strategy. 'domain_count' is every domain the set matches, including those expanded from geosite categories; 'manual_domain_count' is only the ones listed by hand.",
+		Description: "Summarise the strategy sets in priority order: id, name, group, whether enabled, how many domains each targets, and the primary strategy. 'domain_count' counts every domain the set matches, geosite expansions included; 'manual_domain_count' only the ones listed by hand.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpSetsOut, error) {
 		cfg := api.getCfg()
@@ -856,6 +857,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 				Domains:       total,
 				ManualDomains: len(s.Targets.SNIDomains),
 				Strategy:      s.Fragmentation.Strategy,
+				Group:         s.Group,
 			})
 		}
 		return nil, out, nil

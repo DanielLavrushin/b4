@@ -30,7 +30,7 @@ export type TechniqueCode = "fake" | "sni_mutation" | "tls_mod" | "frag" | "syn_
 
 export type FilterCode = "tls_only" | "ip_only" | "domain_only";
 
-export type SetGroupName = "pending" | "listed" | "superseded" | "withheld" | "hidden" | "rejected";
+export type SetTabName = "pending" | "listed" | "superseded" | "withheld" | "hidden" | "rejected";
 
 export type AppliedState = "counted" | "not_published" | "after_build" | "excluded" | "capped";
 
@@ -99,6 +99,7 @@ export interface SetDetailView {
   listed_version?: number;
   versions: EntryView[];
   votes: VoteView[];
+  groups: SetMembershipView[];
 }
 
 export interface EditRequest {
@@ -259,15 +260,48 @@ export interface BadgesView {
 }
 
 export interface SetRowsView {
-  group: SetGroupName;
+  tab: SetTabName;
   total: number;
-  groups: Record<string, number>;
+  tabs: Record<string, number>;
   attention: number;
   rows: SetRowView[];
 }
 
 export interface QueueView {
   items: EntryView[];
+  groups: GroupVersionView[];
+}
+
+export interface GroupDetailView {
+  id: string;
+  author: string;
+  author_hmac: string;
+  author_banned?: boolean;
+  derived_from_id?: string;
+  derived_from_version?: number;
+  created_at: string;
+  updated_at: string;
+  published_version?: number;
+  versions: GroupVersionView[];
+}
+
+export interface GroupActionRequest {
+  reason: string;
+  expect_status?: string;
+  members?: ModerationItemRequest[];
+  force?: boolean;
+  keep_reports?: boolean;
+  dry_run?: boolean;
+}
+
+export interface GroupModerationView {
+  notice: string;
+  code: string;
+  params?: Record<string, unknown>;
+  batch_id?: string;
+  group: GroupEffectView;
+  members: GroupMemberEffectView[];
+  build?: BuildStateView;
 }
 
 export interface KeyListView {
@@ -537,6 +571,15 @@ export interface VoteView {
   received_at: string;
 }
 
+export interface SetMembershipView {
+  group_id: string;
+  version: number;
+  title: string;
+  status: SetStatus;
+  set_version: number;
+  brought: boolean;
+}
+
 export interface BlobRef {
   sha256: string;
   protocol: string;
@@ -603,6 +646,7 @@ export interface ReportView {
 
 export interface LimitsView {
   shares_per_day: number;
+  groups_per_day: number;
   votes_per_day: number;
   reports_per_day: number;
   mirrors_per_day: number;
@@ -614,6 +658,7 @@ export interface ModerationItemRequest {
   set_id: string;
   version: number;
   expect_status?: string;
+  expect_kept?: boolean;
 }
 
 export interface SetRefView {
@@ -715,6 +760,58 @@ export interface SetRowView {
   edited_at?: string;
 }
 
+export interface GroupVersionView {
+  group_id: string;
+  version: number;
+  title: string;
+  description?: string;
+  status: SetStatus;
+  status_reason?: string;
+  hidden_from?: SetStatus;
+  author: string;
+  author_hmac: string;
+  author_banned?: boolean;
+  asn_observed?: string;
+  country_observed?: string;
+  asn_hint?: string;
+  country_hint?: string;
+  created_at: string;
+  updated_at: string;
+  members: GroupMemberView[];
+}
+
+export interface GroupEffectView {
+  group_id: string;
+  version: number;
+  title?: string;
+  from?: SetStatus;
+  to?: SetStatus;
+  listed: number;
+  listed_after: number;
+  withheld?: WithheldReason;
+  ok: boolean;
+  code?: string;
+  params?: Record<string, unknown>;
+}
+
+export interface GroupMemberEffectView {
+  set_id: string;
+  version: number;
+  title?: string;
+  from?: SetStatus;
+  to?: SetStatus;
+  listed: number;
+  listed_after: number;
+  withheld?: WithheldReason;
+  reports: number;
+  ok: boolean;
+  code?: string;
+  params?: Record<string, unknown>;
+  position: number;
+  brought: boolean;
+  missing?: boolean;
+}
+
 export interface KeyRowView {
   key_hmac: string;
   label: string;
@@ -761,6 +858,7 @@ export interface ActivityKindView {
 export interface ActivityDayView {
   day: string;
   share: number;
+  group: number;
   vote: number;
   report: number;
   mirror: number;
@@ -853,6 +951,7 @@ export interface HealthManifestView {
 export interface HealthPendingView {
   count: number;
   oldest?: SetRefView;
+  oldest_group?: GroupRefView;
   since?: string;
 }
 
@@ -1024,6 +1123,19 @@ export interface EvidenceView {
   pooled: number;
 }
 
+export interface GroupMemberView {
+  position: number;
+  set_id: string;
+  version: number;
+  brought: boolean;
+  brought_in?: number;
+  missing?: boolean;
+  listed_version?: number;
+  escalate?: GroupEscalation;
+  entry?: EntryView;
+  row?: SetRowView;
+}
+
 export interface KeySetVersionView {
   version: number;
   status: SetStatus;
@@ -1038,6 +1150,12 @@ export interface AppliedView {
   weight: number;
   state: AppliedState;
   reason?: string;
+}
+
+export interface GroupRefView {
+  group_id: string;
+  version: number;
+  title: string;
 }
 
 export interface ScoreBinView {
@@ -1066,4 +1184,14 @@ export interface EvidenceSideView {
   devices: number;
   positive: number;
   negative: number;
+}
+
+export interface GroupEscalation {
+  to: number;
+  rst_threshold?: number;
+  rst_window_sec?: number;
+  ttl_sec?: number;
+  stall_threshold?: number;
+  stall_timeout_ms?: number;
+  dns_threshold?: number;
 }

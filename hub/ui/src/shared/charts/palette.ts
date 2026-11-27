@@ -2,6 +2,7 @@ import { colors } from "@design";
 
 export const seriesColors = {
   share: colors.primaryLight,
+  group: colors.secondary,
   vote: colors.state.success,
   works: colors.state.success,
   broken: colors.state.error,

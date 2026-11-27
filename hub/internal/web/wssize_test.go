@@ -117,7 +117,7 @@ func TestSharedWSSizeSetShowsTheTechniqueInTheConsole(t *testing.T) {
 	}
 
 	var rows SetRowsView
-	f.admin(http.MethodGet, PathAPI+"/sets/rows?group=pending&q="+wssizeTerm, nil).decode(t, &rows)
+	f.admin(http.MethodGet, PathAPI+"/sets/rows?tab=pending&q="+wssizeTerm, nil).decode(t, &rows)
 	if len(rows.Rows) != 1 || rows.Rows[0].SetID != id || termOf(rows.Rows[0].Techniques, wssizeTerm) == nil {
 		t.Errorf("a search for wssize must find the set that uses it and no other: %+v", rows.Rows)
 	}

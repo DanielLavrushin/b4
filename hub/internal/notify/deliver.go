@@ -107,6 +107,7 @@ func (s *Service) consoleURL(path string) string {
 
 var consolePaths = map[string]string{
 	EventShare:       "/queue",
+	EventGroup:       "/queue",
 	EventReport:      "/feedback?tab=reports",
 	EventAutoHide:    "/feedback?tab=reports",
 	EventBuildFailed: "/catalogue",
@@ -234,12 +235,14 @@ func (s *Service) collect(ctx context.Context, cfg Config, cursors map[string]in
 		if !cfg.EventEnabled(kind) {
 			continue
 		}
-		b, err := s.Store.NotifyEvents(ctx, kind, cursors[kind], LinesPerKind)
-		if err != nil {
-			return digest{}, err
-		}
-		if b.Count > 0 {
-			d.batches = append(d.batches, b)
+		for _, source := range sourcesOf(kind) {
+			b, err := s.Store.NotifyEvents(ctx, source, cursors[source], LinesPerKind)
+			if err != nil {
+				return digest{}, err
+			}
+			if b.Count > 0 {
+				d.batches = append(d.batches, b)
+			}
 		}
 	}
 	return d, nil
@@ -412,6 +415,8 @@ type WebhookEvent struct {
 	Reason  string `json:"reason,omitempty"`
 	Detail  string `json:"detail,omitempty"`
 	Reports int    `json:"reports,omitempty"`
+	GroupID string `json:"group_id,omitempty"`
+	Members int    `json:"members,omitempty"`
 	URL     string `json:"url,omitempty"`
 }
 
@@ -432,6 +437,8 @@ func (s *Service) eventURL(e store.NotifyEvent) string {
 		return e.URL
 	case EventBuildFailed:
 		return s.consoleURL(consolePaths[EventBuildFailed])
+	case EventGroup:
+		return s.consoleURL("/groups/" + url.PathEscape(e.SetID) + "/v/" + strconv.Itoa(e.Version))
 	}
 	if e.SetID == "" {
 		return ""
@@ -448,7 +455,9 @@ func (s *Service) webhookDigest(cfg Config, d digest, now time.Time) WebhookPayl
 		Console: s.digestConsole(d),
 	}
 	for _, kind := range cfg.Events {
-		p.Counts[kind] = 0
+		for _, source := range sourcesOf(kind) {
+			p.Counts[source] = 0
+		}
 	}
 	for _, b := range d.batches {
 		p.Counts[b.Kind] = b.Count
@@ -464,6 +473,9 @@ func (s *Service) webhookDigest(cfg Config, d digest, now time.Time) WebhookPayl
 				Detail:  cleanText(e.Detail, 100),
 				Reports: e.Reports,
 				URL:     s.eventURL(e),
+			}
+			if e.Kind == EventGroup {
+				ev.SetID, ev.GroupID, ev.Members = "", e.SetID, e.Members
 			}
 			if !e.At.IsZero() {
 				ev.At = e.At.UTC().Format(time.RFC3339)

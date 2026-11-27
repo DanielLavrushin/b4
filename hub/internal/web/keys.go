@@ -71,6 +71,7 @@ type ActivityKindView struct {
 type ActivityDayView struct {
 	Day    string `json:"day"`
 	Share  int    `json:"share"`
+	Group  int    `json:"group"`
 	Vote   int    `json:"vote"`
 	Report int    `json:"report"`
 	Mirror int    `json:"mirror"`
@@ -291,6 +292,8 @@ func (s *Server) keyDetail(w http.ResponseWriter, r *http.Request) {
 		switch d.Kind {
 		case hubwire.RecordShare:
 			day.Share += d.Count
+		case hubwire.RecordGroup:
+			day.Group += d.Count
 		case hubwire.RecordVote:
 			day.Vote += d.Count
 		case hubwire.RecordReport:

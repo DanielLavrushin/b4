@@ -183,25 +183,36 @@ type SetsView struct {
 }
 
 type SetDetailView struct {
-	ID                 string      `json:"id"`
-	Author             string      `json:"author"`
-	AuthorHMAC         string      `json:"author_hmac"`
-	CurrentVersion     int         `json:"current_version"`
-	DerivedFromID      string      `json:"derived_from_id,omitempty"`
-	DerivedFromVersion int         `json:"derived_from_version,omitempty"`
-	CreatedAt          time.Time   `json:"created_at"`
-	UpdatedAt          time.Time   `json:"updated_at"`
-	WithdrawnAt        *time.Time  `json:"withdrawn_at,omitempty"`
-	WithdrawReason     string      `json:"withdraw_reason,omitempty"`
-	Withheld           string      `json:"withheld,omitempty"`
-	AuthorBanned       bool        `json:"author_banned,omitempty"`
-	ListedVersion      int         `json:"listed_version,omitempty"`
-	Versions           []EntryView `json:"versions"`
-	Votes              []VoteView  `json:"votes"`
+	ID                 string              `json:"id"`
+	Author             string              `json:"author"`
+	AuthorHMAC         string              `json:"author_hmac"`
+	CurrentVersion     int                 `json:"current_version"`
+	DerivedFromID      string              `json:"derived_from_id,omitempty"`
+	DerivedFromVersion int                 `json:"derived_from_version,omitempty"`
+	CreatedAt          time.Time           `json:"created_at"`
+	UpdatedAt          time.Time           `json:"updated_at"`
+	WithdrawnAt        *time.Time          `json:"withdrawn_at,omitempty"`
+	WithdrawReason     string              `json:"withdraw_reason,omitempty"`
+	Withheld           string              `json:"withheld,omitempty"`
+	AuthorBanned       bool                `json:"author_banned,omitempty"`
+	ListedVersion      int                 `json:"listed_version,omitempty"`
+	Versions           []EntryView         `json:"versions"`
+	Votes              []VoteView          `json:"votes"`
+	Groups             []SetMembershipView `json:"groups"`
+}
+
+type SetMembershipView struct {
+	GroupID    string `json:"group_id"`
+	Version    int    `json:"version"`
+	Title      string `json:"title"`
+	Status     string `json:"status"`
+	SetVersion int    `json:"set_version"`
+	Brought    bool   `json:"brought"`
 }
 
 type LimitsView struct {
 	SharesPerDay    int `json:"shares_per_day"`
+	GroupsPerDay    int `json:"groups_per_day"`
 	VotesPerDay     int `json:"votes_per_day"`
 	ReportsPerDay   int `json:"reports_per_day"`
 	MirrorsPerDay   int `json:"mirrors_per_day"`
@@ -217,6 +228,7 @@ type SettingsView struct {
 func limitsView(s store.Settings) LimitsView {
 	return LimitsView{
 		SharesPerDay:    s.SharesPerDay,
+		GroupsPerDay:    s.GroupsPerDay,
 		VotesPerDay:     s.VotesPerDay,
 		ReportsPerDay:   s.ReportsPerDay,
 		MirrorsPerDay:   s.MirrorsPerDay,
@@ -228,6 +240,7 @@ func limitsView(s store.Settings) LimitsView {
 func (v LimitsView) settings() store.Settings {
 	return store.Settings{
 		SharesPerDay:    v.SharesPerDay,
+		GroupsPerDay:    v.GroupsPerDay,
 		VotesPerDay:     v.VotesPerDay,
 		ReportsPerDay:   v.ReportsPerDay,
 		MirrorsPerDay:   v.MirrorsPerDay,
@@ -389,6 +402,7 @@ type ModerationItemRequest struct {
 	SetID        string `json:"set_id"`
 	Version      int    `json:"version"`
 	ExpectStatus string `json:"expect_status,omitempty"`
+	ExpectKept   *bool  `json:"expect_kept,omitempty"`
 }
 
 type ModerationRequest struct {
@@ -404,6 +418,12 @@ type ModerationRequest struct {
 
 type SetRefView struct {
 	SetID   string `json:"set_id"`
+	Version int    `json:"version"`
+	Title   string `json:"title"`
+}
+
+type GroupRefView struct {
+	GroupID string `json:"group_id"`
 	Version int    `json:"version"`
 	Title   string `json:"title"`
 }

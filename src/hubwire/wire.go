@@ -200,7 +200,7 @@ func recordDigest(r *Record) ([]byte, error) {
 
 func SignRecord(id *Identity, kind string, body interface{}, now time.Time) (*Record, error) {
 	switch kind {
-	case RecordShare, RecordVote, RecordReport, RecordMirror:
+	case RecordShare, RecordVote, RecordReport, RecordMirror, RecordGroup:
 	default:
 		return nil, ErrUnknownKind
 	}
@@ -233,7 +233,7 @@ func VerifyRecord(r *Record) (ed25519.PublicKey, error) {
 		return nil, ErrWireVersion
 	}
 	switch r.Kind {
-	case RecordShare, RecordVote, RecordReport, RecordMirror:
+	case RecordShare, RecordVote, RecordReport, RecordMirror, RecordGroup:
 	default:
 		return nil, ErrUnknownKind
 	}
@@ -410,6 +410,7 @@ type Catalogue struct {
 	Sets        []CatalogueSet    `json:"sets"`
 	Blobs       []BlobRef         `json:"blobs,omitempty"`
 	ASNNames    map[string]string `json:"asn_names,omitempty"`
+	Groups      []CatalogueGroup  `json:"groups,omitempty"`
 }
 
 func (c *CatalogueSet) ToEnvelope() *Envelope {

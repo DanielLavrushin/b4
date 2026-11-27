@@ -2,10 +2,10 @@ import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { get, post, query } from "@/api/client";
 import { useAdminMutation } from "@/api/mutations";
 import { qk } from "@/api/queryKeys";
-import type { ActionResult, EditPreview, EditRequest, GeoCategoriesView, QueueView, SetDetailView, SetGroupName, SetRowsView, TextEditRequest } from "@/models/api";
+import type { ActionResult, EditPreview, EditRequest, GeoCategoriesView, GroupDetailView, QueueView, SetDetailView, SetRowsView, SetTabName, TextEditRequest } from "@/models/api";
 
 export interface SetRowsQuery {
-  group: SetGroupName;
+  tab: SetTabName;
   q: string;
   sort: string;
   dir: string;
@@ -33,6 +33,13 @@ export const useSetDetail = (id: string | null) =>
   useQuery({
     queryKey: qk.sets.detail(id ?? ""),
     queryFn: () => get<SetDetailView>("/sets/" + encodeURIComponent(id ?? "")),
+    enabled: id !== null,
+  });
+
+export const useGroupDetail = (id: string | null) =>
+  useQuery({
+    queryKey: qk.sets.group(id ?? ""),
+    queryFn: () => get<GroupDetailView>("/groups/" + encodeURIComponent(id ?? "")),
     enabled: id !== null,
   });
 

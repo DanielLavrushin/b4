@@ -1032,6 +1032,35 @@ func TestMCPListSetsCountsDomainsOnce(t *testing.T) {
 	}
 }
 
+func TestMCPListSetsNamesTheSetGroup(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.Sets[0].Group = "video"
+
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_list_sets"})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	raw := mustStructured(t, res)
+	var out mcpSetsOut
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Sets[0].Group != "video" {
+		t.Errorf("group = %q, want video", out.Sets[0].Group)
+	}
+	var rows struct {
+		Sets []map[string]any `json:"sets"`
+	}
+	if err := json.Unmarshal(raw, &rows); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := rows.Sets[1]["group"]; ok {
+		t.Errorf("a set outside any group carries no group key: %v", rows.Sets[1])
+	}
+}
+
 func TestMCPClampLimit(t *testing.T) {
 	cases := []struct{ in, want int }{
 		{0, mcpDefaultLines},

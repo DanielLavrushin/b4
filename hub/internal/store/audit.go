@@ -14,6 +14,7 @@ const (
 	ActorSystem  = "system"
 
 	TargetSet       = "set"
+	TargetGroup     = "group"
 	TargetKey       = "key"
 	TargetMirror    = "mirror"
 	TargetReport    = "report"

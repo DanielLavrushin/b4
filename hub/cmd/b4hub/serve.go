@@ -78,7 +78,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 			Limiter: ratelimit.New(nil),
 			ASN:     resolver,
 			OnAccepted: func(kind string) {
-				if kind == hubwire.RecordShare || kind == hubwire.RecordReport {
+				if kind == hubwire.RecordShare || kind == hubwire.RecordGroup || kind == hubwire.RecordReport {
 					notifier.Nudge()
 				}
 			},
