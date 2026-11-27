@@ -70,19 +70,25 @@ func SettleSetGroup(sets []*SetConfig, at int) {
 		return
 	}
 	set := sets[at]
+	set.Group = NormalizeSetGroup(set.Group)
 	groupAt := func(i int) string {
 		if i < 0 || i >= len(sets) || sets[i] == nil {
 			return ""
 		}
 		return sets[i].Group
 	}
+	same := func(group string) bool { return group != "" && strings.EqualFold(group, set.Group) }
 	before, after := groupAt(at-1), groupAt(at+1)
 	switch {
 	case before != "" && before == after:
 		set.Group = before
 	case set.Group == "" || set.Group == before || set.Group == after:
+	case same(before):
+		set.Group = before
+	case same(after):
+		set.Group = after
 	case slices.ContainsFunc(sets, func(other *SetConfig) bool {
-		return other != nil && other != set && other.Group == set.Group
+		return other != nil && other != set && same(other.Group)
 	}):
 		set.Group = ""
 	}

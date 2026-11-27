@@ -154,7 +154,7 @@ func TestACreatedSetKeepsItsGroupOnlyNextToTheGroup(t *testing.T) {
 	api, mux := asnAPI(t, groupedSet("c", ""), groupedSet("a", "YouTube"), groupedSet("b", "YouTube"))
 	api.RegisterDiscoveryApi()
 
-	body := `{"name":"far","enabled":true,"group":"YouTube","targets":{"sni_domains":["far.example.org"]}}`
+	body := `{"name":"far","enabled":true,"group":" YouTube ","targets":{"sni_domains":["far.example.org"]}}`
 	if rec := serve(mux, http.MethodPost, "/api/sets", body); rec.Code != http.StatusCreated {
 		t.Fatalf("create = %d %s", rec.Code, rec.Body.String())
 	}
@@ -162,7 +162,7 @@ func TestACreatedSetKeepsItsGroupOnlyNextToTheGroup(t *testing.T) {
 		t.Errorf("after a create at the top: %s, want the new set outside the group: %s", got, want)
 	}
 
-	body = `{"name":"twin","enabled":true,"group":"YouTube","targets":{"sni_domains":["twin.example.org"]}}`
+	body = `{"name":"twin","enabled":true,"group":"youtube","targets":{"sni_domains":["twin.example.org"]}}`
 	if rec := serve(mux, http.MethodPost, "/api/sets?after=a", body); rec.Code != http.StatusCreated {
 		t.Fatalf("create after a = %d %s", rec.Code, rec.Body.String())
 	}

@@ -87,6 +87,28 @@ func TestSettleSetGroupFollowsTheNeighbours(t *testing.T) {
 	SettleSetGroup([]*SetConfig{{Id: "a", Group: "yt"}}, 3)
 }
 
+func TestSettleSetGroupReadsANameTheWayItIsSaved(t *testing.T) {
+	cases := []struct {
+		name string
+		sets []*SetConfig
+		at   int
+		want string
+	}{
+		{"a padded name away from its group leaves", []*SetConfig{{Id: "x", Group: " yt  "}, {Id: "c"}, {Id: "a", Group: "yt"}}, 0, ""},
+		{"a padded name next to its group stays, trimmed", []*SetConfig{{Id: "a", Group: "yt"}, {Id: "x", Group: " yt "}}, 1, "yt"},
+		{"another case next to the group takes its spelling", []*SetConfig{{Id: "a", Group: "YouTube"}, {Id: "x", Group: "youtube"}}, 1, "YouTube"},
+		{"another case away from the group leaves", []*SetConfig{{Id: "x", Group: "youtube"}, {Id: "c"}, {Id: "a", Group: "YouTube"}}, 0, ""},
+		{"an exact name wins over another case", []*SetConfig{{Id: "a", Group: "yt"}, {Id: "x", Group: "YT"}, {Id: "b", Group: "YT"}}, 1, "YT"},
+		{"the only set of a padded group keeps it, trimmed", []*SetConfig{{Id: "x", Group: "  solo "}, {Id: "c"}}, 0, "solo"},
+	}
+	for _, tc := range cases {
+		SettleSetGroup(tc.sets, tc.at)
+		if got := tc.sets[tc.at].Group; got != tc.want {
+			t.Errorf("%s: group %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestGatherSetGroupKeepsEveryOtherSetInPlace(t *testing.T) {
 	mk := func(spec string) []*SetConfig {
 		var out []*SetConfig
