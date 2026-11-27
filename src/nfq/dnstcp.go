@@ -23,7 +23,7 @@ import (
 const (
 	dnsTCPMaxMessage    = 65535
 	dnsTCPMinQueryLen   = 12
-	dnsTCPRelayParallel = 8
+	dnsTCPRelayParallel = 16
 )
 
 var errDNSTCPOtherAnswer = errors.New("answer to another query")

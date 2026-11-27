@@ -19,7 +19,7 @@ With **Enable IPv6 Support** off, these rules cover IPv4 only. The exception is 
 
 TCP interception needs `REDIRECT` in the `nat` table. Where the kernel does not provide it, b4 logs a warning, and DNS over TCP stays with the client's resolver for that address family.
 
-b4 handles each query on an intercepted TCP connection on its own. A query it passes on unchanged goes to the resolver the client asked, up to 8 queries of one connection at a time, so their answers can come back in a different order. When that resolver does not answer within **Read/write timeout**, the client gets SERVFAIL. A zone transfer (AXFR or IXFR), or a message other than a standard query, hands the rest of the connection to that resolver.
+b4 handles each query on an intercepted TCP connection on its own. A query it passes on unchanged goes to the resolver the client asked, up to 16 queries of one connection at a time, so their answers can come back in a different order. When that resolver does not answer within **Read/write timeout**, the client gets SERVFAIL. A zone transfer (AXFR or IXFR), or a message other than a standard query, hands the rest of the connection to that resolver.
 
 ```mermaid
 flowchart TB
