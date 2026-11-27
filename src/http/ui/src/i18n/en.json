@@ -2760,6 +2760,7 @@
       "routerTrafficHeldBack": "{{iface}} is a tunnel a program on this router reads, so b4 leaves the router's own traffic on the normal route. Routing it into {{iface}} would come back out as a new connection to the same address and loop.",
       "killSwitch": "Kill switch",
       "killSwitchDesc": "If the output interface goes away, drop this set's traffic instead of letting it fall back to the normal uplink.",
+      "skipStrategiesDesc": "Send packets untouched: this uplink already bypasses the censor on its own. Use it for a second uplink rather than a tunnel — fragmenting on top of it breaks protocols that carry their own handshake inside TLS, such as MTProto over FakeTLS.",
       "tunnelManipulationNote": "{{iface}} wraps the packet before anything on the network sees it, so b4 leaves this set's packets alone, and the settings on the Strategy tabs have no effect while the set routes there. Connections that leave through it are tagged routed->{{iface}} in the connection log.",
       "dscpTitle": "DSCP",
       "dscpValue": "DSCP value",

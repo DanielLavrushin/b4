@@ -960,6 +960,12 @@ type RoutingConfig struct {
 	BlockAction      string              `json:"block_action"`
 	RouterTraffic    string              `json:"router_traffic"`
 	KillSwitch       bool                `json:"kill_switch"`
+	// SkipStrategies turns the desync strategies off for a set whose traffic
+	// already leaves by another path. A plain egress interface is not a tunnel,
+	// so b4 keeps fragmenting and faking on top of a route that bypasses the
+	// censor by itself. That is harmless for TLS, but a protocol that carries
+	// its own handshake inside the TLS stream (MTProto over FakeTLS) fails it.
+	SkipStrategies bool `json:"skip_strategies"`
 }
 
 type UpstreamProxyConfig struct {

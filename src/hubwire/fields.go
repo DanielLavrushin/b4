@@ -172,6 +172,7 @@ var Fields = map[string]Field{
 	"routing.ip_ttl_seconds":    {Class: Never},
 	"routing.router_traffic":    {Class: Never},
 	"routing.kill_switch":       {Class: Never},
+	"routing.skip_strategies":   {Class: Crosses},
 
 	"escalate": {Class: Never},
 

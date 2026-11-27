@@ -127,6 +127,14 @@ func TestRoutingHandsOffPackets(t *testing.T) {
 		}
 	})
 
+	t.Run("a plain egress can be told to leave the packet alone", func(t *testing.T) {
+		set := routedSet("eth1")
+		set.Routing.SkipStrategies = true
+		if !set.RoutingHandsOffPackets() {
+			t.Error("the operator says this path already bypasses the censor, so nothing should be desynced on top of it")
+		}
+	})
+
 	t.Run("a proxy set hands off whatever the interface is", func(t *testing.T) {
 		set := routedSet("eth1")
 		set.Routing.Mode = RoutingModeProxy

@@ -146,7 +146,7 @@ export const TrafficRouting = ({
   const routesAnyIP =
     !config.targets.domain_only || declaresIpTargets(config.targets);
   const strategyHandedOff =
-    isInterface && egressIsEncapsulated && routesAnyIP;
+    isInterface && (egressIsEncapsulated || !!routing.skip_strategies) && routesAnyIP;
 
   const toggleSourceIface = (iface: string) => {
     const current = routing.source_interfaces || [];
@@ -659,6 +659,18 @@ export const TrafficRouting = ({
                   description={t("sets.routing.killSwitchDesc")}
                   learnMore="internals/routing#kill-switch"
                   aiTopic="routing.kill_switch"
+                  disabled={!routing.egress_interface}
+                />
+              </Grid>
+
+              <Grid size={{ xs: 12 }}>
+                <B4Switch
+                  checked={routing.skip_strategies ?? false}
+                  path="routing.skip_strategies"
+                  onChange={(checked: boolean) =>
+                    onChange("routing.skip_strategies", checked)
+                  }
+                  description={t("sets.routing.skipStrategiesDesc")}
                   disabled={!routing.egress_interface}
                 />
               </Grid>

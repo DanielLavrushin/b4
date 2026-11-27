@@ -782,6 +782,12 @@ func (set *SetConfig) RoutingHandsOffPackets() bool {
 	if !set.RoutesAddressesToInterface() {
 		return false
 	}
+	// An operator who routes a set to a second uplink may know that the path
+	// already bypasses the censor, while b4 can only see that the interface is
+	// not a tunnel. Honour the explicit choice instead of guessing.
+	if set.Routing.SkipStrategies {
+		return true
+	}
 	return netif.EncapsulatedAndUp(set.Routing.EgressInterface)
 }
 

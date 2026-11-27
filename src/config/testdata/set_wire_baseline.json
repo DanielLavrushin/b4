@@ -278,6 +278,7 @@
       "kill_switch": false,
       "mode": "interface",
       "router_traffic": "auto",
+      "skip_strategies": false,
       "source_interfaces": [],
       "table": 0,
       "upstream": {

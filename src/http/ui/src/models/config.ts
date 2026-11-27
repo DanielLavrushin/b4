@@ -571,6 +571,7 @@ export interface RoutingConfig {
   block_action: BlockAction;
   router_traffic: RouterTraffic;
   kill_switch: boolean;
+  skip_strategies: boolean;
 }
 
 export interface DuplicateConfig {
