@@ -428,10 +428,10 @@ func TestAWithheldSetIsGroupedByItsListableVersion(t *testing.T) {
 	if err := f.store.Approve(context.Background(), id, 2, f.clock); err != nil {
 		t.Fatal(err)
 	}
-	rowsOf := func(group string) map[int]SetRowView {
+	rowsOf := func(tab string) map[int]SetRowView {
 		t.Helper()
 		var view SetRowsView
-		f.admin(http.MethodGet, PathAPI+"/sets/rows?group="+group, nil).decode(t, &view)
+		f.admin(http.MethodGet, PathAPI+"/sets/rows?tab="+tab, nil).decode(t, &view)
 		out := map[int]SetRowView{}
 		for _, row := range view.Rows {
 			if row.SetID == id {
@@ -440,27 +440,27 @@ func TestAWithheldSetIsGroupedByItsListableVersion(t *testing.T) {
 		}
 		return out
 	}
-	check := func(group string) {
+	check := func(tab string) {
 		t.Helper()
 		view := f.setsView()
-		current := map[string][]EntryView{GroupListed: view.Listed, GroupWithheld: view.Withheld}[group]
+		current := map[string][]EntryView{TabListed: view.Listed, TabWithheld: view.Withheld}[tab]
 		entry := entryOf(view.Superseded, id, 2)
 		if entryOf(current, id, 1) == nil || entryOf(current, id, 2) != nil || entryOf(view.Superseded, id, 1) != nil || entry == nil {
-			t.Fatalf("%s holds the plain version and superseded the other: %+v", group, view)
+			t.Fatalf("%s holds the plain version and superseded the other: %+v", tab, view)
 		}
 		if entry.SupersededBy != 0 || entry.SupersededAt != nil {
 			t.Fatalf("an older version does not supersede a newer one: %+v", entry)
 		}
-		if rows := rowsOf(group); len(rows) != 1 || rows[1].Version != 1 {
-			t.Fatalf("rows of %s: %+v", group, rows)
+		if rows := rowsOf(tab); len(rows) != 1 || rows[1].Version != 1 {
+			t.Fatalf("rows of %s: %+v", tab, rows)
 		}
-		if rows := rowsOf(GroupSuperseded); len(rows) != 1 || rows[2].Version != 2 || rows[2].SupersededBy != 0 || rows[2].SupersededAt != nil {
+		if rows := rowsOf(TabSuperseded); len(rows) != 1 || rows[2].Version != 2 || rows[2].SupersededBy != 0 || rows[2].SupersededAt != nil {
 			t.Fatalf("superseded rows: %+v", rows)
 		}
 	}
-	check(GroupListed)
+	check(TabListed)
 	f.expectOK(f.admin(http.MethodPost, PathAPI+"/sets/"+id+"/withdraw", map[string]string{"reason": "author asked"}))
-	check(GroupWithheld)
+	check(TabWithheld)
 }
 
 func TestEditTargetCollisionIsADuplicate(t *testing.T) {
@@ -738,7 +738,7 @@ func TestEntriesCarryTheFullConfig(t *testing.T) {
 	}
 
 	var rows SetRowsView
-	f.admin(http.MethodGet, PathAPI+"/sets/rows?group=pending", nil).decode(t, &rows)
+	f.admin(http.MethodGet, PathAPI+"/sets/rows?tab=pending", nil).decode(t, &rows)
 	for _, row := range rows.Rows {
 		switch row.SetID {
 		case id:
@@ -753,7 +753,7 @@ func TestEntriesCarryTheFullConfig(t *testing.T) {
 	}
 	for offset, want := range []string{brokenID, id} {
 		var page SetRowsView
-		f.admin(http.MethodGet, fmt.Sprintf("%s/sets/rows?group=pending&sort=title&dir=asc&limit=1&offset=%d", PathAPI, offset), nil).decode(t, &page)
+		f.admin(http.MethodGet, fmt.Sprintf("%s/sets/rows?tab=pending&sort=title&dir=asc&limit=1&offset=%d", PathAPI, offset), nil).decode(t, &page)
 		if page.Total != 2 || len(page.Rows) != 1 || page.Rows[0].SetID != want {
 			t.Fatalf("page at offset %d: %+v", offset, page)
 		}

@@ -132,9 +132,23 @@ func decodeCatalogue(gz []byte) (*hubwire.Catalogue, error) {
 	if len(raw) > catalogueJSONLimit {
 		return nil, fmt.Errorf("catalogue expands past the %d byte limit", catalogueJSONLimit)
 	}
-	var cat hubwire.Catalogue
-	if err := json.Unmarshal(raw, &cat); err != nil {
+	var wire struct {
+		hubwire.Catalogue
+		Groups json.RawMessage `json:"groups"`
+	}
+	if err := json.Unmarshal(raw, &wire); err != nil {
 		return nil, fmt.Errorf("catalogue does not decode: %w", err)
+	}
+	cat := wire.Catalogue
+	var groups []json.RawMessage
+	if json.Unmarshal(wire.Groups, &groups) != nil {
+		groups = nil
+	}
+	for _, entry := range groups {
+		var g hubwire.CatalogueGroup
+		if json.Unmarshal(entry, &g) == nil {
+			cat.Groups = append(cat.Groups, g)
+		}
 	}
 	if cat.Sets == nil {
 		cat.Sets = []hubwire.CatalogueSet{}

@@ -910,6 +910,30 @@ func hubDSCPOffWarning(ws []hubwire.Warning) (hubwire.Warning, bool) {
 	return hubwire.Warning{}, false
 }
 
+func TestHubApplyReplaceKeepsTheLocalEscalation(t *testing.T) {
+	env := newHubEnv(t)
+	shared := hubStrategySet("Shared video", "youtube.com")
+	cs, _ := hubtest.CatalogueSet(t, "yt-9", 1, &shared, nil)
+	env.publish(t, cs)
+
+	local := hubStrategySet("Video here", "youtube.com")
+	local.Id = "local-1"
+	local.Targets.DomainsToMatch = []string{"youtube.com"}
+	local.Escalate = config.EscalateConfig{To: "fallback", RstThreshold: 5}
+	fallback := hubStrategySet("Fallback", "fallback.example")
+	fallback.Id = "fallback"
+	fallback.Targets.DomainsToMatch = []string{"fallback.example"}
+	env.update(func(cfg *config.Config) { cfg.Sets = []*config.SetConfig{&local, &fallback} })
+
+	rec := postJSON(t, env.mux, "/api/hub/sets/yt-9/apply", map[string]interface{}{"replace": "local-1"})
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if got := env.localSet("local-1").Escalate; got != (config.EscalateConfig{To: "fallback", RstThreshold: 5}) {
+		t.Errorf("the replaced set must keep its own escalation link, got %+v", got)
+	}
+}
+
 func TestHubApplyReplaceKeepsTheLocalDSCP(t *testing.T) {
 	env := newHubEnv(t)
 	shared := hubStrategySet("Shared video", "youtube.com")
@@ -1143,6 +1167,28 @@ func TestHubShareRoundTrip(t *testing.T) {
 	expectCode(t, postJSON(t, env.mux, "/api/hub/share", HubShareRequest{SetID: "local-1"}), http.StatusBadGateway, "hub_unreachable")
 	if env.svc.OutboxCount() != 0 {
 		t.Errorf("a share is never queued")
+	}
+}
+
+func TestHubShareAloneKeepsTheGroupStampOnlyForTheSameHubSet(t *testing.T) {
+	env := newHubEnv(t)
+	local := hubGroupStamp(hubGroupLocalSet("local-1", "Member", "video", "a.example"), "s1", 1, "g-video", 1)
+	env.update(func(cfg *config.Config) { cfg.Sets = []*config.SetConfig{local} })
+	for _, c := range []struct {
+		hubID   string
+		version int
+		group   string
+	}{{"s1", 2, "g-video"}, {"n1", 1, ""}} {
+		env.hub.SetAnswer(func(*hubwire.Record) hubtest.Answer {
+			return hubtest.Answer{Status: http.StatusAccepted, Body: map[string]interface{}{"set_id": c.hubID, "version": c.version, "status": hubwire.SetStatusPending}}
+		})
+		rec := postJSON(t, env.mux, "/api/hub/share", HubShareRequest{SetID: "local-1"})
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("expected 202, got %d (%s)", rec.Code, rec.Body.String())
+		}
+		if got := env.localSet("local-1").Hub; got.ID != c.hubID || got.Version != c.version || got.GroupID != c.group {
+			t.Errorf("shared as %s v%d, the group stamp must be %q, got %+v", c.hubID, c.version, c.group, got)
+		}
 	}
 }
 

@@ -1867,6 +1867,7 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "A hub group stamp (hub.group_id, hub.group_version) in the set is dropped; the hub group endpoints write it.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2933,6 +2934,210 @@
                 }
             }
         },
+        "/hub/groups": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists the set groups of the catalogue with their member sets in order; with set, only the groups that hold that hub set.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Hub"
+                ],
+                "summary": "List hub set groups",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hub set id",
+                        "name": "set",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.HubGroupsResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/hub/groups/share": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Builds the shareable envelope of every set in the local group, in list order, and sends them to the hub as one signed group record; an escalation link to another set of the group travels as that set's position, a link outside the group is left out. On acceptance every member is stamped with its hub set and the hub group. A refusal about one set names it in member (its position), set_id and set_name.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Hub"
+                ],
+                "summary": "Publish a set group to the hub",
+                "parameters": [
+                    {
+                        "description": "Group to publish",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.HubGroupShareRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/handler.HubGroupShareResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "a set the hub or this device refused; group_too_large; hub_no_groups; too_many_members",
+                        "schema": {
+                            "$ref": "#/definitions/handler.HubMemberError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "duplicate_group",
+                        "schema": {
+                            "$ref": "#/definitions/handler.HubRemoteError"
+                        }
+                    },
+                    "502": {
+                        "description": "hub_unreachable",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/hub/groups/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Hub"
+                ],
+                "summary": "Get one hub set group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hub group id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.HubGroup"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/hub/groups/{id}/apply": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Fetches every member's payloads, opens each member as POST /hub/sets/{id}/apply does and saves them in one write as one block at the top of the list, in member order, under the group's title (a number appended when the name is taken), with escalation links between members pointed at their local sets. A member with an enabled local copy outside any group takes that copy over: it is replaced in place, keeps its id, and moves into the block. Domains are taken only from sets outside the block. With replace, the local copy of the group is updated instead: each member replaces its earlier copy in place, keeping the local group name, a new member takes over its copy in the group or an enabled one outside any group, or else joins the block at its position as a new set, and a set the group no longer lists leaves the group and stays as a set after it.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Hub"
+                ],
+                "summary": "Apply a hub set group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hub group id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Update the applied copy",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.HubGroupApplyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/handler.HubGroupApplyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "a member this device cannot use",
+                        "schema": {
+                            "$ref": "#/definitions/handler.HubMemberError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "not_applied",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    },
+                    "502": {
+                        "description": "hub_unreachable or payload_missing",
+                        "schema": {
+                            "$ref": "#/definitions/handler.HubMemberError"
+                        }
+                    }
+                }
+            }
+        },
         "/hub/identity": {
             "get": {
                 "security": [
@@ -3071,7 +3276,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Without a domain lists every active set in the catalogue, ranked; with one, only the sets that cover it.",
+                "description": "Without a domain lists every active set in the catalogue, ranked; with one, only the sets that cover it. groups lists the catalogue's set groups the same way, a group covering the domain when any member does; a member set whose author is the group's author is left out of sets while its group is listed, and total counts sets after that.",
                 "produces": [
                     "application/json"
                 ],
@@ -4377,7 +4582,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "A field the body leaves out takes b4's set default, the value a config file or a set export means when it leaves the field out. The new set template (/ui/new-set-template) does not apply here: only the web interface's Create Set reads it. A set created without \"enabled\" is enabled. A \"group\" in the body is kept only when the new set lands next to a set of that group, or when no other set has it; otherwise the set starts without a group.",
+                "description": "A field the body leaves out takes b4's set default, the value a config file or a set export means when it leaves the field out. The new set template (/ui/new-set-template) does not apply here: only the web interface's Create Set reads it. A set created without \"enabled\" is enabled. A \"group\" in the body is kept only when the new set lands next to a set of that group, or when no other set has it; otherwise the set starts without a group. A hub group stamp (hub.group_id, hub.group_version) in the body is dropped; the hub group endpoints write it.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4422,6 +4627,7 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "restore is optional: domains to give back to the sets they were taken from, such as the moved list of a hub apply being undone, saved in the same write. A domain goes back to its set without being taken from any other set; an entry naming a set that is gone or being deleted is skipped.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4434,7 +4640,7 @@
                 "summary": "Batch delete sets",
                 "parameters": [
                     {
-                        "description": "Set IDs to delete",
+                        "description": "Set IDs to delete, and optionally domains to restore",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -4588,7 +4794,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Creates every set of the document in one write, at the top of the list and in the document's order, all in one group. A field a set leaves out takes b4's set default, as in POST /sets. A set name or group name already in use gets a number appended. Every set must have a name. Imported sets start with the watchdog and IP priority off, whatever the document says.",
+                "description": "Creates every set of the document in one write, at the top of the list and in the document's order, all in one group. A field a set leaves out takes b4's set default, as in POST /sets. A set name or group name already in use gets a number appended. Every set must have a name. Imported sets start with the watchdog and IP priority off, whatever the document says, and without a hub group stamp (hub.group_id, hub.group_version).",
                 "consumes": [
                     "application/json"
                 ],
@@ -4737,7 +4943,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "The body replaces the whole set. It must carry \"name\", \"enabled\" and \"targets\", otherwise the write is refused with 400 validation_failed and the set is left as it was. Any other field the body leaves out takes its set default, not the value the set had. When the body carries the \"revision\" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before. The set keeps the group it is stored with whatever the body says, and a change of group does not change the revision: use POST /sets/batch-set-group to change it.",
+                "description": "The body replaces the whole set. It must carry \"name\", \"enabled\" and \"targets\", otherwise the write is refused with 400 validation_failed and the set is left as it was. Any other field the body leaves out takes its set default, not the value the set had. When the body carries the \"revision\" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before. The set keeps the group it is stored with whatever the body says, and a change of group does not change the revision: use POST /sets/batch-set-group to change it. The set keeps its hub group stamp (hub.group_id, hub.group_version) only while the body carries the hub id it is stored with, whatever stamp the body says; otherwise the stamp is dropped.",
                 "consumes": [
                     "application/json"
                 ],
@@ -6533,6 +6739,12 @@
             "properties": {
                 "applied_at": {
                     "type": "string"
+                },
+                "group_id": {
+                    "type": "string"
+                },
+                "group_version": {
+                    "type": "integer"
                 },
                 "hash": {
                     "type": "string"
@@ -9828,6 +10040,232 @@
                 }
             }
         },
+        "handler.HubGroup": {
+            "type": "object",
+            "properties": {
+                "applied": {
+                    "$ref": "#/definitions/handler.HubGroupApplied"
+                },
+                "author": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.HubGroupMember"
+                    }
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.HubGroupApplied": {
+            "type": "object",
+            "properties": {
+                "group": {
+                    "type": "string"
+                },
+                "set_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "state": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.HubGroupAppliedSet": {
+            "type": "object",
+            "properties": {
+                "covered": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.CoveredSet"
+                    }
+                },
+                "created": {
+                    "type": "boolean"
+                },
+                "hub_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "moved": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.DomainReassignment"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "payloads": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.HubInstalledPayload"
+                    }
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/hubwire.Warning"
+                    }
+                }
+            }
+        },
+        "handler.HubGroupApplyRequest": {
+            "type": "object",
+            "properties": {
+                "replace": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "handler.HubGroupApplyResponse": {
+            "type": "object",
+            "properties": {
+                "created": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "group": {
+                    "type": "string"
+                },
+                "sets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.HubGroupAppliedSet"
+                    }
+                },
+                "ungrouped": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "handler.HubGroupMember": {
+            "type": "object",
+            "properties": {
+                "escalate": {
+                    "$ref": "#/definitions/hubwire.GroupEscalation"
+                },
+                "replaces": {
+                    "$ref": "#/definitions/handler.HubGroupReplaced"
+                },
+                "set": {
+                    "$ref": "#/definitions/handler.HubSet"
+                }
+            }
+        },
+        "handler.HubGroupReplaced": {
+            "type": "object",
+            "properties": {
+                "set_id": {
+                    "type": "string"
+                },
+                "set_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.HubGroupShareMember": {
+            "type": "object",
+            "properties": {
+                "hub_id": {
+                    "type": "string"
+                },
+                "linked": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "result": {
+                    "type": "string"
+                },
+                "set_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.HubGroupShareRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "group": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.HubGroupShareResponse": {
+            "type": "object",
+            "properties": {
+                "group_id": {
+                    "type": "string"
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.HubGroupShareMember"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.HubGroupsResponse": {
+            "type": "object",
+            "properties": {
+                "groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.HubGroup"
+                    }
+                }
+            }
+        },
         "handler.HubIdentityResponse": {
             "type": "object",
             "properties": {
@@ -9876,6 +10314,35 @@
                 }
             }
         },
+        "handler.HubMemberError": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.FieldError"
+                    }
+                },
+                "hub_id": {
+                    "type": "string"
+                },
+                "member": {
+                    "type": "integer"
+                },
+                "set_id": {
+                    "type": "string"
+                },
+                "set_name": {
+                    "type": "string"
+                }
+            }
+        },
         "handler.HubProbeResult": {
             "type": "object",
             "properties": {
@@ -9905,6 +10372,9 @@
                     "type": "string"
                 },
                 "error": {
+                    "type": "string"
+                },
+                "group_id": {
                     "type": "string"
                 },
                 "hub_id": {
@@ -10040,6 +10510,12 @@
         "handler.HubSetsResponse": {
             "type": "object",
             "properties": {
+                "groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.HubGroup"
+                    }
+                },
                 "sets": {
                     "type": "array",
                     "items": {
@@ -11005,6 +11481,32 @@
                 },
                 "site_url": {
                     "type": "string"
+                }
+            }
+        },
+        "hubwire.GroupEscalation": {
+            "type": "object",
+            "properties": {
+                "dns_threshold": {
+                    "type": "integer"
+                },
+                "rst_threshold": {
+                    "type": "integer"
+                },
+                "rst_window_sec": {
+                    "type": "integer"
+                },
+                "stall_threshold": {
+                    "type": "integer"
+                },
+                "stall_timeout_ms": {
+                    "type": "integer"
+                },
+                "to": {
+                    "type": "integer"
+                },
+                "ttl_sec": {
+                    "type": "integer"
                 }
             }
         },

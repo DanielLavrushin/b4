@@ -1,6 +1,7 @@
 import i18n from "../i18n";
 import type { TFunction } from "i18next";
 import { ApiError, type FieldError } from "@api/apiClient";
+import { hubGroupMemberOf } from "@models/hubGroups";
 
 const SET_PATH_PREFIX = /^(sets\[\d+\]|ui\.new_set_template)\./;
 const SET_TEMPLATE_PATH = "ui.new_set_template";
@@ -89,7 +90,7 @@ interface HubErrorBody {
   window?: string;
 }
 
-const hubScopes = new Set(["share", "vote", "report", "mirror", "newkey", "request"]);
+const hubScopes = new Set(["share", "group", "vote", "report", "mirror", "newkey", "request"]);
 
 function formatRetry(t: TFunction, seconds: number): string {
   const hours = Math.floor(seconds / 3600);
@@ -115,6 +116,30 @@ export function describeHubError(error: unknown, t: TFunction): string {
     if (error.code === "banned") return t("hub.errors.banned");
   }
   return describeApiError(error);
+}
+
+const hubGroupCodes = new Set([
+  "hub_no_groups",
+  "group_too_large",
+  "too_many_members",
+  "bad_hub_answer",
+  "hub_unreachable",
+  "not_applied",
+]);
+
+export function describeHubGroupError(error: unknown, t: TFunction): string {
+  if (error instanceof ApiError && error.code && hubGroupCodes.has(error.code)) {
+    return t(`hub.group.errors.${error.code}`);
+  }
+  return describeHubError(error, t);
+}
+
+export function describeHubGroupApplyError(error: unknown, t: TFunction): string {
+  const detail = describeHubGroupError(error, t);
+  const ref = error instanceof ApiError ? hubGroupMemberOf(error.body) : null;
+  return ref
+    ? t("hub.group.apply.memberFailed", { name: ref.name, error: detail })
+    : t("hub.group.apply.failed", { error: detail });
 }
 
 const staleWriteCodes = new Set(["config_changed", "set_changed"]);

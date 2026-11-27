@@ -37,7 +37,7 @@ interface BulkDialogProps {
   onDone?: () => void;
 }
 
-function EffectCell({ item }: { item: ModerationItemView }) {
+export function EffectCell({ item }: { item: ModerationItemView }) {
   const { t } = useTranslation();
   if (!item.ok) return <Box sx={{ color: colors.state.error }}>{t(`errors.${item.code ?? "invalid"}`, { ...(item.params ?? {}), defaultValue: item.code })}</Box>;
   const effect = catalogueEffect(item);

@@ -48,6 +48,9 @@ const (
 	CodeNothingToDo       = "nothing_to_do"
 	CodeBadTag            = "bad_tag"
 
+	CodeKeptNewerGroupVersion = "kept_newer_group_version"
+	CodeKeptOtherGroup        = "kept_other_group"
+
 	MaxBatch       = 200
 	MaxReasonRunes = 500
 )

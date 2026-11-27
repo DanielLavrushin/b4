@@ -46,11 +46,15 @@ func (v Vote) ScoreVote() score.Vote {
 }
 
 func (s *Store) UpsertVote(ctx context.Context, v Vote) error {
+	return upsertVoteTx(ctx, s.db, v)
+}
+
+func upsertVoteTx(ctx context.Context, q querier, v Vote) error {
 	verified := 0
 	if v.OriginVerified {
 		verified = 1
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO votes(record_id, set_id, version, fp, key_hmac, kind, weight, asn_observed, country_observed, asn_hint, country_hint, origin_verified, domain, b4_version, engine, bucket, received_at)
+	_, err := q.ExecContext(ctx, `INSERT INTO votes(record_id, set_id, version, fp, key_hmac, kind, weight, asn_observed, country_observed, asn_hint, country_hint, origin_verified, domain, b4_version, engine, bucket, received_at)
 		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(key_hmac, fp, asn_observed, bucket) DO UPDATE SET
 			record_id = excluded.record_id, set_id = excluded.set_id, version = excluded.version, kind = excluded.kind, weight = excluded.weight,
@@ -62,7 +66,7 @@ func (s *Store) UpsertVote(ctx context.Context, v Vote) error {
 	if err != nil {
 		return err
 	}
-	return s.MarkDirty(ctx)
+	return markDirtyTx(ctx, q)
 }
 
 const voteColumns = `v.id, v.record_id, v.set_id, v.version, v.fp, v.key_hmac, v.kind, v.weight, v.asn_observed, v.country_observed, v.asn_hint, v.country_hint,

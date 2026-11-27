@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Box, Button, Chip, MenuItem, TextField, Tooltip, Typography } from "@mui/material";
+import { Box, Button, Chip, Link, MenuItem, TextField, Tooltip, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { colors } from "@design";
 import type { AuditEntryView } from "@/models/api";
@@ -9,15 +9,32 @@ import { SearchField, fieldSx } from "@/shared/components/SearchField";
 import { SetRef } from "@/shared/components/SetRef";
 import { KeyRef } from "@/shared/components/KeyRef";
 import { Mono } from "@/shared/components/Mono";
+import { useOverlay } from "@/shared/hooks/useOverlay";
+import { groupPath } from "@/features/groups/GroupDrawerHost";
 import { formatAgo, formatStamp } from "@/shared/utils/format";
 import { actorText, changeSummary } from "./HistoryList";
 import { useAuditLog } from "./api";
 
-const kinds = ["set", "key", "mirror", "report", "catalogue", "settings", "notify"];
+const kinds = ["set", "group", "key", "mirror", "report", "catalogue", "settings", "notify"];
 const actors = ["console", "basic", "cli", "system"];
 
 function Target({ entry }: Readonly<{ entry: AuditEntryView }>) {
   const { t } = useTranslation();
+  const overlay = useOverlay();
+  const groupId = entry.target_kind === "group" ? entry.target_id : undefined;
+  if (groupId) {
+    return (
+      <Link component="button" type="button" underline="hover" onClick={() => overlay.open(groupPath(groupId, entry.version || undefined))} sx={{ textAlign: "left", maxWidth: "100%" }}>
+        <Typography component="span" variant="caption" sx={{ color: colors.text.secondary, display: "block" }}>
+          {t("audit.kind.group")}
+        </Typography>
+        <Typography component="span" variant="body2" sx={{ fontWeight: 500, overflowWrap: "anywhere" }}>
+          {entry.target_label || groupId.slice(0, 10)}
+        </Typography>
+        <Mono>{` ${groupId.slice(0, 8)}${entry.version ? `/v${String(entry.version)}` : ""}`}</Mono>
+      </Link>
+    );
+  }
   if (entry.target_kind === "set" && entry.target_id) {
     return <SetRef id={entry.target_id} version={entry.version || undefined} title={entry.target_label || entry.target_id.slice(0, 10)} />;
   }

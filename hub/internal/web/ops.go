@@ -431,6 +431,9 @@ func (s *Server) audit(w http.ResponseWriter, r *http.Request) {
 				v.TargetLabel = title
 			}
 		}
+		if title, ok := e.Before["title"].(string); ok && e.TargetKind == store.TargetGroup {
+			v.TargetLabel = title
+		}
 		if e.TargetKind == store.TargetKey && !hubdata.ValidKeyHMAC(e.TargetID) {
 			v.TargetLabel = ""
 		}

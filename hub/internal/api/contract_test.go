@@ -19,6 +19,7 @@ import (
 
 	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
+	"github.com/daniellavrushin/b4hub/internal/store"
 	"github.com/daniellavrushin/b4hub/internal/testkit"
 )
 
@@ -39,8 +40,14 @@ var (
 	contractFileRefTags   = []string{"file", "sha256", "size"}
 	contractGeoSourceTags = []string{"site_url,omitempty", "ip_url,omitempty"}
 
-	contractCatalogueTags = []string{"epoch", "seq", "generated_at", "sets", "blobs,omitempty", "asn_names,omitempty"}
-	contractSetTags       = []string{
+	contractCatalogueTags = []string{"epoch", "seq", "generated_at", "sets", "blobs,omitempty", "asn_names,omitempty", "groups,omitempty"}
+	contractGroupTags     = []string{"id", "version", "title", "description,omitempty", "author", "created_at", "updated_at", "members"}
+	contractMemberTags    = []string{"set_id", "escalate,omitempty"}
+	contractEscalateTags  = []string{
+		"to", "rst_threshold,omitempty", "rst_window_sec,omitempty", "ttl_sec,omitempty",
+		"stall_threshold,omitempty", "stall_timeout_ms,omitempty", "dns_threshold,omitempty",
+	}
+	contractSetTags = []string{
 		"id", "version", "fp", "title", "description,omitempty", "author", "b4_min", "b4_version,omitempty",
 		"engine,omitempty", "family,omitempty", "flags,omitempty", "status", "created_at", "updated_at",
 		"geo,omitempty", "set", "payloads,omitempty", "scores", "derived_from,omitempty",
@@ -54,6 +61,8 @@ var (
 		"id", "kind", "set_id", "version", "status", "duplicate", "queued",
 		"code", "error", "retry_after", "scope", "limit", "window",
 	}
+	contractGroupAnswerKeys       = []string{"id", "kind", "group_id", "version", "status", "members"}
+	contractGroupMemberAnswerTags = []string{"set_id", "version", "status", "linked,omitempty"}
 )
 
 type routerFileRef struct {
@@ -400,8 +409,33 @@ func TestContractManifestSignatureOldRouters(t *testing.T) {
 	}
 }
 
+func (f *contractFixture) group(t *testing.T) string {
+	t.Helper()
+	set := testkit.SampleSet("YouTube", "youtube.com", "googlevideo.com")
+	body := hubwire.GroupBody{Title: "youtube", Description: "one set", Members: []hubwire.GroupMember{{Envelope: *testkit.BuildEnvelope(t, &set)}}}
+	status, answer := f.h.post(testkit.Sign(t, testkit.Identity(t), hubwire.RecordGroup, body, f.h.clock), contractAuthorIP)
+	if status != http.StatusAccepted {
+		t.Fatalf("group: %d %v", status, answer)
+	}
+	assertExactKeys(t, "group answer", answer, contractGroupAnswerKeys)
+	members := objects(t, "group answer members", answer["members"])
+	if len(members) != 1 || members[0]["set_id"] != f.active || members[0]["linked"] != true {
+		t.Fatalf("the member links the active set, got %v", members)
+	}
+	assertKeys(t, "group answer member", members[0], contractGroupMemberAnswerTags)
+	id, _ := answer["group_id"].(string)
+	ctx := context.Background()
+	if err := f.h.store.Update(ctx, func(tx *store.Tx) error {
+		return tx.SetGroupStatus(ctx, id, 1, hubwire.SetStatusActive, "", f.h.clock)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
 func TestContractCatalogueEntries(t *testing.T) {
 	f := startContractHub(t)
+	groupID := f.group(t)
 	f.build(t)
 	_, m := f.manifest(t)
 
@@ -466,6 +500,36 @@ func TestContractCatalogueEntries(t *testing.T) {
 	if blobs, ok := cat["blobs"]; ok {
 		for _, ref := range objects(t, "catalogue blobs", blobs) {
 			assertKeys(t, "catalogue blob", ref, contractBlobRefTags)
+		}
+	}
+	groups := objects(t, "catalogue groups", cat["groups"])
+	if len(groups) != 1 || groups[0]["id"] != groupID {
+		t.Fatalf("the catalogue lists the approved group %s, got %v", groupID, groups)
+	}
+	for i, entry := range groups {
+		what := "catalogue group " + strconv.Itoa(i)
+		assertKeys(t, what, entry, contractGroupTags)
+		for _, member := range objects(t, what+" members", entry["members"]) {
+			assertKeys(t, what+" member", member, contractMemberTags)
+			if escalate, ok := member["escalate"]; ok {
+				assertKeys(t, what+" member escalate", object(t, what+" member escalate", escalate), contractEscalateTags)
+			}
+		}
+	}
+}
+
+func TestContractGroupTagsFrozen(t *testing.T) {
+	for _, c := range []struct {
+		typ  reflect.Type
+		tags []string
+	}{
+		{reflect.TypeOf(hubwire.CatalogueGroup{}), contractGroupTags},
+		{reflect.TypeOf(hubwire.CatalogueGroupMember{}), contractMemberTags},
+		{reflect.TypeOf(hubwire.GroupEscalation{}), contractEscalateTags},
+		{reflect.TypeOf(hubwire.GroupMemberResult{}), contractGroupMemberAnswerTags},
+	} {
+		if got := structTags(c.typ); !slices.Equal(got, sortedCopy(c.tags)) {
+			t.Errorf("%s tags %v drifted from the frozen list %v", c.typ, got, c.tags)
 		}
 	}
 }

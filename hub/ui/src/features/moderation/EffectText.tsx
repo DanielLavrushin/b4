@@ -3,14 +3,17 @@ import { useTranslation } from "react-i18next";
 import { colors } from "@design";
 import type { ModerationItemView, SetAction } from "@/models/api";
 
-export const catalogueEffect = (item: ModerationItemView): { key: string; params: Record<string, unknown> } => {
+export const catalogueEffect = (
+  item: Pick<ModerationItemView, "listed" | "listed_after">,
+  base = "moderation.effect",
+): { key: string; params: Record<string, unknown> } => {
   const { listed, listed_after: after } = item;
   if (listed === after) {
-    return after > 0 ? { key: "moderation.effect.unchanged", params: { version: after } } : { key: "moderation.effect.none", params: {} };
+    return after > 0 ? { key: `${base}.unchanged`, params: { version: after } } : { key: `${base}.none`, params: {} };
   }
-  if (after === 0) return { key: "moderation.effect.leaves", params: { version: listed } };
-  if (listed === 0) return { key: "moderation.effect.joins", params: { version: after } };
-  return { key: "moderation.effect.replaces", params: { version: after, previous: listed } };
+  if (after === 0) return { key: `${base}.leaves`, params: { version: listed } };
+  if (listed === 0) return { key: `${base}.joins`, params: { version: after } };
+  return { key: `${base}.replaces`, params: { version: after, previous: listed } };
 };
 
 export function EffectText({ item, action }: { item: ModerationItemView; action: SetAction }) {

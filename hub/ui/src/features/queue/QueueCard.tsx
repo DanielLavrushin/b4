@@ -14,6 +14,7 @@ import { SetCard } from "@/features/sets/card/SetCard";
 import type { CardMenuItem, CardPanel } from "@/features/sets/card/types";
 import type { Moderation } from "@/features/moderation/useModeration";
 import { ErrorState } from "@/shared/components/States";
+import { StatusChip } from "@/shared/components/StatusChip";
 import { useOverlay } from "@/shared/hooks/useOverlay";
 import { setRef } from "@/shared/utils/format";
 import { SIMILAR_PANEL, SimilarList, similarBadge, similarLabel, useSimilar } from "./SimilarSets";
@@ -45,8 +46,8 @@ function ListedComparison({ entry, listed }: Readonly<{ entry: EntryView; listed
 interface QueueCardProps {
   entry: EntryView;
   moderation: Moderation;
-  selected: boolean;
-  onToggleSelect: () => void;
+  selected?: boolean;
+  onToggleSelect?: () => void;
   panel: string | null;
   onPanelChange: (panel: string | null) => void;
 }
@@ -109,27 +110,31 @@ export function QueueCard({ entry, moderation, selected, onToggleSelect, panel, 
       panel={panel}
       onPanelChange={onPanelChange}
       menu={menu}
-      selection={{ selected, onToggle: onToggleSelect, label: t("card.select", { title: entry.title }) }}
+      selection={onToggleSelect ? { selected: selected ?? false, onToggle: onToggleSelect, label: t("card.select", { title: entry.title }) } : undefined}
       onOpen={open}
       actions={
-        <>
-          <Box sx={actionPair}>
-            <Button variant="contained" size="small" disabled={moderation.busy} onClick={() => moderation.approve(entry)} sx={actionButton}>
-              {t("queue.approve")}
-            </Button>
-            <Button variant="outlined" size="small" disabled={moderation.busy} onClick={() => moderation.edit(entry)} sx={actionButton}>
-              {t("queue.edit")}
-            </Button>
-          </Box>
-          <Box sx={actionPair}>
-            <Button variant="outlined" size="small" disabled={moderation.busy} onClick={() => moderation.reject(entry)} sx={actionButton}>
-              {t("queue.reject")}
-            </Button>
-            <Button variant="outlined" size="small" disabled={moderation.busy} onClick={() => moderation.hide(entry)} sx={actionButton}>
-              {t("queue.hide")}
-            </Button>
-          </Box>
-        </>
+        entry.status !== "pending" ? (
+          <StatusChip status={entry.status} label={t(`status.set.${entry.status}`)} />
+        ) : (
+          <>
+            <Box sx={actionPair}>
+              <Button variant="contained" size="small" disabled={moderation.busy} onClick={() => moderation.approve(entry)} sx={actionButton}>
+                {t("queue.approve")}
+              </Button>
+              <Button variant="outlined" size="small" disabled={moderation.busy} onClick={() => moderation.edit(entry)} sx={actionButton}>
+                {t("queue.edit")}
+              </Button>
+            </Box>
+            <Box sx={actionPair}>
+              <Button variant="outlined" size="small" disabled={moderation.busy} onClick={() => moderation.reject(entry)} sx={actionButton}>
+                {t("queue.reject")}
+              </Button>
+              <Button variant="outlined" size="small" disabled={moderation.busy} onClick={() => moderation.hide(entry)} sx={actionButton}>
+                {t("queue.hide")}
+              </Button>
+            </Box>
+          </>
+        )
       }
     />
   );

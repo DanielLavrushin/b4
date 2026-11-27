@@ -239,8 +239,48 @@ func (b *Builder) catalogueSet(v *store.Version, set store.Set, votes []store.Vo
 	}
 	if set.DerivedFromID != "" {
 		cs.DerivedFrom = &hubwire.Origin{ID: set.DerivedFromID, Version: set.DerivedFromVersion}
+		if cs.DerivedFrom.Version < 1 || cs.DerivedFrom.Version > math.MaxInt32 {
+			cs.DerivedFrom.Version = 0
+		}
 	}
 	return cs
+}
+
+func catalogueGroups(groups []store.ListedGroup, sets []hubwire.CatalogueSet) []hubwire.CatalogueGroup {
+	listed := make(map[string]bool, len(sets))
+	for i := range sets {
+		listed[sets[i].ID] = true
+	}
+	var out []hubwire.CatalogueGroup
+	for _, g := range groups {
+		members := make([]hubwire.CatalogueGroupMember, 0, len(g.Version.Members))
+		for _, m := range g.Version.Members {
+			if !listed[m.SetID] {
+				members = nil
+				break
+			}
+			members = append(members, hubwire.CatalogueGroupMember{SetID: m.SetID, Escalate: m.Escalate})
+		}
+		if len(members) == 0 {
+			continue
+		}
+		author := g.Group.AuthorHMAC
+		if author == "" {
+			author = g.Version.UploaderHMAC
+		}
+		out = append(out, hubwire.CatalogueGroup{
+			ID:          g.Group.ID,
+			Version:     g.Version.Version,
+			Title:       g.Version.Title,
+			Description: g.Version.Description,
+			Author:      hubdata.AuthorLabel(author),
+			CreatedAt:   score.DayStamp(g.Version.CreatedAt),
+			UpdatedAt:   score.DayStamp(g.Version.UpdatedAt),
+			Members:     members,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 
 func (b *Builder) Build(ctx context.Context) (*Result, error) {
@@ -356,6 +396,10 @@ func (b *Builder) publish(ctx context.Context, now time.Time) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	groups, err := b.Store.CatalogueGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if err := b.guard(ctx, now, len(versions)); err != nil {
 		return nil, err
 	}
@@ -384,6 +428,7 @@ func (b *Builder) publish(ctx context.Context, now time.Time) (*Result, error) {
 		cat.Sets = append(cat.Sets, cs)
 	}
 	sort.Slice(cat.Sets, func(i, j int) bool { return cat.Sets[i].ID < cat.Sets[j].ID })
+	cat.Groups = catalogueGroups(groups, cat.Sets)
 	if len(blobs) > 0 {
 		cat.Blobs = make([]hubwire.BlobRef, 0, len(blobs))
 		for _, ref := range blobs {

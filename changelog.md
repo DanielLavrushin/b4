@@ -7,7 +7,8 @@ All notable changes to b4 are recorded in this file.
 ### Added
 
 - **Add to a set's resolvers** in the DNS results of the **DPI Detector** puts a working encrypted resolver into a set's **Resolvers**. If the set has **Enable DNS Redirect** off, the resolver goes first and the redirect is switched on. [#680](https://github.com/DanielLavrushin/b4/issues/680)
-- Sets can be grouped through **Select** and **Group**, through a set's menu, or by dragging a set onto a group. A group moves as one, and is enabled, renamed or exported as one file.
+- Sets can be grouped through **Select** and **Group**, through a set's menu, or by dragging a set onto a group. A group moves as one, and is enabled, renamed or exported as one file; **MCP** lists each set's group.
+- A group of sets can be published to the community hub with **Publish to hub** in the group's menu. The **Community** page shows a published group as one card whose **Apply group** adds all its sets as one group, and **Discovery** offers the whole group when the set it found belongs to one.
 
 ### Changed
 
@@ -37,6 +38,8 @@ All notable changes to b4 are recorded in this file.
 - With **Enable IPv6 Support** off, or under the TUN engine, the **Watchdog**, **MCP** and **Test** on the **Community** page could fetch a site over IPv6, which b4 does not handle in that case, so their result said nothing about what b4 did. [#631](https://github.com/DanielLavrushin/b4/issues/631)
 - **Page hosts** in **Discovery** could call a host blocked even with a strategy that acts on the first packet of a connection, such as a fake SYN, because b4 did not know the host's address yet. [#642](https://github.com/DanielLavrushin/b4/issues/642)
 - In the Russian interface, **Test** on the **Community** page showed its errors and the status of each fetch in English.
+- **Undo** after applying a set on the **Community** page removed the set without giving back the domains it had taken from other sets.
+- Updating or replacing a set from the **Community** page dropped its link to another set on the **Escalation** tab.
 - **System Info** could report NFQUEUE as failed without testing it, show the firewall backend as `none` in TUN mode and list NFQUEUE modules and packages to install there, report built-in kernel modules as missing in a container, and leave out why iptables refused NFQUEUE. [#531](https://github.com/DanielLavrushin/b4/issues/531)
 - A set exported by b4 before 1.29.0 lost its **TCP Desync Attack** and **Window Manipulation** settings when imported in the set editor.
 - In TUN mode on a MikroTik RouterOS container without `xt_connbytes`, packets b4 sent to the router itself, such as answers to the router's own DNS lookups, could leave by the uplink instead of reaching the router. ([#711](https://github.com/DanielLavrushin/b4/pull/711), thanks [@orshih6](https://github.com/orshih6); [#630](https://github.com/DanielLavrushin/b4/issues/630))

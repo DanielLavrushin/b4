@@ -391,6 +391,7 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary Add discovery preset as a new set
+// @Description A hub group stamp (hub.group_id, hub.group_version) in the set is dropped; the hub group endpoints write it.
 // @Tags Discovery
 // @Accept json
 // @Produce json
@@ -421,6 +422,7 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 	tested := set
 
 	set.Id = uuid.New().String()
+	carryHubGroupStamp(&set, nil)
 
 	if len(set.Targets.SNIDomains) == 0 {
 		log.Errorf("At least one SNI domain is required")

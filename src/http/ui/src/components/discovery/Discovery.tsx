@@ -24,6 +24,14 @@ import {
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useDiscovery, useDiscoveryLogs } from "@hooks/useDiscovery";
 import { useSets } from "@hooks/useSets";
+import { useHubGroupApply } from "@hooks/useHub";
+import {
+  hubGroupAction,
+  hubGroupCovered,
+  hubGroupMoved,
+  hubGroupWarnings,
+} from "@models/hubGroups";
+import { warningText } from "@components/hub/text";
 import { useTunEngine } from "@hooks/useEngineMode";
 import { useHostMatchesInvalidate } from "@hooks/useHostMatches";
 import { useCaptures } from "@b4.capture";
@@ -36,6 +44,7 @@ import {
   ProbeUrl,
   buildResultEntries,
   describeApiError,
+  describeHubGroupApplyError,
   normalizeProbeUrl,
   parsePins,
   probeUrlLabel,
@@ -51,6 +60,7 @@ import {
 } from "./Options";
 import { RunPanel } from "./RunPanel";
 import { ResultsPanel } from "./ResultsPanel";
+import { HubGroupApplyDialog, HubGroupOffer } from "./HubGroupApplyDialog";
 import { HistoryTable } from "./HistoryTable";
 import { ApplyDialog, ReplaceOptions } from "./ApplyDialog";
 import { DiscoveryLogDialog, DiscoveryLogLine } from "./LogPanel";
@@ -69,7 +79,11 @@ export const DiscoveryRunner = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const { showSuccess, showError } = useSnackbar();
+  const { showSuccess, showError, showSnackbar } = useSnackbar();
+  const [hubGroupOffer, setHubGroupOffer] = useState<HubGroupOffer | null>(
+    null,
+  );
+  const hubGroupApply = useHubGroupApply();
   const [handedOver] = useState(() => {
     const state = location.state as DiscoveryLocationState | null;
     return !!state?.setId || !!state?.urls?.length;
@@ -441,6 +455,54 @@ export const DiscoveryRunner = () => {
     setApplyTarget(null);
   };
 
+  const handleApplyHubGroup = async ({ hubGroup }: HubGroupOffer) => {
+    const replace = hubGroupAction(hubGroup) !== "apply";
+    try {
+      const res = await hubGroupApply.mutateAsync({ id: hubGroup.id, replace });
+      setHubGroupOffer(null);
+      void loadSets();
+      const idle = hubGroupCovered(res).filter((c) => c.idle);
+      showSuccess(
+        [
+          replace
+            ? t("hub.group.apply.updated", { group: res.group })
+            : t("hub.group.apply.done", {
+                group: res.group,
+                count: res.sets.length,
+              }),
+          describeMoved(hubGroupMoved(res)),
+          idle.length > 0
+            ? t("hub.group.apply.coveredIdle", {
+                sets: idle.map((c) => c.set_name).join(", "),
+              })
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        {
+          label: t("hub.group.apply.openSets"),
+          onClick: () => {
+            void navigate("/sets");
+          },
+        },
+      );
+      const warnings = hubGroupWarnings(res);
+      if (warnings.length > 0) {
+        showSnackbar(
+          warnings
+            .map(
+              ({ name, warning }) =>
+                `${name}: ${warningText(t, "sets.importExport.warnings", warning)}`,
+            )
+            .join(" "),
+          "warning",
+        );
+      }
+    } catch (e) {
+      showError(describeHubGroupApplyError(e, t));
+    }
+  };
+
   const handleAddToExisting = async (
     setId: string,
     domains: string[],
@@ -705,6 +767,7 @@ export const DiscoveryRunner = () => {
             setName={runSetName}
             runSet={runSet}
             onApply={setApplyTarget}
+            onApplyHubGroup={setHubGroupOffer}
             onApplyVerdict={handleApplyVerdict}
             onSaveSetUrls={handleSaveSetUrls}
             onShowLog={() => setLogOpen(true)}
@@ -901,6 +964,13 @@ export const DiscoveryRunner = () => {
         onReplaceStrategy={(setId, set, domains, pins, opts) =>
           void handleReplaceStrategy(setId, set, domains, pins, opts)
         }
+      />
+
+      <HubGroupApplyDialog
+        offer={hubGroupOffer}
+        loading={hubGroupApply.isPending}
+        onConfirm={(offer) => void handleApplyHubGroup(offer)}
+        onClose={() => setHubGroupOffer(null)}
       />
 
       <DiscoveryLogDialog

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -20,36 +21,119 @@ const (
 	MaxHintRunes        = 32
 )
 
+type member struct {
+	env        *hubwire.Envelope
+	imp        *hubwire.Imported
+	projection map[string]interface{}
+	fp         string
+	targetsKey string
+}
+
+type hints struct {
+	ASN       string
+	Country   string
+	Engine    string
+	B4Version string
+}
+
+func openMember(env *hubwire.Envelope, now time.Time) (*member, *Response) {
+	refuse := func(code, message string) (*member, *Response) {
+		r := fail(http.StatusBadRequest, code, message)
+		return nil, &r
+	}
+	imp, err := hubwire.Open(env, hubwire.OpenOptions{Now: func() time.Time { return now }})
+	if err != nil {
+		var payloadErr *hubwire.PayloadError
+		if errors.As(err, &payloadErr) {
+			return refuse(CodePayloadInvalid, err.Error())
+		}
+		return refuse(CodeInvalidSet, err.Error())
+	}
+	projection, report, err := hubwire.Scrub(&imp.Set)
+	if err != nil {
+		return refuse(CodeInvalidSet, err.Error())
+	}
+	for _, w := range report.Warnings {
+		switch w.Code {
+		case "no_targets":
+			return refuse(CodeInvalidSet, "the set has no targets")
+		case "udp_l7_tcp_ports":
+			return refuse(CodeInvalidSet, "a set that handles only calls has no targets and takes no TCP port filter")
+		}
+	}
+	return &member{env: env, imp: imp, projection: projection, fp: imp.Fingerprint, targetsKey: store.TargetsKey(projection)}, nil
+}
+
+func (s *Service) newVersion(entry record, m *member, h hints) (*store.Version, error) {
+	payloads := make([]hubwire.BlobRef, 0, len(m.imp.Payloads))
+	for _, p := range m.imp.Payloads {
+		hash, err := s.Blobs.Put(p.Data)
+		if err != nil {
+			return nil, err
+		}
+		payloads = append(payloads, hubwire.BlobRef{SHA256: hash, Protocol: p.Protocol, Domain: p.Domain, Size: len(p.Data)})
+	}
+	engine := h.Engine
+	if engine == "" {
+		engine = m.env.Engine
+	}
+	b4Version := h.B4Version
+	if b4Version == "" {
+		b4Version = m.env.B4Version
+	}
+	return &store.Version{
+		FP:              m.fp,
+		TargetsKey:      m.targetsKey,
+		Title:           clip(m.imp.Set.Name, MaxTitleRunes),
+		Description:     clip(m.env.Description, MaxDescriptionRunes),
+		Projection:      m.projection,
+		Payloads:        payloads,
+		Flags:           Flags(m.projection, payloads),
+		Geo:             hubwire.BuiltInGeo(m.env.Geo),
+		B4Min:           hubwire.MinVersion(m.projection),
+		B4Version:       clip(b4Version, MaxHintRunes),
+		Engine:          clip(engine, MaxHintRunes),
+		Family:          Family(&m.imp.Set),
+		Status:          hubwire.SetStatusPending,
+		RecordID:        entry.id,
+		UploaderHMAC:    entry.keyHMAC,
+		ASNObserved:     entry.origin.ASN,
+		CountryObserved: entry.origin.Country,
+		ASNHint:         clip(h.ASN, MaxHintRunes),
+		CountryHint:     strings.ToUpper(clip(h.Country, 2)),
+		CreatedAt:       entry.now,
+		UpdatedAt:       entry.now,
+	}, nil
+}
+
+func derivedSet(env *hubwire.Envelope) *hubwire.Origin {
+	return derivedOrigin(env.DerivedFrom)
+}
+
+func derivedOrigin(o *hubwire.Origin) *hubwire.Origin {
+	if o == nil || !hubdata.ValidSetID(o.ID) {
+		return nil
+	}
+	d := *o
+	if d.Version < 1 || d.Version > math.MaxInt32 {
+		d.Version = 0
+	}
+	return &d
+}
+
 func (s *Service) share(ctx context.Context, entry record) Response {
 	var body hubwire.ShareBody
 	if err := json.Unmarshal(entry.rec.Body, &body); err != nil {
 		return fail(http.StatusBadRequest, CodeBadRecord, "share body does not decode: "+err.Error())
 	}
-	imp, err := hubwire.Open(&body.Envelope, hubwire.OpenOptions{Now: func() time.Time { return entry.now }})
-	if err != nil {
-		var payloadErr *hubwire.PayloadError
-		if errors.As(err, &payloadErr) {
-			return fail(http.StatusBadRequest, CodePayloadInvalid, err.Error())
-		}
-		return fail(http.StatusBadRequest, CodeInvalidSet, err.Error())
+	m, refused := openMember(&body.Envelope, entry.now)
+	if refused != nil {
+		return *refused
 	}
-	projection, report, err := hubwire.Scrub(&imp.Set)
-	if err != nil {
-		return fail(http.StatusBadRequest, CodeInvalidSet, err.Error())
-	}
-	for _, w := range report.Warnings {
-		switch w.Code {
-		case "no_targets":
-			return fail(http.StatusBadRequest, CodeInvalidSet, "the set has no targets")
-		case "udp_l7_tcp_ports":
-			return fail(http.StatusBadRequest, CodeInvalidSet, "a set that handles only calls has no targets and takes no TCP port filter")
-		}
-	}
-	fp := imp.Fingerprint
-	targetsKey := store.TargetsKey(projection)
+	h := hints{ASN: body.ASNHint, Country: body.CountryHint, Engine: body.Engine, B4Version: body.B4Version}
 
-	if existing, err := s.Store.FindDuplicate(ctx, fp, targetsKey); err == nil {
-		if err := s.uploadVote(ctx, entry, existing, body); err != nil {
+	if existing, err := s.Store.FindDuplicate(ctx, m.fp, m.targetsKey); err == nil {
+		if err := s.Store.UpsertVote(ctx, uploadVote(entry, existing, h)); err != nil {
 			return internalError(err)
 		}
 		if err := s.remember(ctx, entry, existing.SetID, existing.Version); err != nil {
@@ -65,51 +149,12 @@ func (s *Service) share(ctx context.Context, entry record) Response {
 		return internalError(err)
 	}
 
-	payloads := make([]hubwire.BlobRef, 0, len(imp.Payloads))
-	for _, p := range imp.Payloads {
-		hash, err := s.Blobs.Put(p.Data)
-		if err != nil {
-			return internalError(err)
-		}
-		payloads = append(payloads, hubwire.BlobRef{SHA256: hash, Protocol: p.Protocol, Domain: p.Domain, Size: len(p.Data)})
+	version, err := s.newVersion(entry, m, h)
+	if err != nil {
+		return internalError(err)
 	}
 
-	engine := body.Engine
-	if engine == "" {
-		engine = body.Envelope.Engine
-	}
-	b4Version := body.B4Version
-	if b4Version == "" {
-		b4Version = body.Envelope.B4Version
-	}
-	version := &store.Version{
-		FP:              fp,
-		TargetsKey:      targetsKey,
-		Title:           clip(imp.Set.Name, MaxTitleRunes),
-		Description:     clip(body.Envelope.Description, MaxDescriptionRunes),
-		Projection:      projection,
-		Payloads:        payloads,
-		Flags:           Flags(projection, payloads),
-		Geo:             hubwire.BuiltInGeo(body.Envelope.Geo),
-		B4Min:           hubwire.MinVersion(projection),
-		B4Version:       clip(b4Version, MaxHintRunes),
-		Engine:          clip(engine, MaxHintRunes),
-		Family:          Family(&imp.Set),
-		Status:          hubwire.SetStatusPending,
-		RecordID:        entry.id,
-		UploaderHMAC:    entry.keyHMAC,
-		ASNObserved:     entry.origin.ASN,
-		CountryObserved: entry.origin.Country,
-		ASNHint:         clip(body.ASNHint, MaxHintRunes),
-		CountryHint:     strings.ToUpper(clip(body.CountryHint, 2)),
-		CreatedAt:       entry.now,
-		UpdatedAt:       entry.now,
-	}
-
-	derived := body.Envelope.DerivedFrom
-	if derived != nil && !hubdata.ValidSetID(derived.ID) {
-		derived = nil
-	}
+	derived := derivedSet(&body.Envelope)
 	if derived != nil {
 		parent, _, err := s.Store.GetSet(ctx, derived.ID)
 		if err == nil && parent.AuthorHMAC == entry.keyHMAC {
@@ -117,7 +162,7 @@ func (s *Service) share(ctx context.Context, entry record) Response {
 			if err := s.Store.AddVersion(ctx, version); err != nil {
 				return internalError(err)
 			}
-			return s.accepted(ctx, entry, version, body)
+			return s.accepted(ctx, entry, version, h)
 		} else if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return internalError(err)
 		}
@@ -131,7 +176,7 @@ func (s *Service) share(ctx context.Context, entry record) Response {
 		if err := s.Store.AddVersion(ctx, version); err != nil {
 			return internalError(err)
 		}
-		return s.accepted(ctx, entry, version, body)
+		return s.accepted(ctx, entry, version, h)
 	}
 	id, err := hubdata.NewSetID()
 	if err != nil {
@@ -145,7 +190,7 @@ func (s *Service) share(ctx context.Context, entry record) Response {
 	if err := s.Store.CreateSet(ctx, set, version); err != nil {
 		return internalError(err)
 	}
-	return s.accepted(ctx, entry, version, body)
+	return s.accepted(ctx, entry, version, h)
 }
 
 func (s *Service) authorSibling(ctx context.Context, authorHMAC string, version *store.Version) (*store.Set, error) {
@@ -172,8 +217,8 @@ func (s *Service) authorSibling(ctx context.Context, authorHMAC string, version 
 	return match, nil
 }
 
-func (s *Service) accepted(ctx context.Context, entry record, version *store.Version, body hubwire.ShareBody) Response {
-	if err := s.uploadVote(ctx, entry, version, body); err != nil {
+func (s *Service) accepted(ctx context.Context, entry record, version *store.Version, h hints) Response {
+	if err := s.Store.UpsertVote(ctx, uploadVote(entry, version, h)); err != nil {
 		return internalError(err)
 	}
 	if err := s.remember(ctx, entry, version.SetID, version.Version); err != nil {
@@ -188,8 +233,8 @@ func (s *Service) accepted(ctx context.Context, entry record, version *store.Ver
 	}}
 }
 
-func (s *Service) uploadVote(ctx context.Context, entry record, version *store.Version, body hubwire.ShareBody) error {
-	return s.Store.UpsertVote(ctx, store.Vote{
+func uploadVote(entry record, version *store.Version, h hints) store.Vote {
+	return store.Vote{
 		RecordID:        entry.id,
 		SetID:           version.SetID,
 		Version:         version.Version,
@@ -199,12 +244,12 @@ func (s *Service) uploadVote(ctx context.Context, entry record, version *store.V
 		Weight:          score.Weights[score.KindUpload],
 		ASNObserved:     entry.origin.ASN,
 		CountryObserved: entry.origin.Country,
-		ASNHint:         clip(body.ASNHint, MaxHintRunes),
-		CountryHint:     strings.ToUpper(clip(body.CountryHint, 2)),
+		ASNHint:         clip(h.ASN, MaxHintRunes),
+		CountryHint:     strings.ToUpper(clip(h.Country, 2)),
 		OriginVerified:  entry.origin.verified(),
-		B4Version:       clip(body.B4Version, MaxHintRunes),
-		Engine:          clip(body.Engine, MaxHintRunes),
+		B4Version:       clip(h.B4Version, MaxHintRunes),
+		Engine:          clip(h.Engine, MaxHintRunes),
 		Bucket:          score.BucketOf(entry.now),
 		ReceivedAt:      entry.now,
-	})
+	}
 }

@@ -1689,7 +1689,25 @@
       "actions": "Group actions",
       "addTo": "Add to group {{group}}",
       "moveTo": "Move to group {{group}}",
-      "newGroup": "New group..."
+      "newGroup": "New group...",
+      "publish": {
+        "menu": "Publish to hub",
+        "title": "Publish group to hub",
+        "intro_one": "Publishes the saved version of the group's {{count}} set as one hub group titled {{group}}, under this router's author key. A set that is an unchanged copy of a published set links to that set instead of adding a new one. Other users see the group after a moderator approves it.",
+        "intro_other": "Publishes the saved versions of the group's {{count}} sets, in list order, as one hub group titled {{group}}, under this router's author key. A set that is an unchanged copy of a published set links to that set instead of adding a new one. Other users see the group after a moderator approves it.",
+        "description": "Description",
+        "descriptionHelp": "Optional. Shown on the group's card on the Community page.",
+        "confirm": "Publish",
+        "result": {
+          "new_set": "New hub set {{id}}",
+          "new_version": "New version {{version}} of hub set {{id}}",
+          "linked": "Linked to the published set {{id}} (version {{version}})"
+        },
+        "done": "Published as group {{id}} (version {{version}}), status: {{status}}. A moderator on the hub approves the group together with its new sets; after that, other users and this router see it on the Community page.",
+        "duplicate": "The hub already has this group unchanged as {{id}} (version {{version}}), so nothing was published.",
+        "memberFailed": "Set {{name}} cannot be published: {{error}}",
+        "failed": "The group was not published: {{error}}"
+      }
     },
     "templateDialog": {
       "title": "Use for new sets",
@@ -3446,7 +3464,15 @@
       "showFewer": "Show fewer",
       "unresolvedNoAddress": "This name exists, but {{server}} answers that it has no {{family}} address, so there was nothing to test. If the site is reached through an address published elsewhere, add it under Pinned addresses in Options and run again.",
       "unresolvedForgeable": "That answer came over plain DNS, which can be forged on the way; a trusted DNS server given as tcp:// or https:// rules that out.",
-      "dohFallback": "DNS over HTTPS"
+      "dohFallback": "DNS over HTTPS",
+      "hubGroupApply_one": "Apply group {{title}}, {{count}} set",
+      "hubGroupApply_other": "Apply group {{title}}, {{count}} sets",
+      "hubGroupTitle": "Apply group {{title}}",
+      "hubGroupTested": "This run tested set {{name}} of the group.",
+      "hubGroupUntested_one": "The group's other set, {{sets}}, was not tested in this run. It is applied as published.",
+      "hubGroupUntested_other": "The group's other sets, {{sets}}, were not tested in this run. They are applied as published.",
+      "hubGroupReplace": "The group is already applied as {{group}}: its sets are replaced with the published ones, and edits made to them on this router are lost.",
+      "hubGroupConfirm": "Apply group"
     },
     "verdict": {
       "perAddress": "Results per address",
@@ -4598,7 +4624,11 @@
       "all_one": "{{count}} set, best rated first",
       "all_other": "{{count}} sets, best rated first",
       "empty": "The catalogue has no active sets yet.",
-      "failed": "The sets could not be loaded: {{error}}"
+      "failed": "The sets could not be loaded: {{error}}",
+      "groupResults_one": "{{count}} group covers {{domain}}",
+      "groupResults_other": "{{count}} groups cover {{domain}}",
+      "groupsAll_one": "{{count}} group",
+      "groupsAll_other": "{{count}} groups"
     },
     "card": {
       "by": "by {{author}}",
@@ -4756,7 +4786,9 @@
         "newkey_one": "{{count}} new author key from one network",
         "newkey_other": "{{count}} new author keys from one network",
         "request_one": "{{count}} request from one network",
-        "request_other": "{{count}} requests from one network"
+        "request_other": "{{count}} requests from one network",
+        "group_one": "{{count}} published group",
+        "group_other": "{{count}} published groups"
       },
       "window": {
         "day": "day",
@@ -4769,6 +4801,45 @@
         "minutes_one": "{{count}} minute",
         "minutes_other": "{{count}} minutes",
         "moment": "a moment"
+      }
+    },
+    "group": {
+      "card": {
+        "title_one": "{{title}} · {{count}} set",
+        "title_other": "{{title}} · {{count}} sets",
+        "apply": "Apply group",
+        "update": "Update group",
+        "reapply": "Reapply group",
+        "appliedAs": "Applied as {{group}}",
+        "appliedModified": "Applied as {{group}}, edited",
+        "escalates": "Escalates to set {{name}}"
+      },
+      "apply": {
+        "done_one": "Created group {{group}} with {{count}} set.",
+        "done_other": "Created group {{group}} with {{count}} sets.",
+        "updated": "Group {{group}} updated to the published version.",
+        "ungrouped_one": "{{count}} set the group no longer holds was taken out of it and kept.",
+        "ungrouped_other": "{{count}} sets the group no longer holds were taken out of it and kept.",
+        "openSets": "Open sets",
+        "undone_one": "{{count}} set was removed.",
+        "undone_other": "{{count}} sets were removed.",
+        "failed": "Could not apply the group: {{error}}",
+        "memberFailed": "Set {{name}} of the group could not be applied, so nothing was applied: {{error}}",
+        "confirmTitle": "Update the local group",
+        "confirmReplace": "Replaces the strategy and targets of the sets in group {{group}} with the published ones and adds the sets the group gained. Edits made to those sets on this router are lost. A set the group no longer holds stays in the list, outside the group.",
+        "confirmApplyTitle": "Apply the group",
+        "takeOver_one": "Set {{sets}} is already on this router, so the published version replaces it and it moves into the group. Edits made to it on this router are lost.",
+        "takeOver_other": "These sets are already on this router, so the published versions replace them and they move into the group: {{sets}}. Edits made to them on this router are lost.",
+        "coveredIntro": "The sets of the applied group {{name}} are higher in the list, so they now handle these targets instead of the sets below.",
+        "coveredIdle": "These sets now handle nothing, because the group's sets above them cover every target they list: {{sets}}."
+      },
+      "errors": {
+        "hub_no_groups": "The hub does not accept set groups yet.",
+        "group_too_large": "The group is too large to publish at once: publish fewer sets, or sets without custom payloads.",
+        "too_many_members": "A group can be published with at most 10 sets.",
+        "bad_hub_answer": "The hub accepted the group, but its answer did not name a hub set for every set, so nothing was recorded on this router.",
+        "hub_unreachable": "No hub answered. Try again later.",
+        "not_applied": "This router has no copy of the group to update."
       }
     }
   },

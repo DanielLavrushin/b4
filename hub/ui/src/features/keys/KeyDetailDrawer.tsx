@@ -147,6 +147,7 @@ function Detail({ data }: Readonly<{ data: KeyDetailView }>) {
   data.days.forEach((d) => {
     values[d.day] = {
       share: d.share,
+      group: d.group,
       vote: d.vote,
       report: d.report,
       mirror: d.mirror,
@@ -241,6 +242,11 @@ function Detail({ data }: Readonly<{ data: KeyDetailView }>) {
               key: "share",
               label: t("keys.kinds.share"),
               color: seriesColors.share,
+            },
+            {
+              key: "group",
+              label: t("keys.kinds.group"),
+              color: seriesColors.group,
             },
             {
               key: "vote",

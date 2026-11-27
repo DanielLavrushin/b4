@@ -4,8 +4,16 @@ All notable changes to the b4hub community hub service are recorded in this file
 
 ## [Unreleased]
 
+### Added
+
+- Set groups: a router running the next b4 release can publish a group of up to 10 sets as one record, and the catalogue lists the group while every one of its sets is listed. Each set is filed as an ordinary set or linked to a set already published; **Groups per key** under **Settings, Limits** allows 3 groups a day.
+- The **Queue** shows a pending group as one item whose **Approve group** and **Reject group** also decide the sets this or an earlier version of the group brought, keeping on reject a set that a newer version or another group still uses, while sets it only links and **Hide group** leave set states alone. Each group has a page at `/admin/groups/<id>`, a set's panel lists its groups, and audit entries and the `b4hub moderate approve-group`, `reject-group`, `hide-group` and `restore-group` commands cover groups.
+- **New sets in the queue** notifications announce a new group in one line, and webhook events of kind `group` carry the group id and its sets.
+
 ### Changed
 
+- The pending count on the menu badge and the **Overview** counts a group once, not once per set it brought.
+- The set list's tab is `?tab=` in the console address instead of `?group=`, so an older link opens the default tab.
 - Votes are deleted a year after they arrive, so the device counts in the catalogue and the console's vote lists cover the last year.
 - An author's votes on their own strategy count only in its worldwide score, not per provider or country. The console shows them as author votes in every set with that strategy.
 - The ids of new sets no longer contain the time of the upload.
@@ -17,6 +25,7 @@ All notable changes to the b4hub community hub service are recorded in this file
 - A router on a network that two providers announce could count for either of them, because the lookup took whichever answer came first.
 - A router behind a 6to4 or Teredo tunnel counted for the operator of the tunnel's relay.
 - Hiding and restoring a set without counted votes removed its **stale** mark in the console for 60 days.
+- A share whose `derived_from` named a version above 2147483647 made the whole catalogue unreadable to b4 on 32-bit routers once the set was approved.
 - Deleted rows stayed readable in the database file until their space was used again. Rows deleted before the update still do.
 
 ### Security

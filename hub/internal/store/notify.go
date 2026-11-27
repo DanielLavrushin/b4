@@ -11,6 +11,7 @@ import (
 
 const (
 	NotifyShare       = "share"
+	NotifyGroup       = "group"
 	NotifyReport      = "report"
 	NotifyAutoHide    = "auto_hide"
 	NotifyBuildFailed = "build_failed"
@@ -19,7 +20,7 @@ const (
 	notifyCursorPrefix = "notify.cursor."
 )
 
-var NotifySources = []string{NotifyShare, NotifyReport, NotifyAutoHide, NotifyBuildFailed, NotifyMirror}
+var NotifySources = []string{NotifyShare, NotifyGroup, NotifyReport, NotifyAutoHide, NotifyBuildFailed, NotifyMirror}
 
 type NotifyEvent struct {
 	Kind    string
@@ -35,6 +36,7 @@ type NotifyEvent struct {
 	URL     string
 	Detail  string
 	Reports int
+	Members int
 }
 
 type NotifyBatch struct {
@@ -59,15 +61,23 @@ var notifyQueries = map[string]notifySource{
 		table:   "set_versions",
 		id:      "v.id",
 		from:    `set_versions v`,
-		where:   `v.status = 'pending' AND v.uploader_hmac` + notTestKey,
-		columns: `v.id, v.created_at, v.set_id, v.version, v.title, v.uploader_hmac, v.asn_observed, v.country_observed, '', '', '', 0`,
+		where:   `v.status = 'pending' AND NOT ` + broughtVersion + ` AND v.uploader_hmac` + notTestKey,
+		columns: `v.id, v.created_at, v.set_id, v.version, v.title, v.uploader_hmac, v.asn_observed, v.country_observed, '', '', '', 0, 0`,
+	},
+	NotifyGroup: {
+		table: "group_versions",
+		id:    "g.id",
+		from:  `group_versions g`,
+		where: `g.status = 'pending' AND g.uploader_hmac` + notTestKey,
+		columns: `g.id, g.created_at, g.group_id, g.version, g.title, g.uploader_hmac, g.asn_observed, g.country_observed, '', '', '', 0,
+			(SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.group_id AND m.version = g.version)`,
 	},
 	NotifyReport: {
 		table:   "reports",
 		id:      "r.id",
 		from:    `reports r LEFT JOIN set_versions v ON v.set_id = r.set_id AND v.version = r.version`,
 		where:   `r.key_hmac` + notTestKey,
-		columns: `r.id, r.received_at, r.set_id, r.version, COALESCE(v.title, ''), r.key_hmac, r.asn_observed, '', r.reason, '', '', 0`,
+		columns: `r.id, r.received_at, r.set_id, r.version, COALESCE(v.title, ''), r.key_hmac, r.asn_observed, '', r.reason, '', '', 0, 0`,
 	},
 	NotifyAutoHide: {
 		table: "audit_log",
@@ -75,21 +85,21 @@ var notifyQueries = map[string]notifySource{
 		from:  `audit_log a LEFT JOIN set_versions v ON v.set_id = a.target_id AND v.version = a.version`,
 		where: `a.actor = '` + ActorSystem + `' AND a.action = 'set.hide'`,
 		columns: `a.id, a.at, a.target_id, a.version, COALESCE(v.title, ''), '', '', '', a.reason, '', '',
-			CASE WHEN json_valid(a.after_json) THEN COALESCE(json_extract(a.after_json, '$.independent_reports'), 0) ELSE 0 END`,
+			CASE WHEN json_valid(a.after_json) THEN COALESCE(json_extract(a.after_json, '$.independent_reports'), 0) ELSE 0 END, 0`,
 	},
 	NotifyBuildFailed: {
 		table:   "builds",
 		id:      "b.id",
 		from:    `builds b`,
 		where:   `b.ok = 0 AND b.finished_at <> ''`,
-		columns: `b.id, b.finished_at, '', 0, '', '', '', '', b.error, '', b.trigger, 0`,
+		columns: `b.id, b.finished_at, '', 0, '', '', '', '', b.error, '', b.trigger, 0, 0`,
 	},
 	NotifyMirror: {
 		table:   "mirrors",
 		id:      "m.id",
 		from:    `mirrors m`,
 		where:   `m.status = '` + MirrorPending + `'`,
-		columns: `m.id, m.first_seen, '', 0, '', m.key_hmac, '', '', '', m.url, m.version, 0`,
+		columns: `m.id, m.first_seen, '', 0, '', m.key_hmac, '', '', '', m.url, m.version, 0, 0`,
 	},
 }
 
@@ -127,7 +137,7 @@ func (s *Store) NotifyEvents(ctx context.Context, kind string, after int64, limi
 		e := NotifyEvent{Kind: kind}
 		var at string
 		var reports sql.NullInt64
-		if err := rows.Scan(&e.ID, &at, &e.SetID, &e.Version, &e.Title, &e.KeyHMAC, &e.ASN, &e.Country, &e.Reason, &e.URL, &e.Detail, &reports); err != nil {
+		if err := rows.Scan(&e.ID, &at, &e.SetID, &e.Version, &e.Title, &e.KeyHMAC, &e.ASN, &e.Country, &e.Reason, &e.URL, &e.Detail, &reports, &e.Members); err != nil {
 			return NotifyBatch{}, err
 		}
 		e.At = parseTime(at)

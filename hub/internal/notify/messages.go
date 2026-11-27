@@ -25,6 +25,8 @@ type catalog struct {
 	counts   map[string]plural
 	sections map[string]string
 	reports  plural
+	sets     plural
+	group    string
 	more     string
 	console  string
 	test     string
@@ -53,6 +55,7 @@ var catalogs = map[string]catalog{
 	LanguageEN: {
 		counts: map[string]plural{
 			EventShare:       {"new set", "new sets", "new sets"},
+			EventGroup:       {"new group", "new groups", "new groups"},
 			EventReport:      {"report", "reports", "reports"},
 			EventAutoHide:    {"set hidden by reports", "sets hidden by reports", "sets hidden by reports"},
 			EventBuildFailed: {"failed build", "failed builds", "failed builds"},
@@ -60,12 +63,15 @@ var catalogs = map[string]catalog{
 		},
 		sections: map[string]string{
 			EventShare:       "New sets in the queue",
+			EventGroup:       "New groups in the queue",
 			EventReport:      "Reports",
 			EventAutoHide:    "Hidden by reports",
 			EventBuildFailed: "Failed builds",
 			EventMirror:      "Mirrors waiting for approval",
 		},
 		reports: plural{"report", "reports", "reports"},
+		sets:    plural{"set", "sets", "sets"},
+		group:   "group",
 		more:    "and %d more",
 		console: "Console: %s",
 		test:    "b4hub: test notification. This channel is set up and delivers messages.",
@@ -74,6 +80,7 @@ var catalogs = map[string]catalog{
 	LanguageRU: {
 		counts: map[string]plural{
 			EventShare:       {"новый сет", "новых сета", "новых сетов"},
+			EventGroup:       {"новая группа", "новых группы", "новых групп"},
 			EventReport:      {"жалоба", "жалобы", "жалоб"},
 			EventAutoHide:    {"сет скрыт по жалобам", "сета скрыты по жалобам", "сетов скрыто по жалобам"},
 			EventBuildFailed: {"неудачная сборка", "неудачные сборки", "неудачных сборок"},
@@ -81,12 +88,15 @@ var catalogs = map[string]catalog{
 		},
 		sections: map[string]string{
 			EventShare:       "Новые сеты в очереди",
+			EventGroup:       "Новые группы в очереди",
 			EventReport:      "Жалобы",
 			EventAutoHide:    "Скрыты по жалобам",
 			EventBuildFailed: "Неудачные сборки",
 			EventMirror:      "Зеркала ждут одобрения",
 		},
 		reports: plural{"жалоба", "жалобы", "жалоб"},
+		sets:    plural{"сет", "сета", "сетов"},
+		group:   "группа",
 		more:    "и ещё %d",
 		console: "Консоль: %s",
 		test:    "b4hub: тестовое уведомление. Канал настроен и доставляет сообщения.",
@@ -128,12 +138,24 @@ func setLabel(e store.NotifyEvent) string {
 	return ref
 }
 
+func (c catalog) groupLabel(e store.NotifyEvent) string {
+	ref := c.group + " " + e.SetID + " v" + strconv.Itoa(e.Version) + ", " + c.count(c.sets, e.Members)
+	if title := cleanText(e.Title, fieldRunes); title != "" {
+		return title + " (" + ref + ")"
+	}
+	return ref
+}
+
 func (c catalog) line(e store.NotifyEvent) string {
 	var b strings.Builder
 	b.WriteString("- ")
 	switch e.Kind {
-	case EventShare:
-		b.WriteString(setLabel(e))
+	case EventShare, EventGroup:
+		if e.Kind == EventGroup {
+			b.WriteString(c.groupLabel(e))
+		} else {
+			b.WriteString(setLabel(e))
+		}
 		if asn := cleanText(e.ASN, 20); asn != "" {
 			b.WriteString(", AS" + asn)
 		}

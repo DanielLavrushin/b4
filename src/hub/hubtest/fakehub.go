@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -272,6 +273,21 @@ func (f *FakeHub) serveBlob(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+type GroupAnswer struct {
+	ID   string `json:"id"`
+	Kind string `json:"kind"`
+	hubwire.GroupResult
+}
+
+func NewGroupAnswer(rec *hubwire.Record, body hubwire.GroupBody) GroupAnswer {
+	short := rec.ID()[:8]
+	answer := GroupAnswer{ID: rec.ID(), Kind: rec.Kind, GroupResult: hubwire.GroupResult{GroupID: "grp-" + short, Version: 1, Status: hubwire.SetStatusPending, Members: []hubwire.GroupMemberResult{}}}
+	for i := range body.Members {
+		answer.Members = append(answer.Members, hubwire.GroupMemberResult{SetID: fmt.Sprintf("hub-%s-%d", short, i), Version: 1, Status: hubwire.SetStatusPending})
+	}
+	return answer
+}
+
 func writeJSON(w http.ResponseWriter, status int, body interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -309,6 +325,13 @@ func (f *FakeHub) serveMessage(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusAccepted, map[string]interface{}{
 			"id": rec.ID(), "kind": rec.Kind, "set_id": "hub-" + rec.ID()[:8], "version": 1, "status": hubwire.SetStatusPending,
 		})
+	case hubwire.RecordGroup:
+		var body hubwire.GroupBody
+		if err := json.Unmarshal(rec.Body, &body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"code": "bad_record", "error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusAccepted, NewGroupAnswer(&rec, body))
 	default:
 		writeJSON(w, http.StatusAccepted, map[string]interface{}{"id": rec.ID(), "kind": rec.Kind})
 	}

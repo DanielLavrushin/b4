@@ -578,7 +578,7 @@ func (api *API) getSet(w http.ResponseWriter, id string) {
 }
 
 // @Summary Create a new set
-// @Description A field the body leaves out takes b4's set default, the value a config file or a set export means when it leaves the field out. The new set template (/ui/new-set-template) does not apply here: only the web interface's Create Set reads it. A set created without "enabled" is enabled. A "group" in the body is kept only when the new set lands next to a set of that group, or when no other set has it; otherwise the set starts without a group.
+// @Description A field the body leaves out takes b4's set default, the value a config file or a set export means when it leaves the field out. The new set template (/ui/new-set-template) does not apply here: only the web interface's Create Set reads it. A set created without "enabled" is enabled. A "group" in the body is kept only when the new set lands next to a set of that group, or when no other set has it; otherwise the set starts without a group. A hub group stamp (hub.group_id, hub.group_version) in the body is dropped; the hub group endpoints write it.
 // @Tags Sets
 // @Accept json
 // @Produce json
@@ -596,6 +596,7 @@ func (api *API) createSet(w http.ResponseWriter, r *http.Request) {
 	after := r.URL.Query().Get("after")
 
 	set.Id = uuid.New().String()
+	carryHubGroupStamp(&set, nil)
 	log.Tracef("createSet: routing before defaults: enabled=%v, egress=%s, ttl=%d", set.Routing.Enabled, set.Routing.EgressInterface, set.Routing.IPTTLSeconds)
 	api.initializeSetDefaults(&set)
 	log.Tracef("createSet: routing after defaults: enabled=%v, egress=%s, ttl=%d", set.Routing.Enabled, set.Routing.EgressInterface, set.Routing.IPTTLSeconds)
@@ -636,8 +637,18 @@ func insertSetAfter(sets []*config.SetConfig, set *config.SetConfig, afterID str
 	return append([]*config.SetConfig{set}, sets...)
 }
 
+func carryHubGroupStamp(set, stored *config.SetConfig) {
+	if set.Hub == nil {
+		return
+	}
+	set.Hub.GroupID, set.Hub.GroupVersion = "", 0
+	if stored != nil && stored.Hub != nil && stored.Hub.ID != "" && stored.Hub.ID == set.Hub.ID {
+		set.Hub.GroupID, set.Hub.GroupVersion = stored.Hub.GroupID, stored.Hub.GroupVersion
+	}
+}
+
 // @Summary Update a set
-// @Description The body replaces the whole set. It must carry "name", "enabled" and "targets", otherwise the write is refused with 400 validation_failed and the set is left as it was. Any other field the body leaves out takes its set default, not the value the set had. When the body carries the "revision" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before. The set keeps the group it is stored with whatever the body says, and a change of group does not change the revision: use POST /sets/batch-set-group to change it.
+// @Description The body replaces the whole set. It must carry "name", "enabled" and "targets", otherwise the write is refused with 400 validation_failed and the set is left as it was. Any other field the body leaves out takes its set default, not the value the set had. When the body carries the "revision" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before. The set keeps the group it is stored with whatever the body says, and a change of group does not change the revision: use POST /sets/batch-set-group to change it. The set keeps its hub group stamp (hub.group_id, hub.group_version) only while the body carries the hub id it is stored with, whatever stamp the body says; otherwise the stamp is dropped.
 // @Tags Sets
 // @Accept json
 // @Produce json
@@ -718,6 +729,7 @@ func (api *API) updateSet(w http.ResponseWriter, r *http.Request, id string) {
 		for i, set := range next.Sets {
 			if set.Id == id {
 				updated.Group = set.Group
+				carryHubGroupStamp(&updated, set)
 				next.Sets[i] = &updated
 				found = true
 				break
@@ -972,10 +984,11 @@ func (api *API) loadTargetsForSetCached(set *config.SetConfig) targetExpansion {
 }
 
 // @Summary Batch delete sets
+// @Description restore is optional: domains to give back to the sets they were taken from, such as the moved list of a hub apply being undone, saved in the same write. A domain goes back to its set without being taken from any other set; an entry naming a set that is gone or being deleted is skipped.
 // @Tags Sets
 // @Accept json
 // @Produce json
-// @Param body body object true "Set IDs to delete"
+// @Param body body object true "Set IDs to delete, and optionally domains to restore"
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @Router /sets/batch-delete [post]
@@ -986,7 +999,8 @@ func (api *API) handleBatchDeleteSets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Ids []string `json:"ids"`
+		Ids     []string             `json:"ids"`
+		Restore []DomainReassignment `json:"restore"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, ErrInvalidJSON())
@@ -1016,6 +1030,11 @@ func (api *API) handleBatchDeleteSets(w http.ResponseWriter, r *http.Request) {
 			return ErrNotFound("No matching sets found")
 		}
 		next.Sets = filtered
+		for _, back := range req.Restore {
+			if set := next.GetSetById(back.SetId); set != nil && strings.TrimSpace(back.Domain) != "" {
+				addSNIDomains(set, []string{strings.TrimSpace(back.Domain)})
+			}
+		}
 		return nil
 	})
 	if err != nil {

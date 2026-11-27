@@ -63,6 +63,7 @@ func fail(status int, code, message string) Response {
 
 var limitedActions = map[string]string{
 	ratelimit.ScopeShare:   "shares",
+	ratelimit.ScopeGroup:   "groups",
 	ratelimit.ScopeVote:    "votes",
 	ratelimit.ScopeReport:  "reports",
 	ratelimit.ScopeMirror:  "mirror announcements",
@@ -223,6 +224,9 @@ func (s *Service) HandleFrom(ctx context.Context, raw []byte, src Source) Respon
 	}
 	recordID := rec.ID()
 	if seen, err := s.Store.GetRecord(ctx, recordID); err == nil {
+		if seen.Kind == hubwire.RecordGroup {
+			return s.replayedGroup(ctx, seen)
+		}
 		body := map[string]interface{}{"id": recordID, "duplicate": true}
 		if seen.SetID != "" {
 			body["set_id"] = seen.SetID
@@ -240,6 +244,8 @@ func (s *Service) HandleFrom(ctx context.Context, raw []byte, src Source) Respon
 		scope, limit = ratelimit.ScopeReport, limits.ReportsPerDay
 	case hubwire.RecordMirror:
 		scope, limit = ratelimit.ScopeMirror, limits.MirrorsPerDay
+	case hubwire.RecordGroup:
+		scope, limit = ratelimit.ScopeGroup, limits.GroupsPerDay
 	}
 	if !key.Trusted {
 		if ok, retry := s.Limiter.Allow(scope, keyHMAC, limit, ratelimit.Day); !ok {
@@ -271,6 +277,8 @@ func (s *Service) dispatch(ctx context.Context, entry record) Response {
 		return s.report(ctx, entry)
 	case hubwire.RecordMirror:
 		return s.mirror(ctx, entry)
+	case hubwire.RecordGroup:
+		return s.group(ctx, entry)
 	}
 	return fail(http.StatusBadRequest, CodeBadRecord, "unknown record kind")
 }

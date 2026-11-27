@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { B4SetConfig } from "@models/config";
 import { DSCPPath } from "@models/discovery";
+import { duplicateSetDraft } from "@models/sets";
 import { ApiResponse } from "@api/apiClient";
 import { AddDomainsResult, setsApi } from "@api/sets";
 
@@ -101,12 +102,8 @@ export function useSets() {
   );
 
   const duplicateSet = useCallback(
-    async (set: B4SetConfig): Promise<ApiResponse<B4SetConfig>> => {
-      const { id: _, revision: _revision, ...rest } = structuredClone(set);
-      if (rest.discovery) rest.discovery = { ...rest.discovery, watchdog: false };
-      rest.targets = { ...rest.targets, ip_priority: false };
-      return createSet({ ...rest, name: `${set.name} (copy)` }, set.id);
-    },
+    async (set: B4SetConfig): Promise<ApiResponse<B4SetConfig>> =>
+      createSet(duplicateSetDraft(set), set.id),
     [createSet]
   );
 

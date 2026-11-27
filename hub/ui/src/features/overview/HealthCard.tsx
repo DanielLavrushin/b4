@@ -11,6 +11,7 @@ import type { HealthView, IssueView } from "@/models/api";
 import { Section } from "@/shared/components/Section";
 import { Facts } from "@/shared/components/Facts";
 import { SetRef } from "@/shared/components/SetRef";
+import { groupPath } from "@/features/groups/GroupDrawerHost";
 import { formatAgo, formatStamp } from "@/shared/utils/format";
 
 const icons = {
@@ -56,6 +57,12 @@ function Issue({ issue }: Readonly<{ issue: IssueView }>) {
 export function HealthCard({ health }: Readonly<{ health: HealthView }>) {
   const { t } = useTranslation();
   const days = health.manifest.expires_in_s ? Math.floor(health.manifest.expires_in_s / 86400) : 0;
+  const { oldest: set, oldest_group: group } = health.pending;
+  const oldest = set ? (
+    <SetRef id={set.set_id} version={set.version} title={set.title} status="pending" />
+  ) : group ? (
+    <SetRef id={group.group_id} version={group.version} title={t("health.oldestGroup", { title: group.title })} status="pending" href={groupPath(group.group_id, group.version)} />
+  ) : null;
   return (
     <Section
       title={t("health.title")}
@@ -91,9 +98,9 @@ export function HealthCard({ health }: Readonly<{ health: HealthView }>) {
           },
           {
             label: t("health.fact.oldestPending"),
-            value: health.pending.oldest ? (
+            value: oldest ? (
               <span>
-                <SetRef id={health.pending.oldest.set_id} version={health.pending.oldest.version} title={health.pending.oldest.title} status="pending" />{" "}
+                {oldest}{" "}
                 <Typography component="span" variant="caption" sx={{ color: colors.text.secondary }}>
                   {t("health.waiting", { when: formatAgo(t, health.pending.since) })}
                 </Typography>

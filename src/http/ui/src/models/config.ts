@@ -489,6 +489,8 @@ export interface B4HubOrigin {
   id?: string;
   version?: number;
   hash?: string;
+  group_id?: string;
+  group_version?: number;
   applied_at?: string;
   vote?: HubVote;
   voted_at?: string;

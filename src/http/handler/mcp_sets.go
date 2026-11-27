@@ -273,6 +273,7 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 					return nil, mcpManageSetOut{}, err
 				}
 				fresh = *clone
+				carryHubGroupStamp(&fresh, nil)
 				fresh.Routing.Upstream.Username = ""
 				fresh.Routing.Upstream.Password = ""
 				fresh.DNS.Pins = nil

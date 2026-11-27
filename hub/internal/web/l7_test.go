@@ -64,7 +64,7 @@ func TestEditKeepsASetThatSelectsUDPProtocols(t *testing.T) {
 	plain, _ := f.share("Plain", otherAddress, "plain.example")
 	f.shareAs(testkit.Identity(t), testkit.L7Set("Group calls", config.UDPL7STUN), thirdAddress)
 	var rows SetRowsView
-	f.admin(http.MethodGet, PathAPI+"/sets/rows?group=pending&q="+config.UDPL7Discord, nil).decode(t, &rows)
+	f.admin(http.MethodGet, PathAPI+"/sets/rows?tab=pending&q="+config.UDPL7Discord, nil).decode(t, &rows)
 	if len(rows.Rows) != 1 || rows.Rows[0].SetID != id || !reflect.DeepEqual(rows.Rows[0].Targets.UDPL7, want) {
 		t.Fatalf("a search by protocol must find the set that selects it, although no title, description or technique names it, and no other set: %+v", rows.Rows)
 	}

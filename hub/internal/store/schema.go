@@ -248,4 +248,50 @@ UPDATE set_versions SET hidden_from = 'pending'
 WHERE status = 'hidden' AND hidden_from = ''
 	AND version > (SELECT current_version FROM sets WHERE sets.id = set_versions.set_id);
 `,
+	`
+CREATE TABLE groups (
+	id                   TEXT PRIMARY KEY,
+	author_hmac          TEXT NOT NULL,
+	derived_from_id      TEXT NOT NULL DEFAULT '',
+	derived_from_version INTEGER NOT NULL DEFAULT 0,
+	created_at           TEXT NOT NULL,
+	updated_at           TEXT NOT NULL,
+	withdrawn_at         TEXT NOT NULL DEFAULT '',
+	withdraw_reason      TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX groups_author ON groups(author_hmac);
+
+CREATE TABLE group_versions (
+	id               INTEGER PRIMARY KEY AUTOINCREMENT,
+	group_id         TEXT NOT NULL REFERENCES groups(id),
+	version          INTEGER NOT NULL,
+	title            TEXT NOT NULL,
+	description      TEXT NOT NULL DEFAULT '',
+	status           TEXT NOT NULL,
+	status_reason    TEXT NOT NULL DEFAULT '',
+	hidden_from      TEXT NOT NULL DEFAULT '',
+	record_id        TEXT NOT NULL DEFAULT '',
+	uploader_hmac    TEXT NOT NULL DEFAULT '',
+	asn_observed     TEXT NOT NULL DEFAULT '',
+	country_observed TEXT NOT NULL DEFAULT '',
+	asn_hint         TEXT NOT NULL DEFAULT '',
+	country_hint     TEXT NOT NULL DEFAULT '',
+	created_at       TEXT NOT NULL,
+	updated_at       TEXT NOT NULL,
+	UNIQUE(group_id, version)
+);
+CREATE INDEX group_versions_status ON group_versions(status);
+
+CREATE TABLE group_members (
+	group_id      TEXT NOT NULL,
+	version       INTEGER NOT NULL,
+	position      INTEGER NOT NULL,
+	set_id        TEXT NOT NULL,
+	set_version   INTEGER NOT NULL,
+	brought       INTEGER NOT NULL DEFAULT 0,
+	escalate_json TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY(group_id, version, position)
+);
+CREATE INDEX group_members_set ON group_members(set_id, set_version);
+`,
 }

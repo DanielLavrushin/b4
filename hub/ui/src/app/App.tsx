@@ -3,6 +3,7 @@ import { ModerationProvider } from "@/features/moderation/ModerationProvider";
 import { KnownKeysProvider } from "@/features/keys/KnownKeys";
 import { KeyDrawerHost } from "@/features/keys/KeyDrawerHost";
 import { SetDrawerHost } from "@/features/sets/SetDrawerHost";
+import { GroupDrawerHost } from "@/features/groups/GroupDrawerHost";
 import { backgroundOf } from "@/shared/hooks/useOverlay";
 import {
   AppBar,
@@ -90,6 +91,7 @@ function Shell() {
   const navigate = useNavigate();
   const location = useLocation();
   const pageLocation = backgroundOf(location) ?? location;
+  const pagePath = pageLocation.pathname.startsWith("/groups") ? "/queue" : pageLocation.pathname;
   const { logout } = useSession();
   const isCompact = useMediaQuery(theme.breakpoints.down("md"));
   const [desktopOpen, setDesktopOpen] = useState(true);
@@ -111,7 +113,7 @@ function Shell() {
     else setDesktopOpen((o) => !o);
   };
 
-  const current = navItems.find((item) => pageLocation.pathname.startsWith(item.path)) ?? navItems[0];
+  const current = navItems.find((item) => pagePath.startsWith(item.path)) ?? navItems[0];
 
   useEffect(() => {
     document.title = pending > 0 ? `(${String(pending)}) ${t("app.title")}` : t("app.title");
@@ -138,7 +140,7 @@ function Shell() {
           {navItems.map((item) => (
             <ListItem key={item.path} disablePadding>
               <ListItemButton
-                selected={pageLocation.pathname.startsWith(item.path)}
+                selected={pagePath.startsWith(item.path)}
                 onClick={() => {
                   if (isCompact) setMobileOpen(false);
                   void navigate(item.path);
@@ -211,6 +213,8 @@ function Shell() {
             <Route path="/" element={<Navigate to="/overview" replace />} />
             <Route path="/overview" element={<OverviewPage />} />
             <Route path="/queue" element={<QueuePage />} />
+            <Route path="/groups/:id" element={<QueuePage />} />
+            <Route path="/groups/:id/v/:version" element={<QueuePage />} />
             <Route path="/sets" element={<SetsPage />} />
             <Route path="/sets/:id" element={<SetsPage />} />
             <Route path="/sets/:id/v/:version" element={<SetsPage />} />
@@ -225,6 +229,7 @@ function Shell() {
             <Route path="*" element={<Navigate to="/overview" replace />} />
           </Routes>
           <SetDrawerHost />
+          <GroupDrawerHost />
           <KeyDrawerHost />
         </Box>
       </Box>

@@ -48,6 +48,10 @@ func init() {
 		moderateRejectCmd,
 		moderateHideCmd,
 		moderateRestoreCmd,
+		moderateApproveGroupCmd,
+		moderateGroupCmd(moderation.ActionReject, hubwire.SetStatusPending, "Reject a pending group version and the pending versions it brought, except those a newer version still includes", true),
+		moderateGroupCmd(moderation.ActionHide, hubwire.SetStatusActive, "Hide a group version; its member sets stay as they are", true),
+		moderateGroupCmd(moderation.ActionRestore, hubwire.SetStatusHidden, "Return a hidden group version to the state it was hidden from", false),
 		moderateWithdrawCmd,
 		moderateReinstateCmd,
 		moderateDeleteCmd,
@@ -71,6 +75,7 @@ func init() {
 		moderateAuditCmd,
 	)
 	moderateApproveCmd.Flags().BoolVar(&moderateFlags.force, "force", false, "approve even when the author is banned or the set is withdrawn")
+	moderateApproveGroupCmd.Flags().BoolVar(&moderateFlags.force, "force", false, "approve even when the author is banned or a member set is withdrawn")
 	moderateRejectCmd.Flags().BoolVar(&moderateFlags.withdraw, "withdraw", false, "also withdraw the whole set")
 	moderateHideCmd.Flags().BoolVar(&moderateFlags.withdraw, "withdraw", false, "also withdraw the whole set")
 	moderateDeleteCmd.Flags().StringVar(&moderateFlags.confirm, "confirm", "", "the set id again, to confirm the permanent deletion")
@@ -102,6 +107,18 @@ func withModeration(run moderateRun) func(*cobra.Command, []string) error {
 	}
 }
 
+func catalogueEffect(subject string, listed, after int) string {
+	switch {
+	case listed == after:
+		return "no catalogue change"
+	case after == 0:
+		return "the " + subject + " leaves the catalogue"
+	case listed == 0:
+		return "v" + strconv.Itoa(after) + " is listed"
+	}
+	return "v" + strconv.Itoa(after) + " is listed instead of v" + strconv.Itoa(listed)
+}
+
 func printEffects(items []moderation.Item) {
 	for _, it := range items {
 		ref := it.SetID + "/" + strconv.Itoa(it.Version)
@@ -109,19 +126,76 @@ func printEffects(items []moderation.Item) {
 			fmt.Printf("%s: refused (%s)\n", ref, it.Code)
 			continue
 		}
-		effect := "no catalogue change"
-		switch {
-		case it.Listed == it.ListedAfter:
-		case it.ListedAfter == 0:
-			effect = "the set leaves the catalogue"
-		case it.Listed == 0:
-			effect = "v" + strconv.Itoa(it.ListedAfter) + " is listed"
-		default:
-			effect = "v" + strconv.Itoa(it.ListedAfter) + " is listed instead of v" + strconv.Itoa(it.Listed)
-		}
-		fmt.Printf("%s: %s -> %s, %s\n", ref, it.From, it.To, effect)
+		fmt.Printf("%s: %s -> %s, %s\n", ref, it.From, it.To, catalogueEffect("set", it.Listed, it.ListedAfter))
 	}
 }
+
+func printGroupEffects(res moderation.GroupResult) {
+	g := res.Group
+	if g.From == "" {
+		return
+	}
+	if g.OK {
+		fmt.Printf("group %s/%d: %s -> %s, %s\n", g.GroupID, g.Version, g.From, g.To, catalogueEffect("group", g.Listed, g.ListedAfter))
+	} else {
+		fmt.Printf("group %s/%d: refused (%s)\n", g.GroupID, g.Version, g.Code)
+	}
+	for _, m := range res.Members {
+		switch {
+		case m.OK && m.Code != "":
+			fmt.Printf("%s/%d: kept (%s)\n", m.SetID, m.Version, m.Code)
+		case m.To != "" || !m.OK:
+			printEffects([]moderation.Item{m.Item})
+		}
+	}
+}
+
+func resolveGroupVersion(ctx context.Context, st *store.Store, ref, wantStatus string) (*store.GroupVersion, error) {
+	id, version, err := parseVersionRef(ref)
+	if err != nil {
+		return nil, err
+	}
+	if version > 0 {
+		return st.GetGroupVersion(ctx, id, version)
+	}
+	_, versions, err := st.GetGroup(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	for i := len(versions) - 1; i >= 0; i-- {
+		if versions[i].Status == wantStatus {
+			return &versions[i], nil
+		}
+	}
+	return nil, fmt.Errorf("group %s has no %s version, name one as %s/<version>", id, wantStatus, id)
+}
+
+func moderateGroupCmd(action, want, short string, reason bool) *cobra.Command {
+	use, args := action+"-group <id>[/<version>]", cobra.ExactArgs(1)
+	if reason {
+		use, args = use+" <reason>...", cobra.MinimumNArgs(2)
+	}
+	return &cobra.Command{
+		Use:   use,
+		Short: short,
+		Args:  args,
+		RunE: withModeration(func(ctx context.Context, svc *services, mod *moderation.Service, args []string) error {
+			gv, err := resolveGroupVersion(ctx, svc.store, args[0], want)
+			if err != nil {
+				return err
+			}
+			res, err := mod.ModerateGroup(ctx, cliActor(), action, moderation.GroupRef{GroupID: gv.GroupID, Version: gv.Version}, moderation.Options{Reason: strings.Join(args[1:], " "), Force: moderateFlags.force})
+			printGroupEffects(res)
+			if err != nil {
+				return err
+			}
+			fmt.Println(res.Notice)
+			return nil
+		}),
+	}
+}
+
+var moderateApproveGroupCmd = moderateGroupCmd(moderation.ActionApprove, hubwire.SetStatusPending, "Approve a pending group version with the versions it brought and the pending linked versions an earlier version of it brought; all or nothing", false)
 
 func moderateVersions(ctx context.Context, svc *services, mod *moderation.Service, action, want string, refs []string, opts moderation.Options) error {
 	resolved := make([]moderation.Ref, 0, len(refs))
@@ -166,6 +240,28 @@ var moderateListCmd = &cobra.Command{
 				note = store.WithheldAuthorBanned
 			}
 			fmt.Fprintf(tw, "%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", v.SetID, v.Version, v.Title, v.Family, strings.Join(v.Flags, ","), hubdata.AuthorLabel(v.UploaderHMAC), v.ASNObserved, v.CreatedAt.Format(time.RFC3339), note)
+		}
+		if err := tw.Flush(); err != nil {
+			return err
+		}
+		groups, err := svc.store.PendingGroupVersions(ctx)
+		if err != nil || len(groups) == 0 {
+			return err
+		}
+		fmt.Println()
+		fmt.Fprintln(tw, "GROUP\tVERSION\tTITLE\tMEMBERS\tBROUGHT\tAUTHOR\tASN\tRECEIVED\tNOTE")
+		for _, g := range groups {
+			brought := 0
+			for _, m := range g.Members {
+				if m.Brought {
+					brought++
+				}
+			}
+			note := ""
+			if banned[g.UploaderHMAC] {
+				note = store.WithheldAuthorBanned
+			}
+			fmt.Fprintf(tw, "%s\t%d\t%s\t%d\t%d\t%s\t%s\t%s\t%s\n", g.GroupID, g.Version, g.Title, len(g.Members), brought, hubdata.AuthorLabel(g.UploaderHMAC), g.ASNObserved, g.CreatedAt.Format(time.RFC3339), note)
 		}
 		return tw.Flush()
 	}),

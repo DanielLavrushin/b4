@@ -133,6 +133,37 @@ func TestBuildPublishesSignedManifestAndKeepsThreeFiles(t *testing.T) {
 	}
 }
 
+func TestAStoredDerivedVersionOutsideTheIntRangeIsPublishedAsZero(t *testing.T) {
+	b, st := testBuilder(t)
+	now := time.Date(2026, 9, 12, 12, 0, 0, 0, time.UTC)
+	derived, parent := "01ARZ3NDEKTSV4RRFFQ69G5FAY", "01ARZ3NDEKTSV4RRFFQ69G5FAZ"
+	addActiveSet(t, st, parent, "fp-p")
+	v := &store.Version{FP: "fp-d", TargetsKey: "targets-d", Title: "derived", Projection: map[string]interface{}{"targets": map[string]interface{}{"sni_domains": []interface{}{"d.example"}}}, Status: hubwire.SetStatusPending, CreatedAt: now, UpdatedAt: now}
+	if err := st.CreateSet(context.Background(), store.Set{ID: derived, AuthorHMAC: "author-d", DerivedFromID: parent, DerivedFromVersion: 1 << 33, CreatedAt: now, UpdatedAt: now}, v); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Approve(context.Background(), derived, 1, now); err != nil {
+		t.Fatal(err)
+	}
+	result, err := b.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	gz, err := os.ReadFile(filepath.Join(b.PublicDir, result.Manifest.Catalogue.File))
+	if err != nil {
+		t.Fatal(err)
+	}
+	published, err := Decode(gz)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, cs := range published.Sets {
+		if cs.ID == derived && (cs.DerivedFrom == nil || cs.DerivedFrom.ID != parent || cs.DerivedFrom.Version != 0) {
+			t.Errorf("derived_from published as %+v, want %s without a version", cs.DerivedFrom, parent)
+		}
+	}
+}
+
 func TestAStoredCustomGeodataAddressIsNotPublished(t *testing.T) {
 	b, st := testBuilder(t)
 	private := "https://canaryuser:canarypass@files.example/canarytoken/geosite.dat?sig=canarysig"

@@ -6,14 +6,15 @@ import { EditIcon, SetsIcon } from "@b4.icons";
 import { colors } from "@design";
 import { formatAsn } from "@models/asn";
 import { HubSet } from "@models/hub";
-import { CoveredSet } from "@models/sets";
+import { CoveredSet, DomainReassignment } from "@models/sets";
 
 export interface CoveredReport {
-  set: HubSet;
+  set: HubSet | null;
   localId: string;
   name: string;
   covered: CoveredSet[];
-  undoable: boolean;
+  undo: string[];
+  moved: DomainReassignment[];
   disabled: string[];
 }
 
@@ -55,6 +56,8 @@ export const CoveredDialog = ({
   const { t } = useTranslation();
   const name = report?.name ?? "";
   const covered = report?.covered ?? [];
+  const undoable = (report?.undo.length ?? 0) > 0;
+  const replaceable = undoable && Boolean(report?.set);
   const offered = covered.some(
     (c) => c.idle && !report?.disabled.includes(c.set_id),
   );
@@ -72,7 +75,7 @@ export const CoveredDialog = ({
         <>
           <Button onClick={onClose}>{t("core.close")}</Button>
           <Box sx={{ flex: 1 }} />
-          {report?.undoable && (
+          {undoable && (
             <Button disabled={busy} onClick={onUndo}>
               {t("hub.apply.undo")}
             </Button>
@@ -85,7 +88,9 @@ export const CoveredDialog = ({
     >
       <Stack spacing={1.5}>
         <Typography variant="body2" sx={{ color: colors.text.secondary }}>
-          {t("hub.apply.covered.intro", { name })}
+          {report?.set
+            ? t("hub.apply.covered.intro", { name })
+            : t("hub.group.apply.coveredIntro", { name })}
         </Typography>
         {covered.map((c) => {
           const lost = lostText(t, c);
@@ -143,7 +148,7 @@ export const CoveredDialog = ({
                   >
                     {t("hub.apply.covered.disable")}
                   </Button>
-                  {report?.undoable && (
+                  {replaceable && (
                     <Button
                       size="small"
                       variant="outlined"
@@ -160,7 +165,7 @@ export const CoveredDialog = ({
         })}
         {offered && (
           <Typography variant="body2" sx={{ color: colors.text.secondary }}>
-            {report?.undoable
+            {replaceable
               ? t("hub.apply.covered.choices")
               : t("hub.apply.covered.choiceDisable")}
           </Typography>

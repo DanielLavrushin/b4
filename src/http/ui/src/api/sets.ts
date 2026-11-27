@@ -38,8 +38,11 @@ export const setsApi = {
       tested,
       dscp_path: dscpPath,
     }),
-  deleteSets: (ids: string[]) =>
-    apiPost<void>("/api/sets/batch-delete", { ids }),
+  deleteSets: (ids: string[], restore?: DomainReassignment[]) =>
+    apiPost<void>("/api/sets/batch-delete", {
+      ids,
+      ...(restore?.length ? { restore } : {}),
+    }),
   setEnabledForSets: (ids: string[], enabled: boolean) =>
     apiPost<void>("/api/sets/batch-set-enabled", { ids, enabled }),
   setGroupForSets: (ids: string[], group: string) =>

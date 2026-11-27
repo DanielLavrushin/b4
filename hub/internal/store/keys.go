@@ -227,7 +227,11 @@ func (s *Store) GetRecord(ctx context.Context, id string) (*Record, error) {
 }
 
 func (s *Store) InsertRecord(ctx context.Context, r Record) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO records(id, kind, key_hmac, set_id, version, received_at) VALUES(?, ?, ?, ?, ?, ?)`,
+	return insertRecordTx(ctx, s.db, r)
+}
+
+func insertRecordTx(ctx context.Context, q querier, r Record) error {
+	_, err := q.ExecContext(ctx, `INSERT INTO records(id, kind, key_hmac, set_id, version, received_at) VALUES(?, ?, ?, ?, ?, ?)`,
 		r.ID, r.Kind, r.KeyHMAC, r.SetID, r.Version, formatTime(r.ReceivedAt))
 	return err
 }

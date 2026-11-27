@@ -48,8 +48,99 @@ type HubSet struct {
 }
 
 type HubSetsResponse struct {
-	Sets  []HubSet `json:"sets"`
-	Total int      `json:"total"`
+	Sets   []HubSet   `json:"sets"`
+	Groups []HubGroup `json:"groups"`
+	Total  int        `json:"total"`
+}
+
+type HubGroupMember struct {
+	Set      HubSet                   `json:"set"`
+	Escalate *hubwire.GroupEscalation `json:"escalate,omitempty"`
+	Replaces *HubGroupReplaced        `json:"replaces,omitempty"`
+}
+
+type HubGroupReplaced struct {
+	SetID   string `json:"set_id"`
+	SetName string `json:"set_name"`
+}
+
+type HubGroupApplied struct {
+	State   string   `json:"state"`
+	Group   string   `json:"group,omitempty"`
+	Version int      `json:"version,omitempty"`
+	SetIDs  []string `json:"set_ids"`
+}
+
+type HubGroup struct {
+	ID          string           `json:"id"`
+	Version     int              `json:"version"`
+	Title       string           `json:"title"`
+	Description string           `json:"description,omitempty"`
+	Author      string           `json:"author"`
+	CreatedAt   string           `json:"created_at"`
+	UpdatedAt   string           `json:"updated_at"`
+	Members     []HubGroupMember `json:"members"`
+	Applied     HubGroupApplied  `json:"applied"`
+}
+
+type HubGroupsResponse struct {
+	Groups []HubGroup `json:"groups"`
+}
+
+type HubGroupShareRequest struct {
+	Group       string `json:"group"`
+	Description string `json:"description,omitempty"`
+}
+
+type HubGroupShareMember struct {
+	SetID   string `json:"set_id"`
+	Name    string `json:"name"`
+	HubID   string `json:"hub_id"`
+	Version int    `json:"version"`
+	Status  string `json:"status"`
+	Linked  bool   `json:"linked"`
+	Result  string `json:"result"`
+}
+
+type HubGroupShareResponse struct {
+	GroupID string                `json:"group_id"`
+	Version int                   `json:"version"`
+	Status  string                `json:"status"`
+	Members []HubGroupShareMember `json:"members"`
+}
+
+type HubGroupApplyRequest struct {
+	Replace bool `json:"replace,omitempty"`
+}
+
+type HubGroupAppliedSet struct {
+	ID       string                `json:"id"`
+	Name     string                `json:"name"`
+	HubID    string                `json:"hub_id"`
+	Version  int                   `json:"version"`
+	Created  bool                  `json:"created"`
+	Moved    []DomainReassignment  `json:"moved"`
+	Covered  []CoveredSet          `json:"covered"`
+	Warnings []hubwire.Warning     `json:"warnings"`
+	Payloads []HubInstalledPayload `json:"payloads"`
+}
+
+type HubGroupApplyResponse struct {
+	Group     string               `json:"group"`
+	Sets      []HubGroupAppliedSet `json:"sets"`
+	Created   []string             `json:"created"`
+	Ungrouped []string             `json:"ungrouped"`
+}
+
+type HubMemberError struct {
+	Status  int          `json:"-"`
+	Code    string       `json:"code"`
+	Message string       `json:"error"`
+	Fields  []FieldError `json:"fields,omitempty"`
+	Member  int          `json:"member"`
+	SetID   string       `json:"set_id,omitempty"`
+	SetName string       `json:"set_name,omitempty"`
+	HubID   string       `json:"hub_id,omitempty"`
 }
 
 type HubApplyRequest struct {
@@ -105,6 +196,7 @@ type HubRemoteError struct {
 	Scope      string `json:"scope,omitempty"`
 	Limit      int    `json:"limit,omitempty"`
 	Window     string `json:"window,omitempty"`
+	GroupID    string `json:"group_id,omitempty"`
 }
 
 type HubIdentityResponse struct {
