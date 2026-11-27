@@ -7,7 +7,7 @@ All notable changes to b4 are recorded in this file.
 ### Added
 
 - **Add to a set's resolvers** in the DNS results of the **DPI Detector** puts a working encrypted resolver into a set's **Resolvers**. If the set has **Enable DNS Redirect** off, the resolver goes first and the redirect is switched on. [#680](https://github.com/DanielLavrushin/b4/issues/680)
-- Sets can be grouped: **Select** them and press **Group**, pick a group in a set's menu, or drag a set onto a group. A group moves as one, and is enabled, renamed or exported as one file.
+- Sets can be grouped through **Select** and **Group**, through a set's menu, or by dragging a set onto a group. A group moves as one, and is enabled, renamed or exported as one file.
 
 ### Changed
 
