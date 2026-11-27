@@ -79,16 +79,22 @@ func (s *Service) fileGroup(ctx context.Context, t *store.Tx, entry record, body
 	taken := make(map[string]bool, len(members))
 	versions := make([]*store.Version, len(members))
 	linked := make([]bool, len(members))
-	for i, m := range members {
-		matches, err := t.CurrentMatches(ctx, m.fp, m.targetsKey)
-		if err != nil {
-			return Response{}, err
-		}
-		for j := range matches {
-			if !taken[matches[j].SetID] {
-				versions[i], linked[i] = &matches[j], true
-				taken[matches[j].SetID] = true
-				break
+	for _, find := range []func(context.Context, string, string) ([]store.Version, error){t.CurrentMatches, t.ListedOrHiddenMatches} {
+		for i, m := range members {
+			if linked[i] {
+				continue
+			}
+			matches, err := find(ctx, m.fp, m.targetsKey)
+			if err != nil {
+				return Response{}, err
+			}
+			prefer := ""
+			if d := derivedSet(m.env); d != nil {
+				prefer = d.ID
+			}
+			if v := linkTarget(matches, taken, prefer); v != nil {
+				versions[i], linked[i] = v, true
+				taken[v.SetID] = true
 			}
 		}
 	}
@@ -213,6 +219,20 @@ func (s *Service) fileGroup(ctx context.Context, t *store.Tx, entry record, body
 		"status":   gv.Status,
 		"members":  results,
 	}}, nil
+}
+
+func linkTarget(matches []store.Version, taken map[string]bool, prefer string) *store.Version {
+	var first *store.Version
+	for j := range matches {
+		switch {
+		case taken[matches[j].SetID]:
+		case matches[j].SetID == prefer:
+			return &matches[j]
+		case first == nil:
+			first = &matches[j]
+		}
+	}
+	return first
 }
 
 func (s *Service) replayedGroup(ctx context.Context, seen *store.Record) Response {

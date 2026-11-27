@@ -184,7 +184,7 @@ func TestAGroupLinksAnotherAuthorsCurrentSet(t *testing.T) {
 	}
 }
 
-func TestAMatchOnASupersededOrHiddenVersionIsNotALink(t *testing.T) {
+func TestAMatchOnASupersededVersionIsNotALinkButOnTheListedOrHiddenOneIs(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	stranger, author := testkit.Identity(t), testkit.Identity(t)
@@ -202,11 +202,81 @@ func TestAMatchOnASupersededOrHiddenVersionIsNotALink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resp := f.group(t, author, groupOf(t, "mixed", old, hiddenSet), peerA)
+	listedSet := tuned("Discord", 9, "discord.com")
+	l := f.share(t, stranger, listedSet, peerB)
+	expect(t, l, http.StatusAccepted, "")
+	listedID := l.Body["set_id"].(string)
+	if err := f.store.Approve(ctx, listedID, 1, f.clock); err != nil {
+		t.Fatal(err)
+	}
+	next := f.share(t, stranger, tuned("Discord", 11, "discord.com"), peerB)
+	if next.Body["set_id"] != listedID || next.Body["version"] != 2 {
+		t.Fatalf("the second Discord share is version 2 of the listed set, got %v", next.Body)
+	}
+
+	other := testkit.Identity(t)
+	signal := tuned("Signal", 9, "signal.org")
+	s := f.share(t, other, signal, peerB)
+	expect(t, s, http.StatusAccepted, "")
+	signalID := s.Body["set_id"].(string)
+	if err := f.store.Approve(ctx, signalID, 1, f.clock); err != nil {
+		t.Fatal(err)
+	}
+	hiddenNext := tuned("Signal", 11, "signal.org")
+	expect(t, f.share(t, other, hiddenNext, peerB), http.StatusAccepted, "")
+	if err := f.store.Hide(ctx, signalID, 2, "reports", f.clock); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := f.group(t, author, groupOf(t, "mixed", old, hiddenSet, listedSet, hiddenNext), peerA)
 	expect(t, resp, http.StatusAccepted, "")
-	for i, m := range groupMembers(t, resp) {
-		if m.Linked || m.SetID == superseded || m.SetID == hiddenID || m.Version != 1 {
-			t.Errorf("member %d matches only a superseded or hidden version and becomes a new set, got %+v", i, m)
+	members := groupMembers(t, resp)
+	if m := members[3]; m.Linked || m.SetID == signalID {
+		t.Errorf("a member equal to a hidden version of a set that lists an older one becomes a new set, got %+v", m)
+	}
+	if m := members[0]; m.Linked || m.SetID == superseded || m.Version != 1 {
+		t.Errorf("a member that matches only a version a newer pending one supersedes becomes a new set, got %+v", m)
+	}
+	if members[1] != (hubwire.GroupMemberResult{SetID: hiddenID, Version: 1, Status: hubwire.SetStatusHidden, Linked: true}) {
+		t.Errorf("a member that matches a hidden set links it rather than filing it again, got %+v", members[1])
+	}
+	if members[2] != (hubwire.GroupMemberResult{SetID: listedID, Version: 1, Status: hubwire.SetStatusActive, Linked: true}) {
+		t.Errorf("a member that matches the listed version links it while a newer version waits, got %+v", members[2])
+	}
+	for _, id := range []string{hiddenID, listedID} {
+		if _, versions, _ := f.store.GetSet(ctx, id); len(versions) != map[string]int{hiddenID: 1, listedID: 2}[id] {
+			t.Errorf("a link adds no version to %s, got %d", id, len(versions))
+		}
+	}
+}
+
+func TestAMemberLinksTheSetItCameFromAmongEqualMatches(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	stranger := testkit.Identity(t)
+	set := testkit.SampleSet("Discord", "discord.com")
+	shared := f.share(t, stranger, set, peerB)
+	expect(t, shared, http.StatusAccepted, "")
+	first := shared.Body["set_id"].(string)
+	v, err := f.store.GetVersion(ctx, first, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	twin, err := hubdata.NewSetID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	author := hubdata.KeyHMAC(f.svc.Secret, stranger.KeyID())
+	if err := f.store.CreateSet(ctx, store.Set{ID: twin, AuthorHMAC: author, CreatedAt: f.clock, UpdatedAt: f.clock}, v); err != nil {
+		t.Fatal(err)
+	}
+	for _, from := range []string{first, twin} {
+		member := set
+		member.Hub = &config.HubOrigin{ID: from, Version: 1}
+		resp := f.group(t, testkit.Identity(t), groupOf(t, "chat", member), peerA)
+		expect(t, resp, http.StatusAccepted, "")
+		if got := groupMembers(t, resp)[0]; got.SetID != from || !got.Linked {
+			t.Errorf("a member that came from %s links that set among equal ones, got %+v", from, got)
 		}
 	}
 }

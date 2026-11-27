@@ -386,6 +386,14 @@ func (t *Tx) CurrentMatches(ctx context.Context, fp, targetsKey string) ([]Versi
 	return currentMatchesTx(ctx, t.tx, fp, targetsKey)
 }
 
+func (t *Tx) ListedOrHiddenMatches(ctx context.Context, fp, targetsKey string) ([]Version, error) {
+	return queryVersions(ctx, t.tx, `SELECT `+versionColumns+` FROM set_versions sv WHERE fp = ?1 AND targets_key = ?2 AND (
+		(status = ?3 AND version = (SELECT MAX(o.version) FROM set_versions o WHERE o.set_id = sv.set_id AND o.status = ?3))
+		OR (status = ?4 AND version = (SELECT MAX(o.version) FROM set_versions o WHERE o.set_id = sv.set_id AND o.status <> ?5)
+			AND NOT EXISTS (SELECT 1 FROM set_versions o WHERE o.set_id = sv.set_id AND o.status = ?3)))
+		ORDER BY CASE status WHEN ?3 THEN 0 ELSE 1 END, created_at, set_id`, fp, targetsKey, hubwire.SetStatusActive, hubwire.SetStatusHidden, hubwire.SetStatusRejected)
+}
+
 func (t *Tx) CreateSet(ctx context.Context, set Set, v *Version) error {
 	return createSetTx(ctx, t.tx, set, v)
 }
