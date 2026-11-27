@@ -237,3 +237,99 @@ func TestTheCapturePriorityIgnoresB4sOwnRules(t *testing.T) {
 		t.Errorf("a foreign rule at 7 gave capture priority %d, want 6", got)
 	}
 }
+
+const (
+	clientGuardAdd   = "ip rule add fwmark 0x20000000/0x20000000 lookup local priority 87"
+	reinjectGuardAdd = "ip rule add fwmark 0x10000000/0x10000000 lookup local priority 98"
+)
+
+func TestWholeDefaultCaptureAddsTheLocalGuardsBeforeItsBypassRules(t *testing.T) {
+	f := stubRules(t, rosRules)
+	r := &routeManager{tunName: "b4tun0", outIface: "eth0", routeTable: 97}
+	if err := r.setupDefaultCapture(""); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ guard, rules string }{
+		{clientGuardAdd, "ip rule add fwmark 0x20000000/0x20000000 lookup "},
+		{reinjectGuardAdd, "ip rule add fwmark 0x10000000/0x10000000 lookup "},
+	} {
+		guard := f.index(c.guard)
+		if guard < 0 {
+			t.Fatalf("%q was not run, so b4's packets for this device's own addresses leave on the wire; calls:\n%s", c.guard, strings.Join(f.calls, "\n"))
+		}
+		for i, call := range f.calls {
+			if strings.HasPrefix(call, c.rules) && !strings.Contains(call, "lookup local") && i < guard {
+				t.Errorf("%q ran before %q; calls:\n%s", call, c.guard, strings.Join(f.calls, "\n"))
+			}
+		}
+	}
+	if !r.bypassGuardsAdded {
+		t.Error("the guards were added but not recorded, so teardown would leave them")
+	}
+}
+
+func TestWholeDefaultCaptureAddsOnlyTheLocalGuardsTheSystemRulesNeed(t *testing.T) {
+	cases := []struct {
+		name           string
+		show           string
+		client, inject bool
+	}{
+		{"stock rules", stockRules, false, false},
+		{"RouterOS container rules", rosRules, true, true},
+		{"local table between the two bypass pairs", "90:\tfrom all lookup local\n32766:\tfrom all lookup main\n", true, false},
+		{"local table just above the client bypass", "87:\tfrom all lookup local\n32766:\tfrom all lookup main\n", false, false},
+		{"guards already in place", "87:\tfrom all fwmark 0x20000000/0x20000000 lookup local\n98:\tfrom all fwmark 0x10000000/0x10000000 lookup local\n" + rosRules, false, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := stubRules(t, c.show)
+			r := &routeManager{tunName: "b4tun0", resolvedCapture: "default", outIface: "eth0", routeTable: 97}
+			r.ensureBypass()
+			if got := f.index(clientGuardAdd) >= 0; got != c.client {
+				t.Errorf("client-direction guard added = %v, want %v; calls:\n%s", got, c.client, strings.Join(f.calls, "\n"))
+			}
+			if got := f.index(reinjectGuardAdd) >= 0; got != c.inject {
+				t.Errorf("re-inject guard added = %v, want %v; calls:\n%s", got, c.inject, strings.Join(f.calls, "\n"))
+			}
+		})
+	}
+}
+
+func TestTeardownRemovesTheWholeDefaultLocalGuardsByTheirMarksOnly(t *testing.T) {
+	f := stubRules(t, rosRules)
+	r := &routeManager{tunName: "b4tun0", resolvedCapture: "default", routeTable: 97, bypassGuardsAdded: true, skipTables: true}
+	r.teardown()
+	for _, mark := range []string{"0x20000000/0x20000000", "0x10000000/0x10000000"} {
+		if f.index("ip rule del fwmark "+mark+" lookup local") < 0 {
+			t.Errorf("teardown left the guard for mark %s; calls: %q", mark, f.calls)
+		}
+	}
+	for _, c := range f.calls {
+		if strings.HasPrefix(c, "ip rule del") && strings.Contains(c, "lookup local") && !strings.Contains(c, "fwmark 0x") {
+			t.Errorf("%q could delete the system's local rule", c)
+		}
+	}
+	if r.bypassGuardsAdded {
+		t.Error("the guards are still recorded after teardown")
+	}
+}
+
+func TestTheSweepRemovesLeftoverWholeDefaultLocalGuards(t *testing.T) {
+	out := strings.Join([]string{
+		"87:\tfrom all fwmark 0x20000000/0x20000000 lookup local",
+		"88:\tfrom all fwmark 0x20000000/0x20000000 lookup main suppress_prefixlength 0",
+		"98:\tfrom all fwmark 0x10000000/0x10000000 lookup local",
+		"87:\tfrom all fwmark 0x10000000/0x10000000 lookup local",
+		"98:\tfrom all fwmark 0x1234 lookup local",
+		"200:\tfrom all lookup local",
+	}, "\n")
+	dels, _ := planTunRuleSweep(out, ownedTunTables(0), 0x8000)
+	want := strings.Join([]string{
+		"ip rule del priority 87 fwmark 0x20000000/0x20000000 lookup local",
+		"ip rule del priority 88 fwmark 0x20000000/0x20000000 lookup main",
+		"ip rule del priority 98 fwmark 0x10000000/0x10000000 lookup local",
+	}, "\n")
+	if got := joinDels(dels); got != want {
+		t.Errorf("sweep deletes\n%s\nwant\n%s", got, want)
+	}
+}

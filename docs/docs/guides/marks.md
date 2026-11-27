@@ -689,6 +689,11 @@ without its default route, the second in the uplink table, which holds the uplin
 route and is chosen from 97 down to 62 in the same way, or is `queue.tun.route_table`
 itself. Rules 88, 89 and 99 need an `ip` that accepts `suppress_prefixlength`; without it
 only rule 100 is added.
+When no rule looks up the `local` table for every packet ahead of rule 88, as in RouterOS
+containers, b4 adds `fwmark 0x20000000/0x20000000 lookup local` at 87, and when none does
+ahead of rule 99, `fwmark 0x10000000/0x10000000 lookup local` at 98. Packets b4 sends to the
+router's own addresses and to `127.0.0.1`, such as the answers to its own DNS queries, are
+then delivered on the router instead of leaving by the uplink.
 
 With port capture, b4's own connections enter `b4tun0` by their destination port like any other
 router connection, except those that `B4_TUN` returns. The connections of a **Telegram set**
@@ -787,7 +792,9 @@ removed when the TUN engine next starts, before its own rules.
 | 80 | `fwmark <flow mark>/0xffffffff`; also `fwmark <injected mark>/0xffffffff` on the whole default route | `local` | A Discovery run in TUN mode, IPv4, when no rule looks up `local` for every packet ahead of priority 81 |
 | 81 | `fwmark <flow mark>/0xffffffff` | 60 down to 32 | A Discovery run in TUN mode, IPv4 |
 | 82, 83 | `fwmark <injected mark>/0xffffffff` | `main` without its default route, then the uplink table | A Discovery run in TUN mode on the whole default route, IPv4 |
+| 87 | `fwmark 0x20000000/0x20000000` | `local` | TUN mode on the whole default route, IPv4, when no rule looks up `local` for every packet ahead of priority 88 |
 | 88, 89 | `fwmark 0x20000000/0x20000000` | `main` without its default route, then the uplink table: 97 down to 62, or `queue.tun.route_table` | TUN mode on the whole default route, IPv4 |
+| 98 | `fwmark 0x10000000/0x10000000` | `local` | TUN mode on the whole default route, IPv4, when no rule looks up `local` for every packet ahead of priority 99 |
 | 99, 100 | `fwmark 0x10000000/0x10000000` | The same | TUN mode on the whole default route, IPv4 |
 | 10000 + table | `fwmark <mark>/0x27fff` | 100-249, or the pinned `routing.table` | Sets routed through an interface |
 

@@ -85,6 +85,8 @@ type routeManager struct {
 	reinjectLocalAdded bool
 	localGuardAdded    bool
 	localGuardWarned   bool
+	bypassGuardsAdded  bool
+	bypassGuardsWarned bool
 	localNets          []string
 	localNetsWanted    []string
 	localRetries       int
@@ -384,6 +386,7 @@ func (r *routeManager) setupBypassTable() error {
 
 	r.delFwmarkRule(markStr, tableStr)
 
+	r.ensureBypassGuards()
 	if _, err := run("ip", "rule", "add", "fwmark", markStr, "lookup", tableStr, "priority", strconv.Itoa(bypassRulePrio)); err != nil {
 		return routingError("ip rule add (whole-default capture; needs kernel policy routing)", r.routeTable, err)
 	}
@@ -705,6 +708,7 @@ func (r *routeManager) removeReinjectLocalRule() {
 }
 
 func (r *routeManager) ensureBypass() {
+	r.ensureBypassGuards()
 	r.ensureReinjectLocalRule()
 	markStr := reinjectMarkMatch()
 	tableStr := fmt.Sprintf("%d", r.routeTable)
@@ -849,6 +853,9 @@ func (r *routeManager) teardown() {
 	}
 	if r.reinjectLocalAdded {
 		r.removeReinjectLocalRule()
+	}
+	if r.bypassGuardsAdded {
+		r.removeBypassGuards()
 	}
 	if r.resolvedCapture != "ports" && r.bypassTableClaimed {
 		r.delFwmarkRule(markStr, tableStr)

@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -61,12 +62,16 @@ func describeLocalLookup(ruleShow string) string {
 	return "no ip rule looks up the local routing table for every packet"
 }
 
-func (r *routeManager) localGuardArgs(action string, prio int) []string {
-	args := []string{"ip", "rule", action, "fwmark", r.steerMarkStr(), "lookup", "local"}
+func localLookupRuleArgs(action, mark string, prio int) []string {
+	args := []string{"ip", "rule", action, "fwmark", mark, "lookup", "local"}
 	if prio > 0 {
 		args = append(args, "priority", strconv.Itoa(prio))
 	}
 	return args
+}
+
+func (r *routeManager) localGuardArgs(action string, prio int) []string {
+	return localLookupRuleArgs(action, r.steerMarkStr(), prio)
 }
 
 func (r *routeManager) ensureLocalGuard() {
@@ -110,4 +115,69 @@ func (r *routeManager) removeLocalGuard() {
 		}
 	}
 	r.localGuardAdded = false
+}
+
+type bypassGuard struct {
+	mark   string
+	before int
+}
+
+func bypassGuards() []bypassGuard {
+	return []bypassGuard{
+		{mark: clientMarkMatch(), before: clientLocalPrio},
+		{mark: reinjectMarkMatch(), before: reinjectLocalPrio},
+	}
+}
+
+func isBypassGuardRule(prio int, fw string) bool {
+	return (prio == clientLocalPrio-1 && markMatches(fw, engine.ClientMark)) ||
+		(prio == reinjectLocalPrio-1 && markMatches(fw, engine.ReinjectMarkBit))
+}
+
+func (r *routeManager) ensureBypassGuards() {
+	out, err := run("ip", "rule", "show")
+	if err != nil {
+		return
+	}
+	r.syncBypassGuards(out)
+}
+
+func (r *routeManager) syncBypassGuards(ruleShow string) {
+	restoring := r.bypassGuardsAdded
+	for _, g := range bypassGuards() {
+		if !localGuardNeeded(ruleShow, g.before) {
+			continue
+		}
+		prio := g.before - 1
+		if localGuardPresent(ruleShow, g.mark, prio) {
+			r.bypassGuardsAdded = true
+			continue
+		}
+		where := describeLocalLookup(ruleShow)
+		if _, err := run(localLookupRuleArgs("add", g.mark, prio)...); err != nil {
+			if !r.bypassGuardsWarned {
+				log.Warnf("TUN: %s, after b4's rule at priority %d, and the rule that keeps b4's packets with mark %s for this device's own addresses on this device could not be added (%v), so they leave by %s instead", where, g.before, g.mark, err, r.outIface)
+				r.bypassGuardsWarned = true
+			}
+			continue
+		}
+		r.bypassGuardsWarned = false
+		r.bypassGuardsAdded = true
+		if restoring {
+			log.Infof("TUN: reconcile restored the rule that looks up the local routing table for mark %s (ip rule priority %d)", g.mark, prio)
+			continue
+		}
+		log.Infof("TUN: %s, after b4's rule at priority %d, so b4's packets with mark %s for this device's own addresses would leave by %s; added a rule at priority %d that looks up the local routing table first for them", where, g.before, g.mark, r.outIface, prio)
+	}
+}
+
+func (r *routeManager) removeBypassGuards() {
+	for _, g := range bypassGuards() {
+		for {
+			if _, err := run(localLookupRuleArgs("del", g.mark, 0)...); err != nil {
+				break
+			}
+		}
+	}
+	r.bypassGuardsAdded = false
 }
