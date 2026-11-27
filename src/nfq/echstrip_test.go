@@ -344,13 +344,13 @@ func TestDNSOverTCPStripsECHAfterAnotherQueryOnTheConnection(t *testing.T) {
 	}
 }
 
-func TestDNSOverTCPStaysRawWithoutAnECHStripSet(t *testing.T) {
+func TestDNSOverTCPKeepsTheECHKeyWithoutAnECHStripSet(t *testing.T) {
 	w, _ := echTestWorker(t, echTestSet("plain", false, "cloudflare-ech.com"))
 	tcpECHUpstream(t)
 
 	answers := mixedTCPQueries(t, w)
 	if names := dns.ResponseECHPublicNames(answers[1]); len(names) != 1 {
-		t.Fatalf("keys %v: with no set stripping, the connection is passed through untouched", names)
+		t.Fatalf("keys %v: with no set stripping, the answer keeps its ECH key", names)
 	}
 }
 
