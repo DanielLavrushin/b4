@@ -1,11 +1,14 @@
 package tun
 
 import (
+	"bytes"
 	"errors"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/daniellavrushin/b4/log"
 )
 
 const (
@@ -264,7 +267,7 @@ func TestWholeDefaultCaptureAddsTheLocalGuardsBeforeItsBypassRules(t *testing.T)
 			}
 		}
 	}
-	if !r.bypassGuardsAdded {
+	if r.bypassGuardAdded != [2]bool{true, true} {
 		t.Error("the guards were added but not recorded, so teardown would leave them")
 	}
 }
@@ -301,7 +304,7 @@ func TestTeardownRemovesTheWholeDefaultLocalGuardsByTheirMarksOnly(t *testing.T)
 	stateFileCandidates = []string{filepath.Join(t.TempDir(), "b4-tun.state")}
 	t.Cleanup(func() { stateFileCandidates = saved })
 	f := stubRules(t, rosRules)
-	r := &routeManager{tunName: "b4tun0", resolvedCapture: "default", routeTable: 97, bypassGuardsAdded: true, skipTables: true}
+	r := &routeManager{tunName: "b4tun0", resolvedCapture: "default", routeTable: 97, bypassGuardAdded: [2]bool{true, true}, skipTables: true}
 	r.teardown()
 	for _, mark := range []string{"0x20000000/0x20000000", "0x10000000/0x10000000"} {
 		if f.index("ip rule del fwmark "+mark+" lookup local") < 0 {
@@ -313,8 +316,61 @@ func TestTeardownRemovesTheWholeDefaultLocalGuardsByTheirMarksOnly(t *testing.T)
 			t.Errorf("%q could delete the system's local rule", c)
 		}
 	}
-	if r.bypassGuardsAdded {
+	if r.bypassGuardAdded != [2]bool{} {
 		t.Error("the guards are still recorded after teardown")
+	}
+}
+
+func recordTUNLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	buf := &bytes.Buffer{}
+	log.StartRecording(buf, log.LevelInfo)
+	t.Cleanup(func() { log.StopRecording(buf) })
+	return buf
+}
+
+func TestEachWholeDefaultLocalGuardWarnsOnceAboutItsOwnFailedAdd(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		failing []string
+	}{
+		{"both adds fail", []string{clientGuardAdd, reinjectGuardAdd}},
+		{"only the client-direction add fails", []string{clientGuardAdd}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			buf := recordTUNLog(t)
+			f := stubRules(t, rosRules)
+			f.fail = func(cmd string) bool { return slices.Contains(c.failing, cmd) }
+			r := &routeManager{tunName: "b4tun0", outIface: "eth0", routeTable: 97}
+			r.ensureBypassGuards()
+			r.ensureBypassGuards()
+			for _, g := range bypassGuards() {
+				want := 0
+				if slices.Contains(c.failing, strings.Join(localLookupRuleArgs("add", g.mark, g.before-1), " ")) {
+					want = 1
+				}
+				if n := strings.Count(buf.String(), "with mark "+g.mark+" for this device's own addresses on this device could not be added"); n != want {
+					t.Errorf("the failed add for mark %s was reported %d times over two reconciles, want %d; log:\n%s", g.mark, n, want, buf.String())
+				}
+			}
+		})
+	}
+}
+
+func TestAWholeDefaultLocalGuardIsReportedRestoredOnlyAfterItWasAdded(t *testing.T) {
+	buf := recordTUNLog(t)
+	f := stubRules(t, "90:\tfrom all lookup local\n32766:\tfrom all lookup main\n")
+	r := &routeManager{tunName: "b4tun0", outIface: "eth0", routeTable: 97}
+	r.ensureBypassGuards()
+	f.show = "87:\tfrom all fwmark 0x20000000/0x20000000 lookup local\n" + rosRules
+	r.ensureBypassGuards()
+	if strings.Contains(buf.String(), "restored the rule that looks up the local routing table for mark "+reinjectMarkMatch()) {
+		t.Errorf("the re-inject guard, added for the first time, was logged as restored; log:\n%s", buf.String())
+	}
+	f.show = "98:\tfrom all fwmark 0x10000000/0x10000000 lookup local\n" + rosRules
+	r.ensureBypassGuards()
+	if !strings.Contains(buf.String(), "restored the rule that looks up the local routing table for mark "+clientMarkMatch()) {
+		t.Errorf("the client-direction guard, added at setup and then removed, was not logged as restored; log:\n%s", buf.String())
 	}
 }
 

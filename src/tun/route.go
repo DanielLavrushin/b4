@@ -85,8 +85,8 @@ type routeManager struct {
 	reinjectLocalAdded bool
 	localGuardAdded    bool
 	localGuardWarned   bool
-	bypassGuardsAdded  bool
-	bypassGuardsWarned bool
+	bypassGuardAdded   [2]bool
+	bypassGuardWarned  [2]bool
 	localNets          []string
 	localNetsWanted    []string
 	localRetries       int
@@ -854,7 +854,7 @@ func (r *routeManager) teardown() {
 	if r.reinjectLocalAdded {
 		r.removeReinjectLocalRule()
 	}
-	if r.bypassGuardsAdded {
+	if r.bypassGuardAdded != [2]bool{} {
 		r.removeBypassGuards()
 	}
 	if r.resolvedCapture != "ports" && r.bypassTableClaimed {
