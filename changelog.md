@@ -36,7 +36,7 @@ All notable changes to b4 are recorded in this file.
 - In the Russian interface, **Test** on the **Community** page showed its errors and the status of each fetch in English.
 - **System Info** could report NFQUEUE as failed without testing it, show the firewall backend as `none` in TUN mode and list NFQUEUE modules and packages to install there, report built-in kernel modules as missing in a container, and leave out why iptables refused NFQUEUE. [#531](https://github.com/DanielLavrushin/b4/issues/531)
 - A set exported by b4 before 1.29.0 lost its **TCP Desync Attack** and **Window Manipulation** settings when imported in the set editor.
-- In TUN mode on a MikroTik RouterOS container without `xt_connbytes`, packets b4 sent to the router itself, such as answers to the router's own DNS lookups, could leave by the uplink instead of reaching the router.
+- In TUN mode on a MikroTik RouterOS container without `xt_connbytes`, packets b4 sent to the router itself, such as answers to the router's own DNS lookups, could leave by the uplink instead of reaching the router. ([#711](https://github.com/DanielLavrushin/b4/pull/711), thanks [@orshih6](https://github.com/orshih6); [#630](https://github.com/DanielLavrushin/b4/issues/630))
 
 ### Security
 
