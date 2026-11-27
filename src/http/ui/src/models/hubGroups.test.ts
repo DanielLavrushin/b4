@@ -12,6 +12,7 @@ import {
   hubGroupAction,
   hubGroupCovered,
   hubGroupDescriptionOf,
+  hubGroupEscalationTarget,
   hubGroupMemberOf,
   hubGroupMoved,
   hubGroupTakenOver,
@@ -155,4 +156,18 @@ void test("only a first apply that created every set can be undone", () => {
   assert.deepEqual(hubGroupUndo(created, false), ["local-a", "local-c"]);
   assert.deepEqual(hubGroupUndo({ ...created, created: ["local-a"] }, false), []);
   assert.deepEqual(hubGroupUndo(created, true), []);
+});
+
+void test("a member another member escalates to is known by its position", () => {
+  const hubGroup: HubGroup = {
+    ...hubGroupIn("applied"),
+    members: [
+      { set: { id: "hub-a" } as HubSet, escalate: { to: 1 } },
+      { set: { id: "hub-b" } as HubSet },
+      { set: { id: "hub-c" } as HubSet },
+    ],
+  };
+  assert.equal(hubGroupEscalationTarget(hubGroup, 0), false);
+  assert.equal(hubGroupEscalationTarget(hubGroup, 1), true);
+  assert.equal(hubGroupEscalationTarget(hubGroup, 2), false);
 });

@@ -470,6 +470,8 @@ export const HubBrowser = () => {
               }}
               onUpdate={setUpdateHubGroup}
               onDetails={openDetails}
+              onVote={(s, kind) => void handleVote(s, kind)}
+              onTest={setTestSet}
             />
           ))}
           {list.map((set) => (
@@ -606,7 +608,10 @@ export const HubBrowser = () => {
         <TestDialog
           key={testSet.id}
           set={testSet}
-          defaultDomain={defaultTestDomain(testSet, domain)}
+          defaultDomain={defaultTestDomain(
+            testSet,
+            testSet.match ? domain : "",
+          )}
           onClose={() => setTestSet(null)}
         />
       )}

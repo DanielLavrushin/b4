@@ -298,68 +298,98 @@ export const HubSetCard = ({
         {applied && (
           <>
             <Box sx={{ flex: 1 }} />
-            <Tooltip
-              title={
-                modified
-                  ? t("hub.card.voteModified")
-                  : voteTooltip(t, applied, "works")
-              }
-            >
-              <span>
-                <Button
-                  size="small"
-                  startIcon={
-                    applied.vote === "works" ? (
-                      <ThumbUpIcon />
-                    ) : (
-                      <ThumbUpOutlinedIcon />
-                    )
-                  }
-                  disabled={busy || modified}
-                  onClick={() => onVote(set, "works")}
-                  sx={{ color: colors.state.success }}
-                >
-                  {t("hub.card.works")}
-                </Button>
-              </span>
-            </Tooltip>
-            <Tooltip
-              title={
-                modified
-                  ? t("hub.card.voteModified")
-                  : voteTooltip(t, applied, "broken")
-              }
-            >
-              <span>
-                <Button
-                  size="small"
-                  startIcon={
-                    applied.vote === "broken" ? (
-                      <ThumbDownIcon />
-                    ) : (
-                      <ThumbDownOutlinedIcon />
-                    )
-                  }
-                  disabled={busy || modified}
-                  onClick={() => onVote(set, "broken")}
-                  sx={{ color: colors.state.error }}
-                >
-                  {t("hub.card.broken")}
-                </Button>
-              </span>
-            </Tooltip>
-            <Button
-              size="small"
-              startIcon={<TestIcon />}
-              disabled={busy}
-              onClick={() => onTest(set)}
-            >
-              {t("hub.card.test")}
-            </Button>
+            <HubVoteActions
+              set={set}
+              busy={busy}
+              onVote={onVote}
+              onTest={onTest}
+            />
           </>
         )}
       </Stack>
     </B4Card>
+  );
+};
+
+interface HubVoteActionsProps {
+  set: HubSet;
+  busy: boolean;
+  onVote: (set: HubSet, kind: HubVoteKind) => void;
+  onTest?: (set: HubSet) => void;
+}
+
+export const HubVoteActions = ({
+  set,
+  busy,
+  onVote,
+  onTest,
+}: HubVoteActionsProps) => {
+  const { t } = useTranslation();
+  const applied = set.applied;
+  const modified = applied?.hub_state === "modified";
+  return (
+    <>
+      <Tooltip
+        title={
+          modified
+            ? t("hub.card.voteModified")
+            : voteTooltip(t, applied, "works")
+        }
+      >
+        <span>
+          <Button
+            size="small"
+            startIcon={
+              applied?.vote === "works" ? (
+                <ThumbUpIcon />
+              ) : (
+                <ThumbUpOutlinedIcon />
+              )
+            }
+            disabled={busy || modified}
+            onClick={() => onVote(set, "works")}
+            sx={{ color: colors.state.success }}
+          >
+            {t("hub.card.works")}
+          </Button>
+        </span>
+      </Tooltip>
+      <Tooltip
+        title={
+          modified
+            ? t("hub.card.voteModified")
+            : voteTooltip(t, applied, "broken")
+        }
+      >
+        <span>
+          <Button
+            size="small"
+            startIcon={
+              applied?.vote === "broken" ? (
+                <ThumbDownIcon />
+              ) : (
+                <ThumbDownOutlinedIcon />
+              )
+            }
+            disabled={busy || modified}
+            onClick={() => onVote(set, "broken")}
+            sx={{ color: colors.state.error }}
+          >
+            {t("hub.card.broken")}
+          </Button>
+        </span>
+      </Tooltip>
+      {onTest && (
+        <Button
+          size="small"
+          startIcon={<TestIcon />}
+          disabled={busy}
+          onClick={() => onTest(set)}
+        >
+          {t("hub.card.test")}
+        </Button>
+      )}
+    </>
   );
 };
 

@@ -22,6 +22,13 @@ export function hubGroupTakenOver(hubGroup: HubGroup): string[] {
   );
 }
 
+export function hubGroupEscalationTarget(
+  hubGroup: HubGroup,
+  position: number,
+): boolean {
+  return hubGroup.members.some((m) => m.escalate?.to === position);
+}
+
 export function hubGroupUndo(
   res: HubGroupApplyResponse,
   replace: boolean,

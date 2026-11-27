@@ -4,8 +4,9 @@ import { B4Badge } from "@b4.elements";
 import { B4Card } from "@common/B4Card";
 import { AppliedIcon, CategoryIcon, DownloadIcon, InfoIcon } from "@b4.icons";
 import { colors, spacing, typography } from "@design";
-import { HubGroup } from "@models/hub";
-import { hubGroupAction } from "@models/hubGroups";
+import { HubGroup, HubSet, HubVoteKind } from "@models/hub";
+import { hubGroupAction, hubGroupEscalationTarget } from "@models/hubGroups";
+import { HubVoteActions } from "./HubSetCard";
 import { reportsText, scorePercent, shortAuthor, targetsSummary } from "./text";
 
 interface HubGroupCardProps {
@@ -14,6 +15,8 @@ interface HubGroupCardProps {
   onApply: (hubGroup: HubGroup) => void;
   onUpdate: (hubGroup: HubGroup) => void;
   onDetails: (hubSetId: string) => void;
+  onVote: (set: HubSet, kind: HubVoteKind) => void;
+  onTest: (set: HubSet) => void;
 }
 
 const scoreColor = (percent: number): string => {
@@ -28,6 +31,8 @@ export const HubGroupCard = ({
   onApply,
   onUpdate,
   onDetails,
+  onVote,
+  onTest,
 }: HubGroupCardProps) => {
   const { t } = useTranslation();
   const action = hubGroupAction(hubGroup);
@@ -159,8 +164,10 @@ export const HubGroupCard = ({
                 <Stack
                   direction="row"
                   spacing={1.5}
+                  useFlexGap
+                  flexWrap="wrap"
                   alignItems="center"
-                  sx={{ flexShrink: 0 }}
+                  sx={{ maxWidth: "100%" }}
                 >
                   <Box sx={{ textAlign: "right" }}>
                     <Typography
@@ -187,6 +194,18 @@ export const HubGroupCard = ({
                       </Typography>
                     )}
                   </Box>
+                  {set.applied && (
+                    <HubVoteActions
+                      set={set}
+                      busy={busy}
+                      onVote={onVote}
+                      onTest={
+                        hubGroupEscalationTarget(hubGroup, position)
+                          ? undefined
+                          : onTest
+                      }
+                    />
+                  )}
                   <Button
                     size="small"
                     startIcon={<InfoIcon />}
