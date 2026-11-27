@@ -62,6 +62,7 @@ type setState struct {
 }
 
 type memberScope struct {
+	group  string
 	owned  map[string]bool
 	newer  map[string]int
 	expect map[string]string
@@ -73,9 +74,9 @@ func versionKey(setID string, version int) string {
 }
 
 func scopeOf(versions []store.GroupVersion, gv *store.GroupVersion, expect []Ref) memberScope {
-	sc := memberScope{owned: map[string]bool{}, newer: map[string]int{}, expect: map[string]string{}, kept: map[string]bool{}}
+	sc := memberScope{group: gv.GroupID, owned: map[string]bool{}, newer: map[string]int{}, expect: map[string]string{}, kept: map[string]bool{}}
 	for _, other := range versions {
-		live := other.Version > gv.Version && (other.Status == hubwire.SetStatusPending || other.Status == hubwire.SetStatusActive)
+		live := other.Version > gv.Version && other.Status != hubwire.SetStatusRejected
 		for _, m := range other.Members {
 			key := versionKey(m.SetID, m.SetVersion)
 			if m.Brought {
@@ -95,6 +96,19 @@ func scopeOf(versions []store.GroupVersion, gv *store.GroupVersion, expect []Ref
 		}
 	}
 	return sc
+}
+
+func otherGroupUse(ctx context.Context, t *store.Tx, m store.GroupMember, groupID string) (*store.Membership, error) {
+	uses, err := t.Memberships(ctx, m.SetID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range uses {
+		if u := &uses[i]; u.GroupID != groupID && u.SetVersion == m.SetVersion && u.Status != hubwire.SetStatusRejected {
+			return u, nil
+		}
+	}
+	return nil, nil
 }
 
 func keyBanned(ctx context.Context, t *store.Tx, keyHMAC string) (bool, error) {
@@ -172,18 +186,31 @@ func (s *Service) planMember(ctx context.Context, t *store.Tx, action string, m 
 	if err != nil {
 		return p, err
 	}
-	kept := action == ActionReject && current.Status == hubwire.SetStatusPending && sc.newer[key] > 0
+	rejecting := action == ActionReject && target && current.Status == hubwire.SetStatusPending
+	var other *store.Membership
+	if rejecting && sc.newer[key] == 0 {
+		if other, err = otherGroupUse(ctx, t, m, sc.group); err != nil {
+			return p, err
+		}
+	}
+	kept := rejecting && (sc.newer[key] > 0 || other != nil)
+	keeper := "group version " + itoa(sc.newer[key])
+	if other != nil {
+		keeper = "group " + ref(other.GroupID, other.GroupVersion)
+	}
 	wantKept, pinned := sc.kept[key]
 	switch {
 	case !target:
 	case expect != "" && expect != current.Status:
 		p.refuse(CodeStale, ref(m.SetID, m.SetVersion)+" is "+current.Status+" now", map[string]interface{}{"set_id": m.SetID, "version": m.SetVersion, "from": current.Status})
 	case pinned && wantKept != kept:
-		change := " is no longer kept by a newer group version"
+		change := " is no longer kept by another group version"
 		if kept {
-			change = " is kept by group version " + itoa(sc.newer[key]) + " now"
+			change = " is kept by " + keeper + " now"
 		}
 		p.refuse(CodeStale, ref(m.SetID, m.SetVersion)+change, map[string]interface{}{"set_id": m.SetID, "version": m.SetVersion, "from": current.Status})
+	case kept && other != nil:
+		p.item.Code, p.item.Params = CodeKeptOtherGroup, map[string]interface{}{"set_id": m.SetID, "version": m.SetVersion, "group_id": other.GroupID, "group_version": other.GroupVersion, "title": other.Title}
 	case kept:
 		p.item.Code, p.item.Params = CodeKeptNewerGroupVersion, map[string]interface{}{"set_id": m.SetID, "version": m.SetVersion, "group_version": sc.newer[key]}
 	case allowedFrom(action, current.Status) && (m.Brought || current.Status == hubwire.SetStatusPending):

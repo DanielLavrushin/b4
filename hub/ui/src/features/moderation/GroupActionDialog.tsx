@@ -131,7 +131,7 @@ export function GroupActionDialog({ action, group, onClose }: Readonly<GroupActi
           expect_status: group.status,
           members: members
             .filter((m) => m.from)
-            .map((m) => ({ set_id: m.set_id, version: m.version, expect_status: m.from, expect_kept: m.code === "kept_newer_group_version" })),
+            .map((m) => ({ set_id: m.set_id, version: m.version, expect_status: m.from, expect_kept: m.code === "kept_newer_group_version" || m.code === "kept_other_group" })),
           force,
           keep_reports: keepReports,
         },

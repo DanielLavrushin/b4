@@ -386,7 +386,7 @@ func previewExpectations(preview GroupModerationView, withKept bool) []Moderatio
 	for _, m := range preview.Members {
 		item := ModerationItemRequest{SetID: m.SetID, Version: m.Version, ExpectStatus: m.From}
 		if withKept {
-			kept := m.Code == "kept_newer_group_version"
+			kept := m.Code == "kept_newer_group_version" || m.Code == "kept_other_group"
 			item.ExpectKept = &kept
 		}
 		out = append(out, item)
@@ -457,21 +457,25 @@ func TestAGroupRejectConfirmIsStaleWhenWhatThePreviewKeptChanged(t *testing.T) {
 		}
 	})
 
-	t.Run("the newer version is restored after the preview", func(t *testing.T) {
+	t.Run("another group that links the set arrives after the preview", func(t *testing.T) {
 		f := newFixture(t, password)
 		g, first := f.republished()
-		f.expectStatus(f.groupVersionAction(g, 2, ActionHide, GroupActionRequest{Reason: "later"}), http.StatusOK)
+		f.expectStatus(f.groupVersionAction(g, 2, ActionReject, GroupActionRequest{Reason: "another tab", ExpectStatus: "pending"}), http.StatusOK)
 		p := preview(f, g)
 		if p.Members[0].Code != "" || p.Members[0].To != "rejected" {
-			t.Fatalf("with v2 hidden the preview rejects Video/1: %+v", p.Members)
+			t.Fatalf("with v2 rejected the preview rejects Video/1: %+v", p.Members)
 		}
-		f.expectStatus(f.groupVersionAction(g, 2, ActionRestore, GroupActionRequest{}), http.StatusOK)
+		other, members := f.group(testkit.Identity(t), "video", authorAddress, testkit.SampleSet("Video", "video.example"))
+		if !members[0].Linked || members[0].SetID != first[0].SetID {
+			t.Fatalf("the other group links Video/1: %+v", members)
+		}
 
 		stale(f, g, first, previewExpectations(p, true))
 
-		f.expectStatus(confirm(f, g, nil), http.StatusOK)
-		if got := f.firstVersionStatuses(g); got[0] != "rejected" || got[1] != "pending" || got[2] != "rejected" {
-			t.Fatalf("a confirm without expectations keeps what v2 includes: %v", got)
+		var res GroupModerationView
+		f.expectStatus(confirm(f, g, nil), http.StatusOK).decode(t, &res)
+		if got := f.firstVersionStatuses(g); got[0] != "rejected" || got[1] != "pending" || got[2] != "rejected" || res.Members[0].Code != "kept_other_group" || res.Members[0].Params["group_id"] != other {
+			t.Fatalf("a confirm without expectations keeps what the other group includes: %v %+v", got, res.Members[0])
 		}
 	})
 }

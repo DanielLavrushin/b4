@@ -439,6 +439,72 @@ func TestRejectingAnOlderGroupVersionKeepsWhatANewerVersionStillIncludes(t *test
 	}
 }
 
+func TestRejectingAnOlderGroupVersionKeepsWhatAHiddenNewerVersionIncludes(t *testing.T) {
+	e := newEnv(t)
+	r := e.republished(keyOf(1))
+	if _, err := e.svc.ModerateGroup(e.ctx, console, ActionHide, GroupRef{GroupID: r.group, Version: 2}, Options{Reason: "later"}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := e.svc.ModerateGroup(e.ctx, console, ActionReject, GroupRef{GroupID: r.group, Version: 1}, Options{Reason: "superseded"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Members[0].Code != CodeKeptNewerGroupVersion || !sameStrings(e.statuses(r.video, r.music, r.music2), "pending", "rejected", "pending") {
+		t.Fatalf("a hidden newer version keeps the member it links: %+v %v", res.Members[0], e.statuses(r.video, r.music, r.music2))
+	}
+	if _, err := e.svc.ModerateGroup(e.ctx, console, ActionRestore, GroupRef{GroupID: r.group, Version: 2}, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.ModerateGroup(e.ctx, console, ActionApprove, GroupRef{GroupID: r.group, Version: 2}, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if !sameStrings(e.statuses(r.video, r.music2), "active", "active") {
+		t.Fatalf("the restored version is approved with the kept member: %v", e.statuses(r.video, r.music2))
+	}
+}
+
+func TestRejectingAGroupKeepsAPendingSetAnotherGroupStillIncludes(t *testing.T) {
+	e := newEnv(t)
+	author := keyOf(1)
+	shared := member{e.set(author, hubwire.SetStatusPending), 1, true}
+	own := member{e.set(author, hubwire.SetStatusPending), 1, true}
+	first := e.group(author, shared, own)
+	second := e.group(author, member{shared.setID, 1, false}, member{e.set(author, hubwire.SetStatusPending), 1, true})
+
+	preview, err := e.svc.ModerateGroup(e.ctx, console, ActionReject, GroupRef{GroupID: first, Version: 1}, Options{Reason: "broken", DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := preview.Members[0]; !m.OK || m.To != "" || m.Code != CodeKeptOtherGroup || m.Params["group_id"] != second || m.Params["group_version"] != 1 {
+		t.Fatalf("the preview keeps the set another group links: %+v", m)
+	}
+	yes, no := true, false
+	expect := []Ref{
+		{SetID: shared.setID, Version: 1, ExpectStatus: hubwire.SetStatusPending, ExpectKept: &yes},
+		{SetID: own.setID, Version: 1, ExpectStatus: hubwire.SetStatusPending, ExpectKept: &no},
+	}
+	if _, err := e.svc.ModerateGroup(e.ctx, console, ActionReject, GroupRef{GroupID: second, Version: 1}, Options{Reason: "broken"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = e.svc.ModerateGroup(e.ctx, console, ActionReject, GroupRef{GroupID: first, Version: 1, ExpectStatus: hubwire.SetStatusPending, Members: expect}, Options{Reason: "broken"})
+	var refused *Error
+	if !errors.As(err, &refused) || refused.Code != CodeStale || !sameStrings(e.statuses(shared, own), "pending", "pending") {
+		t.Fatalf("a confirm whose kept set lost the other group is stale and changes nothing: %v %v", err, e.statuses(shared, own))
+	}
+
+	third := e.group(author, member{shared.setID, 1, false})
+	res, err := e.svc.ModerateGroup(e.ctx, console, ActionReject, GroupRef{GroupID: first, Version: 1}, Options{Reason: "broken"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Members[0].Code != CodeKeptOtherGroup || res.Members[0].Params["group_id"] != third || !sameStrings(e.statuses(shared, own), "pending", "rejected") {
+		t.Fatalf("reject keeps the set a pending group links: %+v %v", res.Members[0], e.statuses(shared, own))
+	}
+	if folded, _ := e.st.FoldedVersions(e.ctx); folded[shared.setID][1] {
+		t.Fatalf("the kept set is queued on its own, not folded into a group that only links it: %v", folded)
+	}
+}
+
 func TestAGroupConfirmIsStaleWhenAMemberChangedAfterThePreview(t *testing.T) {
 	for _, change := range []string{ActionReject, ActionHide} {
 		t.Run(change, func(t *testing.T) {
@@ -487,7 +553,7 @@ func (e *env) rejectPreview(r republished) []Ref {
 	}
 	expect := make([]Ref, 0, len(preview.Members))
 	for _, m := range preview.Members {
-		kept := m.Code == CodeKeptNewerGroupVersion
+		kept := m.Code == CodeKeptNewerGroupVersion || m.Code == CodeKeptOtherGroup
 		expect = append(expect, Ref{SetID: m.SetID, Version: m.Version, ExpectStatus: m.From, ExpectKept: &kept})
 	}
 	return expect
@@ -541,26 +607,24 @@ func TestAGroupRejectIsStaleWhenWhatThePreviewKeptChanged(t *testing.T) {
 		}
 	})
 
-	t.Run("the newer version is restored after the preview", func(t *testing.T) {
+	t.Run("another group that links the set arrives after the preview", func(t *testing.T) {
 		e := newEnv(t)
 		r := e.republished(keyOf(1))
-		if _, err := e.svc.ModerateGroup(e.ctx, console, ActionHide, GroupRef{GroupID: r.group, Version: 2}, Options{Reason: "later"}); err != nil {
+		if _, err := e.svc.ModerateGroup(e.ctx, console, ActionReject, GroupRef{GroupID: r.group, Version: 2}, Options{Reason: "another tab"}); err != nil {
 			t.Fatal(err)
 		}
 		expect := e.rejectPreview(r)
 		if *expect[0].ExpectKept || *expect[1].ExpectKept {
-			t.Fatalf("with v2 hidden the preview rejects both: %+v", expect)
+			t.Fatalf("with v2 rejected the preview rejects both: %+v", expect)
 		}
-		if _, err := e.svc.ModerateGroup(e.ctx, console, ActionRestore, GroupRef{GroupID: r.group, Version: 2}, Options{}); err != nil {
-			t.Fatal(err)
-		}
+		e.group(keyOf(1), member{r.video.setID, 1, false})
 
 		_, err := e.rejectFirst(r, expect)
 		e.staleUnchanged(r, err)
 
 		res, err := e.rejectFirst(r, nil)
-		if err != nil || res.Members[0].Code != CodeKeptNewerGroupVersion || res.Params["members"] != 1 || !sameStrings(e.statuses(r.video, r.music), "pending", "rejected") {
-			t.Fatalf("a confirm without expectations keeps what v2 includes: %v %+v %v", err, res, e.statuses(r.video, r.music))
+		if err != nil || res.Members[0].Code != CodeKeptOtherGroup || res.Params["members"] != 1 || !sameStrings(e.statuses(r.video, r.music), "pending", "rejected") {
+			t.Fatalf("a confirm without expectations keeps what the other group includes: %v %+v %v", err, res, e.statuses(r.video, r.music))
 		}
 	})
 }

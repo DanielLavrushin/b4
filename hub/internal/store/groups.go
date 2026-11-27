@@ -329,7 +329,15 @@ func (s *Store) BroughtVersions(ctx context.Context, groupID string, version int
 }
 
 func (s *Store) Memberships(ctx context.Context, setID string) ([]Membership, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT m.group_id, m.version, gv.title, gv.status, m.set_version, m.brought
+	return membershipsTx(ctx, s.db, setID)
+}
+
+func (t *Tx) Memberships(ctx context.Context, setID string) ([]Membership, error) {
+	return membershipsTx(ctx, t.tx, setID)
+}
+
+func membershipsTx(ctx context.Context, q querier, setID string) ([]Membership, error) {
+	rows, err := q.QueryContext(ctx, `SELECT m.group_id, m.version, gv.title, gv.status, m.set_version, m.brought
 		FROM group_members m JOIN group_versions gv ON gv.group_id = m.group_id AND gv.version = m.version
 		WHERE m.set_id = ? ORDER BY m.group_id, m.version`, setID)
 	if err != nil {

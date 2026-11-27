@@ -995,6 +995,7 @@
       "untouched": "Not changed",
       "linked": "Not changed: a linked set keeps its own state",
       "kept_newer_group_version": "Not changed: group version {{group_version}} still includes it",
+      "kept_other_group": "Not changed: the group {{title}} still includes it",
       "refused": "Nothing is applied while the group or one of its sets cannot be changed."
     },
     "groupEffect": {
