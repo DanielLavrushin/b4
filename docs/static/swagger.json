@@ -4377,7 +4377,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "A field the body leaves out takes b4's set default, the value a config file or a set export means when it leaves the field out. The new set template (/ui/new-set-template) does not apply here: only the web interface's Create Set reads it. A set created without \"enabled\" is enabled.",
+                "description": "A field the body leaves out takes b4's set default, the value a config file or a set export means when it leaves the field out. The new set template (/ui/new-set-template) does not apply here: only the web interface's Create Set reads it. A set created without \"enabled\" is enabled. A \"group\" in the body is kept only when the new set lands next to a set of that group, or when no other set has it; otherwise the set starts without a group.",
                 "consumes": [
                     "application/json"
                 ],
