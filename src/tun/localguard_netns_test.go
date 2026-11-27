@@ -204,6 +204,7 @@ func bypassRules(show string) []string {
 
 func TestNetnsWholeDefaultPacketsForThisDeviceStayLocal(t *testing.T) {
 	tunNetnsRequire(t)
+	netnsIP(t, "link", "set", "lo", "up")
 	for _, tc := range []struct {
 		name      string
 		localPrio int
