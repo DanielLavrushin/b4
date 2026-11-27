@@ -2,6 +2,7 @@ package tun
 
 import (
 	"errors"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -296,6 +297,9 @@ func TestWholeDefaultCaptureAddsOnlyTheLocalGuardsTheSystemRulesNeed(t *testing.
 }
 
 func TestTeardownRemovesTheWholeDefaultLocalGuardsByTheirMarksOnly(t *testing.T) {
+	saved := stateFileCandidates
+	stateFileCandidates = []string{filepath.Join(t.TempDir(), "b4-tun.state")}
+	t.Cleanup(func() { stateFileCandidates = saved })
 	f := stubRules(t, rosRules)
 	r := &routeManager{tunName: "b4tun0", resolvedCapture: "default", routeTable: 97, bypassGuardsAdded: true, skipTables: true}
 	r.teardown()
