@@ -415,7 +415,7 @@ func logDomainOverlaps(sets []*config.SetConfig) {
 		shown = shown[:maxReported]
 	}
 	for _, o := range shown {
-		log.Warnf("Domain %q is targeted by %d enabled sets (%s): b4 applies the first match ('%s') and ignores the others for this domain, unless one of them has a matching source-device filter",
+		log.Warnf("Domain %q is targeted by %d enabled sets (%s): b4 uses the most specific match; for the same entry a set limited to source devices, the TLS or IP version filter and then the list order decide ('%s' is first in the list). Domains from GeoSite categories are not compared",
 			o.Entry, len(o.SetNames), strings.Join(o.SetNames, ", "), o.SetNames[0])
 	}
 	if len(overlaps) > len(shown) {
