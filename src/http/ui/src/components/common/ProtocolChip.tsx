@@ -323,6 +323,7 @@ export const ProtocolChip = ({ protocol, flags }: ProtocolChipProps) => {
         label={protocol}
         variant="outlined"
         color={protocol === "TCP" ? "primary" : "secondary"}
+        sx={{ flexShrink: 0 }}
       />
       <FlagBadges flags={flags} />
     </Stack>

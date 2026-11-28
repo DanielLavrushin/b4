@@ -45,6 +45,8 @@ interface DomainsTableProps {
 
 const ROW_HEIGHT = 41;
 const OVERSCAN = 5;
+const COLUMN_WIDTHS = [110, 230, 150, undefined, 190, 400];
+const TABLE_MIN_WIDTH = 1420;
 
 const TableRowMemo = memo<{
   log: ParsedLog;
@@ -130,10 +132,15 @@ const TableRowMemo = memo<{
         >
           <Stack direction="row" spacing={1} alignItems="center">
             {log.tls && (
-              <B4Badge variant="outlined" color="primary" label={log.tls} />
+              <B4Badge
+                variant="outlined"
+                color="primary"
+                label={log.tls}
+                sx={{ flexShrink: 0 }}
+              />
             )}
             {log.domain && (
-              <Typography noWrap title={log.domain} sx={{ maxWidth: 360 }}>
+              <Typography noWrap title={log.domain}>
                 {log.domain}
               </Typography>
             )}
@@ -181,6 +188,7 @@ const TableRowMemo = memo<{
           <Stack direction="row" spacing={1} alignItems="center">
             <Box
               sx={{
+                flexShrink: 0,
                 cursor: log.ipSet ? "default" : "pointer",
                 "&:hover": log.ipSet
                   ? {}
@@ -345,8 +353,22 @@ export const DomainsTable = ({
       <Table
         stickyHeader
         size="small"
-        sx={{ "& .MuiTableCell-root": { whiteSpace: "nowrap" } }}
+        sx={{
+          tableLayout: "fixed",
+          minWidth: TABLE_MIN_WIDTH,
+          "& .MuiTableCell-root": {
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          },
+          "& td .MuiChip-root, & td .MuiStack-root": { minWidth: 0 },
+        }}
       >
+        <colgroup>
+          {COLUMN_WIDTHS.map((width, i) => (
+            <col key={i} style={{ width }} />
+          ))}
+        </colgroup>
         <TableHead>
           <TableRow>
             <SortableTableCell
