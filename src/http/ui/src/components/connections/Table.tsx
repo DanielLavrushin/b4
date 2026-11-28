@@ -20,6 +20,13 @@ import { B4Badge } from "@common/B4Badge";
 import { AsnLabels, stripPort } from "@utils";
 import { ParsedLog } from "@b4.connections";
 import { useTranslation } from "react-i18next";
+import {
+  COLUMN_WIDTHS,
+  ROW_HEIGHT,
+  TABLE_MIN_WIDTH,
+  sameRow,
+  visibleRange,
+} from "./rawTable";
 
 export type SortColumn =
   | "timestamp"
@@ -43,8 +50,6 @@ interface DomainsTableProps {
   onScrollStateChange: (isAtBottom: boolean) => void;
 }
 
-const ROW_HEIGHT = 41;
-const OVERSCAN = 5;
 
 const TableRowMemo = memo<{
   log: ParsedLog;
@@ -107,7 +112,9 @@ const TableRowMemo = memo<{
           }}
         >
           {(log.ipSet || log.hostSet) && (
-            <B4Badge color="secondary" label={log.ipSet || log.hostSet} />
+            <Tooltip title={log.ipSet || log.hostSet} placement="top" arrow>
+              <B4Badge color="secondary" label={log.ipSet || log.hostSet} />
+            </Tooltip>
           )}
         </TableCell>
         <TableCell
@@ -130,9 +137,18 @@ const TableRowMemo = memo<{
         >
           <Stack direction="row" spacing={1} alignItems="center">
             {log.tls && (
-              <B4Badge variant="outlined" color="primary" label={log.tls} />
+              <B4Badge
+                variant="outlined"
+                color="primary"
+                label={log.tls}
+                sx={{ flexShrink: 0 }}
+              />
             )}
-            {log.domain && <Typography>{log.domain}</Typography>}
+            {log.domain && (
+              <Tooltip title={log.domain} placement="top" arrow>
+                <Typography noWrap>{log.domain}</Typography>
+              </Tooltip>
+            )}
             <Box sx={{ flex: 1 }} />
             {log.domain && !log.hostSet && (
               <AddIcon
@@ -159,7 +175,13 @@ const TableRowMemo = memo<{
             py: 1,
           }}
         >
-          <Tooltip title={log.source} placement="top" arrow>
+          <Tooltip
+            title={
+              log.deviceName ? `${log.deviceName} (${log.source})` : log.source
+            }
+            placement="top"
+            arrow
+          >
             {log.deviceName ? (
               <B4Badge label={log.deviceName} color="primary" />
             ) : (
@@ -177,6 +199,7 @@ const TableRowMemo = memo<{
           <Stack direction="row" spacing={1} alignItems="center">
             <Box
               sx={{
+                flexShrink: 0,
                 cursor: log.ipSet ? "default" : "pointer",
                 "&:hover": log.ipSet
                   ? {}
@@ -192,12 +215,14 @@ const TableRowMemo = memo<{
               {log.destination}
             </Box>
             {asnInfo ? (
-              <B4Badge
-                variant="outlined"
-                color="primary"
-                label={asnInfo.name}
-                onDelete={() => onDeleteAsn(asnInfo.id)}
-              />
+              <Tooltip title={asnInfo.name} placement="top" arrow>
+                <B4Badge
+                  variant="outlined"
+                  color="primary"
+                  label={asnInfo.name}
+                  onDelete={() => onDeleteAsn(asnInfo.id)}
+                />
+              </Tooltip>
             ) : (
               log.destination && (
                 <Tooltip
@@ -250,10 +275,7 @@ const TableRowMemo = memo<{
       </TableRow>
     );
   },
-  (prev, next) =>
-    prev.log.raw === next.log.raw &&
-    prev.enrichingIps === next.enrichingIps &&
-    prev.asnLabels === next.asnLabels,
+  sameRow,
 );
 
 TableRowMemo.displayName = "TableRowMemo";
@@ -276,9 +298,11 @@ export const DomainsTable = ({
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(600);
 
-  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
-  const visibleCount = Math.ceil(containerHeight / ROW_HEIGHT) + OVERSCAN * 2;
-  const endIndex = Math.min(data.length, startIndex + visibleCount);
+  const { start: startIndex, end: endIndex } = visibleRange(
+    scrollTop,
+    containerHeight,
+    data.length,
+  );
 
   const visibleData = useMemo(
     () => data.slice(startIndex, endIndex),
@@ -338,7 +362,25 @@ export const DomainsTable = ({
         overflow: "auto",
       }}
     >
-      <Table stickyHeader size="small">
+      <Table
+        stickyHeader
+        size="small"
+        sx={{
+          tableLayout: "fixed",
+          minWidth: TABLE_MIN_WIDTH,
+          "& .MuiTableCell-root": {
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          },
+          "& td .MuiChip-root, & td .MuiStack-root": { minWidth: 0 },
+        }}
+      >
+        <colgroup>
+          {COLUMN_WIDTHS.map((width, i) => (
+            <col key={i} style={{ width }} />
+          ))}
+        </colgroup>
         <TableHead>
           <TableRow>
             <SortableTableCell
@@ -380,60 +422,55 @@ export const DomainsTable = ({
           </TableRow>
         </TableHead>
         <TableBody>
-          {data.length === 0 ? (
+          {startIndex > 0 && (
             <TableRow>
               <TableCell
                 colSpan={6}
-                sx={{
-                  textAlign: "center",
-                  py: 4,
-                  color: "text.secondary",
-                  fontStyle: "italic",
-                  bgcolor: colors.background.dark,
-                  borderBottom: "none",
-                }}
-              >
-                {t("connections.table.waitingForPackets")}
-              </TableCell>
+                style={{ height: startIndex * ROW_HEIGHT }}
+                sx={{ p: 0, border: "none" }}
+              />
             </TableRow>
-          ) : (
-            <>
-              {startIndex > 0 && (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    style={{ height: startIndex * ROW_HEIGHT }}
-                    sx={{ p: 0, border: "none" }}
-                  />
-                </TableRow>
-              )}
+          )}
 
-              {visibleData.map((log) => (
-                <TableRowMemo
-                  key={log.raw}
-                  log={log}
-                  onDomainClick={onDomainClick}
-                  onIpClick={onIpClick}
-                  onEnrichIp={onEnrichIp}
-                  onDeleteAsn={onDeleteAsn}
-                  enrichingIps={enrichingIps}
-                  asnLabels={asnLabels}
-                />
-              ))}
+          {visibleData.map((log) => (
+            <TableRowMemo
+              key={log.raw}
+              log={log}
+              onDomainClick={onDomainClick}
+              onIpClick={onIpClick}
+              onEnrichIp={onEnrichIp}
+              onDeleteAsn={onDeleteAsn}
+              enrichingIps={enrichingIps}
+              asnLabels={asnLabels}
+            />
+          ))}
 
-              {endIndex < data.length && (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    style={{ height: (data.length - endIndex) * ROW_HEIGHT }}
-                    sx={{ p: 0, border: "none" }}
-                  />
-                </TableRow>
-              )}
-            </>
+          {endIndex < data.length && (
+            <TableRow>
+              <TableCell
+                colSpan={6}
+                style={{ height: (data.length - endIndex) * ROW_HEIGHT }}
+                sx={{ p: 0, border: "none" }}
+              />
+            </TableRow>
           )}
         </TableBody>
       </Table>
+      {data.length === 0 && (
+        <Typography
+          variant="body2"
+          sx={{
+            position: "sticky",
+            left: 0,
+            py: 4,
+            textAlign: "center",
+            color: "text.secondary",
+            fontStyle: "italic",
+          }}
+        >
+          {t("connections.table.waitingForPackets")}
+        </Typography>
+      )}
     </TableContainer>
   );
 };
