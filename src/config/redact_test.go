@@ -60,7 +60,7 @@ var notSecretPaths = map[string]string{
 	"system.checker.watchdog.domains[]": "bare domains stay to debug the watchdog; URL entries lose credentials, query values and fragments",
 	"sets[].targets.sni_domains[]":      "target domains, needed to debug a set",
 	"sets[].faking.payload_domain":      "public domain written into the fake ClientHello",
-	"sets[].routing.upstream.host":      "needed to debug routing; the log trace and MCP keep it too",
+	"sets[].routing.upstream.host":      "a plain host stays to debug routing and MCP keeps it as typed; the safe copy and the log trace mask a login typed into it",
 }
 
 var placeholderOnlyPaths = map[string]string{
