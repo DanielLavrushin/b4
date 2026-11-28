@@ -408,60 +408,55 @@ export const DomainsTable = ({
           </TableRow>
         </TableHead>
         <TableBody>
-          {data.length === 0 ? (
+          {startIndex > 0 && (
             <TableRow>
               <TableCell
                 colSpan={6}
-                sx={{
-                  textAlign: "center",
-                  py: 4,
-                  color: "text.secondary",
-                  fontStyle: "italic",
-                  bgcolor: colors.background.dark,
-                  borderBottom: "none",
-                }}
-              >
-                {t("connections.table.waitingForPackets")}
-              </TableCell>
+                style={{ height: startIndex * ROW_HEIGHT }}
+                sx={{ p: 0, border: "none" }}
+              />
             </TableRow>
-          ) : (
-            <>
-              {startIndex > 0 && (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    style={{ height: startIndex * ROW_HEIGHT }}
-                    sx={{ p: 0, border: "none" }}
-                  />
-                </TableRow>
-              )}
+          )}
 
-              {visibleData.map((log) => (
-                <TableRowMemo
-                  key={log.raw}
-                  log={log}
-                  onDomainClick={onDomainClick}
-                  onIpClick={onIpClick}
-                  onEnrichIp={onEnrichIp}
-                  onDeleteAsn={onDeleteAsn}
-                  enrichingIps={enrichingIps}
-                  asnLabels={asnLabels}
-                />
-              ))}
+          {visibleData.map((log) => (
+            <TableRowMemo
+              key={log.raw}
+              log={log}
+              onDomainClick={onDomainClick}
+              onIpClick={onIpClick}
+              onEnrichIp={onEnrichIp}
+              onDeleteAsn={onDeleteAsn}
+              enrichingIps={enrichingIps}
+              asnLabels={asnLabels}
+            />
+          ))}
 
-              {endIndex < data.length && (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    style={{ height: (data.length - endIndex) * ROW_HEIGHT }}
-                    sx={{ p: 0, border: "none" }}
-                  />
-                </TableRow>
-              )}
-            </>
+          {endIndex < data.length && (
+            <TableRow>
+              <TableCell
+                colSpan={6}
+                style={{ height: (data.length - endIndex) * ROW_HEIGHT }}
+                sx={{ p: 0, border: "none" }}
+              />
+            </TableRow>
           )}
         </TableBody>
       </Table>
+      {data.length === 0 && (
+        <Typography
+          variant="body2"
+          sx={{
+            position: "sticky",
+            left: 0,
+            py: 4,
+            textAlign: "center",
+            color: "text.secondary",
+            fontStyle: "italic",
+          }}
+        >
+          {t("connections.table.waitingForPackets")}
+        </Typography>
+      )}
     </TableContainer>
   );
 };
