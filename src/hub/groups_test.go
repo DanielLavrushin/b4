@@ -64,6 +64,51 @@ func TestCatalogueGroupsAreIndexedOnlyWhenEveryMemberResolves(t *testing.T) {
 	}
 }
 
+func TestGroupedSetsAreListedOnlyThroughTheirGroup(t *testing.T) {
+	f := hubtest.New(t)
+	cat := sampleCatalogue(t, 1, 1)
+	video := strategySet("Video CDN", []string{"googlevideo.com"}, nil, 11)
+	images := strategySet("Images", []string{"ytimg.com"}, nil, 12)
+	hiddenSet := strategySet("Hidden", []string{"ggpht.com"}, nil, 13)
+	cdn, _ := hubtest.CatalogueSet(t, "cdn", 1, &video, nil)
+	img, _ := hubtest.CatalogueSet(t, "img", 1, &images, nil)
+	hidden, _ := hubtest.CatalogueSet(t, "hidden", 1, &hiddenSet, nil)
+	cdn.Status, img.Status, hidden.Status = hubwire.SetStatusGrouped, hubwire.SetStatusGrouped, hubwire.SetStatusHidden
+	cat.Sets = append(cat.Sets, cdn, img, hidden)
+	cat.Groups = []hubwire.CatalogueGroup{
+		{ID: "g-brought", Version: 1, Title: "brought", Members: []hubwire.CatalogueGroupMember{{SetID: "cdn"}, {SetID: "img"}, {SetID: "direct"}}},
+		{ID: "g-hidden", Version: 1, Title: "hidden", Members: []hubwire.CatalogueGroupMember{{SetID: "cdn"}, {SetID: "hidden"}}},
+		{ID: "g-pending", Version: 1, Title: "pending", Members: []hubwire.CatalogueGroupMember{{SetID: "img"}, {SetID: "pending"}}},
+	}
+	f.Publish(t, cat, time.Now().Add(time.Hour))
+	box := newTestBox(t, f, t.TempDir())
+	if _, err := box.svc.Sync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := groupIDs(box.svc.Groups("")); len(got) != 1 || got[0] != "g-brought" {
+		t.Fatalf("a group of grouped and active members resolves, one with a hidden or pending member does not, got %v", got)
+	}
+	if got := groupIDs(box.svc.Groups("googlevideo.com")); len(got) != 1 || got[0] != "g-brought" {
+		t.Errorf("a domain search finds the group through its grouped member, got %v", got)
+	}
+	if results, total := box.svc.Search("", 0); total != 2 {
+		t.Errorf("the standalone list keeps only active sets, got %d: %+v", total, results)
+	}
+	if results, _ := box.svc.Search("googlevideo.com", 0); len(results) != 0 {
+		t.Errorf("a grouped set never appears on its own, got %+v", results)
+	}
+	if results, _ := box.svc.SearchWithGrouped("googlevideo.com", 0); len(results) != 1 || results[0].Set.ID != "cdn" {
+		t.Errorf("the search Discovery uses must find the grouped set, got %+v", results)
+	}
+	if results, _ := box.svc.SearchWithGrouped("ggpht.com", 0); len(results) != 0 {
+		t.Errorf("a hidden set stays out of every search, got %+v", results)
+	}
+	if res, ok := box.svc.Get("cdn"); !ok || res.Set.Status != hubwire.SetStatusGrouped {
+		t.Errorf("a lookup by id still finds a grouped set, got %+v %v", res, ok)
+	}
+}
+
 func TestAGroupRecordIsNeverQueued(t *testing.T) {
 	f := hubtest.New(t)
 	box := newTestBox(t, f, t.TempDir())

@@ -140,14 +140,15 @@ export const DetailsDialog = ({
               {t("hub.apply.openSet")}
             </Button>
           )}
-          {set && (
-            <AppliedActionButton
-              set={set}
-              busy={busy}
-              onApply={onApply}
-              onUpdate={onUpdate}
-            />
-          )}
+          {set &&
+            !(set.status === "grouped" && appliedAction(set) === "apply") && (
+              <AppliedActionButton
+                set={set}
+                busy={busy}
+                onApply={onApply}
+                onUpdate={onUpdate}
+              />
+            )}
         </>
       }
     >

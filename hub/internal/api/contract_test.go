@@ -52,6 +52,7 @@ var (
 		"engine,omitempty", "family,omitempty", "flags,omitempty", "status", "created_at", "updated_at",
 		"geo,omitempty", "set", "payloads,omitempty", "scores", "derived_from,omitempty",
 	}
+	contractSetStatuses = []string{"active", "grouped"}
 	contractBlobRefTags = []string{"sha256", "protocol", "domain,omitempty", "size"}
 	contractScoresTags  = []string{"global", "asn,omitempty", "cc,omitempty"}
 	contractScoreTags   = []string{"score", "n", "devices", "newest,omitempty"}
@@ -409,20 +410,30 @@ func TestContractManifestSignatureOldRouters(t *testing.T) {
 	}
 }
 
-func (f *contractFixture) group(t *testing.T) string {
+func (f *contractFixture) group(t *testing.T) (string, string) {
 	t.Helper()
-	set := testkit.SampleSet("YouTube", "youtube.com", "googlevideo.com")
-	body := hubwire.GroupBody{Title: "youtube", Description: "one set", Members: []hubwire.GroupMember{{Envelope: *testkit.BuildEnvelope(t, &set)}}}
+	linked := testkit.SampleSet("YouTube", "youtube.com", "googlevideo.com")
+	fresh := testkit.SampleSet("Twitch", "twitch.tv")
+	body := hubwire.GroupBody{Title: "youtube", Description: "two sets", Members: []hubwire.GroupMember{
+		{Envelope: *testkit.BuildEnvelope(t, &linked)},
+		{Envelope: *testkit.BuildEnvelope(t, &fresh)},
+	}}
 	status, answer := f.h.post(testkit.Sign(t, testkit.Identity(t), hubwire.RecordGroup, body, f.h.clock), contractAuthorIP)
 	if status != http.StatusAccepted {
 		t.Fatalf("group: %d %v", status, answer)
 	}
 	assertExactKeys(t, "group answer", answer, contractGroupAnswerKeys)
 	members := objects(t, "group answer members", answer["members"])
-	if len(members) != 1 || members[0]["set_id"] != f.active || members[0]["linked"] != true {
-		t.Fatalf("the member links the active set, got %v", members)
+	if len(members) != 2 || members[0]["set_id"] != f.active || members[0]["linked"] != true {
+		t.Fatalf("the first member links the active set, got %v", members)
 	}
-	assertKeys(t, "group answer member", members[0], contractGroupMemberAnswerTags)
+	brought, _ := members[1]["set_id"].(string)
+	if !hubdata.ValidSetID(brought) || brought == f.active || members[1]["linked"] == true || members[1]["version"] != float64(1) {
+		t.Fatalf("the second member is a new set the group brings, got %v", members[1])
+	}
+	for i, member := range members {
+		assertKeys(t, "group answer member "+strconv.Itoa(i), member, contractGroupMemberAnswerTags)
+	}
 	id, _ := answer["group_id"].(string)
 	ctx := context.Background()
 	if err := f.h.store.Update(ctx, func(tx *store.Tx) error {
@@ -430,12 +441,20 @@ func (f *contractFixture) group(t *testing.T) string {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	return id
+	if err := f.h.store.Approve(ctx, brought, 1, f.h.clock); err != nil {
+		t.Fatal(err)
+	}
+	return id, brought
+}
+
+func releasedRouterLists(entry map[string]interface{}) bool {
+	status, _ := entry["status"].(string)
+	return status == "" || status == "active"
 }
 
 func TestContractCatalogueEntries(t *testing.T) {
 	f := startContractHub(t)
-	groupID := f.group(t)
+	groupID, brought := f.group(t)
 	f.build(t)
 	_, m := f.manifest(t)
 
@@ -461,18 +480,25 @@ func TestContractCatalogueEntries(t *testing.T) {
 	}
 
 	sets := objects(t, "catalogue sets", cat["sets"])
-	if len(sets) != 1 || sets[0]["id"] != f.active {
-		ids := make([]interface{}, 0, len(sets))
-		for _, s := range sets {
-			ids = append(ids, s["id"])
+	statuses := make(map[interface{}]interface{}, len(sets))
+	var routerListed []interface{}
+	for _, s := range sets {
+		statuses[s["id"]] = s["status"]
+		if releasedRouterLists(s) {
+			routerListed = append(routerListed, s["id"])
 		}
-		t.Fatalf("the catalogue must list only the active set %s, got %v", f.active, ids)
+	}
+	if want := map[interface{}]interface{}{f.active: "active", brought: "grouped"}; !reflect.DeepEqual(statuses, want) {
+		t.Fatalf("the catalogue lists the set shared on its own %s as active and the set the group brought %s as grouped, got %v", f.active, brought, statuses)
+	}
+	if !slices.Equal(routerListed, []interface{}{f.active}) {
+		t.Fatalf("a 1.82 to 1.93 router lists a set only while its status is empty or active, so it must skip only the brought member %s, got %v", brought, routerListed)
 	}
 	for i, entry := range sets {
 		what := "catalogue set " + strconv.Itoa(i)
 		assertKeys(t, what, entry, contractSetTags)
-		if entry["status"] != "active" {
-			t.Errorf("%s has status %v, routers list only active entries", what, entry["status"])
+		if status, _ := entry["status"].(string); !slices.Contains(contractSetStatuses, status) {
+			t.Errorf("%s has status %v, the catalogue publishes only %v", what, entry["status"], contractSetStatuses)
 		}
 		object(t, what+" set", entry["set"])
 		assertScores(t, what, entry)

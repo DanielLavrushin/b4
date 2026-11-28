@@ -145,6 +145,7 @@ func (w *Watchdog) healSet(id string) {
 		StopWhenCovered: true,
 		TLSVersion:      tlsVersion,
 		IPVersion:       ipVersion,
+		KeepPreset:      w.keepPreset,
 	})
 	if errors.Is(err, discovery.ErrDiscoveryAlreadyRunning) || errors.Is(err, discovery.ErrDSCPRulesPending) {
 		reason := ReasonBusy

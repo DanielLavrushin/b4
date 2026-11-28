@@ -113,6 +113,103 @@ func TestTheCatalogueListsAGroupOnlyWhileEveryMemberIsListed(t *testing.T) {
 	}
 }
 
+type listedStatus struct {
+	Version int
+	Status  string
+}
+
+func listedStatuses(t *testing.T, b *Builder) map[string]listedStatus {
+	t.Helper()
+	result, err := b.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make(map[string]listedStatus, len(result.Catalogue.Sets))
+	for _, cs := range result.Catalogue.Sets {
+		out[cs.ID] = listedStatus{Version: cs.Version, Status: cs.Status}
+	}
+	return out
+}
+
+func addSetVersion(t *testing.T, st *store.Store, id, fp string, approve bool) {
+	t.Helper()
+	ctx := context.Background()
+	now := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
+	v := &store.Version{SetID: id, FP: fp, TargetsKey: "targets-" + id, Title: "set " + id, Projection: map[string]interface{}{}, Status: hubwire.SetStatusPending, CreatedAt: now, UpdatedAt: now}
+	if err := st.AddVersion(ctx, v); err != nil {
+		t.Fatal(err)
+	}
+	if !approve {
+		return
+	}
+	if err := st.Approve(ctx, id, v.Version, now); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestASetAGroupBroughtIsListedAsGroupedAndALinkedOneStaysActive(t *testing.T) {
+	b, st := testBuilder(t)
+	ctx := context.Background()
+	now := time.Date(2026, 9, 12, 12, 0, 0, 0, time.UTC)
+	addActiveSet(t, st, memberA, "fp-a")
+	addActiveSet(t, st, memberB, "fp-b")
+	addGroup(t, st, groupOne, "author-group", hubwire.SetStatusActive, store.GroupMember{SetID: memberA, SetVersion: 1}, store.GroupMember{SetID: memberB, SetVersion: 1, Brought: true})
+
+	want := map[string]listedStatus{
+		memberA: {Version: 1, Status: hubwire.SetStatusActive},
+		memberB: {Version: 1, Status: hubwire.SetStatusGrouped},
+	}
+	if got := listedStatuses(t, b); !reflect.DeepEqual(got, want) {
+		t.Fatalf("the brought member is grouped, the linked one active:\n got %+v\nwant %+v", got, want)
+	}
+
+	if err := st.Update(ctx, func(tx *store.Tx) error {
+		return tx.SetGroupStatus(ctx, groupOne, 1, hubwire.SetStatusHidden, "reports", now)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := b.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Catalogue.Groups) != 0 {
+		t.Fatalf("the hidden group is not listed, got %+v", result.Catalogue.Groups)
+	}
+	if got := result.ByID[memberB]; got == nil || got.Status != hubwire.SetStatusGrouped {
+		t.Fatalf("a member a hidden group brought stays grouped, got %+v", got)
+	}
+	if got := result.ByID[memberA]; got == nil || got.Status != hubwire.SetStatusActive {
+		t.Fatalf("the linked member stays active, got %+v", got)
+	}
+}
+
+func TestTheGroupedStatusFollowsTheListedVersion(t *testing.T) {
+	b, st := testBuilder(t)
+	addActiveSet(t, st, memberA, "fp-a")
+	addActiveSet(t, st, memberB, "fp-b")
+	addSetVersion(t, st, memberA, "fp-a2", false)
+	addGroup(t, st, groupOne, "author-group", hubwire.SetStatusActive, store.GroupMember{SetID: memberA, SetVersion: 2, Brought: true}, store.GroupMember{SetID: memberB, SetVersion: 1, Brought: true})
+
+	if got := listedStatuses(t, b)[memberA]; got != (listedStatus{Version: 1, Status: hubwire.SetStatusActive}) {
+		t.Fatalf("the solo v1 stays active while the brought v2 is pending, got %+v", got)
+	}
+	if err := st.Approve(context.Background(), memberA, 2, time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	got := listedStatuses(t, b)
+	if got[memberA] != (listedStatus{Version: 2, Status: hubwire.SetStatusGrouped}) {
+		t.Fatalf("the brought v2 is grouped once it is the listed version, got %+v", got[memberA])
+	}
+	if got[memberB] != (listedStatus{Version: 1, Status: hubwire.SetStatusGrouped}) {
+		t.Fatalf("the brought v1 is grouped, got %+v", got[memberB])
+	}
+
+	addSetVersion(t, st, memberB, "fp-b2", true)
+	if got := listedStatuses(t, b)[memberB]; got != (listedStatus{Version: 2, Status: hubwire.SetStatusActive}) {
+		t.Fatalf("a v2 shared on its own after a brought v1 is active, got %+v", got)
+	}
+}
+
 func TestDeletingAListedMemberSetTakesItsGroupOut(t *testing.T) {
 	b, st := testBuilder(t)
 	ctx := context.Background()

@@ -29,6 +29,7 @@ const (
 	SetStatusActive   = "active"
 	SetStatusHidden   = "hidden"
 	SetStatusRejected = "rejected"
+	SetStatusGrouped  = "grouped"
 
 	signingDomain = "b4hub/1\n"
 

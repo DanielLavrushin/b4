@@ -18,8 +18,7 @@ import {
 import { colors } from "@design";
 import { B4Alert, B4Badge, B4ResultCard } from "@b4.elements";
 import { B4SetConfig } from "@models/config";
-import { useHubGroupsOf, useHubStatus } from "@hooks/useHub";
-import { hubGroupAction } from "@models/hubGroups";
+import { useHubGroupOffers, useHubSetGrouped } from "@hooks/useHub";
 import {
   DiscoverySuite,
   HistoryEntry,
@@ -249,14 +248,9 @@ const FoundCard = ({
   const hosts = group.set ? offeredHosts(group.results, group.preset) : [];
   const probed = group.results.some((dr) => !!dr.addresses?.length);
   const hubSetId = group.set?.hub?.id ?? "";
-  const hubStatus = useHubStatus(Boolean(hubSetId));
-  const hubGroupsOf = useHubGroupsOf(
-    hubSetId,
-    Boolean(hubStatus.data?.enabled && hubStatus.data?.configured),
-  );
-  const hubGroupOffers = (hubGroupsOf.data?.groups ?? []).filter(
-    (hubGroup) => hubGroupAction(hubGroup) !== "applied",
-  );
+  const hubGroups = useHubGroupOffers(hubSetId);
+  const hubGroupOffers = hubGroups.offers;
+  const hubGrouped = useHubSetGrouped(hubSetId);
 
   let badge = (
     <B4Badge
@@ -459,37 +453,60 @@ const FoundCard = ({
           />
         </Box>
         <Stack spacing={1} alignItems="flex-end" sx={{ flexShrink: 0 }}>
-          <Button
-            variant="contained"
-            startIcon={
-              applying ? (
-                <CircularProgress size={18} color="inherit" />
-              ) : (
-                <AddIcon />
-              )
-            }
-            disabled={applying || !group.set}
-            onClick={() =>
-              group.set &&
-              onApply({
-                domains: group.domains,
-                set: group.set,
-                preset: group.preset,
-                urls: checkUrlsFor(suite, group.domains),
-                setId: suite.set_id,
-                dscpPath: suite.dscp_path,
-                hosts: hosts.map((h) => ({ ...h, picked: hostPicks[h.host] })),
-              })
-            }
-            sx={{
-              bgcolor: colors.secondary,
-              color: colors.background.default,
-              "&:hover": { bgcolor: colors.primary },
-              whiteSpace: "nowrap",
-            }}
-          >
-            {t("discovery.results.apply")}
-          </Button>
+          {!hubGrouped.grouped && (
+            <Button
+              variant="contained"
+              startIcon={
+                applying ? (
+                  <CircularProgress size={18} color="inherit" />
+                ) : (
+                  <AddIcon />
+                )
+              }
+              disabled={applying || !group.set || hubGrouped.pending}
+              onClick={() =>
+                group.set &&
+                onApply({
+                  domains: group.domains,
+                  set: group.set,
+                  preset: group.preset,
+                  urls: checkUrlsFor(suite, group.domains),
+                  setId: suite.set_id,
+                  dscpPath: suite.dscp_path,
+                  hosts: hosts.map((h) => ({
+                    ...h,
+                    picked: hostPicks[h.host],
+                  })),
+                })
+              }
+              sx={{
+                bgcolor: colors.secondary,
+                color: colors.background.default,
+                "&:hover": { bgcolor: colors.primary },
+                whiteSpace: "nowrap",
+              }}
+            >
+              {t("discovery.results.apply")}
+            </Button>
+          )}
+          {hubGrouped.grouped &&
+            hubGroupOffers.length === 0 &&
+            !hubGroups.pending && (
+              <Typography
+                variant="caption"
+                sx={{
+                  color: colors.text.secondary,
+                  maxWidth: 260,
+                  textAlign: "right",
+                }}
+              >
+                {hubGroups.applied.length > 0
+                  ? t("discovery.results.hubGroupApplied", {
+                      title: hubGroups.applied.map((g) => g.title).join(", "),
+                    })
+                  : t("discovery.results.hubGroupOnly")}
+              </Typography>
+            )}
           {hubGroupOffers.map((hubGroup) => (
             <Button
               key={hubGroup.id}

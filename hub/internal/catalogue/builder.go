@@ -417,6 +417,10 @@ func (b *Builder) publish(ctx context.Context, now time.Time) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	brought, err := b.Store.BroughtVersionSet(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if err := b.guard(ctx, now, len(versions)); err != nil {
 		return nil, err
 	}
@@ -436,6 +440,9 @@ func (b *Builder) publish(ctx context.Context, now time.Time) (*Result, error) {
 	for i := range versions {
 		v := &versions[i]
 		cs := b.catalogueSet(v, sets[v.SetID], votesByFP[v.FP], now)
+		if brought[v.SetID][v.Version] {
+			cs.Status = hubwire.SetStatusGrouped
+		}
 		for _, ref := range cs.Payloads {
 			blobs[ref.SHA256] = ref
 		}

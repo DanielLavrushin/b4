@@ -59,7 +59,7 @@ func splitHostPortLoose(hostport string) (string, string, error) {
 	return hostport[:i], hostport[i+1:], nil
 }
 
-func (api *API) communityPresets(urls []string, skip bool) []discovery.ConfigPreset {
+func (api *API) communityPresets(urls []string, skip, withGrouped bool) []discovery.ConfigPreset {
 	svc := globalHubService
 	if skip || svc == nil || !svc.Enabled() || !svc.Configured() {
 		return nil
@@ -71,15 +71,19 @@ func (api *API) communityPresets(urls []string, skip bool) []discovery.ConfigPre
 		}
 		cancel()
 	}
+	search := svc.Search
+	if withGrouped {
+		search = svc.SearchWithGrouped
+	}
 	var queues []*communityQueue
 	for _, raw := range urls {
 		domain := hubDomainOf(raw)
 		if domain == "" {
 			continue
 		}
-		results, _ := svc.Search(domain, communitySearchDepth)
+		results, _ := search(domain, communitySearchDepth)
 		if len(results) > 0 {
-			queues = append(queues, &communityQueue{domain: domain, results: results})
+			queues = append(queues, &communityQueue{domain: domain, results: activeTwinsFirst(results)})
 		}
 	}
 	byID := map[string]*communityCandidate{}
@@ -133,6 +137,51 @@ func (api *API) communityPresets(urls []string, skip bool) []discovery.ConfigPre
 		log.Infof("discovery: %d community strategies queued ahead of the presets", len(out))
 	}
 	return out
+}
+
+func activeTwinsFirst(results []hub.Result) []hub.Result {
+	active := map[string]hub.Result{}
+	for i := len(results) - 1; i >= 0; i-- {
+		if r := results[i]; r.Set != nil && r.Set.Status != hubwire.SetStatusGrouped {
+			active[r.Set.FP] = r
+		}
+	}
+	out := slices.Clone(results)
+	for i, r := range out {
+		if r.Set == nil || r.Set.Status != hubwire.SetStatusGrouped {
+			continue
+		}
+		if twin, ok := active[r.Set.FP]; ok {
+			out[i] = twin
+		}
+	}
+	return out
+}
+
+func hubGroupedSet(set *config.SetConfig) (*hubwire.CatalogueSet, bool) {
+	svc := globalHubService
+	if svc == nil || set == nil || set.Hub == nil || set.Hub.ID == "" {
+		return nil, false
+	}
+	res, ok := svc.Get(set.Hub.ID)
+	if !ok || res.Set.Status != hubwire.SetStatusGrouped {
+		return nil, false
+	}
+	return res.Set, true
+}
+
+func KeepUngroupedPreset(preset discovery.ConfigPreset) bool {
+	_, grouped := hubGroupedSet(&preset.Config)
+	return !grouped
+}
+
+func keepPresetWithItsGroup(preset discovery.ConfigPreset) bool {
+	cs, grouped := hubGroupedSet(&preset.Config)
+	if !grouped {
+		return true
+	}
+	svc := globalHubService
+	return svc.Enabled() && svc.Configured() && len(svc.GroupsOf(cs.ID)) > 0
 }
 
 func (api *API) communityPreset(cs *hubwire.CatalogueSet) (discovery.ConfigPreset, bool) {

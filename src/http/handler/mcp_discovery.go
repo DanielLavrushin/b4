@@ -14,6 +14,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/discovery"
+	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/sni"
 	"github.com/daniellavrushin/b4/tables"
@@ -152,7 +153,10 @@ type mcpDiscoveryDomain struct {
 	pageHosts     []discovery.HostResult
 	unfixedHosts  []string
 	hostsPreset   string
+	groupedSet    *hubwire.CatalogueSet
 }
+
+const mcpGroupOnly = "which the hub offers only inside a set group: it is applied only with its community group, in b4's web interface (the Discovery results or the Community page), and action=apply does not install it"
 
 type mcpNameEvidence struct {
 	NXDomain        bool   `json:"nxdomain"`
@@ -203,6 +207,8 @@ func mcpDiscoveryVerdict(d mcpDiscoveryDomain, running bool) string {
 		return "the address itself is unreachable, so no packet strategy can help; only a proxy or VPN route would"
 	case d.Found && running:
 		return fmt.Sprintf("%s is the best so far, but the run is still testing and this is PROVISIONAL: it has not been confirmed, a better one may still win, and nothing can be applied until the run finishes or is cancelled", d.BestPreset)
+	case d.Found && d.groupedSet != nil:
+		return fmt.Sprintf("%s loaded the site, but it is community set %q, %s", d.offered(), d.groupedSet.Title, mcpGroupOnly) + mcpPageHostsVerdict(d)
 	case d.Found && d.Unconfirmed:
 		return fmt.Sprintf("%s loaded the site at least once, but the run ended before the confirmation pass re-checked it, so it is UNCONFIRMED: apply it if the user accepts that, and verify with b4_test_domain_now", d.offered()) + mcpPageHostsVerdict(d)
 	case d.Found:
@@ -275,12 +281,14 @@ func (api *API) mcpDiscoverySuiteRows(snap *mcpSuiteSnapshot, running bool) []mc
 	family := map[string]string{}
 	offered := map[string]string{}
 	winner := map[string]string{}
+	sets := map[string]*config.SetConfig{}
 	for _, g := range snap.StrategyGroups {
 		for _, d := range g.Domains {
 			family[sni.NormalizeDomain(d)] = g.Family
 			offered[sni.NormalizeDomain(d)] = g.WinnerPreset
 			if g.Set != nil {
 				winner[sni.NormalizeDomain(d)] = g.WinnerPreset
+				sets[sni.NormalizeDomain(d)] = g.Set
 			}
 		}
 	}
@@ -319,6 +327,7 @@ func (api *API) mcpDiscoverySuiteRows(snap *mcpSuiteSnapshot, running bool) []mc
 		}
 		row.Unconfirmed = row.Found && !running && (unconfirmed || discovery.CheckStatus(snap.Status) == discovery.CheckStatusCanceled)
 		row.Provisional = running && row.Found
+		row.groupedSet, _ = hubGroupedSet(sets[sni.NormalizeDomain(name)])
 		row.Verdict = mcpDiscoveryVerdict(row, running)
 		rows = append(rows, row)
 	}
@@ -416,7 +425,8 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 	opts := discovery.StartSuiteOptions{
 		ValidationTries: 1,
 		Source:          discovery.SourceMCP,
-		HubPresets:      func() []discovery.ConfigPreset { return api.communityPresets(urls, false) },
+		HubPresets:      func() []discovery.ConfigPreset { return api.communityPresets(urls, false, false) },
+		KeepPreset:      KeepUngroupedPreset,
 	}
 	if strings.EqualFold(strings.TrimSpace(in.SkipDNS), "true") {
 		opts.SkipDNS = true
@@ -435,7 +445,7 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		return nil, mcpDiscoveryOut{}, fmt.Errorf("the discovery runtime is not configured in this process")
 	}
 
-	suite, err := api.discoveryRT.StartSuite(cfg, urls, opts)
+	suite, err := discoveryStartSuite(api.discoveryRT, cfg, urls, opts)
 	if err != nil {
 		if errors.Is(err, discovery.ErrDiscoveryAlreadyRunning) {
 			return nil, mcpDiscoveryOut{}, fmt.Errorf(
@@ -633,8 +643,9 @@ func (api *API) mcpDiscoveryStatus(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpD
 			row.Confirmed, unconfirmed = p.Confirmed, !(mcpConfirmation{Confirmed: p.Confirmed, ConfirmTries: p.ConfirmTries}).passed()
 		}
 		row.Unconfirmed = row.Found && (unconfirmed || e.Status == discovery.CheckStatusCanceled)
+		row.groupedSet, _ = hubGroupedSet(e.ApplicableSet())
 		row.Verdict = mcpDiscoveryVerdict(row, false)
-		if row.Found && e.ApplicableSet() != nil {
+		if row.Found && e.ApplicableSet() != nil && row.groupedSet == nil {
 			applicable++
 		}
 		out.Domains = append(out.Domains, row)
@@ -693,6 +704,9 @@ func mcpSetVerdictMeaning(name string, v *discovery.SetVerdict) string {
 	}
 	switch v.Status {
 	case discovery.SetVerdictCovered:
+		if cs, grouped := hubGroupedSet(v.Set); grouped {
+			return fmt.Sprintf("'%s' passed every confirmation try on every address of set %q in one configuration, but it is community set %q, %s", v.WinnerPreset, name, cs.Title, mcpGroupOnly)
+		}
 		return fmt.Sprintf("'%s' passed every confirmation try on every address of set %q in one configuration; action=apply with set writes it into the set, leaving its domains alone", v.WinnerPreset, name)
 	case discovery.SetVerdictCurrentWorks:
 		return fmt.Sprintf("the current strategy of set %q passed every confirmation try on every address; there is nothing to write", name)
@@ -822,17 +836,20 @@ func (api *API) mcpDiscoverySuiteStatus(snap *mcpSuiteSnapshot) (*mcp.CallToolRe
 			out.Note = mcpRulesChangedNote + ", so none of its results can be applied; start it again"
 		}
 	default:
-		applicable := 0
+		found, applicable := 0, 0
 		for _, d := range out.Domains {
 			if d.Found {
-				applicable++
+				found++
+				if d.groupedSet == nil {
+					applicable++
+				}
 			}
 		}
 		if api.discoveryRT != nil && api.discoveryRT.IsActive() {
 			out.Status = "finishing"
 			out.Note = fmt.Sprintf("the search is done (%d of %d domain(s) have a strategy) but the run is still tearing down its firewall rules. "+
 				"apply is refused until that finishes - call status once more in a few seconds.",
-				applicable, len(out.Domains))
+				found, len(out.Domains))
 			break
 		}
 		out.Note = fmt.Sprintf("finished. %d of %d domain(s) have a strategy worth applying, with action=apply and the domain. "+
@@ -1025,7 +1042,6 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 	if err := mcpFakePayloadRefusal(api.getCfg(), chosen); err != nil {
 		return nil, mcpDiscoveryOut{}, err
 	}
-
 	if existing := api.setCoveringDomainWith(domain, chosen); existing != nil {
 		out := mcpDiscoveryOut{Id: suiteID, Source: source}
 		for i, s := range api.getCfg().Sets {
@@ -1039,6 +1055,9 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 			domain, existing.Name, mcpSummarizeList(groupDomains))
 		out.Note += mcpAppliedPageHostsNote(mcpHostsOutside(existing, pageHosts), hostsPreset, existing.Name, len(groupDomains))
 		return nil, out, nil
+	}
+	if err := mcpHubGroupedRefusal(chosen); err != nil {
+		return nil, mcpDiscoveryOut{}, err
 	}
 
 	mcpWriteMu.Lock()
@@ -1221,6 +1240,13 @@ func mcpFakePayloadRefusal(cfg *config.Config, tested *config.SetConfig) error {
 	return nil
 }
 
+func mcpHubGroupedRefusal(tested *config.SetConfig) error {
+	if cs, grouped := hubGroupedSet(tested); grouped {
+		return fmt.Errorf("nothing written: this strategy is community set %q, which the hub offers only inside a set group, together with the group's other sets; on its own it most likely fails. The user can apply the whole group in b4's own web interface, from the Discovery results or the Community page", cs.Title)
+	}
+	return nil
+}
+
 func (api *API) mcpApplySetRun(target *config.SetConfig, run mcpSetRun, found bool) (*mcp.CallToolResult, mcpDiscoveryOut, error) {
 	cfg := api.getCfg()
 	if !found {
@@ -1266,6 +1292,9 @@ func (api *API) mcpApplySetRun(target *config.SetConfig, run mcpSetRun, found bo
 		return nil, mcpDiscoveryOut{}, fmt.Errorf("the verdict for set %q names '%s' but carries no strategy to write; start the run again", target.Name, v.WinnerPreset)
 	}
 	if err := mcpFakePayloadRefusal(cfg, v.Set); err != nil {
+		return nil, mcpDiscoveryOut{}, err
+	}
+	if err := mcpHubGroupedRefusal(v.Set); err != nil {
 		return nil, mcpDiscoveryOut{}, err
 	}
 

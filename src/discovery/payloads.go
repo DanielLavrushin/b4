@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/daniellavrushin/b4/capture"
@@ -47,6 +48,13 @@ func loadCustomPayloads(cfg *config.Config, payloadFiles []string) []CustomPaylo
 	}
 
 	return result
+}
+
+func (ds *DiscoverySuite) keptPresets(presets []ConfigPreset) []ConfigPreset {
+	if ds.keepPreset == nil {
+		return presets
+	}
+	return slices.DeleteFunc(presets, func(preset ConfigPreset) bool { return !ds.keepPreset(preset) })
 }
 
 func (ds *DiscoverySuite) presetsWithPayloads(presets []ConfigPreset) []ConfigPreset {

@@ -1898,7 +1898,7 @@
                         }
                     },
                     "409": {
-                        "description": "code: dscp_path_changed when the strategy was tested on another DSCP path than the new set's traffic would take, dscp_rules_pending while b4 is still applying its DSCP rules, fake_payload_missing when the capture the strategy's fake names can no longer be loaded",
+                        "description": "code: dscp_path_changed when the strategy was tested on another DSCP path than the new set's traffic would take, dscp_rules_pending while b4 is still applying its DSCP rules, fake_payload_missing when the capture the strategy's fake names can no longer be loaded, hub_grouped when the strategy is a community set the hub offers only inside a set group",
                         "schema": {
                             "$ref": "#/definitions/handler.APIError"
                         }
@@ -2247,7 +2247,7 @@
                         }
                     },
                     "409": {
-                        "description": "code: dscp_path_changed when the strategy was tested on another DSCP path than the set's traffic takes, dscp_rules_pending while b4 is still applying its DSCP rules, fake_payload_missing when the capture the strategy's fake names can no longer be loaded",
+                        "description": "code: dscp_path_changed when the strategy was tested on another DSCP path than the set's traffic takes, dscp_rules_pending while b4 is still applying its DSCP rules, fake_payload_missing when the capture the strategy's fake names can no longer be loaded, hub_grouped when the strategy is a community set the hub offers only inside a set group",
                         "schema": {
                             "$ref": "#/definitions/handler.APIError"
                         }
@@ -3461,6 +3461,12 @@
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "hub_grouped: the hub offers the set only inside a set group, so it is applied with the group or as an update of its local copy",
                         "schema": {
                             "$ref": "#/definitions/handler.APIError"
                         }

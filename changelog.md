@@ -8,7 +8,7 @@ All notable changes to b4 are recorded in this file.
 
 - **Add to a set's resolvers** in the DNS results of the **DPI Detector** puts a working encrypted resolver into a set's **Resolvers**. If the set has **Enable DNS Redirect** off, the resolver goes first and the redirect is switched on. [#680](https://github.com/DanielLavrushin/b4/issues/680)
 - Sets can be grouped through **Select** and **Group**, through a set's menu, or by dragging a set onto a group. A group moves as one, and is enabled, renamed or exported as one file; **MCP** lists each set's group.
-- A group of sets can be published to the community hub with **Share** on the group. The **Community** page shows a published group as one card with its own score, where **Apply group** adds all its sets as one group and **Works** and **Broken**, also on the group's header on the sets page, rate the group as a whole, and **Discovery** offers the whole group when the set it found belongs to one.
+- A group of sets can be published to the community hub with **Share** on the group. The **Community** page shows a published group as one card with its own score, where **Apply group** adds all its sets as one group and **Works** and **Broken**, also on the group's header on the sets page, rate the group as a whole, and **Discovery** offers the whole group when the set it found belongs to one. A set published only as part of a group is applied only with its group.
 - A set's menu has **Export**, which shows the set's JSON, copies it as one line or downloads it as a file.
 
 ### Changed

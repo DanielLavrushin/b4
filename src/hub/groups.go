@@ -23,7 +23,7 @@ func groupResolves(g *hubwire.CatalogueGroup, byID map[string]*hubwire.Catalogue
 	seen := make(map[string]bool, len(g.Members))
 	for i, m := range g.Members {
 		cs, ok := byID[m.SetID]
-		if !ok || !setActive(cs) || seen[m.SetID] || !hubwire.ValidGroupEscalation(m.Escalate, i, len(g.Members)) {
+		if !ok || !setListed(cs) || seen[m.SetID] || !hubwire.ValidGroupEscalation(m.Escalate, i, len(g.Members)) {
 			return false
 		}
 		if field, _ := hubwire.EscalationOutOfRange(m.Escalate); field != "" {
