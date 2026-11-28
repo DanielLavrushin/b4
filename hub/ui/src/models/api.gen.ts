@@ -282,6 +282,9 @@ export interface GroupDetailView {
   created_at: string;
   updated_at: string;
   published_version?: number;
+  published?: ScoreView;
+  live: ScoreView;
+  evidence: EvidenceView;
   versions: GroupVersionView[];
 }
 
@@ -578,6 +581,8 @@ export interface SetMembershipView {
   status: SetStatus;
   set_version: number;
   brought: boolean;
+  position: number;
+  members: number;
 }
 
 export interface BlobRef {
@@ -753,6 +758,7 @@ export interface SetRowView {
   superseded_at?: string;
   withheld?: WithheldReason;
   hidden_from?: SetStatus;
+  groups?: SetMembershipView[];
   config?: Record<string, unknown>;
   decode_error?: boolean;
   created_at: string;
@@ -778,6 +784,20 @@ export interface GroupVersionView {
   created_at: string;
   updated_at: string;
   members: GroupMemberView[];
+}
+
+export interface ScoreView {
+  score: number;
+  n: number;
+  devices: number;
+  newest?: string;
+  bucket: string;
+}
+
+export interface EvidenceView {
+  independent: EvidenceSideView;
+  author: EvidenceSideView;
+  pooled: number;
 }
 
 export interface GroupEffectView {
@@ -1109,20 +1129,6 @@ export interface TargetsBriefView {
   filters: Term[];
 }
 
-export interface ScoreView {
-  score: number;
-  n: number;
-  devices: number;
-  newest?: string;
-  bucket: string;
-}
-
-export interface EvidenceView {
-  independent: EvidenceSideView;
-  author: EvidenceSideView;
-  pooled: number;
-}
-
 export interface GroupMemberView {
   position: number;
   set_id: string;
@@ -1134,6 +1140,14 @@ export interface GroupMemberView {
   escalate?: GroupEscalation;
   entry?: EntryView;
   row?: SetRowView;
+}
+
+export interface EvidenceSideView {
+  works: number;
+  broken: number;
+  devices: number;
+  positive: number;
+  negative: number;
 }
 
 export interface KeySetVersionView {
@@ -1176,14 +1190,6 @@ export interface BuildVersionChange {
   title: string;
   from: number;
   to: number;
-}
-
-export interface EvidenceSideView {
-  works: number;
-  broken: number;
-  devices: number;
-  positive: number;
-  negative: number;
 }
 
 export interface GroupEscalation {

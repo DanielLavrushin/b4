@@ -62,6 +62,11 @@ export const hubApi = {
     apiGet<HubGroupsResponse>(
       `/api/hub/groups${setId ? `?set=${encodeURIComponent(setId)}` : ""}`,
     ),
+  voteGroup: (id: string, kind: HubVoteKind, domain?: string) =>
+    apiPost<HubVoteResponse>(`/api/hub/groups/${encodeURIComponent(id)}/vote`, {
+      kind,
+      ...(domain ? { domain } : {}),
+    }),
   applyGroup: (id: string, replace?: boolean) =>
     apiPost<HubGroupApplyResponse>(
       `/api/hub/groups/${encodeURIComponent(id)}/apply`,

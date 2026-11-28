@@ -188,12 +188,20 @@ func (s *Store) PruneVotes(ctx context.Context, now time.Time, maxAge time.Durat
 	if err != nil {
 		return 0, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE records SET set_id = '', version = 0 WHERE received_at < ? AND set_id <> ''
-		AND (kind = ? OR (kind = ? AND id NOT IN (SELECT record_id FROM set_versions)))`,
-		cutoff, hubwire.RecordVote, hubwire.RecordShare); err != nil {
+	res, err = tx.ExecContext(ctx, `DELETE FROM group_votes WHERE received_at < ?`, cutoff)
+	if err != nil {
 		return 0, err
 	}
-	return int(removed), tx.Commit()
+	removedGroup, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE records SET set_id = '', version = 0 WHERE received_at < ? AND set_id <> ''
+		AND (kind IN (?, ?) OR (kind = ? AND id NOT IN (SELECT record_id FROM set_versions)))`,
+		cutoff, hubwire.RecordVote, hubwire.RecordGroupVote, hubwire.RecordShare); err != nil {
+		return 0, err
+	}
+	return int(removed + removedGroup), tx.Commit()
 }
 
 func (s *Store) CountVotes(ctx context.Context) (int, error) {

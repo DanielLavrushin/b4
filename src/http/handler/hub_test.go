@@ -307,6 +307,7 @@ func TestHubEndpointsAreGated(t *testing.T) {
 	expectHubGateStatus(t, getJSON(t, mux, "/api/hub/status"), true)
 	expectCode(t, getJSON(t, mux, "/api/hub/sets?domain=x"), http.StatusConflict, "hub_not_configured")
 	expectCode(t, postJSON(t, mux, "/api/hub/sets/x/vote", HubVoteRequest{Kind: "works"}), http.StatusConflict, "hub_not_configured")
+	expectCode(t, postJSON(t, mux, "/api/hub/groups/x/vote", HubVoteRequest{Kind: "works"}), http.StatusConflict, "hub_not_configured")
 
 	signer, _ := hubwire.NewIdentity()
 	cfg.System.Hub.PublicKey = signer.KeyID()

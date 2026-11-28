@@ -1196,10 +1196,10 @@
         "restoreFailed": "Could not restore the identity: {{error}}"
       },
       "publicKeyPlaceholder": "Key id printed by b4hub keygen",
-      "info": "The set editor gets a Share section that prepares a set with everything private left out.\n\nThe Community page lists the catalogue signed by the hub. A shared set pasted into Import is accepted whether or not this is on.",
+      "info": "Sets and groups on the Sets page get a Share button that publishes them to the hub or prepares a shared set with everything private left out.\n\nThe Community page lists the catalogue signed by the hub. A shared set pasted into Import is accepted whether or not this is on.",
       "urlsInfo": "A mirror serves the same signed catalogue, so the key below stays the same.",
       "publicKeyInfo": "A self-hosted hub is, for example, a development hub on this network.",
-      "privacy": "Like any website, the hub or mirror sees this router's public address on a sync, and b4's version. A Works or Broken report adds the set, the domain the list was filtered by, the provider, the country and the capture engine, and is signed with the author identity below."
+      "privacy": "Like any website, the hub or mirror sees this router's public address on a sync, and b4's version. A Works or Broken report adds the set, or the group with the version of each of its sets, the domain the list was filtered by, the provider, the country and the capture engine, and is signed with the author identity below."
     }
   },
   "dashboard": {
@@ -1656,6 +1656,11 @@
       "orderInfo": "Among sets that list the domain, the longest matching entry wins, then a set restricted to source devices. Among sets that cover the address, a set restricted to source devices wins, then the narrowest range.\n\nBetween a set with the domain and a set with the address, the packet with the server name goes to the set with the domain, whatever the order. The rest of a TCP connection follows it, unless that set has Domain-only matching on. QUIC packets without a server name go to the set with the address. A set with the address keeps its TCP connections when it has Packet Duplication on and b4 has not learned the address for the set with the domain.\n\nFor a set with IP priority on, connections to its addresses stay with it even when a set lower in the list matches the domain.\n\nRouting goes by address alone and ignores how narrow the range is: sets restricted to devices or source interfaces come first, then the list order.",
       "orderTitle": "Order of sets"
     },
+    "export": {
+      "menu": "Export",
+      "title": "Export set",
+      "intro": "On another router, paste the JSON or open the file with Import on the Sets page."
+    },
     "groups": {
       "group": "Group",
       "groupTitle_one": "Group {{count}} set",
@@ -1691,13 +1696,10 @@
       "moveTo": "Move to group {{group}}",
       "newGroup": "New group...",
       "publish": {
-        "menu": "Publish to hub",
-        "title": "Publish group to hub",
         "intro_one": "Publishes the saved version of the group's {{count}} set as one hub group titled {{group}}, under this router's author key. A set that is an unchanged copy of a published set links to that set instead of adding a new one. Other users see the group after a moderator approves it.",
         "intro_other": "Publishes the saved versions of the group's {{count}} sets, in list order, as one hub group titled {{group}}, under this router's author key. A set that is an unchanged copy of a published set links to that set instead of adding a new one. Other users see the group after a moderator approves it.",
         "description": "Description",
         "descriptionHelp": "Optional. Shown on the group's card on the Community page.",
-        "confirm": "Publish",
         "result": {
           "new_set": "New hub set {{id}}",
           "new_version": "New version {{version}} of hub set {{id}}",
@@ -3222,6 +3224,7 @@
       "linkVote": "Your report",
       "linkVotedAt": "Reported on",
       "sectionTitle": "Share with other b4 users",
+      "menu": "Share",
       "info": "Routing (except block mode), device filters, escalation, every resolver except an https:// one in first place without a personal path, a query or a login, and anything else tied to this router are left out.",
       "prepare": "Prepare shared set",
       "prepareFailed": "The shared set could not be prepared",
@@ -3258,12 +3261,10 @@
       "payloadsAttached_other": "{{count}} payload files are included.",
       "publish": "Publish to hub",
       "publishHint": "Publishes the saved version of this set under this router's author key. Other users see it after moderation.",
+      "descriptionHelp": "Optional. Shown on the set's card on the Community page.",
       "linkedUnmodified": "Linked to community set {{id}} (version {{version}}), nothing to publish.",
       "publishNewVersion": "Publish as new version",
       "publishNewVersionHint": "This set changed since it was linked to {{id}}. Publishing creates the next version under your author key, or a new hub set when the original was published by someone else.",
-      "publishSaveFirst": "Save the set before publishing it.",
-      "publishUnsaved": "There are unsaved changes; the saved version is what gets published. Save first.",
-      "published": "Published as {{id}} version {{version}}. It waits in the hub's moderation queue; after approval it appears on the Community page at the next sync.",
       "publishedDetail": "Published as {{id}} (version {{version}}), status: {{status}}. A moderator on the hub has to approve it before other users, and this router, see it in the catalogue.",
       "publishDuplicate": "The hub already has this strategy with the same targets as {{id}} (version {{version}}). The upload was counted as a report that it works.",
       "publishUnreachable": "No hub answered, so the set was not published. Try again later.",
@@ -4812,7 +4813,9 @@
         "reapply": "Reapply group",
         "appliedAs": "Applied as {{group}}",
         "appliedModified": "Applied as {{group}}, edited",
-        "escalates": "Escalates to set {{name}}"
+        "escalates": "Escalates to set {{name}}",
+        "voteModified": "A set of the local copy was edited after the group was applied, so a report would not describe the published group.",
+        "voteOtherVersion": "This router runs another version of the group, or of one of its sets, than the listed one, so a report would not describe it."
       },
       "apply": {
         "done_one": "Created group {{group}} with {{count}} set.",
@@ -4839,7 +4842,13 @@
         "too_many_members": "A group can be published with at most 10 sets.",
         "bad_hub_answer": "The hub accepted the group, but its answer did not name a hub set for every set, so nothing was recorded on this router.",
         "hub_unreachable": "No hub answered. Try again later.",
-        "not_applied": "This router has no copy of the group to update."
+        "not_applied": "This router has no copy of the group to update.",
+        "hub_no_group_votes": "The hub does not accept reports on set groups yet."
+      },
+      "vote": {
+        "notApplied": "Apply the group first; reports are accepted only for groups in use.",
+        "modified": "A set of the local copy of this group was edited, so a report would not describe the published group.",
+        "otherVersion": "This router runs another version of the group, or of one of its sets, than the listed one, so a report would not describe it."
       }
     }
   },

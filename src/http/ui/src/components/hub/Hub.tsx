@@ -18,6 +18,7 @@ import { SnackbarAction, useSnackbar } from "@context/SnackbarProvider";
 import {
   useHubApply,
   useHubGroupApply,
+  useHubGroupVote,
   useHubSet,
   useHubSets,
   useHubStatus,
@@ -48,6 +49,7 @@ import {
   describeApiError,
   describeHubError,
   describeHubGroupApplyError,
+  describeHubGroupError,
 } from "@utils";
 import { CoveredDialog, CoveredReport } from "./CoveredDialog";
 import { DetailsDialog } from "./DetailsDialog";
@@ -110,6 +112,7 @@ export const HubBrowser = () => {
   const undo = useHubUndoApply();
   const enable = useLocalSetsEnabled();
   const vote = useHubVote();
+  const groupVote = useHubGroupVote();
 
   const detailsId = searchParams.get("set");
   const details = useHubSet(ready ? detailsId : null);
@@ -358,6 +361,25 @@ export const HubBrowser = () => {
     }
   };
 
+  const handleGroupVote = async (hubGroup: HubGroup, kind: HubVoteKind) => {
+    try {
+      const res = await groupVote.mutateAsync({
+        id: hubGroup.id,
+        kind,
+        domain: domain || undefined,
+      });
+      showSuccess(res.sent ? t("hub.vote.sent") : t("hub.vote.queued"));
+    } catch (e) {
+      const code = e instanceof ApiError ? e.code : undefined;
+      if (code === "not_applied") showError(t("hub.group.vote.notApplied"));
+      else if (code === "modified") showError(t("hub.group.vote.modified"));
+      else if (code === "other_version")
+        showError(t("hub.group.vote.otherVersion"));
+      else
+        showError(t("hub.vote.failed", { error: describeHubGroupError(e, t) }));
+    }
+  };
+
   const handleSync = () => {
     sync.mutate(undefined, {
       onSuccess: () => showSuccess(t("hub.status.synced")),
@@ -371,6 +393,7 @@ export const HubBrowser = () => {
     hubGroupApply.isPending ||
     undo.isPending ||
     vote.isPending ||
+    groupVote.isPending ||
     enable.isPending;
   const list = sets.data?.sets ?? [];
   const hubGroups = sets.data?.groups ?? [];
@@ -470,7 +493,7 @@ export const HubBrowser = () => {
               }}
               onUpdate={setUpdateHubGroup}
               onDetails={openDetails}
-              onVote={(s, kind) => void handleVote(s, kind)}
+              onVote={(g, kind) => void handleGroupVote(g, kind)}
               onTest={setTestSet}
             />
           ))}

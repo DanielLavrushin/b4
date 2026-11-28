@@ -2,6 +2,7 @@ package hubwire
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,6 +43,58 @@ func TestGroupRecordSignsAndVerifiesWithItsMembers(t *testing.T) {
 	tampered.Body = json.RawMessage(`{"title":"other","members":[]}`)
 	if _, err := VerifyRecord(&tampered); err != ErrBadSignature {
 		t.Errorf("a changed member list must fail verification, got %v", err)
+	}
+}
+
+func TestGroupVoteRecordSignsAndVerifies(t *testing.T) {
+	id, err := NewIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := GroupVoteBody{GroupID: "G1", Version: 2, Members: []GroupVoteMember{{SetID: "S1", Version: 3}, {SetID: "S2", Version: 1}}, Kind: VoteWorks, Domain: "youtube.com"}
+	rec, err := SignRecord(id, RecordGroupVote, body, time.Date(2026, 11, 28, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("a group vote must sign: %v", err)
+	}
+	raw, _ := json.Marshal(rec)
+	var decoded Record
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyRecord(&decoded); err != nil {
+		t.Fatalf("a group vote must verify: %v", err)
+	}
+	var back GroupVoteBody
+	if err := json.Unmarshal(decoded.Body, &back); err != nil || back.GroupID != body.GroupID || back.Kind != body.Kind || len(back.Members) != 2 || back.Members[0] != body.Members[0] || back.Members[1] != body.Members[1] {
+		t.Fatalf("the vote did not survive the round trip: %+v %v", back, err)
+	}
+	decoded.Body = json.RawMessage(`{"group_id":"G1","version":2,"members":[{"set_id":"S1","version":3},{"set_id":"S2","version":1}],"kind":"broken"}`)
+	if _, err := VerifyRecord(&decoded); err != ErrBadSignature {
+		t.Errorf("a flipped vote must fail verification, got %v", err)
+	}
+}
+
+func TestGroupFingerprintFollowsTheStrategiesTheirOrderAndTheEscalation(t *testing.T) {
+	a, b := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	base := []GroupFingerprintMember{{FP: a, Escalate: &GroupEscalation{To: 1, RstThreshold: 3}}, {FP: b}}
+	fp := GroupFingerprint(base)
+	if len(fp) != 64 {
+		t.Fatalf("a group fingerprint is a sha256 in hex: %q", fp)
+	}
+	upper := []GroupFingerprintMember{{FP: strings.ToUpper(a), Escalate: &GroupEscalation{To: 1, RstThreshold: 3}}, {FP: b}}
+	if GroupFingerprint(upper) != fp {
+		t.Error("the case of a member fingerprint must not matter")
+	}
+	for name, other := range map[string][]GroupFingerprintMember{
+		"order":      {{FP: b}, {FP: a, Escalate: &GroupEscalation{To: 1, RstThreshold: 3}}},
+		"strategy":   {{FP: a, Escalate: &GroupEscalation{To: 1, RstThreshold: 3}}, {FP: a}},
+		"escalation": {{FP: a, Escalate: &GroupEscalation{To: 1, RstThreshold: 4}}, {FP: b}},
+		"no link":    {{FP: a}, {FP: b}},
+		"members":    {{FP: a, Escalate: &GroupEscalation{To: 1, RstThreshold: 3}}},
+	} {
+		if GroupFingerprint(other) == fp {
+			t.Errorf("a different %s must give another group fingerprint", name)
+		}
 	}
 }
 

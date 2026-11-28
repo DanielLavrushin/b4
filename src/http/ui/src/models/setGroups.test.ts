@@ -8,6 +8,7 @@ import {
   normalizeSetGroup,
   parseSetsImport,
   setBlocks,
+  setFileName,
   setGroupFileName,
 } from "./setGroups";
 import type { Lean } from "./setGroups";
@@ -239,4 +240,7 @@ void test("the export file name keeps letters of any script", () => {
   assert.equal(setGroupFileName("YouTube apps"), "youtube-apps.b4group.json");
   assert.equal(setGroupFileName("Ютуб"), "ютуб.b4group.json");
   assert.equal(setGroupFileName("  --  "), "group.b4group.json");
+  assert.equal(setFileName("YouTube video"), "youtube-video.b4set.json");
+  assert.equal(setFileName("Ютуб"), "ютуб.b4set.json");
+  assert.equal(setFileName(""), "set.b4set.json");
 });

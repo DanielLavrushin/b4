@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/hubwire"
+	"github.com/daniellavrushin/b4hub/internal/catalogue"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
 	"github.com/daniellavrushin/b4hub/internal/moderation"
+	"github.com/daniellavrushin/b4hub/internal/score"
 	"github.com/daniellavrushin/b4hub/internal/store"
 )
 
@@ -56,6 +58,9 @@ type GroupDetailView struct {
 	CreatedAt          time.Time          `json:"created_at"`
 	UpdatedAt          time.Time          `json:"updated_at"`
 	PublishedVersion   int                `json:"published_version,omitempty"`
+	Published          *ScoreView         `json:"published,omitempty"`
+	Live               ScoreView          `json:"live"`
+	Evidence           EvidenceView       `json:"evidence"`
 	Versions           []GroupVersionView `json:"versions"`
 }
 
@@ -234,13 +239,28 @@ func (s *Server) groupDetail(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:          g.UpdatedAt,
 		Versions:           make([]GroupVersionView, 0, len(versions)),
 	}
+	pool, err := s.Store.ScoringGroupVotesByGFP(ctx)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	fps := make(map[string]string, len(tabs.listed))
+	for _, v := range tabs.listed {
+		fps[v.SetID] = v.FP
+	}
+	var votes []store.Vote
 	if latest := s.latest(); latest != nil {
 		for _, cg := range latest.Catalogue.Groups {
 			if cg.ID == id {
 				view.PublishedVersion = cg.Version
+				published := scoreView(cg.Scores.Global)
+				view.Published = &published
+				votes = pool[catalogue.ListedGroupFP(cg.Members, fps)]
 			}
 		}
 	}
+	view.Live = scoreView(score.Aggregate(catalogue.ScoreVotes(votes), gc.now).Global)
+	view.Evidence = evidenceOf(votes, id, "", gc.at)
 	for _, gv := range versions {
 		v, err := s.groupVersionView(ctx, gv, gc)
 		if err != nil {

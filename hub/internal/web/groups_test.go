@@ -10,6 +10,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/hubwire"
+	"github.com/daniellavrushin/b4hub/internal/store"
 	"github.com/daniellavrushin/b4hub/internal/testkit"
 )
 
@@ -378,6 +379,113 @@ func TestASetDetailNamesTheGroupsThatHoldIt(t *testing.T) {
 	f.expectStatus(f.groupAction(m.group, ActionHide, GroupActionRequest{Reason: "later"}), http.StatusOK)
 	if g := detail(m.linked).Groups; len(g) != 1 || g[0].Status != "hidden" {
 		t.Fatalf("a hidden group is still named: %+v", g)
+	}
+}
+
+func TestTheSetListNamesEachSetsGroups(t *testing.T) {
+	f := newFixture(t, password)
+	m := f.mediaGroup()
+	f.expectStatus(f.groupAction(m.group, ActionApprove, GroupActionRequest{}), http.StatusOK)
+	f.approve(m.single)
+	rows := func(query string) map[string][]SetMembershipView {
+		t.Helper()
+		var view SetRowsView
+		f.admin(http.MethodGet, PathAPI+"/sets/rows?tab=listed"+query, nil).decode(t, &view)
+		out := make(map[string][]SetMembershipView, len(view.Rows))
+		for _, row := range view.Rows {
+			out[row.SetID] = row.Groups
+		}
+		return out
+	}
+	members := []string{m.linked, m.members[1].SetID, m.members[2].SetID}
+	all := rows("")
+	for _, id := range members {
+		if g := all[id]; len(g) != 1 || g[0].GroupID != m.group || g[0].Version != 1 || g[0].Title != "media" || g[0].Status != "active" {
+			t.Fatalf("member %s names its group: %+v", id, g)
+		}
+	}
+	if g, ok := all[m.single]; !ok || len(g) != 0 {
+		t.Fatalf("a listed set in no group names none: %v %+v", ok, g)
+	}
+	if resp := f.admin(http.MethodGet, PathAPI+"/sets/rows?tab=listed&q=single", nil); strings.Contains(resp.body, `"groups"`) {
+		t.Fatalf("a set in no group carries no groups field: %s", resp.body)
+	}
+	for name, query := range map[string]string{"filter": "&filter=grouped", "search": "&q=MEDIA"} {
+		got := rows(query)
+		if len(got) != len(members) {
+			t.Fatalf("%s keeps the three members only: %+v", name, got)
+		}
+		for _, id := range members {
+			if _, ok := got[id]; !ok {
+				t.Fatalf("%s lost member %s: %+v", name, id, got)
+			}
+		}
+	}
+}
+
+func TestTheSetListKeepsAGroupsSetsTogetherInGroupOrder(t *testing.T) {
+	f := newFixture(t, password)
+	m := f.mediaGroup()
+	f.expectStatus(f.groupAction(m.group, ActionApprove, GroupActionRequest{}), http.StatusOK)
+	f.approve(m.single)
+	var view SetRowsView
+	f.admin(http.MethodGet, PathAPI+"/sets/rows?tab=listed&sort=title&dir=asc", nil).decode(t, &view)
+	titles := make([]string, 0, len(view.Rows))
+	for _, row := range view.Rows {
+		titles = append(titles, row.Title)
+	}
+	if strings.Join(titles, ",") != "Linked,Video,Music,Single" {
+		t.Fatalf("by title Music would split the group; the group's sets follow its first one in group order: %v", titles)
+	}
+	for i, row := range view.Rows[:3] {
+		if g := row.Groups[0]; g.Position != i || g.Members != 3 {
+			t.Fatalf("%s: position %d of %d, want %d of 3", row.Title, g.Position, g.Members, i)
+		}
+	}
+}
+
+func TestGatheringMovesEachGroupToItsFirstSetAndKeepsTheRestInPlace(t *testing.T) {
+	row := func(title, group string, position int) SetRowView {
+		r := SetRowView{Title: title}
+		if group != "" {
+			r.Groups = []SetMembershipView{{GroupID: group, Position: position}, {GroupID: "zz"}}
+		}
+		return r
+	}
+	got := gatherGroups([]SetRowView{row("a", "g1", 2), row("x", "", 0), row("b", "g2", 0), row("c", "g1", 0), row("y", "", 0), row("d", "g2", 1), row("e", "g1", 1)})
+	titles := make([]string, 0, len(got))
+	for _, r := range got {
+		titles = append(titles, r.Title)
+	}
+	if strings.Join(titles, ",") != "c,e,a,x,b,d,y" {
+		t.Fatalf("order: %v", titles)
+	}
+	if gatherGroups(nil) == nil || len(gatherGroups(nil)) != 0 {
+		t.Fatal("no rows give an empty list")
+	}
+}
+
+func TestASetRowNamesTheNewestVersionOfEachGroupThatIsNotRejected(t *testing.T) {
+	got := rowGroups([]store.Membership{
+		{GroupID: "a", GroupVersion: 1, Title: "old", Status: "hidden", SetVersion: 1},
+		{GroupID: "a", GroupVersion: 2, Title: "new", Status: "active", SetVersion: 2, Brought: true},
+		{GroupID: "b", GroupVersion: 1, Title: "gone", Status: hubwire.SetStatusRejected, SetVersion: 1},
+		{GroupID: "c", GroupVersion: 3, Title: "other", Status: "pending", SetVersion: 2},
+	})
+	want := []SetMembershipView{
+		{GroupID: "a", Version: 2, Title: "new", Status: "active", SetVersion: 2, Brought: true},
+		{GroupID: "c", Version: 3, Title: "other", Status: "pending", SetVersion: 2},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("groups: %+v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("group %d: %+v, want %+v", i, got[i], want[i])
+		}
+	}
+	if rowGroups(nil) != nil {
+		t.Fatal("no memberships give no list, so the field is left out")
 	}
 }
 

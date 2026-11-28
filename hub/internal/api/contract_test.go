@@ -41,7 +41,7 @@ var (
 	contractGeoSourceTags = []string{"site_url,omitempty", "ip_url,omitempty"}
 
 	contractCatalogueTags = []string{"epoch", "seq", "generated_at", "sets", "blobs,omitempty", "asn_names,omitempty", "groups,omitempty"}
-	contractGroupTags     = []string{"id", "version", "title", "description,omitempty", "author", "created_at", "updated_at", "members"}
+	contractGroupTags     = []string{"id", "version", "title", "description,omitempty", "author", "created_at", "updated_at", "members", "scores"}
 	contractMemberTags    = []string{"set_id", "escalate,omitempty"}
 	contractEscalateTags  = []string{
 		"to", "rst_threshold,omitempty", "rst_window_sec,omitempty", "ttl_sec,omitempty",
@@ -475,16 +475,7 @@ func TestContractCatalogueEntries(t *testing.T) {
 			t.Errorf("%s has status %v, routers list only active entries", what, entry["status"])
 		}
 		object(t, what+" set", entry["set"])
-		scores := object(t, what+" scores", entry["scores"])
-		assertKeys(t, what+" scores", scores, contractScoresTags)
-		assertKeys(t, what+" scores global", object(t, what+" scores global", scores["global"]), contractScoreTags)
-		for _, bucket := range []string{"asn", "cc"} {
-			if cells, ok := scores[bucket]; ok {
-				for key, cell := range object(t, what+" scores "+bucket, cells) {
-					assertKeys(t, what+" scores "+bucket+" "+key, object(t, what+" scores "+bucket+" "+key, cell), contractScoreTags)
-				}
-			}
-		}
+		assertScores(t, what, entry)
 		if payloads, ok := entry["payloads"]; ok {
 			for _, ref := range objects(t, what+" payloads", payloads) {
 				assertKeys(t, what+" payload", ref, contractBlobRefTags)
@@ -509,10 +500,25 @@ func TestContractCatalogueEntries(t *testing.T) {
 	for i, entry := range groups {
 		what := "catalogue group " + strconv.Itoa(i)
 		assertKeys(t, what, entry, contractGroupTags)
+		assertScores(t, what, entry)
 		for _, member := range objects(t, what+" members", entry["members"]) {
 			assertKeys(t, what+" member", member, contractMemberTags)
 			if escalate, ok := member["escalate"]; ok {
 				assertKeys(t, what+" member escalate", object(t, what+" member escalate", escalate), contractEscalateTags)
+			}
+		}
+	}
+}
+
+func assertScores(t *testing.T, what string, entry map[string]interface{}) {
+	t.Helper()
+	scores := object(t, what+" scores", entry["scores"])
+	assertKeys(t, what+" scores", scores, contractScoresTags)
+	assertKeys(t, what+" scores global", object(t, what+" scores global", scores["global"]), contractScoreTags)
+	for _, bucket := range []string{"asn", "cc"} {
+		if cells, ok := scores[bucket]; ok {
+			for key, cell := range object(t, what+" scores "+bucket, cells) {
+				assertKeys(t, what+" scores "+bucket+" "+key, object(t, what+" scores "+bucket+" "+key, cell), contractScoreTags)
 			}
 		}
 	}

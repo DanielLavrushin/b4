@@ -173,7 +173,8 @@ func (s *Store) KeyImpact(ctx context.Context, keyHMAC string) (*KeyImpact, erro
 		WHERE v.status = 'pending' AND v.uploader_hmac = ? ORDER BY v.created_at`, keyHMAC); err != nil {
 		return nil, err
 	}
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*), COUNT(DISTINCT fp) FROM votes WHERE key_hmac = ?`, keyHMAC).Scan(&impact.Votes, &impact.VotedSets); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*), COUNT(DISTINCT fp) FROM (
+		SELECT fp FROM votes WHERE key_hmac = ?1 UNION ALL SELECT gfp FROM group_votes WHERE key_hmac = ?1)`, keyHMAC).Scan(&impact.Votes, &impact.VotedSets); err != nil {
 		return nil, err
 	}
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM reports WHERE key_hmac = ? AND state = 'open'`, keyHMAC).Scan(&impact.Reports); err != nil {

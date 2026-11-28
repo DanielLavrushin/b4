@@ -159,7 +159,8 @@ func (s *Store) keyRows(ctx context.Context, where string, args ...interface{}) 
 	}); err != nil {
 		return nil, err
 	}
-	if err := countInto(ctx, s.db, `SELECT key_hmac, COUNT(*), SUM(kind <> 'upload'), MAX(received_at) FROM votes GROUP BY key_hmac`, func(key string, a, b int, last string) {
+	if err := countInto(ctx, s.db, `SELECT key_hmac, COUNT(*), SUM(kind <> 'upload'), MAX(received_at) FROM (
+		SELECT key_hmac, kind, received_at FROM votes UNION ALL SELECT key_hmac, kind, received_at FROM group_votes) GROUP BY key_hmac`, func(key string, a, b int, last string) {
 		if k := at(key); k != nil {
 			k.Votes = a
 			k.ManualVotes = b
@@ -189,6 +190,7 @@ func (s *Store) keyRows(ctx context.Context, where string, args ...interface{}) 
 			ROW_NUMBER() OVER (PARTITION BY key_hmac ORDER BY at DESC, id DESC) AS rn
 		FROM (
 			SELECT id, key_hmac, asn_observed AS asn, country_observed AS country, received_at AS at FROM votes
+			UNION ALL SELECT id, key_hmac, asn_observed, country_observed, received_at FROM group_votes
 			UNION ALL SELECT id, uploader_hmac, asn_observed, country_observed, created_at FROM set_versions
 			UNION ALL SELECT id, key_hmac, asn_observed, '', received_at FROM reports
 		) WHERE asn <> '') WHERE rn = 1`)

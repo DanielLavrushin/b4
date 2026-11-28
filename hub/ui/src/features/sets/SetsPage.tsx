@@ -19,7 +19,7 @@ import {
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import { useTranslation } from "react-i18next";
-import { FacetCompareBar, colors, radius } from "@design";
+import { FacetCompareBar, GROUP_ROW_GAP, colors, groupTraySx, radius } from "@design";
 import type { SetAction, SetRowView, SetTabName } from "@/models/api";
 import { PAGE_SIZES, useTableState } from "@/shared/table/useTableState";
 import type { SortDir } from "@/shared/table/sort";
@@ -27,6 +27,7 @@ import { SearchField, fieldSx } from "@/shared/components/SearchField";
 import { EmptyState, ErrorState } from "@/shared/components/States";
 import { BulkDialog } from "@/features/moderation/BulkDialog";
 import { useSetRows } from "./api";
+import { GroupStrip } from "./card/GroupStrip";
 import { RowCard } from "./card/row";
 import { HUB_FACETS } from "./card/SetCard";
 import { SetCardSkeleton } from "./card/SetCardSkeleton";
@@ -51,6 +52,8 @@ const gridItem = { xs: 12, sm: 6, lg: 4, xl: 3 } as const;
 const skeletons = [0, 1, 2, 3, 4, 5, 6, 7];
 
 const rowKey = (r: SetRowView) => `${r.set_id}/${String(r.version)}`;
+
+const blockOf = (r: SetRowView | undefined) => r?.groups?.[0]?.group_id ?? "";
 
 const tabsSx = {
   minHeight: 38,
@@ -170,19 +173,32 @@ export function SetsPage() {
   } else if (list.length === 0) {
     content = <EmptyState text={filtered ? t("sets.noMatch") : t("sets.empty")} />;
   } else {
+    const grouped = list.some((row) => blockOf(row) !== "");
     content = (
-      <Grid container spacing={3}>
-        {list.map((row) => {
+      <Grid container columnSpacing={3} rowSpacing={grouped ? `${String(GROUP_ROW_GAP)}px` : 3} sx={grouped ? { mt: `${String(GROUP_ROW_GAP - 12)}px` } : undefined}>
+        {list.map((row, i) => {
           const key = rowKey(row);
+          const block = blockOf(row);
+          const card = (
+            <RowCard
+              row={row}
+              tab={shown}
+              selection={actions.length > 0 ? { selected: selected.has(key), onToggle: () => toggleRow(key), label: t("card.select", { title: row.title }) } : undefined}
+              panel={panels.panelOf(key)}
+              onPanelChange={(next) => panels.setPanel(key, next)}
+            />
+          );
+          const first = block !== "" && blockOf(list[i - 1]) !== block;
           return (
             <Grid key={key} size={gridItem}>
-              <RowCard
-                row={row}
-                tab={shown}
-                selection={actions.length > 0 ? { selected: selected.has(key), onToggle: () => toggleRow(key), label: t("card.select", { title: row.title }) } : undefined}
-                panel={panels.panelOf(key)}
-                onPanelChange={(next) => panels.setPanel(key, next)}
-              />
+              {block === "" ? (
+                card
+              ) : (
+                <Box sx={{ position: "relative", zIndex: 0, height: "100%", ...groupTraySx(first, blockOf(list[i + 1]) !== block) }}>
+                  {first && row.groups?.[0] && <GroupStrip group={row.groups[0]} />}
+                  {card}
+                </Box>
+              )}
             </Grid>
           );
         })}
@@ -214,6 +230,7 @@ export function SetsPage() {
           )}
           <FilterToggle value="reports" active={filter === "reports"} label={t("sets.withReports")} onToggle={() => toggleFilter("reports")} />
           <FilterToggle value="edited" active={filter === "edited"} label={t("sets.edited")} onToggle={() => toggleFilter("edited")} />
+          <FilterToggle value="grouped" active={filter === "grouped"} label={t("sets.inGroup")} onToggle={() => toggleFilter("grouped")} />
         </Box>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, ml: "auto" }}>
           <SortControl value={sort} options={sortOptions} dir={table.dir} onChange={table.setSort} />

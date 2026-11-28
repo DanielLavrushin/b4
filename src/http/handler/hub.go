@@ -73,6 +73,7 @@ func (api *API) RegisterHubApi() {
 	api.mux.HandleFunc("/api/hub/groups/share", api.handleHubGroupShare)
 	api.mux.HandleFunc("/api/hub/groups/{id}", api.handleHubGroupByID)
 	api.mux.HandleFunc("/api/hub/groups/{id}/apply", api.handleHubGroupApply)
+	api.mux.HandleFunc("/api/hub/groups/{id}/vote", api.handleHubGroupVote)
 	api.mux.HandleFunc("/api/hub/identity", api.handleHubIdentity)
 	api.mux.HandleFunc("/api/hub/identity/recovery", api.handleHubIdentityRecovery)
 	api.mux.HandleFunc("/api/hub/identity/restore", api.handleHubIdentityRestore)
@@ -362,7 +363,7 @@ func (api *API) handleHubSets(w http.ResponseWriter, r *http.Request) {
 		limit = hub.DefaultSearchLimit
 	}
 	cfg := api.getCfg()
-	applied := hubAppliedIndex(cfg)
+	applied := hubAppliedIndex(svc, cfg)
 	groups := hubGroupViews(svc, cfg, svc.Groups(domain), applied)
 	folded := hubFoldedSets(groups)
 	results, _ := svc.Search(domain, math.MaxInt)
@@ -399,7 +400,7 @@ func (api *API) handleHubSetByID(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrNotFound("Hub set not found"))
 		return
 	}
-	sendResponse(w, hubSetView(res, hubAppliedIndex(api.getCfg())))
+	sendResponse(w, hubSetView(res, hubAppliedIndex(svc, api.getCfg())))
 }
 
 // @Summary Apply a hub set
@@ -593,8 +594,7 @@ func hubReplaceInPlace(next *config.Config, existing, set *config.SetConfig) []h
 	set.DSCP = existing.DSCP
 	set.Escalate = existing.Escalate
 	if existing.Hub != nil && set.Hub != nil && existing.Hub.ID == set.Hub.ID {
-		set.Hub.GroupID = existing.Hub.GroupID
-		set.Hub.GroupVersion = existing.Hub.GroupVersion
+		carryHubGroupOrigin(set.Hub, existing.Hub)
 	}
 	if reason := next.DSCPRefusal(existing); existing.DSCP.Enabled && reason != "" {
 		set.DSCP.Enabled = false
@@ -854,8 +854,7 @@ func (api *API) stampHubOrigin(localID, hubID string, version int, hash string) 
 		if set.Hub != nil {
 			origin.AppliedAt = set.Hub.AppliedAt
 			if set.Hub.ID == hubID {
-				origin.GroupID = set.Hub.GroupID
-				origin.GroupVersion = set.Hub.GroupVersion
+				carryHubGroupOrigin(origin, set.Hub)
 			}
 		}
 		set.Hub = origin

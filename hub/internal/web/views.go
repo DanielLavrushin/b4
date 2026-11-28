@@ -208,6 +208,12 @@ type SetMembershipView struct {
 	Status     string `json:"status"`
 	SetVersion int    `json:"set_version"`
 	Brought    bool   `json:"brought"`
+	Position   int    `json:"position"`
+	Members    int    `json:"members"`
+}
+
+func membershipView(m store.Membership) SetMembershipView {
+	return SetMembershipView{GroupID: m.GroupID, Version: m.GroupVersion, Title: m.Title, Status: m.Status, SetVersion: m.SetVersion, Brought: m.Brought, Position: m.Position, Members: m.Members}
 }
 
 type LimitsView struct {

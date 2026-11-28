@@ -68,6 +68,7 @@ func TestTheCatalogueListsAGroupOnlyWhileEveryMemberIsListed(t *testing.T) {
 		ID: groupOne, Version: 1, Title: "group " + groupOne, Author: hubdata.AuthorLabel("author-group"),
 		CreatedAt: "2026-09-12T00:00:00Z", UpdatedAt: "2026-09-12T00:00:00Z",
 		Members: []hubwire.CatalogueGroupMember{{SetID: memberB, Escalate: escalate}, {SetID: memberA}},
+		Scores:  hubwire.Scores{Global: hubwire.Score{Score: 0.5}},
 	}}
 	if !reflect.DeepEqual(groups, want) {
 		t.Fatalf("only the active group is listed, members in order:\n got %+v\nwant %+v", groups, want)

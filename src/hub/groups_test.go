@@ -80,6 +80,28 @@ func TestAGroupRecordIsNeverQueued(t *testing.T) {
 	}
 }
 
+func TestAGroupVoteIsQueuedAndFlushed(t *testing.T) {
+	f := hubtest.New(t)
+	box := newTestBox(t, f, t.TempDir())
+	f.SetDown(true)
+	rec, err := box.svc.Sign(hubwire.RecordGroupVote, hubwire.GroupVoteBody{GroupID: "g-video", Version: 2, Members: []hubwire.GroupVoteMember{{SetID: "s1", Version: 3}}, Kind: hubwire.VoteWorks})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent, queued, _, err := box.svc.SendOrQueue(context.Background(), rec)
+	if err != nil || sent || !queued || box.svc.OutboxCount() != 1 {
+		t.Fatalf("a group vote is queued while the hub is down: sent=%v queued=%v err=%v outbox=%d", sent, queued, err, box.svc.OutboxCount())
+	}
+	f.SetDown(false)
+	box.svc.FlushOutbox(context.Background())
+	if box.svc.OutboxCount() != 0 {
+		t.Fatalf("the outbox must drain once the hub answers, %d left", box.svc.OutboxCount())
+	}
+	if records := f.Records(); len(records) != 1 || records[0].Kind != hubwire.RecordGroupVote || records[0].ID() != rec.ID() {
+		t.Errorf("the queued group vote must reach the hub unchanged: %+v", records)
+	}
+}
+
 func TestSendDecodesTheGroupAnswer(t *testing.T) {
 	f := hubtest.New(t)
 	box := newTestBox(t, f, t.TempDir())

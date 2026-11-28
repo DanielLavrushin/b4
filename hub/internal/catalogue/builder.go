@@ -202,11 +202,23 @@ func (b *Builder) HubBase() string {
 	return strings.TrimRight(strings.TrimSpace(b.PublicURL), "/")
 }
 
-func (b *Builder) catalogueSet(v *store.Version, set store.Set, votes []store.Vote, now time.Time) hubwire.CatalogueSet {
-	scoreVotes := make([]score.Vote, 0, len(votes))
+func ScoreVotes(votes []store.Vote) []score.Vote {
+	out := make([]score.Vote, 0, len(votes))
 	for _, vote := range votes {
-		scoreVotes = append(scoreVotes, vote.ScoreVote())
+		out = append(out, vote.ScoreVote())
 	}
+	return out
+}
+
+func ListedGroupFP(members []hubwire.CatalogueGroupMember, fps map[string]string) string {
+	out := make([]hubwire.GroupFingerprintMember, len(members))
+	for i, m := range members {
+		out[i] = hubwire.GroupFingerprintMember{FP: fps[m.SetID], Escalate: m.Escalate}
+	}
+	return hubwire.GroupFingerprint(out)
+}
+
+func (b *Builder) catalogueSet(v *store.Version, set store.Set, votes []store.Vote, now time.Time) hubwire.CatalogueSet {
 	author := set.AuthorHMAC
 	if author == "" {
 		author = v.UploaderHMAC
@@ -229,7 +241,7 @@ func (b *Builder) catalogueSet(v *store.Version, set store.Set, votes []store.Vo
 		Geo:         hubwire.BuiltInGeo(v.Geo),
 		Set:         v.Projection,
 		Payloads:    v.Payloads,
-		Scores:      score.Aggregate(scoreVotes, now),
+		Scores:      score.Aggregate(ScoreVotes(votes), now),
 	}
 	if len(cs.Payloads) == 0 {
 		cs.Payloads = nil
@@ -246,16 +258,16 @@ func (b *Builder) catalogueSet(v *store.Version, set store.Set, votes []store.Vo
 	return cs
 }
 
-func catalogueGroups(groups []store.ListedGroup, sets []hubwire.CatalogueSet) []hubwire.CatalogueGroup {
-	listed := make(map[string]bool, len(sets))
+func catalogueGroups(groups []store.ListedGroup, sets []hubwire.CatalogueSet, votesByGFP map[string][]store.Vote, now time.Time) []hubwire.CatalogueGroup {
+	fps := make(map[string]string, len(sets))
 	for i := range sets {
-		listed[sets[i].ID] = true
+		fps[sets[i].ID] = sets[i].FP
 	}
 	var out []hubwire.CatalogueGroup
 	for _, g := range groups {
 		members := make([]hubwire.CatalogueGroupMember, 0, len(g.Version.Members))
 		for _, m := range g.Version.Members {
-			if !listed[m.SetID] {
+			if _, listed := fps[m.SetID]; !listed {
 				members = nil
 				break
 			}
@@ -277,6 +289,7 @@ func catalogueGroups(groups []store.ListedGroup, sets []hubwire.CatalogueSet) []
 			CreatedAt:   score.DayStamp(g.Version.CreatedAt),
 			UpdatedAt:   score.DayStamp(g.Version.UpdatedAt),
 			Members:     members,
+			Scores:      score.Aggregate(ScoreVotes(votesByGFP[ListedGroupFP(members, fps)]), now),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
@@ -384,6 +397,10 @@ func (b *Builder) publish(ctx context.Context, now time.Time) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	votesByGFP, err := b.Store.ScoringGroupVotesByGFP(ctx)
+	if err != nil {
+		return nil, err
+	}
 	names, err := b.Store.ASNNames(ctx)
 	if err != nil {
 		return nil, err
@@ -428,7 +445,12 @@ func (b *Builder) publish(ctx context.Context, now time.Time) (*Result, error) {
 		cat.Sets = append(cat.Sets, cs)
 	}
 	sort.Slice(cat.Sets, func(i, j int) bool { return cat.Sets[i].ID < cat.Sets[j].ID })
-	cat.Groups = catalogueGroups(groups, cat.Sets)
+	cat.Groups = catalogueGroups(groups, cat.Sets, votesByGFP, now)
+	for _, g := range cat.Groups {
+		for asn := range g.Scores.ASN {
+			usedASNs[asn] = struct{}{}
+		}
+	}
 	if len(blobs) > 0 {
 		cat.Blobs = make([]hubwire.BlobRef, 0, len(blobs))
 		for _, ref := range blobs {

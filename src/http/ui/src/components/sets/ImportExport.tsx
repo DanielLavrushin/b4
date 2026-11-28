@@ -26,6 +26,7 @@ import { hubApi } from "@api/hub";
 import { ApiError } from "@api/apiClient";
 import {
   collectPayloadRefs,
+  compactJson,
   convertLegacySetShape,
   copyText,
   exportSetJson,
@@ -80,14 +81,6 @@ function importedDiscovery(
   };
   if (current?.watchdog) discovery.watchdog = true;
   return discovery;
-}
-
-function compactJson(text: string): string {
-  try {
-    return JSON.stringify(JSON.parse(text));
-  } catch {
-    return text;
-  }
 }
 
 interface ImportExportSettingsProps {

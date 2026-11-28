@@ -120,6 +120,7 @@ export function describeHubError(error: unknown, t: TFunction): string {
 
 const hubGroupCodes = new Set([
   "hub_no_groups",
+  "hub_no_group_votes",
   "group_too_large",
   "too_many_members",
   "bad_hub_answer",

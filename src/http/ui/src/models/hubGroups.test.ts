@@ -28,6 +28,7 @@ const hubGroupIn = (state: HubGroupState): HubGroup => ({
   created_at: "",
   updated_at: "",
   members: [],
+  display: { bucket: "none", score: 0, n: 0, devices: 0 },
   applied: { state, set_ids: [] },
 });
 

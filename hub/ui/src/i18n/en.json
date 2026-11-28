@@ -330,7 +330,7 @@
     "superseded": "Superseded",
     "hidden": "Hidden",
     "rejected": "Rejected",
-    "searchPlaceholder": "Title, id, domain, author, technique",
+    "searchPlaceholder": "Title, id, domain, author, technique, group",
     "empty": "No set in this tab.",
     "noMatch": "No set matches the search.",
     "sort": {
@@ -369,6 +369,7 @@
     "needsAttention": "Needs attention ({{count}})",
     "withReports": "With open reports",
     "edited": "Edited",
+    "inGroup": "In a group",
     "tabCount": "{{label}} ({{count}})",
     "perPage": "Sets per page",
     "openAuthor": "Open the author's key",
@@ -529,6 +530,7 @@
       "share": "shares",
       "group": "set groups",
       "vote": "votes",
+      "group_vote": "set group votes",
       "report": "reports",
       "mirror": "mirror announcements"
     },
@@ -1114,7 +1116,10 @@
     "bannedTip": "The author is banned. Nothing of this set is listed until the ban is lifted.",
     "withdrawnTip": "A moderator withdrew the whole set. Nothing of it is listed until it is reinstated.",
     "reports": "open reports: {{count}}",
-    "reportsTip": "Open: {{open}} of {{total}}, independent: {{independent}}"
+    "reportsTip": "Open: {{open}} of {{total}}, independent: {{independent}}",
+    "group": "Group {{title}}",
+    "groupTip": "Group {{title}}, version {{version}}: {{status}}",
+    "groupOpen": "Click to open the group."
   },
   "targets": {
     "more": "and {{count}} more",
@@ -1150,7 +1155,9 @@
   "evidence": {
     "independentTip": "Independent: +{{works}} / -{{broken}} from {{devices}} devices, weighted {{positive}} / {{negative}}",
     "authorTip": "By authors of this strategy: +{{works}} / -{{broken}}, counted in this score like any other device",
-    "pooledTip": "The score pools votes by strategy fingerprint; {{count}} other sets share it"
+    "pooledTip": "The score pools votes by strategy fingerprint; {{count}} other sets share it",
+    "groupAuthorTip": "By the author of this group: +{{works}} / -{{broken}}, counted in this score like any other device",
+    "groupPooledTip": "The score pools votes by the strategies of the group's sets, their order and escalations; {{count}} other groups share them"
   },
   "technique": {
     "payload": {
@@ -1550,6 +1557,7 @@
   },
   "groups": {
     "label": "Set group",
+    "open": "Open version {{version}} of this group",
     "heading_one": "{{title}} · {{count}} set",
     "heading_few": "{{title}} · {{count}} sets",
     "heading_many": "{{title}} · {{count}} sets",

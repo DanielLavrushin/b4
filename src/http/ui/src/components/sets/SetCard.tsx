@@ -25,6 +25,7 @@ import {
   CompareIcon,
   CopyIcon,
   DiscoveryIcon,
+  DownloadIcon,
   DragIcon,
   EditIcon,
   EscalateInIcon,
@@ -81,6 +82,8 @@ interface SetCardProps {
   onEdit: (section?: EditorSection) => void;
   onDuplicate: () => void;
   onCompare: () => void;
+  onExport: () => void;
+  onShare?: () => void;
   onUseForNewSets: () => void;
   onDelete: () => void;
   groups?: string[];
@@ -105,6 +108,7 @@ interface SetCardProps {
   watchdogOn?: boolean;
   deviceFilter?: boolean;
   telegramSet?: { problem: TelegramSetProblem | null };
+  ratedByGroup?: boolean;
 }
 
 export const SetCard = ({
@@ -114,6 +118,8 @@ export const SetCard = ({
   onEdit,
   onDuplicate,
   onCompare,
+  onExport,
+  onShare,
   onUseForNewSets,
   onDelete,
   groups = [],
@@ -138,6 +144,7 @@ export const SetCard = ({
   watchdogOn = true,
   deviceFilter = false,
   telegramSet,
+  ratedByGroup = false,
 }: SetCardProps) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -150,6 +157,7 @@ export const SetCard = ({
   const vote = useHubVote();
   const canVote =
     Boolean(hubId) &&
+    !ratedByGroup &&
     set.hub_state === "unmodified" &&
     Boolean(hubStatus.data?.enabled && hubStatus.data?.configured);
 
@@ -366,6 +374,21 @@ export const SetCard = ({
 
         <Box sx={{ flex: 1 }} />
 
+        {!selectionMode && onShare && (
+          <Tooltip title={t("sets.share.sectionTitle")}>
+            <IconButton
+              size="small"
+              aria-label={t("sets.share.sectionTitle")}
+              onClick={(e) => {
+                e.stopPropagation();
+                onShare();
+              }}
+            >
+              <ShareIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
+
         {!selectionMode && (
           <IconButton size="small" onClick={handleMenuOpen}>
             <MoreVertIcon fontSize="small" />
@@ -417,6 +440,21 @@ export const SetCard = ({
                 <DiscoveryIcon fontSize="small" />
               </ListItemIcon>
               <ListItemText>{t("sets.card.findStrategy")}</ListItemText>
+            </MenuItem>
+          )}
+          <Divider />
+          <MenuItem onClick={() => handleAction(onExport)}>
+            <ListItemIcon>
+              <DownloadIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>{t("sets.export.menu")}</ListItemText>
+          </MenuItem>
+          {onShare && (
+            <MenuItem onClick={() => handleAction(onShare)}>
+              <ListItemIcon>
+                <ShareIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>{t("sets.share.menu")}</ListItemText>
             </MenuItem>
           )}
           {onNewGroup && <Divider />}

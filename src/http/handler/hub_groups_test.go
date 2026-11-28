@@ -676,10 +676,11 @@ func TestHubSingleSetWritesKeepTheGroupStamp(t *testing.T) {
 	s1 := hubCatalogueMember(t, "s1", 2, "alice", "a.example")
 	env.publishCatalogue(t, 1, []hubwire.CatalogueSet{s1}, nil)
 	local := hubGroupStamp(hubGroupLocalSet("local", "Local", "video", "a.example"), "s1", 1, "g-video", 4)
+	local.Hub.GroupVote, local.Hub.GroupVotedAt = hubwire.VoteWorks, "2026-11-20T10:00:00Z"
 	env.update(func(cfg *config.Config) { cfg.Sets = []*config.SetConfig{local} })
 
 	hubApplyOK(t, env, "s1", map[string]interface{}{"replace": "local"})
-	if set := env.localSet("local"); set.Hub.Version != 2 || set.Hub.GroupID != "g-video" || set.Hub.GroupVersion != 4 || set.Group != "video" {
+	if set := env.localSet("local"); set.Hub.Version != 2 || set.Hub.GroupID != "g-video" || set.Hub.GroupVersion != 4 || set.Hub.GroupVote != hubwire.VoteWorks || set.Hub.GroupVotedAt != "2026-11-20T10:00:00Z" || set.Group != "video" {
 		t.Errorf("updating one member keeps it in its group copy, got %q %+v", set.Group, set.Hub)
 	}
 
@@ -690,7 +691,7 @@ func TestHubSingleSetWritesKeepTheGroupStamp(t *testing.T) {
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("expected 202, got %d (%s)", rec.Code, rec.Body.String())
 	}
-	if set := env.localSet("local"); set.Hub.Version != 3 || set.Hub.GroupID != "g-video" || set.Hub.GroupVersion != 4 {
+	if set := env.localSet("local"); set.Hub.Version != 3 || set.Hub.GroupID != "g-video" || set.Hub.GroupVersion != 4 || set.Hub.GroupVote != hubwire.VoteWorks {
 		t.Errorf("sharing one member as a new version of its hub set keeps its group stamp, got %+v", set.Hub)
 	}
 }
@@ -985,6 +986,7 @@ func TestHubGroupRepublishKeepsTheVoteOfAnUnchangedMember(t *testing.T) {
 	env.update(func(cfg *config.Config) {
 		for _, set := range cfg.Sets {
 			set.Hub.Vote, set.Hub.VotedAt = hubwire.VoteWorks, "2026-11-20T10:00:00Z"
+			set.Hub.GroupVote, set.Hub.GroupVotedAt = hubwire.VoteBroken, "2026-11-21T10:00:00Z"
 		}
 		cfg.Sets[0].Faking.TTL = 3
 	})
@@ -998,5 +1000,10 @@ func TestHubGroupRepublishKeepsTheVoteOfAnUnchangedMember(t *testing.T) {
 	}
 	if set := env.localSet("a"); set.Hub.Vote != "" || set.Hub.VotedAt != "" || set.Hub.Version != 2 {
 		t.Errorf("a member published as a new version drops the vote of the old one, got %+v", set.Hub)
+	}
+	for _, id := range []string{"a", "b"} {
+		if set := env.localSet(id); set.Hub.GroupVote != "" || set.Hub.GroupVotedAt != "" {
+			t.Errorf("a group published as a new version drops the vote on the old one, got %s %+v", id, set.Hub)
+		}
 	}
 }

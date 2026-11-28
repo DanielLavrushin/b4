@@ -9,11 +9,12 @@ var setTemplateMarkers = []string{"new_set_template", "setTemplate", "createSetF
 
 func TestOnlyCreateSetReadsTheNewSetTemplate(t *testing.T) {
 	baselineReaders := map[string]string{
-		"utils/setExport.ts":                "the export strips against b4's set defaults",
-		"components/sets/ImportExport.tsx":  "a pasted set merges onto b4's set defaults",
-		"models/hub.ts":                     "community set cards merge onto b4's set defaults",
-		"models/defaults.ts":                "createDefaultSet is the baseline every reader above shares",
-		"components/sets/ShareEnvelope.tsx": "a shared envelope is built from b4's set defaults",
+		"utils/setExport.ts":               "the export strips against b4's set defaults",
+		"components/sets/ImportExport.tsx": "a pasted set merges onto b4's set defaults",
+		"models/hub.ts":                    "community set cards merge onto b4's set defaults",
+		"models/defaults.ts":               "createDefaultSet is the baseline every reader above shares",
+		"components/sets/ShareDialog.tsx":  "a shared envelope is built from b4's set defaults",
+		"components/sets/ExportDialog.tsx": "the export strips against b4's set defaults",
 	}
 	for file, why := range baselineReaders {
 		src := readUI(t, file)

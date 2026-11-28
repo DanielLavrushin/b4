@@ -8,11 +8,13 @@ All notable changes to b4 are recorded in this file.
 
 - **Add to a set's resolvers** in the DNS results of the **DPI Detector** puts a working encrypted resolver into a set's **Resolvers**. If the set has **Enable DNS Redirect** off, the resolver goes first and the redirect is switched on. [#680](https://github.com/DanielLavrushin/b4/issues/680)
 - Sets can be grouped through **Select** and **Group**, through a set's menu, or by dragging a set onto a group. A group moves as one, and is enabled, renamed or exported as one file; **MCP** lists each set's group.
-- A group of sets can be published to the community hub with **Publish to hub** in the group's menu. The **Community** page shows a published group as one card whose **Apply group** adds all its sets as one group, and **Discovery** offers the whole group when the set it found belongs to one.
+- A group of sets can be published to the community hub with **Share** on the group. The **Community** page shows a published group as one card with its own score, where **Apply group** adds all its sets as one group and **Works** and **Broken** rate the group as a whole, and **Discovery** offers the whole group when the set it found belongs to one.
+- A set's menu has **Export**, which shows the set's JSON, copies it as one line or downloads it as a file.
 
 ### Changed
 
 - **Import** on the sets page takes everything in one field: a set, several sets, a group or a shared set from b4, or a zapret or byedpi command line.
+- **Share with other b4 users** moved from the set editor's **Import/Export** tab to **Share** on the set's card, and publishing a set takes a description for its card on the **Community** page.
 - **Recommended DNS Servers** no longer list Mullvad, which announced the end of its public resolvers, or xbox-dns.ru, which its operator reports as not working. 94.140.14.140 is renamed from AdGuard Family to **AdGuard No Filter**. [#680](https://github.com/DanielLavrushin/b4/issues/680)
 - On a router whose DNS server may run on the router or elsewhere on its network, such as OpenWrt, the host name of a set's own `https://` resolver is looked up through the set's resolvers given by IP address, or, when there are none or none answers, through the resolver the device asked, even with **Fail closed when no resolver is reachable** on. **Traffic** marks a lookup passed on unchanged as `doh host`. [#680](https://github.com/DanielLavrushin/b4/issues/680)
 - **Start trace** on the **Logs** page records every log line down to debug whatever the **Log Level**, while the log itself keeps its level. A trace is capped at 8 MB, less when free memory or disk space runs short, and a longer one keeps its first and newest lines.

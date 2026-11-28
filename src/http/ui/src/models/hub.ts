@@ -121,6 +121,7 @@ export interface HubApplied {
   version: number;
   vote?: HubVote;
   voted_at?: string;
+  group_id?: string;
 }
 
 export interface HubSet {
@@ -166,6 +167,8 @@ export interface HubGroupApplied {
   group?: string;
   version?: number;
   set_ids: string[];
+  vote?: HubVote;
+  voted_at?: string;
 }
 
 export interface HubGroup {
@@ -177,6 +180,7 @@ export interface HubGroup {
   created_at: string;
   updated_at: string;
   members: HubGroupMember[];
+  display: HubDisplayed;
   applied: HubGroupApplied;
 }
 

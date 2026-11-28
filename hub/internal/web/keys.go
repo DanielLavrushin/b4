@@ -294,7 +294,7 @@ func (s *Server) keyDetail(w http.ResponseWriter, r *http.Request) {
 			day.Share += d.Count
 		case hubwire.RecordGroup:
 			day.Group += d.Count
-		case hubwire.RecordVote:
+		case hubwire.RecordVote, hubwire.RecordGroupVote:
 			day.Vote += d.Count
 		case hubwire.RecordReport:
 			day.Report += d.Count

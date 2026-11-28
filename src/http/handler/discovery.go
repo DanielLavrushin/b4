@@ -391,7 +391,7 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary Add discovery preset as a new set
-// @Description A hub group stamp (hub.group_id, hub.group_version) in the set is dropped; the hub group endpoints write it.
+// @Description A hub group stamp (hub.group_id, hub.group_version, hub.group_vote, hub.group_voted_at) in the set is dropped; the hub group endpoints write it.
 // @Tags Discovery
 // @Accept json
 // @Produce json

@@ -1867,7 +1867,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "A hub group stamp (hub.group_id, hub.group_version) in the set is dropped; the hub group endpoints write it.",
+                "description": "A hub group stamp (hub.group_id, hub.group_version, hub.group_vote, hub.group_voted_at) in the set is dropped; the hub group endpoints write it.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3138,6 +3138,70 @@
                 }
             }
         },
+        "/hub/groups/{id}/vote": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sends a signed works or broken vote for the whole hub group. The local copy must run the listed version of the group with every set and its escalation link unmodified since it was applied; the vote names the hub set and version of each member as applied on this device, in the group's order. Votes on a group are counted for the group only, never for its sets. Once sent or queued, every set of the local copy remembers the vote in hub.group_vote.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Hub"
+                ],
+                "summary": "Vote on an applied hub set group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hub group id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Vote",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.HubVoteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/handler.HubVoteResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "bad_request or hub_no_group_votes",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "not_applied, modified or other_version",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/hub/identity": {
             "get": {
                 "security": [
@@ -3354,7 +3418,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Fetches the set's payloads from the hub, opens the envelope and creates a local set from it in front of the others; with a replace id the new set takes that local set's id, position and enabled flag instead. A discard id next to replace names an earlier local copy of this hub set, removed in the same save. The reply lists the domains moved out of other sets and, in covered, the enabled sets further down whose geosite, geoip or ASN targets the applied set now matches first; idle marks one left matching nothing.",
+                "description": "Fetches the set's payloads from the hub, opens the envelope and creates a local set from it in front of the others; with a replace id the new set takes that local set's id, position and enabled flag instead. A discard id next to replace names an earlier local copy of this hub set, removed in the same save. The reply lists the domains moved out of other sets and, in covered, the enabled sets further down whose geosite, geoip or ASN targets the applied set now takes from them; idle marks one left matching nothing.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4582,7 +4646,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "A field the body leaves out takes b4's set default, the value a config file or a set export means when it leaves the field out. The new set template (/ui/new-set-template) does not apply here: only the web interface's Create Set reads it. A set created without \"enabled\" is enabled. A \"group\" in the body is kept only when the new set lands next to a set of that group, or when no other set has it; otherwise the set starts without a group. A hub group stamp (hub.group_id, hub.group_version) in the body is dropped; the hub group endpoints write it.",
+                "description": "A field the body leaves out takes b4's set default, the value a config file or a set export means when it leaves the field out. The new set template (/ui/new-set-template) does not apply here: only the web interface's Create Set reads it. A set created without \"enabled\" is enabled. A \"group\" in the body is kept only when the new set lands next to a set of that group, or when no other set has it; otherwise the set starts without a group. A hub group stamp (hub.group_id, hub.group_version, hub.group_vote, hub.group_voted_at) in the body is dropped; the hub group endpoints write it.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4794,7 +4858,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Creates every set of the document in one write, at the top of the list and in the document's order, all in one group. A field a set leaves out takes b4's set default, as in POST /sets. A set name or group name already in use gets a number appended. Every set must have a name. Imported sets start with the watchdog and IP priority off, whatever the document says, and without a hub group stamp (hub.group_id, hub.group_version).",
+                "description": "Creates every set of the document in one write, at the top of the list and in the document's order, all in one group. A field a set leaves out takes b4's set default, as in POST /sets. A set name or group name already in use gets a number appended. Every set must have a name. Imported sets start with the watchdog and IP priority off, whatever the document says, and without a hub group stamp (hub.group_id, hub.group_version, hub.group_vote, hub.group_voted_at).",
                 "consumes": [
                     "application/json"
                 ],
@@ -4943,7 +5007,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "The body replaces the whole set. It must carry \"name\", \"enabled\" and \"targets\", otherwise the write is refused with 400 validation_failed and the set is left as it was. Any other field the body leaves out takes its set default, not the value the set had. When the body carries the \"revision\" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before. The set keeps the group it is stored with whatever the body says, and a change of group does not change the revision: use POST /sets/batch-set-group to change it. The set keeps its hub group stamp (hub.group_id, hub.group_version) only while the body carries the hub id it is stored with, whatever stamp the body says; otherwise the stamp is dropped.",
+                "description": "The body replaces the whole set. It must carry \"name\", \"enabled\" and \"targets\", otherwise the write is refused with 400 validation_failed and the set is left as it was. Any other field the body leaves out takes its set default, not the value the set had. When the body carries the \"revision\" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before. The set keeps the group it is stored with whatever the body says, and a change of group does not change the revision: use POST /sets/batch-set-group to change it. The set keeps its hub group stamp (hub.group_id, hub.group_version, hub.group_vote, hub.group_voted_at) only while the body carries the hub id it is stored with, whatever stamp the body says; otherwise the stamp is dropped.",
                 "consumes": [
                     "application/json"
                 ],
@@ -6745,6 +6809,12 @@
                 },
                 "group_version": {
                     "type": "integer"
+                },
+                "group_vote": {
+                    "type": "string"
+                },
+                "group_voted_at": {
+                    "type": "string"
                 },
                 "hash": {
                     "type": "string"
@@ -9963,6 +10033,9 @@
         "handler.HubApplied": {
             "type": "object",
             "properties": {
+                "group_id": {
+                    "type": "string"
+                },
                 "hub_state": {
                     "type": "string"
                 },
@@ -10055,6 +10128,9 @@
                 "description": {
                     "type": "string"
                 },
+                "display": {
+                    "$ref": "#/definitions/hubwire.Displayed"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -10092,6 +10168,12 @@
                 },
                 "version": {
                     "type": "integer"
+                },
+                "vote": {
+                    "type": "string"
+                },
+                "voted_at": {
+                    "type": "string"
                 }
             }
         },

@@ -2,7 +2,13 @@ import { Box, Button, CircularProgress, Stack, Typography } from "@mui/material"
 import { useTranslation } from "react-i18next";
 import { B4Badge } from "@b4.elements";
 import { B4Card } from "@common/B4Card";
-import { AppliedIcon, CategoryIcon, DownloadIcon, InfoIcon } from "@b4.icons";
+import {
+  AppliedIcon,
+  CategoryIcon,
+  DownloadIcon,
+  InfoIcon,
+  TestIcon,
+} from "@b4.icons";
 import { colors, spacing, typography } from "@design";
 import { HubGroup, HubSet, HubVoteKind } from "@models/hub";
 import { hubGroupAction, hubGroupEscalationTarget } from "@models/hubGroups";
@@ -15,7 +21,7 @@ interface HubGroupCardProps {
   onApply: (hubGroup: HubGroup) => void;
   onUpdate: (hubGroup: HubGroup) => void;
   onDetails: (hubSetId: string) => void;
-  onVote: (set: HubSet, kind: HubVoteKind) => void;
+  onVote: (hubGroup: HubGroup, kind: HubVoteKind) => void;
   onTest: (set: HubSet) => void;
 }
 
@@ -38,6 +44,13 @@ export const HubGroupCard = ({
   const action = hubGroupAction(hubGroup);
   const applied = hubGroup.applied;
   const count = hubGroup.members.length;
+  const percent = scorePercent(hubGroup.display);
+  const voteBlocked =
+    applied.state === "modified"
+      ? t("hub.group.card.voteModified")
+      : applied.state !== "applied" || applied.version !== hubGroup.version
+        ? t("hub.group.card.voteOtherVersion")
+        : undefined;
 
   const meta = [
     t("hub.card.by", { author: shortAuthor(hubGroup.author) }),
@@ -85,18 +98,52 @@ export const HubGroupCard = ({
               {meta.join(" · ")}
             </Typography>
           </Box>
-          {applied.state !== "none" && (
-            <B4Badge
-              icon={<AppliedIcon sx={{ fontSize: 14 }} />}
-              label={
-                applied.state === "modified"
-                  ? t("hub.group.card.appliedModified", { group: applied.group })
-                  : t("hub.group.card.appliedAs", { group: applied.group })
-              }
-              color="success"
-              variant={applied.state === "modified" ? "outlined" : "filled"}
-            />
-          )}
+          <Stack
+            direction="row"
+            spacing={1.5}
+            useFlexGap
+            flexWrap="wrap"
+            alignItems="center"
+            sx={{ maxWidth: "100%" }}
+          >
+            {applied.state !== "none" && (
+              <B4Badge
+                icon={<AppliedIcon sx={{ fontSize: 14 }} />}
+                label={
+                  applied.state === "modified"
+                    ? t("hub.group.card.appliedModified", {
+                        group: applied.group,
+                      })
+                    : t("hub.group.card.appliedAs", { group: applied.group })
+                }
+                color="success"
+                variant={applied.state === "modified" ? "outlined" : "filled"}
+              />
+            )}
+            <Box sx={{ textAlign: "right" }}>
+              <Typography
+                component="div"
+                sx={{
+                  fontWeight: 700,
+                  color:
+                    percent === null ? colors.text.disabled : scoreColor(percent),
+                }}
+              >
+                {percent === null
+                  ? t("hub.card.reports.none")
+                  : t("hub.card.score", { percent })}
+              </Typography>
+              {percent !== null && (
+                <Typography
+                  component="div"
+                  variant="caption"
+                  sx={{ color: colors.text.secondary }}
+                >
+                  {reportsText(t, hubGroup.display)}
+                </Typography>
+              )}
+            </Box>
+          </Stack>
         </Stack>
 
         {hubGroup.description && (
@@ -111,7 +158,6 @@ export const HubGroupCard = ({
         <Stack spacing={1} sx={{ mt: 1.5 }}>
           {hubGroup.members.map((member, position) => {
             const set = member.set;
-            const percent = scorePercent(set.display);
             const target =
               member.escalate === undefined
                 ? undefined
@@ -169,43 +215,17 @@ export const HubGroupCard = ({
                   alignItems="center"
                   sx={{ maxWidth: "100%" }}
                 >
-                  <Box sx={{ textAlign: "right" }}>
-                    <Typography
-                      component="div"
-                      sx={{
-                        fontWeight: 700,
-                        color:
-                          percent === null
-                            ? colors.text.disabled
-                            : scoreColor(percent),
-                      }}
-                    >
-                      {percent === null
-                        ? t("hub.card.reports.none")
-                        : t("hub.card.score", { percent })}
-                    </Typography>
-                    {percent !== null && (
-                      <Typography
-                        component="div"
-                        variant="caption"
-                        sx={{ color: colors.text.secondary }}
+                  {set.applied &&
+                    !hubGroupEscalationTarget(hubGroup, position) && (
+                      <Button
+                        size="small"
+                        startIcon={<TestIcon />}
+                        disabled={busy}
+                        onClick={() => onTest(set)}
                       >
-                        {reportsText(t, set.display)}
-                      </Typography>
+                        {t("hub.card.test")}
+                      </Button>
                     )}
-                  </Box>
-                  {set.applied && (
-                    <HubVoteActions
-                      set={set}
-                      busy={busy}
-                      onVote={onVote}
-                      onTest={
-                        hubGroupEscalationTarget(hubGroup, position)
-                          ? undefined
-                          : onTest
-                      }
-                    />
-                  )}
                   <Button
                     size="small"
                     startIcon={<InfoIcon />}
@@ -251,6 +271,17 @@ export const HubGroupCard = ({
         >
           {actionLabel}
         </Button>
+        {applied.state !== "none" && (
+          <>
+            <Box sx={{ flex: 1 }} />
+            <HubVoteActions
+              applied={applied}
+              busy={busy}
+              blocked={voteBlocked}
+              onVote={(kind) => onVote(hubGroup, kind)}
+            />
+          </>
+        )}
       </Stack>
     </B4Card>
   );

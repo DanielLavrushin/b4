@@ -38,6 +38,7 @@ type GroupVersion struct {
 	CountryObserved string
 	ASNHint         string
 	CountryHint     string
+	GFP             string
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	Members         []GroupMember
@@ -58,6 +59,8 @@ type Membership struct {
 	Status       string
 	SetVersion   int
 	Brought      bool
+	Position     int
+	Members      int
 }
 
 type ListedGroup struct {
@@ -68,7 +71,7 @@ type ListedGroup struct {
 const groupColumns = `id, author_hmac, derived_from_id, derived_from_version, created_at, updated_at, withdrawn_at, withdraw_reason`
 
 const groupVersionColumns = `id, group_id, version, title, description, status, status_reason, hidden_from, record_id, uploader_hmac,
-	asn_observed, country_observed, asn_hint, country_hint, created_at, updated_at`
+	asn_observed, country_observed, asn_hint, country_hint, gfp, created_at, updated_at`
 
 const withheldGroups = `SELECT g.id FROM groups g LEFT JOIN keys k ON k.key_hmac = g.author_hmac WHERE g.withdrawn_at <> '' OR COALESCE(k.banned, 0) = 1`
 
@@ -88,7 +91,7 @@ func scanGroupVersion(row rowScanner) (*GroupVersion, error) {
 	var v GroupVersion
 	var createdAt, updatedAt string
 	if err := row.Scan(&v.RowID, &v.GroupID, &v.Version, &v.Title, &v.Description, &v.Status, &v.StatusReason, &v.HiddenFrom, &v.RecordID, &v.UploaderHMAC,
-		&v.ASNObserved, &v.CountryObserved, &v.ASNHint, &v.CountryHint, &createdAt, &updatedAt); err != nil {
+		&v.ASNObserved, &v.CountryObserved, &v.ASNHint, &v.CountryHint, &v.GFP, &createdAt, &updatedAt); err != nil {
 		return nil, err
 	}
 	v.CreatedAt = parseTime(createdAt)
@@ -167,9 +170,9 @@ func fillGroupMembers(ctx context.Context, q querier, versions []GroupVersion) e
 
 func insertGroupVersionTx(ctx context.Context, q querier, v *GroupVersion) error {
 	res, err := q.ExecContext(ctx, `INSERT INTO group_versions(group_id, version, title, description, status, status_reason, record_id, uploader_hmac,
-		asn_observed, country_observed, asn_hint, country_hint, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		asn_observed, country_observed, asn_hint, country_hint, gfp, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		v.GroupID, v.Version, v.Title, v.Description, v.Status, v.StatusReason, v.RecordID, v.UploaderHMAC,
-		v.ASNObserved, v.CountryObserved, v.ASNHint, v.CountryHint, formatTime(v.CreatedAt), formatTime(v.UpdatedAt))
+		v.ASNObserved, v.CountryObserved, v.ASNHint, v.CountryHint, v.GFP, formatTime(v.CreatedAt), formatTime(v.UpdatedAt))
 	if err != nil {
 		return err
 	}
@@ -336,23 +339,41 @@ func (t *Tx) Memberships(ctx context.Context, setID string) ([]Membership, error
 	return membershipsTx(ctx, t.tx, setID)
 }
 
+const membershipSelect = `SELECT m.set_id, m.group_id, m.version, gv.title, gv.status, m.set_version, m.brought, m.position,
+	(SELECT COUNT(*) FROM group_members c WHERE c.group_id = m.group_id AND c.version = m.version)
+	FROM group_members m JOIN group_versions gv ON gv.group_id = m.group_id AND gv.version = m.version`
+
 func membershipsTx(ctx context.Context, q querier, setID string) ([]Membership, error) {
-	rows, err := q.QueryContext(ctx, `SELECT m.group_id, m.version, gv.title, gv.status, m.set_version, m.brought
-		FROM group_members m JOIN group_versions gv ON gv.group_id = m.group_id AND gv.version = m.version
-		WHERE m.set_id = ? ORDER BY m.group_id, m.version`, setID)
+	bySet, err := queryMemberships(ctx, q, membershipSelect+` WHERE m.set_id = ? ORDER BY m.group_id, m.version`, setID)
+	if err != nil {
+		return nil, err
+	}
+	if out := bySet[setID]; out != nil {
+		return out, nil
+	}
+	return make([]Membership, 0), nil
+}
+
+func (s *Store) AllMemberships(ctx context.Context) (map[string][]Membership, error) {
+	return queryMemberships(ctx, s.db, membershipSelect+` ORDER BY m.set_id, m.group_id, m.version`)
+}
+
+func queryMemberships(ctx context.Context, q querier, query string, args ...interface{}) (map[string][]Membership, error) {
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := make([]Membership, 0)
+	out := make(map[string][]Membership)
 	for rows.Next() {
+		var setID string
 		var m Membership
 		var brought int
-		if err := rows.Scan(&m.GroupID, &m.GroupVersion, &m.Title, &m.Status, &m.SetVersion, &brought); err != nil {
+		if err := rows.Scan(&setID, &m.GroupID, &m.GroupVersion, &m.Title, &m.Status, &m.SetVersion, &brought, &m.Position, &m.Members); err != nil {
 			return nil, err
 		}
 		m.Brought = brought == 1
-		out = append(out, m)
+		out[setID] = append(out[setID], m)
 	}
 	return out, rows.Err()
 }

@@ -30,6 +30,7 @@ export type {
   SetFacet,
 } from "./sets/facets";
 export { FacetCompareBar, FacetDrawer, SignalRail } from "./sets/SignalRail";
+export { GROUP_ROW_GAP, groupTraySx } from "./sets/groupTray";
 export type {
   FacetCompareBarProps,
   FacetDrawerProps,

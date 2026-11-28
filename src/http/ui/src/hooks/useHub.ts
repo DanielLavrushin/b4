@@ -164,6 +164,25 @@ export function useHubVote() {
   });
 }
 
+export function useHubGroupVote() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      kind,
+      domain,
+    }: {
+      id: string;
+      kind: HubVoteKind;
+      domain?: string;
+    }) => hubApi.voteGroup(id, kind, domain),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: hubKeys.status });
+      invalidateHubLists(client);
+    },
+  });
+}
+
 export function useHubReport() {
   const client = useQueryClient();
   return useMutation({
