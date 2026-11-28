@@ -7,7 +7,9 @@ import (
 	"net/netip"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/utils"
@@ -46,12 +48,17 @@ var placeholderPaths = map[string]bool{
 	"system.checker.watchdog.domains[]":       true,
 	"system.checker.dns_server":               true,
 	"sets[].dns.upstreams[]":                  true,
+	"sets[].routing.upstream.host":            true,
 	"sets[].routing.upstream.username":        true,
 	"sets[].routing.upstream.password":        true,
 	"sets[].dns.doh_url":                      true,
+	"sets[].dns.target_dns":                   true,
 	"sets[].discovery.urls[]":                 true,
-	"ui.new_set_template.dns.doh_url":         true,
-	"ui.new_set_template.dns.upstreams[]":     true,
+
+	"ui.new_set_template.dns.doh_url":           true,
+	"ui.new_set_template.dns.target_dns":        true,
+	"ui.new_set_template.dns.upstreams[]":       true,
+	"ui.new_set_template.routing.upstream.host": true,
 }
 
 func (c *Config) RedactedCopy() (*Config, error) {
@@ -133,10 +140,12 @@ func (c *Config) RedactForSharing() {
 			continue
 		}
 		set.DNS.DoHURL = maskDoHURL(set.DNS.DoHURL)
+		set.DNS.TargetDNS = maskDNSServer(set.DNS.TargetDNS)
 		for i, upstream := range set.DNS.Upstreams {
 			set.DNS.Upstreams[i] = maskDNSServer(upstream)
 		}
 		set.Discovery.URLs = maskURLs(set.Discovery.URLs)
+		set.Routing.Upstream.Host = maskProxyHost(set.Routing.Upstream.Host)
 	}
 	c.UI.NewSetTemplate = redactSetTemplateForSharing(c.UI.NewSetTemplate)
 }
@@ -314,13 +323,40 @@ func maskDNSServer(raw string) string {
 		s = rest
 	}
 	s = strings.TrimSuffix(s, "/")
-	if _, err := netip.ParseAddrPort(s); err == nil {
+	if ap, err := netip.ParseAddrPort(s); err == nil && ap.Addr().Zone() == "" {
 		return raw
 	}
-	if _, err := netip.ParseAddr(strings.TrimSuffix(strings.TrimPrefix(s, "["), "]")); err == nil {
+	if addr, err := netip.ParseAddr(strings.TrimSuffix(strings.TrimPrefix(s, "["), "]")); err == nil && addr.Zone() == "" {
 		return raw
 	}
 	return RedactedMarker
+}
+
+func maskProxyHost(host string) string {
+	if strings.ContainsAny(host, "@/?#") {
+		return RedactedMarker
+	}
+	s := strings.TrimSpace(host)
+	if ap, err := netip.ParseAddrPort(s); err == nil && !strings.ContainsFunc(ap.Addr().Zone(), notInHostName) {
+		return host
+	}
+	if addr, err := netip.ParseAddr(strings.TrimSuffix(strings.TrimPrefix(s, "["), "]")); err == nil && !strings.ContainsFunc(addr.Zone(), notInHostName) {
+		return host
+	}
+	name, port, _ := strings.Cut(s, ":")
+	if !proxyHostPort(port) || strings.ContainsFunc(name, notInHostName) {
+		return RedactedMarker
+	}
+	return host
+}
+
+func proxyHostPort(port string) bool {
+	_, err := strconv.ParseUint(port, 10, 16)
+	return port == "" || err == nil && len(port) <= 5
+}
+
+func notInHostName(r rune) bool {
+	return !unicode.IsLetter(r) && !unicode.IsDigit(r) && !strings.ContainsRune(".-_", r)
 }
 
 func resolverHost(raw string) string {

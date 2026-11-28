@@ -38,6 +38,7 @@ func resetTraceState() {
 	traceMu.Lock()
 	defer traceMu.Unlock()
 
+	recordedConfig.Store(nil)
 	if activeTrace != nil {
 		activeTrace.timer.Stop()
 		log.StopRecording(activeTrace.writer)

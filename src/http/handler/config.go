@@ -524,6 +524,11 @@ func errConfigChanged() *APIError {
 	}
 }
 
+func (a *API) publishConfig(cfg *config.Config) {
+	a.cfgPtr.Store(cfg)
+	NoteTraceConfig()
+}
+
 func (a *API) saveAndPushConfig(newCfg *config.Config) error {
 	return a.saveAndPushConfigIf(newCfg, nil)
 }
@@ -591,7 +596,7 @@ func (a *API) reloadRunningSets(affected func(running *config.Config) []string) 
 	if globalTUNEngine != nil {
 		globalTUNEngine.UpdateConfig(next)
 	}
-	a.cfgPtr.Store(next)
+	a.publishConfig(next)
 	if routingSyncFunc != nil {
 		routingSyncFunc(next)
 	}
@@ -715,6 +720,7 @@ func (a *API) pushConfigLocked(newCfg *config.Config) error {
 	if loginWasOn && !mcpAuthConfigured(newCfg) && loginDroppedFunc != nil {
 		loginDroppedFunc()
 	}
+	NoteTraceConfig()
 	if setsChanged && configHasUnresolvedASNs(newCfg) {
 		config.RequestASNRefresh()
 	}

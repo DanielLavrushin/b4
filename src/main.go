@@ -503,6 +503,11 @@ func runB4(cmd *cobra.Command, args []string) error {
 	}
 	handler.SetMTProtoServer(mtprotoServer)
 
+	publishConfig := func(c *config.Config) {
+		cfgPtr.Store(c)
+		handler.NoteTraceConfig()
+	}
+
 	wd := watchdog.New(&cfgPtr, discoveryRT, watchdog.NewUpdateFunc(cfgPtr.Load, func(_, c *config.Config) error {
 		if err := c.Validate(); err != nil {
 			return fmt.Errorf("invalid configuration: %v", err)
@@ -518,7 +523,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		if err := c.SaveToFile(c.ConfigPath); err != nil {
 			return fmt.Errorf("failed to save config: %v", err)
 		}
-		cfgPtr.Store(c)
+		publishConfig(c)
 		socks5Server.UpdateConfig(c)
 		mtprotoBridge.UpdateConfig(c)
 		mtproto.KickUpstreamRefresh()
@@ -611,7 +616,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 					log.Errorf("failed to persist geo last_run: %v", err)
 					return
 				}
-				cfgPtr.Store(c)
+				publishConfig(c)
 			},
 		)
 		geoScheduler.Start()
@@ -638,7 +643,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 			if tunEngine != nil {
 				tunEngine.UpdateConfig(c)
 			}
-			cfgPtr.Store(c)
+			publishConfig(c)
 			socks5Server.UpdateConfig(c)
 			tproxyResolver.Set(pool.GetMatcher())
 			if !c.System.Tables.SkipSetup && !engineDown.Load() {

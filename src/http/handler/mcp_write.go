@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"reflect"
 	"slices"
 	"sort"
@@ -384,11 +385,27 @@ func parseMCPWritePath(path string) (canonical, setRef string, err error) {
 func mcpLogValue(path, value string) string {
 	switch canonical, _, _ := parseMCPWritePath(path); canonical {
 	case mcpSetPathPrefix + ".dns.doh_url", mcpSetPathPrefix + ".dns.target_dns":
-		return traceTargetDNS(value)
+		return mcpResolverLabel(value)
 	case mcpSetPathPrefix + ".dns.upstreams":
-		return strings.Join(traceUpstreams(strings.Split(value, ",")), ",")
+		var labels []string
+		for _, entry := range strings.Split(value, ",") {
+			if label := config.UpstreamLabel(entry); label != "" {
+				labels = append(labels, label)
+			}
+		}
+		return strings.Join(labels, ",")
 	}
 	return value
+}
+
+func mcpResolverLabel(value string) string {
+	if label := config.UpstreamLabel(value); label != "" || strings.TrimSpace(value) == "" {
+		return label
+	}
+	if _, err := netip.ParseAddrPort(value); err == nil {
+		return value
+	}
+	return config.RedactedMarker
 }
 
 func mcpHasSourceEntries(entries []string) bool {

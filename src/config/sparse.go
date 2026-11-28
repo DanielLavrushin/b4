@@ -71,6 +71,14 @@ func SetToMap(set *SetConfig) (map[string]interface{}, error) {
 }
 
 func MarshalSparse(cfg *Config) ([]byte, error) {
+	sparse, err := SparseMap(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return json.MarshalIndent(sparse, "", "  ")
+}
+
+func SparseMap(cfg *Config) (map[string]interface{}, error) {
 	cfgMap, err := toMap(cfg)
 	if err != nil {
 		return nil, err
@@ -131,5 +139,5 @@ func MarshalSparse(cfg *Config) ([]byte, error) {
 		}
 	}
 
-	return json.MarshalIndent(sparse, "", "  ")
+	return sparse, nil
 }

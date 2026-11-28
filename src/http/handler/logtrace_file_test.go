@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/log"
@@ -34,6 +35,7 @@ func restartTraceAPI(t *testing.T, graceful bool) *http.ServeMux {
 		FinishActiveTrace()
 	}
 	traceMu.Lock()
+	recordedConfig.Store(nil)
 	if activeTrace != nil {
 		activeTrace.timer.Stop()
 		log.StopRecording(activeTrace.writer)
@@ -281,18 +283,57 @@ func TestAvailableMemoryOnOldAndNewKernels(t *testing.T) {
 	}
 }
 
+func TestACutKeepsWholeLetters(t *testing.T) {
+	text := []byte(strings.Repeat("Видео ", 100))
+	for most := int64(len(traceCutMark)); most < int64(len(text)); most++ {
+		cut := cutTrace(text, most)
+		if !utf8.Valid(cut) || int64(len(cut)) > most || !strings.HasSuffix(string(cut), traceCutMark) {
+			t.Fatalf("a cut to %d bytes gives %q", most, cut)
+		}
+	}
+}
+
 func TestALongHeaderIsCutToAQuarterOfTheLimit(t *testing.T) {
 	diag := Diagnostics{}
 	diag.B4.Version = strings.Repeat("v", 50_000)
-	sets := []traceSet{{Name: "kept set"}}
-	header := string(traceHeader(time.Now(), "a note", diag, sets, 10_000))
+	configuration := []byte("{\"kept\": \"setting\"}")
+	header := string(traceHeader(time.Now(), "a note", diag, configuration, 10_000))
 	if len(header) > 10_000 {
 		t.Errorf("the header takes %d bytes", len(header))
 	}
-	wantLines(t, "the header", header, []string{"b4 trace session", "note: a note", traceCutMark, "kept set", "\n=========================\n"}, nil)
+	wantLines(t, "the header", header, []string{"b4 trace session", "note: a note", traceCutMark, string(configuration), "\n=========================\n"}, nil)
 
-	whole := string(traceHeader(time.Now(), "", Diagnostics{}, sets, 1<<20))
-	wantLines(t, "a short header", whole, []string{"kept set", "\n=========================\n"}, []string{"[cut]"})
+	whole := string(traceHeader(time.Now(), "", Diagnostics{}, configuration, 1<<20))
+	wantLines(t, "a short header", whole, []string{string(configuration), "\n=========================\n"}, []string{"[cut]"})
+}
+
+func TestALongSystemInfoAndALongConfigurationShareTheHeader(t *testing.T) {
+	header := func(diagBytes, configBytes int) string {
+		diag := Diagnostics{}
+		diag.B4.Version = strings.Repeat("~", diagBytes)
+		return string(traceHeader(time.Now(), "", diag, []byte(strings.Repeat("^", configBytes)), 20_000))
+	}
+	for name, tc := range map[string]struct {
+		diag, config           int
+		leastDiag, leastConfig int
+		cuts                   int
+	}{
+		"both long":            {50_000, 50_000, 8000, 9000, 2},
+		"a long configuration": {100, 50_000, 100, 15_000, 1},
+		"a long System Info":   {50_000, 100, 15_000, 100, 1},
+		"both short":           {100, 100, 100, 100, 0},
+	} {
+		text := header(tc.diag, tc.config)
+		if len(text) > 20_000 || !strings.HasSuffix(text, "\n=========================\n") {
+			t.Errorf("%s: %d bytes ending in %q", name, len(text), text[max(0, len(text)-40):])
+		}
+		if diag, config := strings.Count(text, "~"), strings.Count(text, "^"); diag < tc.leastDiag || config < tc.leastConfig {
+			t.Errorf("%s: %d bytes of System Info and %d of the configuration are kept", name, diag, config)
+		}
+		if got := strings.Count(text, traceCutMark); got != tc.cuts {
+			t.Errorf("%s: %d cuts, want %d", name, got, tc.cuts)
+		}
+	}
 }
 
 func TestTheHeaderTakesAQuarterOfTheTraceAtMost(t *testing.T) {
