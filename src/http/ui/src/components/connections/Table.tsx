@@ -108,7 +108,9 @@ const TableRowMemo = memo<{
           }}
         >
           {(log.ipSet || log.hostSet) && (
-            <B4Badge color="secondary" label={log.ipSet || log.hostSet} />
+            <Tooltip title={log.ipSet || log.hostSet} placement="top" arrow>
+              <B4Badge color="secondary" label={log.ipSet || log.hostSet} />
+            </Tooltip>
           )}
         </TableCell>
         <TableCell
@@ -139,9 +141,9 @@ const TableRowMemo = memo<{
               />
             )}
             {log.domain && (
-              <Typography noWrap title={log.domain}>
-                {log.domain}
-              </Typography>
+              <Tooltip title={log.domain} placement="top" arrow>
+                <Typography noWrap>{log.domain}</Typography>
+              </Tooltip>
             )}
             <Box sx={{ flex: 1 }} />
             {log.domain && !log.hostSet && (
@@ -169,7 +171,13 @@ const TableRowMemo = memo<{
             py: 1,
           }}
         >
-          <Tooltip title={log.source} placement="top" arrow>
+          <Tooltip
+            title={
+              log.deviceName ? `${log.deviceName} (${log.source})` : log.source
+            }
+            placement="top"
+            arrow
+          >
             {log.deviceName ? (
               <B4Badge label={log.deviceName} color="primary" />
             ) : (
@@ -203,12 +211,14 @@ const TableRowMemo = memo<{
               {log.destination}
             </Box>
             {asnInfo ? (
-              <B4Badge
-                variant="outlined"
-                color="primary"
-                label={asnInfo.name}
-                onDelete={() => onDeleteAsn(asnInfo.id)}
-              />
+              <Tooltip title={asnInfo.name} placement="top" arrow>
+                <B4Badge
+                  variant="outlined"
+                  color="primary"
+                  label={asnInfo.name}
+                  onDelete={() => onDeleteAsn(asnInfo.id)}
+                />
+              </Tooltip>
             ) : (
               log.destination && (
                 <Tooltip
