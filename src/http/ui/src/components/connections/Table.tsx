@@ -132,7 +132,11 @@ const TableRowMemo = memo<{
             {log.tls && (
               <B4Badge variant="outlined" color="primary" label={log.tls} />
             )}
-            {log.domain && <Typography>{log.domain}</Typography>}
+            {log.domain && (
+              <Typography noWrap title={log.domain} sx={{ maxWidth: 360 }}>
+                {log.domain}
+              </Typography>
+            )}
             <Box sx={{ flex: 1 }} />
             {log.domain && !log.hostSet && (
               <AddIcon
@@ -338,7 +342,11 @@ export const DomainsTable = ({
         overflow: "auto",
       }}
     >
-      <Table stickyHeader size="small">
+      <Table
+        stickyHeader
+        size="small"
+        sx={{ "& .MuiTableCell-root": { whiteSpace: "nowrap" } }}
+      >
         <TableHead>
           <TableRow>
             <SortableTableCell
