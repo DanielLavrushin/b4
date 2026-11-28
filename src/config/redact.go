@@ -336,10 +336,10 @@ func maskProxyHost(host string) string {
 		return RedactedMarker
 	}
 	s := strings.TrimSpace(host)
-	if _, err := netip.ParseAddrPort(s); err == nil {
+	if ap, err := netip.ParseAddrPort(s); err == nil && !strings.ContainsFunc(ap.Addr().Zone(), notInHostName) {
 		return host
 	}
-	if _, err := netip.ParseAddr(strings.TrimSuffix(strings.TrimPrefix(s, "["), "]")); err == nil {
+	if addr, err := netip.ParseAddr(strings.TrimSuffix(strings.TrimPrefix(s, "["), "]")); err == nil && !strings.ContainsFunc(addr.Zone(), notInHostName) {
 		return host
 	}
 	name, port, _ := strings.Cut(s, ":")
