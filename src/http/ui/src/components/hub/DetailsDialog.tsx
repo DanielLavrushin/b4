@@ -9,9 +9,16 @@ import {
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { B4Alert, B4Badge, B4Dialog, B4TextField } from "@b4.elements";
-import { CommunityIcon, CopyIcon, EditIcon, ReportIcon } from "@b4.icons";
+import {
+  CategoryIcon,
+  CommunityIcon,
+  CopyIcon,
+  EditIcon,
+  ReportIcon,
+} from "@b4.icons";
 import { colors, typography } from "@design";
-import { HubSet, projectionToSet } from "@models/hub";
+import { HubGroup, HubSet, projectionToSet } from "@models/hub";
+import { useHubGroupOffers } from "@hooks/useHub";
 import { formatAsn } from "@models/asn";
 import { copyText, describeApiError, formatBytes } from "@utils";
 import { ApiError } from "@api/apiClient";
@@ -36,6 +43,7 @@ interface DetailsDialogProps {
   busy: boolean;
   onApply: (set: HubSet) => void;
   onUpdate: (set: HubSet) => void;
+  onApplyGroup: (hubGroup: HubGroup) => void;
   onOpenLocal: (localSetId: string) => void;
   onReport: (set: HubSet) => void;
   onClose: () => void;
@@ -83,11 +91,14 @@ export const DetailsDialog = ({
   busy,
   onApply,
   onUpdate,
+  onApplyGroup,
   onOpenLocal,
   onReport,
   onClose,
 }: DetailsDialogProps) => {
   const { t } = useTranslation();
+  const grouped = set?.status === "grouped";
+  const groupOffers = useHubGroupOffers(grouped ? (set?.id ?? "") : "");
   const { showSuccess, showError } = useSnackbar();
   const localSet = useMemo(
     () => (set ? projectionToSet(set.set, set.title) : null),
@@ -131,7 +142,7 @@ export const DetailsDialog = ({
             </Button>
           )}
           <Box sx={{ flex: 1 }} />
-          {set?.applied && appliedAction(set) === "applied" && (
+          {set?.applied && (grouped || appliedAction(set) === "applied") && (
             <Button
               variant="outlined"
               startIcon={<EditIcon />}
@@ -140,15 +151,14 @@ export const DetailsDialog = ({
               {t("hub.apply.openSet")}
             </Button>
           )}
-          {set &&
-            !(set.status === "grouped" && appliedAction(set) === "apply") && (
-              <AppliedActionButton
-                set={set}
-                busy={busy}
-                onApply={onApply}
-                onUpdate={onUpdate}
-              />
-            )}
+          {set && !grouped && (
+            <AppliedActionButton
+              set={set}
+              busy={busy}
+              onApply={onApply}
+              onUpdate={onUpdate}
+            />
+          )}
         </>
       }
     >
@@ -171,6 +181,42 @@ export const DetailsDialog = ({
         )}
         {set && localSet && (
           <Stack spacing={2.5}>
+            {grouped && (
+              <B4Alert severity="info">
+                {groupOffers.applied[0]
+                  ? t("discovery.results.hubGroupApplied", {
+                      title: groupOffers.applied[0].title,
+                    })
+                  : groupOffers.pending || groupOffers.offers.length > 0
+                    ? t("discovery.results.hubGroupOnly")
+                    : t("discovery.results.hubGroupUnlisted")}
+                {groupOffers.offers.length > 0 && (
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    useFlexGap
+                    flexWrap="wrap"
+                    sx={{ mt: 1 }}
+                  >
+                    {groupOffers.offers.map((hubGroup) => (
+                      <Button
+                        key={hubGroup.id}
+                        size="small"
+                        variant="contained"
+                        startIcon={<CategoryIcon />}
+                        disabled={busy}
+                        onClick={() => onApplyGroup(hubGroup)}
+                      >
+                        {t("discovery.results.hubGroupApply", {
+                          title: hubGroup.title,
+                          count: hubGroup.members.length,
+                        })}
+                      </Button>
+                    ))}
+                  </Stack>
+                )}
+              </B4Alert>
+            )}
             {set.description && (
               <Typography variant="body2" sx={{ color: colors.text.secondary }}>
                 {set.description}

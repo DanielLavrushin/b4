@@ -3466,7 +3466,7 @@
                         }
                     },
                     "409": {
-                        "description": "hub_grouped: the hub offers the set only inside a set group, so it is applied with the group or as an update of its local copy",
+                        "description": "hub_grouped: the hub offers the set only inside a set group, so it is applied and updated only with the group",
                         "schema": {
                             "$ref": "#/definitions/handler.APIError"
                         }

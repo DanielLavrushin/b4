@@ -3470,7 +3470,8 @@
       "hubGroupReplace": "The group is already applied as {{group}}: its sets are replaced with the published ones, and edits made to them on this router are lost.",
       "hubGroupConfirm": "Apply group",
       "hubGroupOnly": "This strategy belongs to a community set group and is applied only with the whole group.",
-      "hubGroupApplied": "This strategy belongs to the community set group {{title}}, which is already applied on this router."
+      "hubGroupApplied": "This strategy belongs to the community set group {{title}}, which is already applied on this router.",
+      "hubGroupUnlisted": "This strategy belongs to a community set group that the hub does not list right now, so it cannot be applied or updated here. A copy already on this router keeps working."
     },
     "verdict": {
       "perAddress": "Results per address",

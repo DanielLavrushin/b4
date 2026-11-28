@@ -49,7 +49,7 @@ func publishOrphanedMembers(t *testing.T, env *hubEnv) {
 	env.publishCatalogue(t, 1, []hubwire.CatalogueSet{brought, alone, orphan, stranded, hidden}, groups)
 }
 
-func TestHubApplyTakesAGroupedSetOnlyAsAnUpdateOfItsCopy(t *testing.T) {
+func TestHubApplyNeverTakesAGroupedSetAlone(t *testing.T) {
 	env := newHubEnv(t)
 	publishOrphanedMembers(t, env)
 	other := hubGroupLocalSet("mine", "mine", "", "mine.example")
@@ -64,8 +64,9 @@ func TestHubApplyTakesAGroupedSetOnlyAsAnUpdateOfItsCopy(t *testing.T) {
 		t.Fatalf("a refused apply writes nothing: %d sets, mine stamped %+v", got, env.localSet("mine").Hub)
 	}
 
-	if rec := postJSON(t, env.mux, "/api/hub/sets/brought/apply", map[string]any{"replace": "copy"}); rec.Code != http.StatusAccepted {
-		t.Fatalf("updating the local copy of a grouped set stays allowed: %d %s", rec.Code, rec.Body.String())
+	expectCode(t, postJSON(t, env.mux, "/api/hub/sets/brought/apply", map[string]any{"replace": "copy"}), http.StatusConflict, "hub_grouped")
+	if got := env.localSet("copy"); got == nil || got.Hub == nil || *got.Hub != (config.HubOrigin{ID: "brought", Version: 1}) {
+		t.Fatalf("a refused update rewrites the copy: %+v", got)
 	}
 	if rec := postJSON(t, env.mux, "/api/hub/sets/alone/apply", map[string]any{}); rec.Code != http.StatusAccepted {
 		t.Fatalf("an active set still applies on its own: %d %s", rec.Code, rec.Body.String())

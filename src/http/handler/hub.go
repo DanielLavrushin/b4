@@ -413,7 +413,7 @@ func (api *API) handleHubSetByID(w http.ResponseWriter, r *http.Request) {
 // @Success 202 {object} HubApplyResponse
 // @Failure 400 {object} APIError "discard without replace, or naming a set not applied from this hub set"
 // @Failure 404 {object} APIError
-// @Failure 409 {object} APIError "hub_grouped: the hub offers the set only inside a set group, so it is applied with the group or as an update of its local copy"
+// @Failure 409 {object} APIError "hub_grouped: the hub offers the set only inside a set group, so it is applied and updated only with the group"
 // @Failure 502 {object} APIError "hub_unreachable or payload_missing"
 // @Security BearerAuth
 // @Router /hub/sets/{id}/apply [post]
@@ -443,10 +443,8 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 	}
 	cs := res.Set
 	if cs.Status == hubwire.SetStatusGrouped {
-		if local := hubSetByLocalID(api.getCfg(), replace); local == nil || local.Hub == nil || local.Hub.ID != cs.ID {
-			writeAPIError(w, groupedSetRefusal(cs))
-			return
-		}
+		writeAPIError(w, groupedSetRefusal(cs))
+		return
 	}
 	if refusal := hubDiscardRefusal(api.getCfg(), replace, discard, cs.ID); refusal != nil {
 		writeAPIError(w, refusal)

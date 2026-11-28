@@ -523,6 +523,12 @@ export const HubBrowser = () => {
         busy={busy}
         onApply={(s) => void handleApply(s)}
         onUpdate={setUpdateSet}
+        onApplyGroup={(g) => {
+          openDetails(null);
+          if (hubGroupAction(g) !== "apply" || hubGroupTakenOver(g).length > 0)
+            setUpdateHubGroup(g);
+          else void handleHubGroupApply(g);
+        }}
         onOpenLocal={(localId) => {
           void navigate(`/sets/${localId}`);
         }}

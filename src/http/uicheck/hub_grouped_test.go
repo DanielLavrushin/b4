@@ -19,7 +19,10 @@ var (
 	applyDialogBlockRe  = regexp.MustCompile(`hubGrouped\.pending \|\|\s*\(hubGrouped\.grouped && mode !== "existing"\) \|\|`)
 	verdictHookRe       = regexp.MustCompile(`const hubGrouped = useHubSetGrouped\(verdict\.set\?\.hub\?\.id \?\? ""\);`)
 	verdictApplyRe      = regexp.MustCompile(`const canApply =\s*!!set &&\s*!!strategy &&\s*covered\.length > 0 &&\s*!hubGrouped\.grouped &&\s*!hubGrouped\.pending &&`)
-	detailsApplyRe      = regexp.MustCompile(`\{set &&\s*!\(set\.status === "grouped" && appliedAction\(set\) === "apply"\) && \(\s*<AppliedActionButton\b`)
+	detailsApplyRe      = regexp.MustCompile(`\{set && !grouped && \(\s*<AppliedActionButton\b`)
+	detailsGroupRe      = regexp.MustCompile(`\{groupOffers\.offers\.length > 0 && \(\s*<Stack\b[^>]*?flexWrap="wrap"[\s\S]{0,200}?groupOffers\.offers\.map\(\(hubGroup\) => \([\s\S]{0,400}?onClick=\{\(\) => onApplyGroup\(hubGroup\)\}`)
+	detailsUnlistedRe   = regexp.MustCompile(`groupOffers\.pending \|\| groupOffers\.offers\.length > 0\s*\?\s*t\("discovery\.results\.hubGroupOnly"\)\s*:\s*t\("discovery\.results\.hubGroupUnlisted"\)`)
+	detailsOpenSetRe    = regexp.MustCompile(`\{set\?\.applied && \(grouped \|\| appliedAction\(set\) === "applied"\) && \(`)
 )
 
 func TestAGroupedHubSetIsOfferedOnlyWithItsGroup(t *testing.T) {
@@ -69,8 +72,18 @@ func TestAGroupedHubSetIsOfferedOnlyWithItsGroup(t *testing.T) {
 		t.Error("a set run's verdict still writes a grouped hub set's strategy into the set")
 	}
 
-	if !detailsApplyRe.MatchString(readUI(t, "components/hub/DetailsDialog.tsx")) {
-		t.Error("the details dialog still applies a grouped hub set on its own")
+	details := readUI(t, "components/hub/DetailsDialog.tsx")
+	if !detailsApplyRe.MatchString(details) {
+		t.Error("the details dialog still applies, updates or reapplies a grouped hub set on its own, which can replace a copy applied alone with the group's version")
+	}
+	if !detailsGroupRe.MatchString(details) || !strings.Contains(readUI(t, "components/hub/Hub.tsx"), "onApplyGroup={(g) => {") {
+		t.Error("the details dialog of a grouped hub set does not offer its group in a row that wraps")
+	}
+	if !detailsUnlistedRe.MatchString(details) {
+		t.Error("the details dialog of a grouped hub set whose group the hub does not list tells the user to apply the whole group")
+	}
+	if !detailsOpenSetRe.MatchString(details) {
+		t.Error("the details dialog of a grouped hub set gives no way to open the local copy when its version differs from the listed one")
 	}
 
 	requireKeysInBothLocales(t, []string{"discovery.results.hubGroupOnly", "discovery.results.hubGroupApplied", "hub.status.set.grouped", "errors.hub_grouped"})
