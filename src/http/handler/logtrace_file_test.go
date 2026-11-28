@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/log"
@@ -278,6 +279,16 @@ func TestAvailableMemoryOnOldAndNewKernels(t *testing.T) {
 	for _, tc := range cases {
 		if got, known := parseAvailableMemory(strings.NewReader(tc.meminfo)); got != tc.want*1024 || known != tc.known {
 			t.Errorf("%s: %d, %v, want %d kB, %v", tc.name, got, known, tc.want, tc.known)
+		}
+	}
+}
+
+func TestACutKeepsWholeLetters(t *testing.T) {
+	text := []byte(strings.Repeat("Видео ", 100))
+	for most := int64(len(traceCutMark)); most < int64(len(text)); most++ {
+		cut := cutTrace(text, most)
+		if !utf8.Valid(cut) || int64(len(cut)) > most || !strings.HasSuffix(string(cut), traceCutMark) {
+			t.Fatalf("a cut to %d bytes gives %q", most, cut)
 		}
 	}
 }

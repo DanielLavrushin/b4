@@ -330,7 +330,7 @@ func cutTrace(p []byte, most int64) []byte {
 	if int64(len(p)) <= most {
 		return p
 	}
-	return slices.Concat(p[:max(0, most-int64(len(traceCutMark)))], []byte(traceCutMark))
+	return slices.Concat(bytes.ToValidUTF8(p[:max(0, most-int64(len(traceCutMark)))], nil), []byte(traceCutMark))
 }
 
 func (t *traceWriter) nextPart() error {
