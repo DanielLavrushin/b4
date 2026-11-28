@@ -1,0 +1,178 @@
+#!/bin/sh
+set -eu
+
+usage() {
+	cat <<'EOF'
+Usage: toolkit/wt-run [options] [worktree]
+       toolkit/wt-run --shell [worktree] [command...]
+
+Builds the UI and b4 from a worktree and runs it in a private rootless network
+namespace (unshare + slirp4netns): no root, the host firewall stays untouched,
+and several worktrees can run side by side. The web UI is forwarded to
+http://127.0.0.1:<port>.
+
+worktree   a name under .claude/worktrees (wt-sets-community), main, a path, or
+           empty for the checkout the current directory is in.
+
+  -p, --port N    host port for the UI (default: derived from the name, 17000-17899)
+      --no-ui     skip pnpm build, embed whatever src/http/ui/dist holds
+      --no-build  run the last build again
+      --reset     start from a fresh config
+      --verbose L b4 log level (debug, trace, info), default info
+      --shell     enter the running instance's namespace (curl from there goes through b4)
+
+State, config and logs: ${XDG_CACHE_HOME:-~/.cache}/b4-wt/<name>/
+EOF
+}
+
+die() { echo "wt-run: $*" >&2; exit 1; }
+
+PORT=""
+UI=1
+BUILD=1
+RESET=0
+SHELL_MODE=0
+VERBOSE=info
+TARGET=""
+while [ $# -gt 0 ]; do
+	case "$1" in
+	-p | --port) PORT=$2; shift 2 ;;
+	--no-ui) UI=0; shift ;;
+	--no-build) BUILD=0; shift ;;
+	--reset) RESET=1; shift ;;
+	--verbose) VERBOSE=$2; shift 2 ;;
+	--shell) SHELL_MODE=1; shift ;;
+	-h | --help) usage; exit 0 ;;
+	-*) die "unknown option $1" ;;
+	*) TARGET=$1; shift; [ "$SHELL_MODE" = 1 ] && break ;;
+	esac
+done
+
+MAIN=$(cd "$(dirname "$0")/.." && cd "$(git rev-parse --git-common-dir)/.." && pwd)
+if [ -z "$TARGET" ]; then
+	WT=$(git rev-parse --show-toplevel)
+elif [ "$TARGET" = main ] || [ "$TARGET" = "$(basename "$MAIN")" ]; then
+	WT=$MAIN
+elif [ -d "$TARGET/src" ]; then
+	WT=$(cd "$TARGET" && pwd)
+elif [ -d "$MAIN/.claude/worktrees/$TARGET" ]; then
+	WT="$MAIN/.claude/worktrees/$TARGET"
+else
+	die "no worktree '$TARGET' (looked in $MAIN/.claude/worktrees)"
+fi
+NAME=$(basename "$WT")
+STATE="${XDG_CACHE_HOME:-$HOME/.cache}/b4-wt/$NAME"
+mkdir -p "$STATE/log"
+
+if [ "$SHELL_MODE" = 1 ]; then
+	[ -f "$STATE/holder.pid" ] || die "$NAME is not running"
+	H=$(cat "$STATE/holder.pid")
+	kill -0 "$H" 2>/dev/null || die "$NAME is not running"
+	[ $# -gt 0 ] || set -- "${SHELL:-/bin/sh}"
+	exec nsenter --preserve-credentials -U -n -m -t "$H" --wd="$PWD" "$@"
+fi
+
+if [ -f "$STATE/holder.pid" ] && kill -0 "$(cat "$STATE/holder.pid")" 2>/dev/null; then
+	die "$NAME is already running (holder pid $(cat "$STATE/holder.pid"))"
+fi
+
+if [ -z "$PORT" ]; then
+	PORT=$((17000 + $(printf '%s' "$NAME" | cksum | cut -d' ' -f1) % 900))
+fi
+
+for tool in unshare nsenter slirp4netns python3 go pnpm; do
+	command -v "$tool" >/dev/null 2>&1 || die "$tool not found"
+done
+
+if [ "$BUILD" = 1 ]; then
+	COMMIT=$(git -C "$WT" rev-parse --short HEAD)
+	if [ "$UI" = 1 ]; then
+		[ -d "$WT/src/http/ui/node_modules" ] || (cd "$WT" && pnpm install --frozen-lockfile)
+		echo "wt-run: building UI in $WT"
+		(cd "$WT/src" && go run tools/gendefaults.go)
+		(cd "$WT/src/http/ui" && VITE_APP_VERSION="dev-$NAME" pnpm build)
+	fi
+	echo "wt-run: building b4 ($COMMIT)"
+	CGO_ENABLED=0 go -C "$WT/src" build -trimpath \
+		-ldflags "-s -w -X main.Version=dev-$NAME -X main.Commit=$COMMIT -X main.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+		-o "$STATE/b4" .
+fi
+[ -x "$STATE/b4" ] || die "no build in $STATE yet, run without --no-build"
+
+CFG="$STATE/config.json"
+if [ "$RESET" = 1 ] || [ ! -f "$CFG" ]; then
+	VER=$(sed -n 's/^[[:space:]]*CurrentConfigVersion[[:space:]]*=[[:space:]]*\([[:digit:]]*\).*/\1/p' "$WT/src/config/migration.go")
+	cat >"$CFG" <<EOF
+{
+  "version": ${VER:-0},
+  "system": {
+    "web_server": { "port": 7000, "bind_address": "0.0.0.0" },
+    "logging": { "directory": "$STATE/log" }
+  }
+}
+EOF
+fi
+
+RESOLV=$(readlink -f /etc/resolv.conf)
+case "$RESOLV" in /run/*) ;; *) RESOLV=/run/resolv.conf ;; esac
+
+H=""
+SLIRP=""
+B4=""
+cleanup() {
+	trap - EXIT INT TERM
+	[ -n "$B4" ] && kill "$B4" 2>/dev/null && wait "$B4" 2>/dev/null
+	[ -n "$SLIRP" ] && kill "$SLIRP" 2>/dev/null
+	[ -n "$H" ] && kill "$H" 2>/dev/null
+	rm -f "$STATE/holder.pid" "$STATE/slirp.sock"
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+
+unshare -Urnm sh -c '
+	mount -t sysfs sysfs /sys
+	mount -t tmpfs tmpfs /run
+	ip link set lo up
+	mkdir -p "$(dirname "$1")"
+	echo "nameserver 10.0.2.3" >"$1"
+	touch /run/.wt-ready
+	exec sleep infinity
+' wt-holder "$RESOLV" &
+H=$!
+echo "$H" >"$STATE/holder.pid"
+
+i=0
+until [ -e "/proc/$H/root/run/.wt-ready" ]; do
+	i=$((i + 1))
+	[ $i -lt 100 ] || die "namespace did not come up (is unprivileged userns allowed?)"
+	kill -0 "$H" 2>/dev/null || die "unshare failed"
+	sleep 0.05
+done
+
+rm -f "$STATE/slirp.sock"
+(cd "$STATE" && exec slirp4netns --configure --mtu=65520 --disable-host-loopback --api-socket slirp.sock "$H" tap0 >"$STATE/log/slirp.log" 2>&1) &
+SLIRP=$!
+
+python3 - "$STATE/slirp.sock" "$PORT" <<'EOF'
+import json, socket, sys, time
+path, port = sys.argv[1], int(sys.argv[2])
+for _ in range(100):
+    try:
+        s = socket.socket(socket.AF_UNIX)
+        s.connect(path)
+        break
+    except OSError:
+        time.sleep(0.05)
+else:
+    sys.exit("wt-run: slirp4netns api socket never appeared")
+s.sendall(json.dumps({"execute": "add_hostfwd", "arguments": {"proto": "tcp", "host_addr": "127.0.0.1", "host_port": port, "guest_port": 7000}}).encode())
+reply = json.loads(s.recv(4096))
+if "error" in reply:
+    sys.exit("wt-run: port %d: %s" % (port, reply["error"].get("desc", reply)))
+EOF
+
+echo "wt-run: $NAME at http://127.0.0.1:$PORT  (logs $STATE/log, shell: toolkit/wt-run --shell $NAME)"
+nsenter --preserve-credentials -U -n -m -t "$H" "$STATE/b4" --config "$CFG" --verbose "$VERBOSE" &
+B4=$!
+wait "$B4" || true
+B4=""
