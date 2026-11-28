@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"maps"
 	"net/http"
 	"os"
@@ -804,22 +805,25 @@ func TestConfigurationLinesAreBounded(t *testing.T) {
 
 func TestEveryPublishedConfigurationIsNotedInTheTrace(t *testing.T) {
 	stores := map[string]int{}
-	for _, pattern := range []string{"*.go", "../*.go", "../../*.go"} {
-		files, err := filepath.Glob(pattern)
-		if err != nil || len(files) == 0 {
-			t.Fatalf("no Go files match %s: %v", pattern, err)
+	err := filepath.WalkDir("../..", func(path string, d fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return err
+		case d.IsDir() && d.Name() == "node_modules":
+			return filepath.SkipDir
+		case d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go"):
+			return nil
 		}
-		for _, path := range files {
-			source, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if n := strings.Count(string(source), "cfgPtr.Store("); n > 0 && !strings.HasSuffix(path, "_test.go") {
-				stores[path] = n
-			}
+		source, err := os.ReadFile(path)
+		if n := strings.Count(string(source), "cfgPtr.Store("); n > 0 {
+			stores[path] = n
 		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if want := map[string]int{"config.go": 2, "../../main.go": 2}; !maps.Equal(stores, want) {
+	if want := map[string]int{"../../http/handler/config.go": 2, "../../main.go": 2}; !maps.Equal(stores, want) {
 		t.Errorf("cfgPtr.Store is called in %v, want %v: the start of b4, the two publishConfig functions and pushConfigLocked, which note the change in a running trace", stores, want)
 	}
 	source, err := os.ReadFile("../../main.go")
