@@ -606,7 +606,7 @@ func (api *API) addMCPImportTools(srv *mcp.Server) {
 				note.WriteString("apply would be refused, for the reason in blocked.")
 			} else {
 				out.CanApply = true
-				fmt.Fprintf(&note, "Calling again with the same arguments and apply='true' creates these %d set(s) at the top of the list, above the %d existing ones, so they match first. "+
+				fmt.Fprintf(&note, "Calling again with the same arguments and apply='true' creates these %d set(s) at the top of the list, above the %d existing ones. The most specific match wins; position only breaks ties. "+
 					"Show the user the sets, what did not convert and the warnings before that.", len(staged), len(cfg.Sets))
 				if len(out.WouldMoveFrom) > 0 {
 					note.WriteString(" A domain belongs to one enabled set, so applying takes the domains in would_move_from away from the sets that hold them now.")
@@ -660,7 +660,7 @@ func (api *API) addMCPImportTools(srv *mcp.Server) {
 		out.MovedFrom = mcpImportMoves(moved)
 
 		var note strings.Builder
-		fmt.Fprintf(&note, "applied live; %d set(s) created at positions 1 to %d of %d, so they match before the older sets. Undo with b4_revert_last_change",
+		fmt.Fprintf(&note, "applied live; %d set(s) created at positions 1 to %d of %d, above the older sets (position only breaks ties between equal matches). Undo with b4_revert_last_change",
 			len(created), len(created), len(newCfg.Sets))
 		if refreshed {
 			note.WriteString(" (firewall rules were refreshed to match)")

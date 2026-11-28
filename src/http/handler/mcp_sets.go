@@ -21,7 +21,7 @@ type mcpManageSetIn struct {
 	Action   string `json:"action" jsonschema:"One of: create, duplicate, move, set_enabled, delete, reset."`
 	Set      string `json:"set,omitempty" jsonschema:"Set id or name to act on. Comma-separated for set_enabled."`
 	Name     string `json:"name,omitempty" jsonschema:"Name for the new set, for create and duplicate."`
-	Position string `json:"position,omitempty" jsonschema:"Where it lands in match priority: 'last' (default), 'first', 'before:<set>' or 'after:<set>'. First enabled match wins."`
+	Position string `json:"position,omitempty" jsonschema:"Where it lands in the list: 'last' (default), 'first', 'before:<set>' or 'after:<set>'. Order breaks ties only."`
 	Enabled  string `json:"enabled,omitempty" jsonschema:"'true' or 'false', for set_enabled."`
 	Confirm  string `json:"confirm_name,omitempty" jsonschema:"For delete and reset: the exact current name of the set, as a guard against acting on the wrong one."`
 }
@@ -229,7 +229,7 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 		Name:  "b4_manage_set",
 		Title: "Create, move, enable or remove a strategy set",
 		Description: "Set lifecycle: create, duplicate, move, set_enabled, delete, reset. " +
-			"List position IS match priority and the first enabled match wins; new sets go last unless 'position' says otherwise. " +
+			"The most specific match wins, list position only breaks ties; new sets go last unless 'position' says otherwise. " +
 			"delete and reset need confirm_name to equal the set's current name, and are refused on a set holding upstream credentials or DNS pins. " +
 			"Targets belong to b4_edit_set_targets, settings to b4_set_config_value.",
 		Annotations: mcpDestructiveEachCall,
@@ -475,7 +475,7 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 			out.Note += " (firewall rules were refreshed to match)"
 		}
 		if out.Set != nil {
-			out.Note += fmt.Sprintf(". %q is at position %d of %d - earlier sets match first",
+			out.Note += fmt.Sprintf(". %q is at position %d of %d - the most specific match wins, position only breaks ties",
 				out.Set.Name, out.Set.Position, out.TotalSets)
 			switch action {
 			case "create":
