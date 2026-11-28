@@ -20,6 +20,7 @@ import { B4Badge } from "@common/B4Badge";
 import { AsnLabels, stripPort } from "@utils";
 import { ParsedLog } from "@b4.connections";
 import { useTranslation } from "react-i18next";
+import { ROW_HEIGHT, visibleRange } from "./rawTable";
 
 export type SortColumn =
   | "timestamp"
@@ -43,8 +44,6 @@ interface DomainsTableProps {
   onScrollStateChange: (isAtBottom: boolean) => void;
 }
 
-const ROW_HEIGHT = 41;
-const OVERSCAN = 5;
 const COLUMN_WIDTHS = [110, 230, 150, undefined, 190, 400];
 const TABLE_MIN_WIDTH = 1420;
 
@@ -288,9 +287,11 @@ export const DomainsTable = ({
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(600);
 
-  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
-  const visibleCount = Math.ceil(containerHeight / ROW_HEIGHT) + OVERSCAN * 2;
-  const endIndex = Math.min(data.length, startIndex + visibleCount);
+  const { start: startIndex, end: endIndex } = visibleRange(
+    scrollTop,
+    containerHeight,
+    data.length,
+  );
 
   const visibleData = useMemo(
     () => data.slice(startIndex, endIndex),
