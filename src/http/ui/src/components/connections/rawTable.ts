@@ -1,5 +1,20 @@
+import type { ParsedLog } from "../../hooks/useDomainActions";
+import type { AsnLabels } from "../../utils/asn";
+
 export const ROW_HEIGHT = 41;
 const OVERSCAN = 5;
+
+interface RowInputs {
+  log: ParsedLog;
+  enrichingIps: Set<string>;
+  asnLabels: AsnLabels;
+}
+
+export const sameRow = (prev: RowInputs, next: RowInputs): boolean =>
+  prev.log.raw === next.log.raw &&
+  prev.log.deviceName === next.log.deviceName &&
+  prev.enrichingIps === next.enrichingIps &&
+  prev.asnLabels === next.asnLabels;
 
 export function visibleRange(
   scrollTop: number,

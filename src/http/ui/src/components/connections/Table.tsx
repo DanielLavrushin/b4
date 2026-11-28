@@ -20,7 +20,7 @@ import { B4Badge } from "@common/B4Badge";
 import { AsnLabels, stripPort } from "@utils";
 import { ParsedLog } from "@b4.connections";
 import { useTranslation } from "react-i18next";
-import { ROW_HEIGHT, visibleRange } from "./rawTable";
+import { ROW_HEIGHT, sameRow, visibleRange } from "./rawTable";
 
 export type SortColumn =
   | "timestamp"
@@ -261,10 +261,7 @@ const TableRowMemo = memo<{
       </TableRow>
     );
   },
-  (prev, next) =>
-    prev.log.raw === next.log.raw &&
-    prev.enrichingIps === next.enrichingIps &&
-    prev.asnLabels === next.asnLabels,
+  sameRow,
 );
 
 TableRowMemo.displayName = "TableRowMemo";
