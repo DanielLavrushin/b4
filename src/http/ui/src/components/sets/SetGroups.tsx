@@ -25,7 +25,9 @@ import {
 } from "@b4.icons";
 import { B4Dialog, B4TextField } from "@b4.elements";
 import { colors } from "@design";
+import { HubApplied, HubVoteKind } from "@models/hub";
 import { MAX_SET_GROUP_CHARS, normalizeSetGroup } from "@models/setGroups";
+import { VoteThumbs } from "./VoteThumbs";
 
 interface SetGroupHeaderProps {
   group: string;
@@ -37,6 +39,11 @@ interface SetGroupHeaderProps {
   onRename: () => void;
   onExport: () => void;
   onShare?: () => void;
+  vote?: {
+    applied: Pick<HubApplied, "vote" | "voted_at">;
+    busy: boolean;
+    onVote: (kind: HubVoteKind) => void;
+  };
   onUngroup: () => void;
 }
 
@@ -50,6 +57,7 @@ export const SetGroupHeader = ({
   onRename,
   onExport,
   onShare,
+  vote,
   onUngroup,
 }: SetGroupHeaderProps) => {
   const { t } = useTranslation();
@@ -134,7 +142,14 @@ export const SetGroupHeader = ({
               sx={partly ? { "& .MuiSwitch-track": { opacity: 0.25 } } : null}
             />
           </Tooltip>
-          {onShare && (
+          {vote && (
+            <VoteThumbs
+              applied={vote.applied}
+              busy={vote.busy}
+              onVote={vote.onVote}
+            />
+          )}
+          {onShare && !vote && (
             <Tooltip title={t("sets.share.sectionTitle")}>
               <IconButton
                 size="small"

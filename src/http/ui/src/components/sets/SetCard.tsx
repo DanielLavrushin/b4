@@ -22,6 +22,7 @@ import {
   CategoryIcon,
   ClearIcon,
   CloseIcon,
+  CommunityIcon,
   CompareIcon,
   CopyIcon,
   DiscoveryIcon,
@@ -33,10 +34,6 @@ import {
   SetsIcon,
   ShareIcon,
   TelegramIcon,
-  ThumbDownIcon,
-  ThumbDownOutlinedIcon,
-  ThumbUpIcon,
-  ThumbUpOutlinedIcon,
   WarningIcon,
   WatchdogIcon,
 } from "@b4.icons";
@@ -55,9 +52,9 @@ import { useTranslation } from "react-i18next";
 import { ApiError } from "@api/apiClient";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useHubStatus, useHubVote } from "@hooks/useHub";
-import { voteTooltip } from "@components/hub/text";
 import { describeApiError, dscpRefusalText } from "@utils";
 import { SetStats } from "./Manager";
+import { VoteThumbs } from "./VoteThumbs";
 import {
   EditorSection,
   FacetKey,
@@ -160,6 +157,7 @@ export const SetCard = ({
     !ratedByGroup &&
     set.hub_state === "unmodified" &&
     Boolean(hubStatus.data?.enabled && hubStatus.data?.configured);
+  const publishedAsIs = Boolean(hubId) && set.hub_state === "unmodified";
 
   const castVote = async (kind: HubVoteKind) => {
     try {
@@ -374,7 +372,15 @@ export const SetCard = ({
 
         <Box sx={{ flex: 1 }} />
 
-        {!selectionMode && onShare && (
+        {!selectionMode && canVote && (
+          <VoteThumbs
+            applied={set.hub}
+            busy={vote.isPending}
+            onVote={(kind) => void castVote(kind)}
+          />
+        )}
+
+        {!selectionMode && onShare && !publishedAsIs && (
           <Tooltip title={t("sets.share.sectionTitle")}>
             <IconButton
               size="small"
@@ -449,6 +455,22 @@ export const SetCard = ({
             </ListItemIcon>
             <ListItemText>{t("sets.export.menu")}</ListItemText>
           </MenuItem>
+          {hubId && (
+            <MenuItem
+              onClick={() =>
+                handleAction(() => {
+                  navigate(`/hub?set=${encodeURIComponent(hubId)}`)?.catch(
+                    () => {},
+                  );
+                })
+              }
+            >
+              <ListItemIcon>
+                <CommunityIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>{t("sets.share.openHub")}</ListItemText>
+            </MenuItem>
+          )}
           {onShare && (
             <MenuItem onClick={() => handleAction(onShare)}>
               <ListItemIcon>
@@ -603,7 +625,6 @@ export const SetCard = ({
       {(telegramSet ||
         escalatesTo ||
         (escalatedFrom && escalatedFrom.length > 0) ||
-        set.hub_state ||
         watched ||
         unresolvedAsns.length > 0) && (
         <Box
@@ -696,85 +717,6 @@ export const SetCard = ({
               />
             </Tooltip>
           )}
-          {set.hub_state && (
-            <Tooltip
-              title={
-                set.hub?.id
-                  ? t("sets.card.sharedSetOpenHub")
-                  : set.hub_state === "modified"
-                    ? t("sets.card.sharedSetEdited")
-                    : t("sets.card.sharedSet")
-              }
-            >
-              <B4Badge
-                icon={<ShareIcon sx={{ fontSize: ESCALATION_ICON }} />}
-                label={
-                  set.hub?.id
-                    ? set.hub_state === "modified"
-                      ? t("sets.card.communitySetEdited")
-                      : t("sets.card.communitySet")
-                    : set.hub_state === "modified"
-                      ? t("sets.card.sharedSetEdited")
-                      : t("sets.card.sharedSet")
-                }
-                size="small"
-                color="secondary"
-                variant={set.hub_state === "modified" ? "outlined" : "filled"}
-                onClick={
-                  set.hub?.id
-                    ? (e) => {
-                        e.stopPropagation();
-                        navigate(
-                          `/hub?set=${encodeURIComponent(set.hub?.id ?? "")}`,
-                        )?.catch(() => {});
-                      }
-                    : undefined
-                }
-              />
-            </Tooltip>
-          )}
-          {canVote && (
-            <>
-              <Tooltip title={voteTooltip(t, set.hub, "works")}>
-                <span>
-                  <IconButton
-                    size="small"
-                    disabled={vote.isPending}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void castVote("works");
-                    }}
-                    sx={{ color: colors.state.success, p: spacing.xs / 2 }}
-                  >
-                    {set.hub?.vote === "works" ? (
-                      <ThumbUpIcon sx={{ fontSize: VOTE_ICON }} />
-                    ) : (
-                      <ThumbUpOutlinedIcon sx={{ fontSize: VOTE_ICON }} />
-                    )}
-                  </IconButton>
-                </span>
-              </Tooltip>
-              <Tooltip title={voteTooltip(t, set.hub, "broken")}>
-                <span>
-                  <IconButton
-                    size="small"
-                    disabled={vote.isPending}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void castVote("broken");
-                    }}
-                    sx={{ color: colors.state.error, p: spacing.xs / 2 }}
-                  >
-                    {set.hub?.vote === "broken" ? (
-                      <ThumbDownIcon sx={{ fontSize: VOTE_ICON }} />
-                    ) : (
-                      <ThumbDownOutlinedIcon sx={{ fontSize: VOTE_ICON }} />
-                    )}
-                  </IconButton>
-                </span>
-              </Tooltip>
-            </>
-          )}
           {escalatedFrom?.map((link) => (
             <EscalationChip
               key={link.id}
@@ -809,7 +751,6 @@ interface EscalationChipProps {
 }
 
 const ESCALATION_ICON = 12;
-const VOTE_ICON = 16;
 
 const EscalationChip = ({
   icon,

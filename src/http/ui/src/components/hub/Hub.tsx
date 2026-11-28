@@ -49,7 +49,7 @@ import {
   describeApiError,
   describeHubError,
   describeHubGroupApplyError,
-  describeHubGroupError,
+  describeHubGroupVoteError,
 } from "@utils";
 import { CoveredDialog, CoveredReport } from "./CoveredDialog";
 import { DetailsDialog } from "./DetailsDialog";
@@ -370,13 +370,7 @@ export const HubBrowser = () => {
       });
       showSuccess(res.sent ? t("hub.vote.sent") : t("hub.vote.queued"));
     } catch (e) {
-      const code = e instanceof ApiError ? e.code : undefined;
-      if (code === "not_applied") showError(t("hub.group.vote.notApplied"));
-      else if (code === "modified") showError(t("hub.group.vote.modified"));
-      else if (code === "other_version")
-        showError(t("hub.group.vote.otherVersion"));
-      else
-        showError(t("hub.vote.failed", { error: describeHubGroupError(e, t) }));
+      showError(describeHubGroupVoteError(e, t));
     }
   };
 

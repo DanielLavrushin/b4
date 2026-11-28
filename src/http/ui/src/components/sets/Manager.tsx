@@ -49,7 +49,11 @@ import { CSS } from "@dnd-kit/utilities";
 
 import { B4Dialog, B4Help, B4Section } from "@b4.elements";
 import { useSnackbar } from "@context/SnackbarProvider";
-import { deviceFilterSelects, reportSaveError } from "@utils";
+import {
+  describeHubGroupVoteError,
+  deviceFilterSelects,
+  reportSaveError,
+} from "@utils";
 
 import { SetCompare } from "./Compare";
 import { SetCard } from "./SetCard";
@@ -70,7 +74,8 @@ import {
 import { configApi } from "@api/settings";
 import { formatSetTemplate, setTemplateFromSet } from "@models/setTemplate";
 import { useSets } from "@hooks/useSets";
-import { useHubGroups, useHubStatus } from "@hooks/useHub";
+import { useHubGroupVote, useHubGroups, useHubStatus } from "@hooks/useHub";
+import { HubGroup, HubVoteKind } from "@models/hub";
 import { useSetFacetSelection } from "@hooks/useSetFacetSelection";
 import { useWatchdogSetStatuses } from "@hooks/useWatchdog";
 import { B4Config, B4SetConfig } from "@models/config";
@@ -360,6 +365,34 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
     () => new Set((hubGroups.data?.groups ?? []).map((g) => g.id)),
     [hubGroups.data],
   );
+  const publishedGroups = useMemo(
+    () =>
+      new Map(
+        (hubGroups.data?.groups ?? [])
+          .filter(
+            (g) => g.applied.state === "applied" && g.applied.version === g.version,
+          )
+          .map((g) => [g.applied.group ?? "", g]),
+      ),
+    [hubGroups.data],
+  );
+  const groupVote = useHubGroupVote();
+  const castGroupVote = async (hubGroup: HubGroup, kind: HubVoteKind) => {
+    try {
+      const res = await groupVote.mutateAsync({ id: hubGroup.id, kind });
+      showSuccess(res.sent ? t("hub.vote.sent") : t("hub.vote.queued"));
+    } catch (e) {
+      showError(describeHubGroupVoteError(e, t));
+    }
+  };
+  const groupVoteOf = (hubGroup: HubGroup | undefined) =>
+    hubGroup
+      ? {
+          applied: hubGroup.applied,
+          busy: groupVote.isPending,
+          onVote: (kind: HubVoteKind) => void castGroupVote(hubGroup, kind),
+        }
+      : undefined;
   const deviceFilter = deviceFilterSelects(config.queue?.devices);
   const anyWatched = sets.some((s) => !!s.discovery?.watchdog);
   const watchStatuses = useWatchdogSetStatuses(anyWatched && watchdogOn);
@@ -848,6 +881,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                           })
                       : undefined
                   }
+                  vote={groupVoteOf(publishedGroups.get(block.group))}
                   onUngroup={() =>
                     applyGroup(
                       block.all.map((s) => s.id),

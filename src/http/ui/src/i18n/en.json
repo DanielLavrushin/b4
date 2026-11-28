@@ -1845,11 +1845,6 @@
         "dscp": "DSCP",
         "dscpOff": "not applied: {{reason}}"
       },
-      "sharedSet": "Imported shared set",
-      "sharedSetEdited": "Imported shared set, edited",
-      "sharedSetOpenHub": "Linked to a hub set: published from here or applied from the Community page. Click to open it there.",
-      "communitySet": "Community set",
-      "communitySetEdited": "Community set, edited",
       "telegramSet": "Telegram set",
       "telegramSetTooltip": "b4's own Telegram connections use this set, with or without targets. Click to open the Telegram settings.",
       "telegramTargets": "b4's own Telegram connections",

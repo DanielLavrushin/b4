@@ -135,6 +135,14 @@ export function describeHubGroupError(error: unknown, t: TFunction): string {
   return describeHubError(error, t);
 }
 
+export function describeHubGroupVoteError(error: unknown, t: TFunction): string {
+  const code = error instanceof ApiError ? error.code : undefined;
+  if (code === "not_applied") return t("hub.group.vote.notApplied");
+  if (code === "modified") return t("hub.group.vote.modified");
+  if (code === "other_version") return t("hub.group.vote.otherVersion");
+  return t("hub.vote.failed", { error: describeHubGroupError(error, t) });
+}
+
 export function describeHubGroupApplyError(error: unknown, t: TFunction): string {
   const detail = describeHubGroupError(error, t);
   const ref = error instanceof ApiError ? hubGroupMemberOf(error.body) : null;
