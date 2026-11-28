@@ -59,7 +59,7 @@ func (a *API) handleNewSetTemplate(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, ErrInternal("Failed to save the new set template"))
 			return
 		}
-		a.cfgPtr.Store(newCfg)
+		a.publishConfig(newCfg)
 		unlock()
 
 		setJsonHeader(w)
@@ -100,7 +100,7 @@ func (a *API) handleDashboardLayout(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, ErrInternal("Failed to save dashboard layout"))
 			return
 		}
-		a.cfgPtr.Store(newCfg)
+		a.publishConfig(newCfg)
 		unlock()
 
 		setJsonHeader(w)

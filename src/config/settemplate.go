@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"maps"
 	"strings"
 
 	"github.com/daniellavrushin/b4/log"
@@ -90,34 +91,45 @@ func setTemplatePlaceholderError(template map[string]interface{}) error {
 }
 
 func redactSetTemplateForSharing(template map[string]interface{}) map[string]interface{} {
-	dns, ok := template["dns"].(map[string]interface{})
-	if !ok {
+	dns, _ := template["dns"].(map[string]interface{})
+	routing, _ := template["routing"].(map[string]interface{})
+	upstream, _ := routing["upstream"].(map[string]interface{})
+	if dns == nil && upstream == nil {
 		return template
 	}
-	maskedDNS := make(map[string]interface{}, len(dns))
-	for key, value := range dns {
-		maskedDNS[key] = value
+	out := maps.Clone(template)
+	if dns != nil {
+		out["dns"] = redactTemplateDNS(dns)
 	}
-	if doh, ok := maskedDNS["doh_url"].(string); ok {
-		maskedDNS["doh_url"] = maskDoHURL(doh)
+	if host, ok := upstream["host"].(string); ok {
+		maskedUpstream, maskedRouting := maps.Clone(upstream), maps.Clone(routing)
+		maskedUpstream["host"] = maskProxyHost(host)
+		maskedRouting["upstream"] = maskedUpstream
+		out["routing"] = maskedRouting
 	}
-	if upstreams, ok := maskedDNS["upstreams"].([]interface{}); ok {
-		masked := make([]interface{}, len(upstreams))
+	return out
+}
+
+func redactTemplateDNS(dns map[string]interface{}) map[string]interface{} {
+	masked := maps.Clone(dns)
+	if doh, ok := masked["doh_url"].(string); ok {
+		masked["doh_url"] = maskDoHURL(doh)
+	}
+	if target, ok := masked["target_dns"].(string); ok {
+		masked["target_dns"] = maskDNSServer(target)
+	}
+	if upstreams, ok := masked["upstreams"].([]interface{}); ok {
+		servers := make([]interface{}, len(upstreams))
 		for i, upstream := range upstreams {
 			if server, ok := upstream.(string); ok {
-				masked[i] = maskDNSServer(server)
+				servers[i] = maskDNSServer(server)
 			} else {
-				masked[i] = upstream
+				servers[i] = upstream
 			}
 		}
-		maskedDNS["upstreams"] = masked
+		masked["upstreams"] = servers
 	}
-	out := make(map[string]interface{}, len(template))
-	for key, value := range template {
-		out[key] = value
-	}
-	out["dns"] = maskedDNS
-	return out
+	return masked
 }
 
 func (c *Config) loadSetTemplate() {

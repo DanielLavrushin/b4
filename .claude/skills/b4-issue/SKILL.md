@@ -34,7 +34,7 @@ From System Info (Settings, System, Service, System Info, Copy JSON) and the tra
 | Kernel version | Before 4.18, conntrack loses the second of two queued UDP DNS queries on one socket, and `ip rule del` without a mask deletes any rule with that mark. |
 | Engine | NFQUEUE or TUN. Discovery and the watchdog's healing need NFQUEUE. |
 | Firewall backend | iptables-legacy, iptables-nft or nftables: separate code paths (`/b4-tables`). |
-| Sets involved | Their targets, routing mode and strategy, from the trace's set summary or the set's Copy JSON. |
+| Sets involved | Their targets, routing mode and strategy, from the trace's configuration (in an older trace, its set summary) or the set's Copy JSON. |
 
 If the report lacks these, ask for them with the reporting page:
 `https://docs.b4core.app/docs/troubleshooting/reporting` (Russian:
@@ -87,13 +87,24 @@ Info copy and what in them is private.
 
 ## 5. Read the trace
 
-- It starts with a System Info snapshot and the enabled sets, then the log lines. `level:` in
-  its header names what it holds: debug, or in a trace of an older b4 the level the reporter
-  chose. At Info, ask for a new trace. `log level setting:` is the reporter's own setting.
+- It starts with a System Info snapshot and the masked configuration (in a trace of an older b4
+  a summary of the enabled sets), then the log lines. `level:` in its header names what it holds:
+  debug, or in a trace of an older b4 the level the reporter chose. At Info, ask for a new
+  trace. `log level setting:` is the reporter's own setting.
+- The configuration lists what differs from that version's defaults, plus `enabled` in every listed
+  block that has one. `<list>_total` counts a list that was cut or whose entries are withheld.
+  `resolved_domains` and `resolved_ips` count what an enabled set matches, its own entries
+  included: no more than those next to a category means the category was not loaded.
+  `escalate.to` and `upstream_set` are ids of sets in the same list, marks are decimal,
+  `ip_priority` has no effect next to `tls`, and `strip_scale` wins over `scale`. `hub` holds
+  only the date the set was applied from the hub, so ask for the hub set when it matters.
+- `Configuration changed:` lines give what b4 applied while recording, a reload of ASN prefixes
+  included: the old and the new value, the added and removed entries of a long list, or only
+  `changed` where the value is masked.
 - Its last line says how it ended. `interrupted` means b4 crashed or was killed while
   recording, so the lines right above are the evidence, next to `errors.log`. A
   `lines left out here` line marks the middle of a trace that reached its size limit, and
-  `[cut]` a line or a System Info JSON that was too long for it.
+  `[cut]` a line, a value, the System Info JSON or the configuration that was too long for it.
 - Rebuild windows are marked by `resyncing routing rules`, `Routing rules missing`,
   `reinstalled policy routes for interface` and `IPTABLES: adding rules`. "Slow after
   switching sets" reports usually fall inside one.

@@ -16,6 +16,7 @@ All notable changes to b4 are recorded in this file.
 - **Recommended DNS Servers** no longer list Mullvad, which announced the end of its public resolvers, or xbox-dns.ru, which its operator reports as not working. 94.140.14.140 is renamed from AdGuard Family to **AdGuard No Filter**. [#680](https://github.com/DanielLavrushin/b4/issues/680)
 - On a router whose DNS server may run on the router or elsewhere on its network, such as OpenWrt, the host name of a set's own `https://` resolver is looked up through the set's resolvers given by IP address, or, when there are none or none answers, through the resolver the device asked, even with **Fail closed when no resolver is reachable** on. **Traffic** marks a lookup passed on unchanged as `doh host`. [#680](https://github.com/DanielLavrushin/b4/issues/680)
 - **Start trace** on the **Logs** page records every log line down to debug whatever the **Log Level**, while the log itself keeps its level. A trace is capped at 8 MB, less when free memory or disk space runs short, and a longer one keeps its first and newest lines.
+- A log trace begins with b4's settings and all sets instead of a summary of the enabled sets, without passwords, tokens and the device list, and tells what a save changed while it recorded.
 - The note under **Settings, Integrations, Community Hub** lists what the hub receives with a sync and with a report.
 - Importing a shared set, or applying one on the **Community** page, warns when the set's DNS redirect is on but has no resolver.
 
@@ -49,7 +50,7 @@ All notable changes to b4 are recorded in this file.
 - When a download from a custom geodata address failed, the login or token in that address was written to the log and shown under **Geo Databases**.
 - The path of an `https://` resolver address, which can contain an account ID, was written to the log, to log traces and to the saved log and history of **Discovery**, which any account on the router could read.
 - A set published with **Publish to hub** or prepared with **Prepare shared set** carried the full address of a custom geodata source.
-- The safe copy from **Download Configuration** kept the user name and password of an address with no host when the password was a long number.
+- The safe copy from **Download Configuration** kept the user name and password of an address with no host when the password was a long number, a user name and password typed into a set's **Upstream SOCKS5 host**, and the full `https://` address of a resolver that **MCP** or the API had put in the field for an IP address.
 
 ## [1.93.0] - 2026-11-21
 

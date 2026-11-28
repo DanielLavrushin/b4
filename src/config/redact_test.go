@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -14,7 +15,7 @@ import (
 	"github.com/daniellavrushin/b4/geodat"
 )
 
-var secretLookingName = regexp.MustCompile(`(?i)pass|secret|token|key|user|auth|cred|url|endpoint|domain|host|relay|mirror|cookie|session`)
+var secretLookingName = regexp.MustCompile(`(?i)pass|secret|token|key|user|auth|cred|url|endpoint|domain|host|relay|mirror|cookie|session|dns`)
 
 var credentialPaths = map[string]string{
 	"system.web_server.username":       "web login",
@@ -45,6 +46,7 @@ var sharingPaths = map[string]string{
 	"system.update.mirrors[]":                 "the user's own relays",
 	"system.hub.urls[]":                       "URL that can carry credentials",
 	"sets[].dns.doh_url":                      "personal resolver id in the path or the host",
+	"sets[].dns.target_dns":                   "an https:// URL fits the field too",
 	"sets[].dns.upstreams[]":                  "the list holds the same resolver ids and addresses",
 	"system.checker.dns_server":               "as an https:// URL, a personal resolver id in the path or the host",
 	"sets[].discovery.urls[]":                 "URL that can carry credentials",
@@ -62,14 +64,18 @@ var notSecretPaths = map[string]string{
 }
 
 var placeholderOnlyPaths = map[string]string{
-	"system.web_server.tls_cert":          "file path; host names inside it are masked",
-	"system.web_server.tls_key":           "file path; host names inside it are masked",
-	"system.mtproto.web_proxy.tls_cert":   "file path; host names inside it are masked",
-	"system.mtproto.web_proxy.tls_key":    "file path; host names inside it are masked",
-	"system.mtproto.secret":               "legacy single secret that the v50 migration moves into secrets",
-	"system.checker.watchdog.domains[]":   "URL entries are masked like Discovery URLs",
-	"ui.new_set_template.dns.doh_url":     "the new set template, an untyped map, masks its resolver like sets[].dns.doh_url",
-	"ui.new_set_template.dns.upstreams[]": "the new set template masks its resolvers like sets[].dns.upstreams[]",
+	"system.web_server.tls_cert":        "file path; host names inside it are masked",
+	"system.web_server.tls_key":         "file path; host names inside it are masked",
+	"system.mtproto.web_proxy.tls_cert": "file path; host names inside it are masked",
+	"system.mtproto.web_proxy.tls_key":  "file path; host names inside it are masked",
+	"system.mtproto.secret":             "legacy single secret that the v50 migration moves into secrets",
+	"system.checker.watchdog.domains[]": "URL entries are masked like Discovery URLs",
+	"sets[].routing.upstream.host":      "a login typed into the host is masked; a plain host stays to debug routing",
+
+	"ui.new_set_template.dns.doh_url":           "the new set template, an untyped map, masks its resolver like sets[].dns.doh_url",
+	"ui.new_set_template.dns.target_dns":        "the new set template masks its resolver like sets[].dns.target_dns",
+	"ui.new_set_template.dns.upstreams[]":       "the new set template masks its resolvers like sets[].dns.upstreams[]",
+	"ui.new_set_template.routing.upstream.host": "the new set template masks its proxy host like sets[].routing.upstream.host",
 }
 
 var indexInPath = regexp.MustCompile(`\[\d+\]`)
@@ -748,6 +754,131 @@ func TestTheSafeCopyMasksAResolverListEntryByItsKind(t *testing.T) {
 	}
 	if wantPaths := []string{"sets[0].dns.upstreams[1]", "sets[0].dns.upstreams[2]"}; !reflect.DeepEqual(placeholders, wantPaths) {
 		t.Errorf("placeholders in the list = %v, want %v", placeholders, wantPaths)
+	}
+}
+
+func TestTheSafeCopyMasksAResolverURLInTheAddressField(t *testing.T) {
+	for typed, want := range map[string]string{
+		"":                             "",
+		"9.9.9.9":                      "9.9.9.9",
+		"192.0.2.1:53":                 "192.0.2.1:53",
+		"[2001:db8::1]:53":             "[2001:db8::1]:53",
+		"https://dns.google/dns-query": "https://dns.google/dns-query",
+		"https://canaryuser:canarypass@canaryhost.example/canarypath?id=canaryquery": "https://[redacted]@[redacted]/[redacted]?id=[redacted]",
+		"https://canaryuser:canary^pass@dns.example/":                                RedactedMarker,
+		"canaryhost.example/canarypath?id=canaryquery":                               RedactedMarker,
+		"quic://canaryuser:canarypass@dns.example":                                   RedactedMarker,
+	} {
+		cfg := NewConfig()
+		set := NewSetConfig()
+		set.Id, set.Name = "dns1", "dns"
+		set.DNS = DNSConfig{Enabled: true, TargetDNS: typed}
+		cfg.Sets = []*SetConfig{&set}
+		cfg.UI.NewSetTemplate = map[string]interface{}{"dns": map[string]interface{}{"target_dns": typed}}
+
+		safe, err := cfg.RedactedCopy()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := safe.Sets[0].DNS.TargetDNS; got != want {
+			t.Errorf("the safe copy holds %q as %q, want %q", typed, got, want)
+		}
+		dns, _ := safe.UI.NewSetTemplate["dns"].(map[string]interface{})
+		if got := dns["target_dns"]; got != want {
+			t.Errorf("the safe copy's set template holds %q as %v, want %q", typed, got, want)
+		}
+		if out := canaryOutput(t, safe); strings.Contains(out, "canary") {
+			t.Errorf("a private part of %q is in the safe copy: %s", typed, out)
+		}
+		masked := strings.Contains(want, RedactedMarker)
+		for _, path := range []string{"sets[0].dns.target_dns", "ui.new_set_template.dns.target_dns"} {
+			if got := slices.Contains(safe.RedactedValuePaths(), path); got != masked {
+				t.Errorf("%q: %s refused on load or save = %v, want %v", typed, path, got, masked)
+			}
+		}
+	}
+}
+
+func TestTheSafeCopyMasksALoginInTheProxyHost(t *testing.T) {
+	for typed, want := range map[string]string{
+		"": "", "192.0.2.9": "192.0.2.9", "proxy.example": "proxy.example", "proxy.example:1080": "proxy.example:1080", "192.0.2.9:1080": "192.0.2.9:1080",
+		"2001:db8::1": "2001:db8::1", "[2001:db8::1]": "[2001:db8::1]", "[2001:db8::1]:1080": "[2001:db8::1]:1080", "fe80::1%br0": "fe80::1%br0", "fe80::1%eth0.100": "fe80::1%eth0.100", "192.0.2.9:": "192.0.2.9:", "router.lan.": "router.lan.", "proxy_1": "proxy_1", "xn--e1afmkfd.example": "xn--e1afmkfd.example", "прокси.example:1080": "прокси.example:1080", " 192.0.2.9 ": " 192.0.2.9 ", " 2001:db8::1 ": " 2001:db8::1 ", " [2001:db8::1]:1080 ": " [2001:db8::1]:1080 ",
+		"canaryuser:canarypass@192.0.2.9":              RedactedMarker,
+		"canaryuser@proxy.example":                     RedactedMarker,
+		"socks5://canaryuser:canarypass@proxy.example": RedactedMarker,
+		"canaryuser:canarypass@[2001:db8::1]:1080":     RedactedMarker,
+		"192.0.2.9:1080:canaryuser:canarypass":         RedactedMarker,
+		"proxy.example:1080:canaryuser:canarypass":     RedactedMarker,
+		"proxy.example/canarypath":                     RedactedMarker,
+		"proxy.example?token=canarytoken":              RedactedMarker,
+		"fe80::1%br0/canarypass":                       RedactedMarker,
+		"fe80::1%br0?canarypass":                       RedactedMarker,
+		"fe80::1%br0#canarypass":                       RedactedMarker,
+		"fe80::1%br0@canarypass":                       RedactedMarker,
+		"192.0.2.9\t1080\tcanaryuser\tcanarypass":      RedactedMarker,
+		"192.0.2.9:1080 canaryuser canarypass":         RedactedMarker,
+		"192.0.2.9;1080;canaryuser;canarypass":         RedactedMarker,
+		"192.0.2.9|1080|canaryuser|canarypass":         RedactedMarker,
+		"192.0.2.9,1080,canaryuser,canarypass":         RedactedMarker,
+		"192.0.2.9:1080;canaryuser;canarypass":         RedactedMarker,
+		"canaryuser:canarypass":                        RedactedMarker,
+		"proxy.example:canarypass":                     RedactedMarker,
+		"proxy.example#canaryfragment":                 RedactedMarker,
+	} {
+		cfg := NewConfig()
+		set := NewSetConfig()
+		set.Id, set.Name = "p", "Proxy"
+		set.Routing.Upstream = UpstreamProxyConfig{Host: typed, Port: 1080}
+		cfg.Sets = []*SetConfig{&set}
+		cfg.UI.NewSetTemplate = decodeTemplate(t, `{"routing":{"mode":"proxy","upstream":{"port":1080}},"faking":{"sni":false}}`)
+		cfg.UI.NewSetTemplate["routing"].(map[string]interface{})["upstream"].(map[string]interface{})["host"] = typed
+
+		safe, err := cfg.RedactedCopy()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := safe.Sets[0].Routing.Upstream.Host; got != want {
+			t.Errorf("the safe copy holds the proxy host %q as %q, want %q", typed, got, want)
+		}
+		routing, _ := safe.UI.NewSetTemplate["routing"].(map[string]interface{})
+		upstream, _ := routing["upstream"].(map[string]interface{})
+		if upstream["host"] != want || fmt.Sprint(upstream["port"]) != "1080" || routing["mode"] != "proxy" || len(safe.UI.NewSetTemplate) != 2 {
+			t.Errorf("the safe copy's set template holds %q as %v", typed, safe.UI.NewSetTemplate)
+		}
+		if out := canaryOutput(t, safe); strings.Contains(out, "canary") {
+			t.Errorf("a private part of %q is in the safe copy: %s", typed, out)
+		}
+		if live := cfg.UI.NewSetTemplate["routing"].(map[string]interface{})["upstream"].(map[string]interface{})["host"]; cfg.Sets[0].Routing.Upstream.Host != typed || live != typed {
+			t.Errorf("the safe copy changed the live host %q", typed)
+		}
+		masked := want == RedactedMarker
+		for _, path := range []string{"sets[0].routing.upstream.host", "ui.new_set_template.routing.upstream.host"} {
+			if got := slices.Contains(safe.RedactedValuePaths(), path); got != masked {
+				t.Errorf("%q: %s refused on load or save = %v, want %v", typed, path, got, masked)
+			}
+		}
+	}
+}
+
+func TestTheSafeCopyOfDefaultsHoldsNothingBesidesThem(t *testing.T) {
+	cfg := NewConfig()
+	set := NewSetConfig()
+	set.Id, set.Name = "a", "A"
+	cfg.Sets = []*SetConfig{&set}
+	safe, err := cfg.RedactedCopy()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := SparseMap(&cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := SparseMap(safe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("the safe copy of a default config is %v, the config %v", got, want)
 	}
 }
 

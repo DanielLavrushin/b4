@@ -7,6 +7,22 @@ import (
 	"github.com/daniellavrushin/b4/config"
 )
 
+func TestMCPLogMasksAResolverURLInTheAddressField(t *testing.T) {
+	for target, want := range map[string]string{
+		"https://canaryuser:canarypass@dns.example/canarypath?id=canaryquery": "https://dns.example",
+		"https://canaryuser:canary^pass@dns.example/":                         "https://[redacted]",
+		"dns.example/canarypath?id=canaryquery":                               "[redacted]",
+		"quic://canaryuser:canarypass@dns.example":                            "[redacted]",
+		"192.0.2.1:53": "192.0.2.1:53",
+		"192.0.2.1":    "192.0.2.1",
+		"":             "",
+	} {
+		if got := mcpLogValue("sets[video].dns.target_dns", target); got != want {
+			t.Errorf("target_dns %q is logged as %q, want %q", target, got, want)
+		}
+	}
+}
+
 func TestAResolverWrittenOverMCPIsLoggedByItsHost(t *testing.T) {
 	cfg := writableCfg(t)
 	cfg.Sets[0].DNS = config.DNSConfig{Enabled: true, TargetDNS: "9.9.9.9"}

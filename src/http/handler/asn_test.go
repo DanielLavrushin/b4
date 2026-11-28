@@ -564,14 +564,14 @@ func TestDiagnosticsReportASNTargets(t *testing.T) {
 	}
 }
 
-func TestTraceTargetsListASNsAndUnresolvedOnes(t *testing.T) {
+func TestTheTraceHeaderListsASNsAndUnresolvedOnes(t *testing.T) {
 	s := useAsnStore(t)
 	putTelegram(t, s)
-	got := traceTargets(asnSet("tg", "62041", "15169").Targets)
-	if !slices.Equal(got.ASNs, []string{"62041", "15169"}) || !slices.Equal(got.ASNsUnresolved, []string{"15169"}) {
-		t.Fatalf("trace: %+v", got)
-	}
-	if plain := traceTargets(asnSet("x").Targets); plain.ASNs != nil && len(plain.ASNs) != 0 || plain.ASNsUnresolved != nil {
-		t.Errorf("nothing for a set without ASNs: %+v", plain)
-	}
+	cfg := config.NewConfig()
+	cfg.Sets = []*config.SetConfig{asnSet("tg", "62041", "15169"), asnSet("x")}
+	doc := shownTraceConfig(t, &cfg)
+	wantTraceValue(t, doc, "[62041 15169]", "sets", 0, "targets", "asns")
+	wantTraceValue(t, doc, "[15169]", "sets", 0, "targets", "asns_unresolved")
+	wantTraceValue(t, doc, nil, "sets", 1, "targets", "asns")
+	wantTraceValue(t, doc, nil, "sets", 1, "targets", "asns_unresolved")
 }

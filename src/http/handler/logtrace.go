@@ -95,7 +95,7 @@ func traceStatusResponse() TraceStatusResponse {
 }
 
 // @Summary Start a log trace session
-// @Description Records every log line, down to debug, to a file until stopped or the max duration elapses; the log level setting and the other log outputs stay as they are. The file is prefixed with build info and a system diagnostics snapshot, cut when it would take more than a quarter of the trace. A trace that reaches its size limit (8 MB, less when free memory or disk space is short) keeps its first and its newest lines. Only one session may run at a time.
+// @Description Records every log line, down to debug, to a file until stopped or the max duration elapses; the log level setting and the other log outputs stay as they are. The file is prefixed with build info, a system diagnostics snapshot and the masked configuration, cut when they would take more than a quarter of the trace. A configuration change during the session is written as a line. A trace that reaches its size limit (8 MB, less when free memory or disk space is short) keeps its first and its newest lines. Only one session may run at a time.
 // @Tags Logs
 // @Accept json
 // @Produce json
@@ -130,9 +130,11 @@ func (api *API) handleTraceStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	diag := api.buildDiagnostics()
-	sets := collectTraceSets(api.getCfg())
+	cfg := api.getCfg()
+	values, doc, err := readTraceConfig(cfg)
+	configuration := traceConfigText(doc, err)
 	startedAt := time.Now()
-	header := traceHeader(startedAt, req.Note, diag, sets, limit/4)
+	header := traceHeader(startedAt, req.Note, diag, configuration, limit/4)
 
 	writer, err := newTraceWriter(startedAt, header, limit)
 	if errors.Is(err, syscall.ENOSPC) && lastTrace != nil {
@@ -163,6 +165,8 @@ func (api *API) handleTraceStart(w http.ResponseWriter, r *http.Request) {
 	log.StartRecording(writer, traceLevel)
 
 	log.Infof("Log trace session started")
+	recordedConfig.Store(&traceConfigLog{load: api.getCfg, shown: cfg, last: values})
+	NoteTraceConfig()
 	sendResponse(w, traceStatusResponse())
 }
 
@@ -174,8 +178,10 @@ func writeTraceStartError(w http.ResponseWriter, err error) {
 	writeJsonError(w, status, "Failed to create trace file: "+err.Error())
 }
 
-func traceHeader(startedAt time.Time, note string, diag Diagnostics, sets []traceSet, most int64) []byte {
-	var top, bottom bytes.Buffer
+func traceHeader(startedAt time.Time, note string, diag Diagnostics, configuration []byte, most int64) []byte {
+	const heading = "\n--- configuration (the values that differ from the defaults; long lists are cut) ---\n"
+	const ending = "\n=========================\n"
+	var top bytes.Buffer
 	fmt.Fprintf(&top, "=== b4 trace session ===\n")
 	fmt.Fprintf(&top, "version: %s (%s)\n", Version, Commit)
 	fmt.Fprintf(&top, "started: %s\n", startedAt.UTC().Format(time.RFC3339))
@@ -185,17 +191,25 @@ func traceHeader(startedAt time.Time, note string, diag Diagnostics, sets []trac
 		fmt.Fprintf(&top, "note: %s\n", note)
 	}
 	fmt.Fprintf(&top, "--- system diagnostics ---\n")
-	if data, err := json.MarshalIndent(sets, "", "  "); err == nil {
-		fmt.Fprintf(&bottom, "\n--- enabled sets (%d) ---\n%s", len(sets), data)
-	}
-	fmt.Fprintf(&bottom, "\n=========================\n")
 
-	data, err := json.MarshalIndent(diag, "", "  ")
+	system, err := json.MarshalIndent(diag, "", "  ")
 	if err != nil {
-		data = []byte(err.Error())
+		system = []byte(err.Error())
 	}
-	data = cutTrace(data, max(0, most-int64(top.Len()+bottom.Len())))
-	return cutTrace(slices.Concat(top.Bytes(), data, bottom.Bytes()), most)
+	room := max(0, most-int64(top.Len()+len(heading)+len(ending)))
+	system = cutTrace(system, max(room/2, room-int64(len(configuration))))
+	configuration = cutTrace(configuration, max(0, room-int64(len(system))))
+	return cutTrace(slices.Concat(top.Bytes(), system, []byte(heading), configuration, []byte(ending)), most)
+}
+
+func traceConfigText(doc map[string]any, err error) []byte {
+	if err == nil {
+		var text []byte
+		if text, err = json.MarshalIndent(doc, "", "  "); err == nil {
+			return text
+		}
+	}
+	return []byte("cannot be shown: " + err.Error())
 }
 
 // @Summary Stop the active log trace session
@@ -241,6 +255,7 @@ func finishTraceLocked(end traceEnd) {
 		return
 	}
 	s.timer.Stop()
+	recordedConfig.Store(nil)
 	log.StopRecording(s.writer)
 	lastTrace = s.writer.finish(s.startedAt, time.Now(), end)
 	activeTrace = nil
