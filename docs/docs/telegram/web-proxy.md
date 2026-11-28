@@ -1,10 +1,10 @@
 ---
 sidebar_position: 3
 title: Telegram Desktop WEB proxy
-description: Serving the MTProto proxy as an ordinary HTTPS site for Telegram Desktop 7.1.1 and later.
+description: Serving the MTProto proxy as an ordinary HTTPS site.
 ---
 
-The WEB proxy serves the [MTProto proxy](./mtproto-proxy.md) as an ordinary HTTPS site on a hostname of its own. Telegram Desktop 7.1.1 and later loads that site in a hidden window and carries all of its connections through it, so the client opens no MTProto connection and the traffic looks like a browser visiting a website. The proxy's secrets and its [upstream](./upstream.md) apply as usual.
+The WEB proxy serves the [MTProto proxy](./mtproto-proxy.md) as an ordinary HTTPS site on a hostname of its own. Telegram loads that site in a hidden window and carries all of its connections through it, so the client opens no MTProto connection and the traffic looks like a browser visiting a website. The proxy's secrets and its [upstream](./upstream.md) apply as usual.
 
 The hostname needs a publicly trusted certificate on port 443, so the WEB proxy suits b4 on a VPS more than a router behind carrier-grade NAT.
 
@@ -23,7 +23,7 @@ The hostname needs a publicly trusted certificate on port 443, so the WEB proxy 
 5. Under **Certificate for the relay hostname**, enter the **Certificate file** and **Private key file** for the hostname. Left empty, the relay uses the web server's certificate.
 6. On a router, turn on **Expose to internet** under **Relay port**. When the relay port is not 443, forward WAN port 443 to it.
 7. Click **Save Changes**.
-8. On the **Secrets** card, click the share button of a secret, copy the link in the **WEB · Telegram Desktop 7.1.1+** row, and add it in Telegram Desktop.
+8. On the **Secrets** card, click the share button of a secret, copy the link in the **WEB Proxy** row, and add it in Telegram Desktop.
 
 ![The WEB proxy card](/img/telegram/20260826233004.png)
 
@@ -39,10 +39,10 @@ The link is bound to the relay hostname. After **Relay hostname** changes, every
 
 Telegram always opens `https://<hostname>/` on port 443, and the link carries no port. Public port 443 therefore has to lead to the relay: the relay port set to 443, a forward from 443, or a reverse proxy on 443.
 
-| **Relay port** | Effect |
-| --- | --- |
-| A port, usually `443` | The relay gets a listener of its own. Any other name or an IP address on that port gets the placeholder page, so the web interface is not reachable through it. |
-| Empty | The relay is served on the web interface's port, on the relay hostname only. Whatever brings public port 443 to that port also brings the web interface, and its login page answers on the public IP address. |
+| **Relay port**        | Effect                                                                                                                                                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A port, usually `443` | The relay gets a listener of its own. Any other name or an IP address on that port gets the placeholder page, so the web interface is not reachable through it.                                               |
+| Empty                 | The relay is served on the web interface's port, on the relay hostname only. Whatever brings public port 443 to that port also brings the web interface, and its login page answers on the public IP address. |
 
 On a router, the usual layout is a relay port with **Expose to internet** on, and a forward from WAN port 443 when the relay port is not 443. The web interface port is neither exposed nor forwarded, so the interface stays reachable only from the local network.
 

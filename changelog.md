@@ -678,7 +678,7 @@ All notable changes to b4 are recorded in this file.
 
 ### Added
 
-- The MTProto proxy has a WEB carrier under **Settings, MTProto Proxy** that Telegram Desktop 7.1.1 reaches over ordinary HTTPS, for networks that block MTProxy and fake-TLS outright.
+- The MTProto proxy has a WEB carrier under **Settings, MTProto Proxy** that Telegram reaches over ordinary HTTPS, for networks that block MTProxy and fake-TLS outright.
 - The SOCKS5 proxy under **Settings, SOCKS5 Proxy** has **Allowed Sources**, a list of IP addresses and CIDR ranges allowed to connect, for clients such as Chrome that cannot send a username and password.
 - A set's **UDP** tab has a **Block QUIC (force TCP)** switch, and a UDP action that leaves matched packets alone, for a set that matches QUIC only to learn a site's addresses.
 - **Force IPv4 for matched domains** under **Settings, Core, DNS** drops the IPv6 records from DNS answers for names a set matches, so a dual-stack site cannot skip the set over IPv6.
