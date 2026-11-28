@@ -361,8 +361,14 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
     hubStatus.data?.enabled && hubStatus.data?.configured,
   );
   const hubGroups = useHubGroups(hubReady);
-  const listedGroupIds = useMemo(
-    () => new Set((hubGroups.data?.groups ?? []).map((g) => g.id)),
+  const groupCopies = useMemo(
+    () =>
+      new Map(
+        (hubGroups.data?.groups ?? []).map((g) => [
+          g.id,
+          g.applied.state === "none" ? "" : (g.applied.group ?? ""),
+        ]),
+      ),
     [hubGroups.data],
   );
   const publishedGroups = useMemo(
@@ -945,7 +951,8 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
             deviceFilter={deviceFilter}
             telegramSet={set.id === telegramId ? telegramState : undefined}
             ratedByGroup={
-              Boolean(set.group) && listedGroupIds.has(set.hub?.group_id ?? "")
+              Boolean(set.group) &&
+              groupCopies.get(set.hub?.group_id ?? "") === set.group
             }
           />
         )}

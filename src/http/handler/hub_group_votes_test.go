@@ -432,6 +432,43 @@ func TestHubAppliedNamesOnlyAGroupTheHubLists(t *testing.T) {
 	}
 }
 
+func TestASetMovedOutOfTheGroupsCopyIsRatedOnItsOwn(t *testing.T) {
+	env := hubGroupVoteEnv(t)
+	hubApplyGroupOK(t, env, "G", nil)
+	ids := map[string]string{}
+	for _, set := range env.api.getCfg().Sets {
+		if set.Hub != nil && set.Hub.GroupID == "G" {
+			ids[set.Hub.ID] = set.Id
+		}
+	}
+	if len(ids) < 2 {
+		t.Fatalf("the group copy has its sets: %v", ids)
+	}
+	env.update(func(cfg *config.Config) {
+		for _, set := range cfg.Sets {
+			if set.Id == ids["s1"] {
+				set.Group = "elsewhere"
+			}
+		}
+	})
+	copied := map[string]bool{}
+	for _, set := range hubGroupCopyOf(env.api.getCfg().Sets, "G").sets {
+		copied[set.Hub.ID] = true
+	}
+	var list HubSetsResponse
+	decodeInto(t, getJSON(t, env.mux, "/api/hub/sets?limit=50"), &list)
+	for hubID := range ids {
+		var set HubSet
+		decodeInto(t, getJSON(t, env.mux, "/api/hub/sets/"+hubID), &set)
+		if set.Applied == nil {
+			t.Fatalf("%s is applied, got %+v", hubID, set)
+		}
+		if rated := set.Applied.GroupID == "G"; rated != copied[hubID] {
+			t.Errorf("%s: rated through the group %v, but in the group's local copy %v; a set outside the copy gets no group vote, so it must keep its own", hubID, rated, copied[hubID])
+		}
+	}
+}
+
 func TestHubGroupVoteStampsOnlyTheCopyItSent(t *testing.T) {
 	env := hubGroupVoteEnv(t)
 	hubApplyGroupOK(t, env, "G", nil)

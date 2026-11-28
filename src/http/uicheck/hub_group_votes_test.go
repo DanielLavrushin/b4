@@ -14,8 +14,8 @@ var (
 	groupCardOpenRe   = regexp.MustCompile(`<HubGroupCard\b`)
 	setCardGroupRe    = regexp.MustCompile(`onVote=\{\s*applied\.group_id \? undefined : \(kind\) => onVote\(set, kind\)\s*\}`)
 	setsPageGroupRe   = regexp.MustCompile(`const canVote =\s*Boolean\(hubId\) &&\s*!ratedByGroup &&`)
-	listedGroupsRe    = regexp.MustCompile(`const hubGroups = useHubGroups\(hubReady\);\s*const listedGroupIds = useMemo\(\s*\(\) => new Set\(\(hubGroups\.data\?\.groups \?\? \[\]\)\.map\(\(g\) => g\.id\)\),`)
-	ratedByGroupRe    = regexp.MustCompile(`ratedByGroup=\{\s*Boolean\(set\.group\) &&\s*listedGroupIds\.has\(set\.hub\?\.group_id \?\? ""\)\s*\}`)
+	listedGroupsRe    = regexp.MustCompile(`const hubGroups = useHubGroups\(hubReady\);\s*const groupCopies = useMemo\(\s*\(\) =>\s*new Map\(\s*\(hubGroups\.data\?\.groups \?\? \[\]\)\.map\(\(g\) => \[\s*g\.id,\s*g\.applied\.state === "none" \? "" : \(g\.applied\.group \?\? ""\),\s*\]\),`)
+	ratedByGroupRe    = regexp.MustCompile(`ratedByGroup=\{\s*Boolean\(set\.group\) &&\s*groupCopies\.get\(set\.hub\?\.group_id \?\? ""\) === set\.group\s*\}`)
 	groupVoteSearchRe = regexp.MustCompile(`groupVote\.mutateAsync\(\{\s*id: hubGroup\.id,\s*kind,\s*domain: domain \|\| undefined,`)
 )
 
@@ -65,6 +65,6 @@ func TestASetAppliedWithItsGroupIsRatedThroughTheGroup(t *testing.T) {
 	}
 	manager := readUI(t, "components/sets/Manager.tsx")
 	if !listedGroupsRe.MatchString(manager) || !ratedByGroupRe.MatchString(manager) {
-		t.Error("the Sets page hides Works and Broken for a set of a hub group the hub does not list, so it can be rated neither on its own nor through the group")
+		t.Error("the Sets page hides Works and Broken for a set outside the local copy of a listed hub group, so it can be rated neither on its own nor through the group")
 	}
 }

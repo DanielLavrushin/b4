@@ -174,6 +174,18 @@ func hubOpenError(err error) *APIError {
 
 func hubAppliedIndex(svc *hub.Service, cfg *config.Config) map[string]*HubApplied {
 	index := map[string]*HubApplied{}
+	copies := map[string]map[string]bool{}
+	inCopy := func(set *config.SetConfig) bool {
+		ids, ok := copies[set.Hub.GroupID]
+		if !ok {
+			ids = map[string]bool{}
+			for _, member := range hubGroupCopyOf(cfg.Sets, set.Hub.GroupID).sets {
+				ids[member.Id] = true
+			}
+			copies[set.Hub.GroupID] = ids
+		}
+		return ids[set.Id]
+	}
 	for _, set := range cfg.Sets {
 		if set == nil || set.Hub == nil || set.Hub.ID == "" {
 			continue
@@ -183,7 +195,7 @@ func hubAppliedIndex(svc *hub.Service, cfg *config.Config) map[string]*HubApplie
 			continue
 		}
 		applied := &HubApplied{SetID: set.Id, SetName: set.Name, HubState: state, Version: set.Hub.Version, Vote: set.Hub.Vote, VotedAt: set.Hub.VotedAt}
-		if _, listed := svc.Group(set.Hub.GroupID); listed && set.Group != "" {
+		if _, listed := svc.Group(set.Hub.GroupID); listed && set.Group != "" && inCopy(set) {
 			applied.GroupID = set.Hub.GroupID
 		}
 		index[set.Hub.ID] = applied
