@@ -138,6 +138,17 @@ func TestTheTraceHeaderCarriesTheConfiguration(t *testing.T) {
 	wantTraceValue(t, doc, false, "sets", 1, "enabled")
 }
 
+func TestTheTraceHeaderSpellsANameAsTheChangeLinesDo(t *testing.T) {
+	cfg := config.NewConfig()
+	cfg.Sets = []*config.SetConfig{traceTestSet("aaaa1111", "Talk & more <beta>", nil)}
+	_, mux, _ := recordingAPI(t, &cfg)
+	startTrace(t, mux)
+	stopTrace(t, mux)
+
+	trace := downloadedTrace(t, mux)
+	wantLines(t, "the trace", trace, []string{`"name": "Talk & more <beta>"`}, nil)
+}
+
 func TestTheTraceHeaderSaysThatABlockIsOff(t *testing.T) {
 	cfg := config.NewConfig()
 	cfg.System.Socks5.Port = 1089

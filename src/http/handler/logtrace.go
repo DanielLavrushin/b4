@@ -204,9 +204,12 @@ func traceHeader(startedAt time.Time, note string, diag Diagnostics, configurati
 
 func traceConfigText(doc map[string]any, err error) []byte {
 	if err == nil {
-		var text []byte
-		if text, err = json.MarshalIndent(doc, "", "  "); err == nil {
-			return text
+		var text bytes.Buffer
+		enc := json.NewEncoder(&text)
+		enc.SetEscapeHTML(false)
+		enc.SetIndent("", "  ")
+		if err = enc.Encode(doc); err == nil {
+			return bytes.TrimSuffix(text.Bytes(), []byte("\n"))
 		}
 	}
 	return []byte("cannot be shown: " + err.Error())
