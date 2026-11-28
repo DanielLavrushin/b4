@@ -403,7 +403,7 @@ func (api *API) handleHubSetByID(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary Apply a hub set
-// @Description Fetches the set's payloads from the hub, opens the envelope and creates a local set from it in front of the others; with a replace id the new set takes that local set's id, position and enabled flag instead. A discard id next to replace names an earlier local copy of this hub set, removed in the same save. The reply lists the domains moved out of other sets and, in covered, the enabled sets further down whose geosite, geoip or ASN targets the applied set now matches first; idle marks one left matching nothing.
+// @Description Fetches the set's payloads from the hub, opens the envelope and creates a local set from it in front of the others; with a replace id the new set takes that local set's id, position and enabled flag instead. A discard id next to replace names an earlier local copy of this hub set, removed in the same save. The reply lists the domains moved out of other sets and, in covered, the enabled sets further down whose geosite, geoip or ASN targets the applied set now takes from them; idle marks one left matching nothing.
 // @Tags Hub
 // @Accept json
 // @Produce json
