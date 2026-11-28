@@ -294,4 +294,31 @@ CREATE TABLE group_members (
 );
 CREATE INDEX group_members_set ON group_members(set_id, set_version);
 `,
+	`
+CREATE TABLE group_votes (
+	id               INTEGER PRIMARY KEY AUTOINCREMENT,
+	record_id        TEXT NOT NULL DEFAULT '',
+	group_id         TEXT NOT NULL,
+	version          INTEGER NOT NULL,
+	gfp              TEXT NOT NULL,
+	key_hmac         TEXT NOT NULL,
+	kind             TEXT NOT NULL,
+	weight           REAL NOT NULL,
+	asn_observed     TEXT NOT NULL DEFAULT '',
+	country_observed TEXT NOT NULL DEFAULT '',
+	asn_hint         TEXT NOT NULL DEFAULT '',
+	country_hint     TEXT NOT NULL DEFAULT '',
+	origin_verified  INTEGER NOT NULL DEFAULT 0,
+	domain           TEXT NOT NULL DEFAULT '',
+	b4_version       TEXT NOT NULL DEFAULT '',
+	engine           TEXT NOT NULL DEFAULT '',
+	bucket           INTEGER NOT NULL,
+	received_at      TEXT NOT NULL,
+	UNIQUE(key_hmac, gfp, asn_observed, bucket)
+);
+CREATE INDEX group_votes_gfp ON group_votes(gfp);
+CREATE INDEX group_votes_received ON group_votes(received_at, id);
+CREATE INDEX group_votes_key ON group_votes(key_hmac);
+ALTER TABLE group_versions ADD COLUMN gfp TEXT NOT NULL DEFAULT '';
+`,
 }

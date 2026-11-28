@@ -49,26 +49,33 @@ import { CSS } from "@dnd-kit/utilities";
 
 import { B4Dialog, B4Help, B4Section } from "@b4.elements";
 import { useSnackbar } from "@context/SnackbarProvider";
-import { deviceFilterSelects, reportSaveError } from "@utils";
+import {
+  describeHubGroupVoteError,
+  deviceFilterSelects,
+  reportSaveError,
+} from "@utils";
 
 import { SetCompare } from "./Compare";
 import { SetCard } from "./SetCard";
-import {
-  GROUP_ROW_GAP,
-  SetGroupExportDialog,
-  SetGroupHeader,
-  SetGroupNameDialog,
-  groupTraySx,
-} from "./SetGroups";
-import { SetGroupPublishDialog } from "./SetGroupPublish";
+import { ExportTarget, SetExportDialog } from "./ExportDialog";
+import { SetGroupHeader, SetGroupNameDialog } from "./SetGroups";
+import { ShareDialog, ShareTarget } from "./ShareDialog";
 import { EditorSection } from "./facets";
 import { FacetCompareBar } from "./SignalRail";
 
-import { colors, fonts, radius, radiusPx } from "@design";
+import {
+  GROUP_ROW_GAP,
+  colors,
+  fonts,
+  groupTraySx,
+  radius,
+  radiusPx,
+} from "@design";
 import { configApi } from "@api/settings";
 import { formatSetTemplate, setTemplateFromSet } from "@models/setTemplate";
 import { useSets } from "@hooks/useSets";
-import { useHubStatus } from "@hooks/useHub";
+import { useHubGroupVote, useHubGroups, useHubStatus } from "@hooks/useHub";
+import { HubGroup, HubVoteKind } from "@models/hub";
 import { useSetFacetSelection } from "@hooks/useSetFacetSelection";
 import { useWatchdogSetStatuses } from "@hooks/useWatchdog";
 import { B4Config, B4SetConfig } from "@models/config";
@@ -281,14 +288,8 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
   const [groupDialog, setGroupDialog] = useState<GroupDialogState | null>(
     null,
   );
-  const [exportBlock, setExportBlock] = useState<{
-    group: string;
-    sets: B4SetConfig[];
-  } | null>(null);
-  const [publishBlock, setPublishBlock] = useState<{
-    group: string;
-    sets: B4SetConfig[];
-  } | null>(null);
+  const [exportTarget, setExportTarget] = useState<ExportTarget | null>(null);
+  const [shareTarget, setShareTarget] = useState<ShareTarget | null>(null);
   const [compareDialog, setCompareDialog] = useState<{
     open: boolean;
     setId: string | null;
@@ -354,10 +355,50 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
   );
   const facetSelection = useSetFacetSelection(sets.map((s) => s.id));
   const watchdogOn = !!config.system?.checker?.watchdog?.enabled;
-  const hubStatus = useHubStatus(Boolean(config.system?.hub?.enabled));
+  const hubEnabled = Boolean(config.system?.hub?.enabled);
+  const hubStatus = useHubStatus(hubEnabled);
   const hubReady = Boolean(
     hubStatus.data?.enabled && hubStatus.data?.configured,
   );
+  const hubGroups = useHubGroups(hubReady);
+  const groupCopies = useMemo(
+    () =>
+      new Map(
+        (hubGroups.data?.groups ?? []).map((g) => [
+          g.id,
+          g.applied.state === "none" ? "" : (g.applied.group ?? ""),
+        ]),
+      ),
+    [hubGroups.data],
+  );
+  const publishedGroups = useMemo(
+    () =>
+      new Map(
+        (hubGroups.data?.groups ?? [])
+          .filter(
+            (g) => g.applied.state === "applied" && g.applied.version === g.version,
+          )
+          .map((g) => [g.applied.group ?? "", g]),
+      ),
+    [hubGroups.data],
+  );
+  const groupVote = useHubGroupVote();
+  const castGroupVote = async (hubGroup: HubGroup, kind: HubVoteKind) => {
+    try {
+      const res = await groupVote.mutateAsync({ id: hubGroup.id, kind });
+      showSuccess(res.sent ? t("hub.vote.sent") : t("hub.vote.queued"));
+    } catch (e) {
+      showError(describeHubGroupVoteError(e, t));
+    }
+  };
+  const groupVoteOf = (hubGroup: HubGroup | undefined) =>
+    hubGroup
+      ? {
+          applied: hubGroup.applied,
+          busy: groupVote.isPending,
+          onVote: (kind: HubVoteKind) => void castGroupVote(hubGroup, kind),
+        }
+      : undefined;
   const deviceFilter = deviceFilterSelects(config.queue?.devices);
   const anyWatched = sets.some((s) => !!s.discovery?.watchdog);
   const watchStatuses = useWatchdogSetStatuses(anyWatched && watchdogOn);
@@ -835,17 +876,18 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                     })
                   }
                   onExport={() =>
-                    setExportBlock({ group: block.group, sets: block.all })
+                    setExportTarget({ group: block.group, sets: block.all })
                   }
-                  onPublish={
+                  onShare={
                     hubReady && !block.all.some((s) => isTempId(s.id))
                       ? () =>
-                          setPublishBlock({
+                          setShareTarget({
                             group: block.group,
                             sets: block.all,
                           })
                       : undefined
                   }
+                  vote={groupVoteOf(publishedGroups.get(block.group))}
                   onUngroup={() =>
                     applyGroup(
                       block.all.map((s) => s.id),
@@ -866,6 +908,12 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
             onEdit={(section?: EditorSection) => handleEditSet(set, section)}
             onDuplicate={() => handleDuplicateSet(set)}
             onCompare={() => setCompareDialog({ open: true, setId: set.id })}
+            onExport={() => setExportTarget({ set })}
+            onShare={
+              hubEnabled && !isTempId(set.id)
+                ? () => setShareTarget({ set })
+                : undefined
+            }
             onUseForNewSets={() => setTemplateSetId(set.id)}
             onDelete={() => setDeleteDialog({ open: true, setId: set.id })}
             groups={groupNames}
@@ -902,6 +950,10 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
             watchdogOn={watchdogOn}
             deviceFilter={deviceFilter}
             telegramSet={set.id === telegramId ? telegramState : undefined}
+            ratedByGroup={
+              Boolean(set.group) &&
+              groupCopies.get(set.hub?.group_id ?? "") === set.group
+            }
           />
         )}
       </SortableCardWrapper>
@@ -1364,18 +1416,17 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
         />
       )}
 
-      <SetGroupExportDialog
-        group={exportBlock?.group ?? null}
-        sets={exportBlock?.sets ?? []}
-        onClose={() => setExportBlock(null)}
+      <SetExportDialog
+        target={exportTarget}
+        onClose={() => setExportTarget(null)}
       />
 
-      {publishBlock && (
-        <SetGroupPublishDialog
-          group={publishBlock.group}
-          sets={publishBlock.sets}
+      {shareTarget && (
+        <ShareDialog
+          target={shareTarget}
+          hubReady={hubReady}
           onPublished={onRefresh}
-          onClose={() => setPublishBlock(null)}
+          onClose={() => setShareTarget(null)}
         />
       )}
 

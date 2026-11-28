@@ -182,6 +182,28 @@ func TestSetHealProbesWithTheSetsDSCP(t *testing.T) {
 	}
 }
 
+func TestEveryHealRunCarriesThePresetFilter(t *testing.T) {
+	h := newHarness(t, watchedSet("yt", ytURL))
+	h.check.set(ytURL, okCheck)
+	h.driver.verdict = coveredVerdict("disorder")
+	h.w.SetPresetFilter(func(p discovery.ConfigPreset) bool { return p.Name != "grouped-member" })
+
+	h.healNow("yt")
+	h.w.healBatch([]string{"youtube.com"}, nil)
+
+	if len(h.driver.starts) != 2 {
+		t.Fatalf("a set heal and a domain heal, two runs; got %d", len(h.driver.starts))
+	}
+	for i, opts := range h.driver.starts {
+		if opts.KeepPreset == nil {
+			t.Fatalf("run %d has no preset filter, so a cached community strategy that is offered only with its group could heal a set alone", i)
+		}
+		if opts.KeepPreset(discovery.ConfigPreset{Name: "grouped-member"}) || !opts.KeepPreset(discovery.ConfigPreset{Name: "plain"}) {
+			t.Errorf("run %d does not use the filter it was given", i)
+		}
+	}
+}
+
 func TestLegacyHealProbesEachDSCPPathInARunOfItsOwn(t *testing.T) {
 	h := legacyHarness(t)
 	h.edit("yt", func(s *config.SetConfig) { s.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25} })

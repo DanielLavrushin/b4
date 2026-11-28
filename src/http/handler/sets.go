@@ -578,7 +578,7 @@ func (api *API) getSet(w http.ResponseWriter, id string) {
 }
 
 // @Summary Create a new set
-// @Description A field the body leaves out takes b4's set default, the value a config file or a set export means when it leaves the field out. The new set template (/ui/new-set-template) does not apply here: only the web interface's Create Set reads it. A set created without "enabled" is enabled. A "group" in the body is kept only when the new set lands next to a set of that group, or when no other set has it; otherwise the set starts without a group. A hub group stamp (hub.group_id, hub.group_version) in the body is dropped; the hub group endpoints write it.
+// @Description A field the body leaves out takes b4's set default, the value a config file or a set export means when it leaves the field out. The new set template (/ui/new-set-template) does not apply here: only the web interface's Create Set reads it. A set created without "enabled" is enabled. A "group" in the body is kept only when the new set lands next to a set of that group, or when no other set has it; otherwise the set starts without a group. A hub group stamp (hub.group_id, hub.group_version, hub.group_vote, hub.group_voted_at) in the body is dropped; the hub group endpoints write it.
 // @Tags Sets
 // @Accept json
 // @Produce json
@@ -641,14 +641,19 @@ func carryHubGroupStamp(set, stored *config.SetConfig) {
 	if set.Hub == nil {
 		return
 	}
-	set.Hub.GroupID, set.Hub.GroupVersion = "", 0
+	from := &config.HubOrigin{}
 	if stored != nil && stored.Hub != nil && stored.Hub.ID != "" && stored.Hub.ID == set.Hub.ID {
-		set.Hub.GroupID, set.Hub.GroupVersion = stored.Hub.GroupID, stored.Hub.GroupVersion
+		from = stored.Hub
 	}
+	carryHubGroupOrigin(set.Hub, from)
+}
+
+func carryHubGroupOrigin(to, from *config.HubOrigin) {
+	to.GroupID, to.GroupVersion, to.GroupVote, to.GroupVotedAt = from.GroupID, from.GroupVersion, from.GroupVote, from.GroupVotedAt
 }
 
 // @Summary Update a set
-// @Description The body replaces the whole set. It must carry "name", "enabled" and "targets", otherwise the write is refused with 400 validation_failed and the set is left as it was. Any other field the body leaves out takes its set default, not the value the set had. When the body carries the "revision" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before. The set keeps the group it is stored with whatever the body says, and a change of group does not change the revision: use POST /sets/batch-set-group to change it. The set keeps its hub group stamp (hub.group_id, hub.group_version) only while the body carries the hub id it is stored with, whatever stamp the body says; otherwise the stamp is dropped.
+// @Description The body replaces the whole set. It must carry "name", "enabled" and "targets", otherwise the write is refused with 400 validation_failed and the set is left as it was. Any other field the body leaves out takes its set default, not the value the set had. When the body carries the "revision" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before. The set keeps the group it is stored with whatever the body says, and a change of group does not change the revision: use POST /sets/batch-set-group to change it. The set keeps its hub group stamp (hub.group_id, hub.group_version, hub.group_vote, hub.group_voted_at) only while the body carries the hub id it is stored with, whatever stamp the body says; otherwise the stamp is dropped.
 // @Tags Sets
 // @Accept json
 // @Produce json

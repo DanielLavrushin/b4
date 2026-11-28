@@ -295,7 +295,7 @@ func unreachable(a *Answer, err error) (string, bool) {
 }
 
 func queueable(kind string) bool {
-	return kind == hubwire.RecordVote || kind == hubwire.RecordReport
+	return kind == hubwire.RecordVote || kind == hubwire.RecordGroupVote || kind == hubwire.RecordReport
 }
 
 func publicClient(ip net.IP) bool {

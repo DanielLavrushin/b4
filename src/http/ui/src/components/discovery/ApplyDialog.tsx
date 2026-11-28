@@ -13,7 +13,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import { AddIcon, CopyIcon } from "@b4.icons";
+import { AddIcon, CategoryIcon, CopyIcon } from "@b4.icons";
 import { B4Alert, B4Select, B4TextField } from "@b4.elements";
 import { B4Dialog } from "@common/B4Dialog";
 import { colors } from "@design";
@@ -23,6 +23,7 @@ import { SetDomainMatch } from "@models/sets";
 import { discoveryApi } from "@api/discovery";
 import { setsApi } from "@api/sets";
 import { useHostMatches } from "@hooks/useHostMatches";
+import { useHubGroupOffers, useHubSetGrouped } from "@hooks/useHub";
 import { useSnackbar } from "@context/SnackbarProvider";
 import {
   ApplyTarget,
@@ -38,6 +39,7 @@ import {
   strategySuffix,
   suggestSetName,
 } from "@utils";
+import { HubGroupOffer } from "./HubGroupApplyDialog";
 import { PageHostsPicker } from "./PageHostsPicker";
 import { StrategySummary } from "./StrategySummary";
 
@@ -85,6 +87,7 @@ interface ApplyDialogProps {
     pins: Record<string, string[]> | undefined,
     opts: ReplaceOptions,
   ) => void;
+  onApplyHubGroup: (offer: HubGroupOffer) => void;
 }
 
 const lower = (d: string) => d.toLowerCase();
@@ -99,6 +102,7 @@ export const ApplyDialog = ({
   onCreate,
   onAddToExisting,
   onReplaceStrategy,
+  onApplyHubGroup,
 }: ApplyDialogProps) => {
   const { t } = useTranslation();
   const { showSuccess, showError } = useSnackbar();
@@ -126,6 +130,9 @@ export const ApplyDialog = ({
     checking: hostsPending,
     failed: hostMatchesFailed,
   } = useHostMatches((target?.hosts ?? []).map((h) => h.host), open);
+  const hubSetId = target?.set.hub?.id ?? "";
+  const hubGrouped = useHubSetGrouped(hubSetId);
+  const hubGroups = useHubGroupOffers(hubSetId);
 
   useEffect(() => {
     if (!open || !target) return;
@@ -439,6 +446,8 @@ export const ApplyDialog = ({
             disabled={
               loading ||
               hostsPending ||
+              hubGrouped.pending ||
+              (hubGrouped.grouped && mode !== "existing") ||
               (mode === "existing" && !selectedSetId) ||
               (mode === "replace" && (!replaceSetId || !matchesReady))
             }
@@ -457,6 +466,39 @@ export const ApplyDialog = ({
       }
     >
       <Stack spacing={3} sx={{ mt: 1 }}>
+        {hubGrouped.grouped && (
+          <B4Alert severity="warning">
+            {hubGroups.offers.length === 0 && hubGroups.applied.length > 0
+              ? t("discovery.results.hubGroupApplied", {
+                  title: hubGroups.applied.map((g) => g.title).join(", "),
+                })
+              : t("discovery.results.hubGroupOnly")}
+            {hubGroups.offers.length > 0 && (
+              <Stack
+                direction="row"
+                spacing={1}
+                useFlexGap
+                sx={{ mt: 1, flexWrap: "wrap" }}
+              >
+                {hubGroups.offers.map((hubGroup) => (
+                  <Button
+                    key={hubGroup.id}
+                    size="small"
+                    variant="outlined"
+                    startIcon={<CategoryIcon />}
+                    disabled={loading}
+                    onClick={() => onApplyHubGroup({ hubGroup, hubSetId })}
+                  >
+                    {t("discovery.results.hubGroupApply", {
+                      title: hubGroup.title,
+                      count: hubGroup.members.length,
+                    })}
+                  </Button>
+                ))}
+              </Stack>
+            )}
+          </B4Alert>
+        )}
         {target.domains.length > 1 && (
           <B4Alert severity="info">
             {t("discovery.apply.shared", { domains: target.domains.join(", ") })}

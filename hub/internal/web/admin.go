@@ -370,7 +370,7 @@ func (s *Server) setDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	view.Groups = make([]SetMembershipView, 0, len(memberships))
 	for _, m := range memberships {
-		view.Groups = append(view.Groups, SetMembershipView{GroupID: m.GroupID, Version: m.GroupVersion, Title: m.Title, Status: m.Status, SetVersion: m.SetVersion, Brought: m.Brought})
+		view.Groups = append(view.Groups, membershipView(m))
 	}
 	writeJSON(w, http.StatusOK, view)
 }

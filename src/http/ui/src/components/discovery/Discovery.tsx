@@ -964,6 +964,10 @@ export const DiscoveryRunner = () => {
         onReplaceStrategy={(setId, set, domains, pins, opts) =>
           void handleReplaceStrategy(setId, set, domains, pins, opts)
         }
+        onApplyHubGroup={(offer) => {
+          setApplyTarget(null);
+          setHubGroupOffer(offer);
+        }}
       />
 
       <HubGroupApplyDialog

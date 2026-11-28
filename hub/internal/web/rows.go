@@ -66,6 +66,7 @@ type SetRowView struct {
 	SupersededAt       *time.Time             `json:"superseded_at,omitempty"`
 	Withheld           string                 `json:"withheld,omitempty"`
 	HiddenFrom         string                 `json:"hidden_from,omitempty"`
+	Groups             []SetMembershipView    `json:"groups,omitempty"`
 	Config             map[string]interface{} `json:"config,omitempty"`
 	DecodeError        bool                   `json:"decode_error,omitempty"`
 	CreatedAt          time.Time              `json:"created_at"`
@@ -104,11 +105,55 @@ func briefTargets(v store.Version) TargetsBriefView {
 	return b
 }
 
+func gatherGroups(rows []SetRowView) []SetRowView {
+	members := make(map[string][]SetRowView)
+	for _, row := range rows {
+		if len(row.Groups) > 0 {
+			id := row.Groups[0].GroupID
+			members[id] = append(members[id], row)
+		}
+	}
+	out := make([]SetRowView, 0, len(rows))
+	for _, row := range rows {
+		if len(row.Groups) == 0 {
+			out = append(out, row)
+			continue
+		}
+		block, ok := members[row.Groups[0].GroupID]
+		if !ok {
+			continue
+		}
+		delete(members, row.Groups[0].GroupID)
+		sort.SliceStable(block, func(i, j int) bool { return block[i].Groups[0].Position < block[j].Groups[0].Position })
+		out = append(out, block...)
+	}
+	return out
+}
+
+func rowGroups(memberships []store.Membership) []SetMembershipView {
+	var out []SetMembershipView
+	for _, m := range memberships {
+		if m.Status == hubwire.SetStatusRejected {
+			continue
+		}
+		view := membershipView(m)
+		if n := len(out); n > 0 && out[n-1].GroupID == m.GroupID {
+			out[n-1] = view
+			continue
+		}
+		out = append(out, view)
+	}
+	return out
+}
+
 func rowMatches(row SetRowView, v store.Version, needle string) bool {
 	if needle == "" {
 		return true
 	}
 	hay := []string{row.Title, row.SetID, row.Author, row.AuthorHMAC, row.Family, row.StatusReason, v.Description}
+	for _, g := range row.Groups {
+		hay = append(hay, g.Title, g.GroupID)
+	}
 	hay = append(hay, store.TargetList(v.Projection, "sni_domains")...)
 	hay = append(hay, row.Targets.GeoSite...)
 	hay = append(hay, row.Targets.UDPL7...)
@@ -198,6 +243,11 @@ func (s *Server) setRows(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	memberships, err := s.Store.AllMemberships(ctx)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
 	var versions []store.Version
 	switch tab {
 	case TabPending:
@@ -234,10 +284,15 @@ func (s *Server) setRows(w http.ResponseWriter, r *http.Request) {
 		if tab == TabSuperseded {
 			row.SupersededBy, row.SupersededAt = g.supersededBy(v)
 		}
+		row.Groups = rowGroups(memberships[v.SetID])
 		if !rowMatches(row, v, needle) {
 			continue
 		}
 		switch filter {
+		case "grouped":
+			if len(row.Groups) == 0 {
+				continue
+			}
 		case "attention":
 			if len(row.Attention) == 0 {
 				continue
@@ -271,6 +326,7 @@ func (s *Server) setRows(w http.ResponseWriter, r *http.Request) {
 		}
 		return less
 	})
+	rows = gatherGroups(rows)
 	view := SetRowsView{
 		Tab:       tab,
 		Total:     len(rows),

@@ -7,7 +7,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 )
 
-const stampedHub = `"hub":{"id":"s1","version":2,"hash":"h","group_id":"g-video","group_version":3}`
+const stampedHub = `"hub":{"id":"s1","version":2,"hash":"h","group_id":"g-video","group_version":3,"group_vote":"works","group_voted_at":"2026-11-20T10:00:00Z"}`
 
 func TestCreatedSetsDropTheHubGroupStamp(t *testing.T) {
 	for _, tc := range []struct {
@@ -31,7 +31,7 @@ func TestCreatedSetsDropTheHubGroupStamp(t *testing.T) {
 			if set.Hub.ID != "s1" || set.Hub.Version != 2 || set.Hub.Hash != "h" {
 				t.Errorf("hub = %+v, want the hub id, version and hash kept", set.Hub)
 			}
-			if set.Hub.GroupID != "" || set.Hub.GroupVersion != 0 {
+			if set.Hub.GroupID != "" || set.Hub.GroupVersion != 0 || set.Hub.GroupVote != "" || set.Hub.GroupVotedAt != "" {
 				t.Errorf("hub = %+v, want no group stamp from the body", set.Hub)
 			}
 		})
@@ -42,6 +42,9 @@ func TestSavingASetKeepsOnlyTheHubGroupStampItIsStoredWith(t *testing.T) {
 	stamped := func(id, hubID, groupID string, groupVersion int) *config.SetConfig {
 		set := groupedSet(id, "video")
 		set.Hub = &config.HubOrigin{ID: hubID, Version: 1, Hash: "h", GroupID: groupID, GroupVersion: groupVersion}
+		if groupID != "" {
+			set.Hub.GroupVote, set.Hub.GroupVotedAt = "works", "2026-11-20T10:00:00Z"
+		}
 		return set
 	}
 	put := func(t *testing.T, mux *http.ServeMux, id, hub string) {
@@ -65,11 +68,11 @@ func TestSavingASetKeepsOnlyTheHubGroupStampItIsStoredWith(t *testing.T) {
 		hub    string
 		want   config.HubOrigin
 	}{
-		{"a stamp the stored set lacks", stamped("a", "s1", "", 0), `,"hub":{"id":"s1","version":1,"hash":"h","group_id":"g-video","group_version":3}`, config.HubOrigin{ID: "s1", Version: 1, Hash: "h"}},
-		{"the same hub id with a forged stamp", stamped("a", "s1", "g-video", 3), `,"hub":{"id":"s1","version":1,"hash":"h","group_id":"g-other","group_version":9}`, config.HubOrigin{ID: "s1", Version: 1, Hash: "h", GroupID: "g-video", GroupVersion: 3}},
-		{"the same hub id without a stamp", stamped("a", "s1", "g-video", 3), `,"hub":{"id":"s1","version":1,"hash":"h"}`, config.HubOrigin{ID: "s1", Version: 1, Hash: "h", GroupID: "g-video", GroupVersion: 3}},
-		{"another hub id", stamped("a", "s1", "g-video", 3), `,"hub":{"id":"s2","version":1,"hash":"h","group_id":"g-video","group_version":3}`, config.HubOrigin{ID: "s2", Version: 1, Hash: "h"}},
-		{"no hub id", stamped("a", "s1", "g-video", 3), `,"hub":{"hash":"h","group_id":"g-video","group_version":3}`, config.HubOrigin{Hash: "h"}},
+		{"a stamp the stored set lacks", stamped("a", "s1", "", 0), `,"hub":{"id":"s1","version":1,"hash":"h","group_id":"g-video","group_version":3,"group_vote":"works","group_voted_at":"2026-11-21T10:00:00Z"}`, config.HubOrigin{ID: "s1", Version: 1, Hash: "h"}},
+		{"the same hub id with a forged stamp", stamped("a", "s1", "g-video", 3), `,"hub":{"id":"s1","version":1,"hash":"h","group_id":"g-other","group_version":9,"group_vote":"broken","group_voted_at":"2026-11-21T10:00:00Z"}`, config.HubOrigin{ID: "s1", Version: 1, Hash: "h", GroupID: "g-video", GroupVersion: 3, GroupVote: "works", GroupVotedAt: "2026-11-20T10:00:00Z"}},
+		{"the same hub id without a stamp", stamped("a", "s1", "g-video", 3), `,"hub":{"id":"s1","version":1,"hash":"h"}`, config.HubOrigin{ID: "s1", Version: 1, Hash: "h", GroupID: "g-video", GroupVersion: 3, GroupVote: "works", GroupVotedAt: "2026-11-20T10:00:00Z"}},
+		{"another hub id", stamped("a", "s1", "g-video", 3), `,"hub":{"id":"s2","version":1,"hash":"h","group_id":"g-video","group_version":3,"group_vote":"works"}`, config.HubOrigin{ID: "s2", Version: 1, Hash: "h"}},
+		{"no hub id", stamped("a", "s1", "g-video", 3), `,"hub":{"hash":"h","group_id":"g-video","group_version":3,"group_vote":"works"}`, config.HubOrigin{Hash: "h"}},
 		{"no hub origin", stamped("a", "s1", "g-video", 3), ``, config.HubOrigin{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

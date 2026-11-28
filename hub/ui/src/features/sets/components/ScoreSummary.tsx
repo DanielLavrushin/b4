@@ -24,9 +24,10 @@ interface ScoreSummaryProps {
   published?: ScoreView;
   live: ScoreView;
   evidence: EvidenceView;
+  group?: boolean;
 }
 
-export function ScoreSummary({ published, live, evidence }: Readonly<ScoreSummaryProps>) {
+export function ScoreSummary({ published, live, evidence, group = false }: Readonly<ScoreSummaryProps>) {
   const { t } = useTranslation();
   const shown = published ?? live;
   const drift = published !== undefined && Math.abs(published.score - live.score) > 0.01;
@@ -39,8 +40,8 @@ export function ScoreSummary({ published, live, evidence }: Readonly<ScoreSummar
   ]);
   const evidenceTip = tipLines([
     t("evidence.independentTip", { works: ind.works, broken: ind.broken, devices: ind.devices, positive: formatN(ind.positive), negative: formatN(ind.negative) }),
-    t("evidence.authorTip", { works: own.works, broken: own.broken }),
-    evidence.pooled > 0 ? t("evidence.pooledTip", { count: evidence.pooled }) : "",
+    t(group ? "evidence.groupAuthorTip" : "evidence.authorTip", { works: own.works, broken: own.broken }),
+    evidence.pooled > 0 ? t(group ? "evidence.groupPooledTip" : "evidence.pooledTip", { count: evidence.pooled }) : "",
   ]);
   return (
     <Box sx={{ display: "flex", alignItems: "baseline", gap: 1, whiteSpace: "nowrap" }}>

@@ -296,10 +296,16 @@ export function parseSetsImport(text: string): SetsImport {
   return setsImport([value], "");
 }
 
-export function setGroupFileName(group: string): string {
-  const safe = group
+const fileSlug = (name: string): string =>
+  name
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-+|-+$/g, "");
-  return `${safe || "group"}.b4group.json`;
+
+export function setGroupFileName(group: string): string {
+  return `${fileSlug(group) || "group"}.b4group.json`;
+}
+
+export function setFileName(name: string): string {
+  return `${fileSlug(name) || "set"}.b4set.json`;
 }

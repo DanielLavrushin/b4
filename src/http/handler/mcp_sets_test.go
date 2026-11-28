@@ -187,7 +187,7 @@ func TestMCPManageSetKeepsEveryGroupInOneBlock(t *testing.T) {
 func TestMCPManageSetDuplicateDropsTheHubGroupStamp(t *testing.T) {
 	cfg := writableCfg(t)
 	member := groupedSet("yt-a", "YouTube")
-	member.Hub = &config.HubOrigin{ID: "s1", Version: 2, Hash: "h", GroupID: "g-video", GroupVersion: 3}
+	member.Hub = &config.HubOrigin{ID: "s1", Version: 2, Hash: "h", GroupID: "g-video", GroupVersion: 3, GroupVote: "works", GroupVotedAt: "2026-11-20T10:00:00Z"}
 	cfg.Sets = []*config.SetConfig{member, groupedSet("yt-b", "YouTube")}
 	srv, api := newMCPTestServerAPI(t, cfg)
 	session, ctx := connectMCP(t, srv)
@@ -198,11 +198,11 @@ func TestMCPManageSetDuplicateDropsTheHubGroupStamp(t *testing.T) {
 	for _, set := range api.getCfg().Sets {
 		switch set.Name {
 		case "twin":
-			if set.Group != "YouTube" || set.Hub == nil || set.Hub.ID != "s1" || set.Hub.Version != 2 || set.Hub.GroupID != "" || set.Hub.GroupVersion != 0 {
+			if set.Group != "YouTube" || set.Hub == nil || set.Hub.ID != "s1" || set.Hub.Version != 2 || set.Hub.GroupID != "" || set.Hub.GroupVersion != 0 || set.Hub.GroupVote != "" || set.Hub.GroupVotedAt != "" {
 				t.Errorf("the copy keeps its local group and hub set but not the hub group stamp, got %q %+v", set.Group, set.Hub)
 			}
 		case "yt-a":
-			if set.Hub.GroupID != "g-video" || set.Hub.GroupVersion != 3 {
+			if set.Hub.GroupID != "g-video" || set.Hub.GroupVersion != 3 || set.Hub.GroupVote != "works" {
 				t.Errorf("the source keeps its stamp, got %+v", set.Hub)
 			}
 		}

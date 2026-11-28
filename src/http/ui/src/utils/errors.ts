@@ -120,6 +120,7 @@ export function describeHubError(error: unknown, t: TFunction): string {
 
 const hubGroupCodes = new Set([
   "hub_no_groups",
+  "hub_no_group_votes",
   "group_too_large",
   "too_many_members",
   "bad_hub_answer",
@@ -132,6 +133,14 @@ export function describeHubGroupError(error: unknown, t: TFunction): string {
     return t(`hub.group.errors.${error.code}`);
   }
   return describeHubError(error, t);
+}
+
+export function describeHubGroupVoteError(error: unknown, t: TFunction): string {
+  const code = error instanceof ApiError ? error.code : undefined;
+  if (code === "not_applied") return t("hub.group.vote.notApplied");
+  if (code === "modified") return t("hub.group.vote.modified");
+  if (code === "other_version") return t("hub.group.vote.otherVersion");
+  return t("hub.vote.failed", { error: describeHubGroupError(error, t) });
 }
 
 export function describeHubGroupApplyError(error: unknown, t: TFunction): string {

@@ -176,6 +176,7 @@ type KeyOrigin struct {
 func (s *Store) KeyOrigins(ctx context.Context, keyHMAC string) ([]KeyOrigin, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT o.asn, COALESCE(n.name, ''), MAX(o.country), COUNT(*), MIN(o.at), MAX(o.at), GROUP_CONCAT(DISTINCT o.source) FROM (
 		SELECT asn_observed AS asn, country_observed AS country, received_at AS at, 'vote' AS source FROM votes WHERE key_hmac = ?1 AND asn_observed <> ''
+		UNION ALL SELECT asn_observed, country_observed, received_at, 'group_vote' FROM group_votes WHERE key_hmac = ?1 AND asn_observed <> ''
 		UNION ALL SELECT asn_observed, country_observed, created_at, 'share' FROM set_versions WHERE uploader_hmac = ?1 AND asn_observed <> ''
 		UNION ALL SELECT asn_observed, '', received_at, 'report' FROM reports WHERE key_hmac = ?1 AND asn_observed <> ''
 	) o LEFT JOIN asn_names n ON n.asn = o.asn GROUP BY o.asn ORDER BY MAX(o.at) DESC`, keyHMAC)
@@ -210,6 +211,7 @@ type KeyClient struct {
 func (s *Store) KeyClients(ctx context.Context, keyHMAC string) ([]KeyClient, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT b4_version, engine, COUNT(*), MAX(at) FROM (
 		SELECT b4_version, engine, received_at AS at FROM votes WHERE key_hmac = ?1 AND b4_version <> ''
+		UNION ALL SELECT b4_version, engine, received_at FROM group_votes WHERE key_hmac = ?1 AND b4_version <> ''
 		UNION ALL SELECT b4_version, engine, created_at FROM set_versions WHERE uploader_hmac = ?1 AND b4_version <> ''
 	) GROUP BY b4_version, engine ORDER BY MAX(at) DESC`, keyHMAC)
 	if err != nil {

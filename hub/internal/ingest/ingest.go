@@ -238,7 +238,7 @@ func (s *Service) HandleFrom(ctx context.Context, raw []byte, src Source) Respon
 	}
 	scope, limit := ratelimit.ScopeShare, limits.SharesPerDay
 	switch rec.Kind {
-	case hubwire.RecordVote:
+	case hubwire.RecordVote, hubwire.RecordGroupVote:
 		scope, limit = ratelimit.ScopeVote, limits.VotesPerDay
 	case hubwire.RecordReport:
 		scope, limit = ratelimit.ScopeReport, limits.ReportsPerDay
@@ -279,6 +279,8 @@ func (s *Service) dispatch(ctx context.Context, entry record) Response {
 		return s.mirror(ctx, entry)
 	case hubwire.RecordGroup:
 		return s.group(ctx, entry)
+	case hubwire.RecordGroupVote:
+		return s.groupVote(ctx, entry)
 	}
 	return fail(http.StatusBadRequest, CodeBadRecord, "unknown record kind")
 }

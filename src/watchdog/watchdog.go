@@ -75,6 +75,7 @@ type Watchdog struct {
 	pollEvery   time.Duration
 	verifyDelay time.Duration
 	idleWait    time.Duration
+	keepPreset  func(discovery.ConfigPreset) bool
 }
 
 func New(cfgPtr *atomic.Pointer[config.Config], discoveryRT *discovery.Runtime, update UpdateFunc) *Watchdog {
@@ -93,6 +94,10 @@ func New(cfgPtr *atomic.Pointer[config.Config], discoveryRT *discovery.Runtime, 
 		verifyDelay:      verifyRetryDelay,
 		idleWait:         setIdleWait,
 	}
+}
+
+func (w *Watchdog) SetPresetFilter(keep func(discovery.ConfigPreset) bool) {
+	w.keepPreset = keep
 }
 
 func (w *Watchdog) SetEngine(engine EngineView) {
@@ -473,6 +478,7 @@ func (w *Watchdog) healBatch(domains []string, dscp *config.DSCPProbe) {
 		Source:          discovery.SourceWatchdog,
 		DSCP:            dscp,
 		IPVersion:       legacyIPVersion(dscp),
+		KeepPreset:      w.keepPreset,
 	})
 	if err != nil {
 		w.mu.Lock()

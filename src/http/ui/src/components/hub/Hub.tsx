@@ -18,6 +18,7 @@ import { SnackbarAction, useSnackbar } from "@context/SnackbarProvider";
 import {
   useHubApply,
   useHubGroupApply,
+  useHubGroupVote,
   useHubSet,
   useHubSets,
   useHubStatus,
@@ -48,6 +49,7 @@ import {
   describeApiError,
   describeHubError,
   describeHubGroupApplyError,
+  describeHubGroupVoteError,
 } from "@utils";
 import { CoveredDialog, CoveredReport } from "./CoveredDialog";
 import { DetailsDialog } from "./DetailsDialog";
@@ -110,6 +112,7 @@ export const HubBrowser = () => {
   const undo = useHubUndoApply();
   const enable = useLocalSetsEnabled();
   const vote = useHubVote();
+  const groupVote = useHubGroupVote();
 
   const detailsId = searchParams.get("set");
   const details = useHubSet(ready ? detailsId : null);
@@ -358,6 +361,19 @@ export const HubBrowser = () => {
     }
   };
 
+  const handleGroupVote = async (hubGroup: HubGroup, kind: HubVoteKind) => {
+    try {
+      const res = await groupVote.mutateAsync({
+        id: hubGroup.id,
+        kind,
+        domain: domain || undefined,
+      });
+      showSuccess(res.sent ? t("hub.vote.sent") : t("hub.vote.queued"));
+    } catch (e) {
+      showError(describeHubGroupVoteError(e, t));
+    }
+  };
+
   const handleSync = () => {
     sync.mutate(undefined, {
       onSuccess: () => showSuccess(t("hub.status.synced")),
@@ -371,6 +387,7 @@ export const HubBrowser = () => {
     hubGroupApply.isPending ||
     undo.isPending ||
     vote.isPending ||
+    groupVote.isPending ||
     enable.isPending;
   const list = sets.data?.sets ?? [];
   const hubGroups = sets.data?.groups ?? [];
@@ -470,7 +487,7 @@ export const HubBrowser = () => {
               }}
               onUpdate={setUpdateHubGroup}
               onDetails={openDetails}
-              onVote={(s, kind) => void handleVote(s, kind)}
+              onVote={(g, kind) => void handleGroupVote(g, kind)}
               onTest={setTestSet}
             />
           ))}
@@ -506,6 +523,12 @@ export const HubBrowser = () => {
         busy={busy}
         onApply={(s) => void handleApply(s)}
         onUpdate={setUpdateSet}
+        onApplyGroup={(g) => {
+          openDetails(null);
+          if (hubGroupAction(g) !== "apply" || hubGroupTakenOver(g).length > 0)
+            setUpdateHubGroup(g);
+          else void handleHubGroupApply(g);
+        }}
         onOpenLocal={(localId) => {
           void navigate(`/sets/${localId}`);
         }}

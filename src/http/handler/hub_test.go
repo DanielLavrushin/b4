@@ -307,6 +307,7 @@ func TestHubEndpointsAreGated(t *testing.T) {
 	expectHubGateStatus(t, getJSON(t, mux, "/api/hub/status"), true)
 	expectCode(t, getJSON(t, mux, "/api/hub/sets?domain=x"), http.StatusConflict, "hub_not_configured")
 	expectCode(t, postJSON(t, mux, "/api/hub/sets/x/vote", HubVoteRequest{Kind: "works"}), http.StatusConflict, "hub_not_configured")
+	expectCode(t, postJSON(t, mux, "/api/hub/groups/x/vote", HubVoteRequest{Kind: "works"}), http.StatusConflict, "hub_not_configured")
 
 	signer, _ := hubwire.NewIdentity()
 	cfg.System.Hub.PublicKey = signer.KeyID()
@@ -1251,7 +1252,7 @@ func TestCommunityPresetsKeepDistinctSetsWithTheSameStrategy(t *testing.T) {
 	}
 	env.publish(t, csA, csB)
 
-	presets := env.api.communityPresets([]string{"a.example", "b.example"}, false)
+	presets := env.api.communityPresets([]string{"a.example", "b.example"}, false, true)
 	if len(presets) != 2 {
 		t.Fatalf("both publications must be queued, got %d", len(presets))
 	}
@@ -1277,7 +1278,7 @@ func TestCommunityPresetNamesTheCaptureItInstalled(t *testing.T) {
 	}
 	env.publish(t, cs)
 
-	presets := env.api.communityPresets([]string{"a.example"}, false)
+	presets := env.api.communityPresets([]string{"a.example"}, false, true)
 	if len(presets) != 1 {
 		t.Fatalf("the shared capture set must be queued, got %d presets", len(presets))
 	}
@@ -1313,7 +1314,7 @@ func TestCommunityPresetsCoverEveryRequestedDomain(t *testing.T) {
 	csAB, _ := hubtest.CatalogueSet(t, "ab-1", 1, &shared, nil)
 	env.publish(t, append(sets, csB, csAB)...)
 
-	presets := env.api.communityPresets([]string{"https://a.example/watch?v=1", "b.example:443"}, false)
+	presets := env.api.communityPresets([]string{"https://a.example/watch?v=1", "b.example:443"}, false, true)
 	var titles []string
 	perTitle := map[string]int{}
 	for _, p := range presets {
@@ -1352,7 +1353,7 @@ func TestCommunityPresetsCoverEveryRequestedDomain(t *testing.T) {
 		}
 	}
 
-	if got := env.api.communityPresets([]string{"a.example", "b.example"}, true); got != nil {
+	if got := env.api.communityPresets([]string{"a.example", "b.example"}, true, true); got != nil {
 		t.Errorf("skip must return no community presets, got %d", len(got))
 	}
 }

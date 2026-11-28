@@ -6,6 +6,7 @@ import {
 import { hubApi } from "@api/hub";
 import { setsApi } from "@api/sets";
 import { HubSet, HubVoteKind } from "@models/hub";
+import { hubGroupAction } from "@models/hubGroups";
 import { DomainReassignment } from "@models/sets";
 
 export const hubKeys = {
@@ -52,6 +53,17 @@ export function useHubSet(id: string | null) {
   });
 }
 
+export function useHubSetGrouped(hubSetId: string) {
+  const status = useHubStatus(Boolean(hubSetId));
+  const ready = Boolean(status.data?.enabled && status.data?.configured);
+  const set = useHubSet(ready ? hubSetId : null);
+  return {
+    grouped: set.data?.status === "grouped",
+    pending:
+      Boolean(hubSetId) && (status.isPending || (ready && set.isPending)),
+  };
+}
+
 export function useHubGroupsOf(setId: string, enabled = true) {
   return useQuery({
     queryKey: hubKeys.groupsOf(setId),
@@ -60,6 +72,20 @@ export function useHubGroupsOf(setId: string, enabled = true) {
     staleTime: 30 * 1000,
     retry: false,
   });
+}
+
+export function useHubGroupOffers(hubSetId: string) {
+  const status = useHubStatus(Boolean(hubSetId));
+  const groupsOf = useHubGroupsOf(
+    hubSetId,
+    Boolean(status.data?.enabled && status.data?.configured),
+  );
+  const groups = groupsOf.data?.groups ?? [];
+  return {
+    offers: groups.filter((g) => hubGroupAction(g) !== "applied"),
+    applied: groups.filter((g) => hubGroupAction(g) === "applied"),
+    pending: groupsOf.isPending,
+  };
 }
 
 export function useHubGroups(enabled = true) {
@@ -160,6 +186,25 @@ export function useHubVote() {
       void client.invalidateQueries({ queryKey: hubKeys.status });
       void client.invalidateQueries({ queryKey: ["hub", "sets"] });
       void client.invalidateQueries({ queryKey: ["hub", "set"] });
+    },
+  });
+}
+
+export function useHubGroupVote() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      kind,
+      domain,
+    }: {
+      id: string;
+      kind: HubVoteKind;
+      domain?: string;
+    }) => hubApi.voteGroup(id, kind, domain),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: hubKeys.status });
+      invalidateHubLists(client);
     },
   });
 }

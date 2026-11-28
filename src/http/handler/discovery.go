@@ -15,6 +15,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/discovery"
 	"github.com/daniellavrushin/b4/dns/endpoint"
+	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/sni"
 	"github.com/daniellavrushin/b4/tables"
@@ -334,7 +335,8 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 		IPVersion:       req.IPVersion,
 		Source:          discovery.SourceWeb,
 		SetId:           req.SetId,
-		HubPresets:      func() []discovery.ConfigPreset { return api.communityPresets(urls, req.SkipCommunity) },
+		HubPresets:      func() []discovery.ConfigPreset { return api.communityPresets(urls, req.SkipCommunity, true) },
+		KeepPreset:      keepPresetWithItsGroup,
 		DNSServer:       req.DNSServer,
 		Pins:            pins,
 		Note:            note,
@@ -391,13 +393,13 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary Add discovery preset as a new set
-// @Description A hub group stamp (hub.group_id, hub.group_version) in the set is dropped; the hub group endpoints write it.
+// @Description A hub group stamp (hub.group_id, hub.group_version, hub.group_vote, hub.group_voted_at) in the set is dropped; the hub group endpoints write it.
 // @Tags Discovery
 // @Accept json
 // @Produce json
 // @Param body body DiscoveredSetRequest true "The discovered set, and the dscp_path of the run it comes from. A bare set configuration is accepted too"
 // @Success 202 {object} map[string]interface{}
-// @Failure 409 {object} APIError "code: dscp_path_changed when the strategy was tested on another DSCP path than the new set's traffic would take, dscp_rules_pending while b4 is still applying its DSCP rules, fake_payload_missing when the capture the strategy's fake names can no longer be loaded"
+// @Failure 409 {object} APIError "code: dscp_path_changed when the strategy was tested on another DSCP path than the new set's traffic would take, dscp_rules_pending while b4 is still applying its DSCP rules, fake_payload_missing when the capture the strategy's fake names can no longer be loaded, hub_grouped when the strategy is a community set the hub offers only inside a set group"
 // @Security BearerAuth
 // @Router /discovery/add [post]
 func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
@@ -412,6 +414,10 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Errorf("Failed to decode config update: %v", err)
 		writeDecodeError(w, err)
+		return
+	}
+	if err := hubGroupedRefusal(&set); err != nil {
+		writeAPIError(w, err)
 		return
 	}
 	hosts, err := sanitizeExtraHosts(rawHosts)
@@ -526,7 +532,7 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} APIError
 // @Failure 404 {object} APIError
-// @Failure 409 {object} APIError "code: dscp_path_changed when the strategy was tested on another DSCP path than the set's traffic takes, dscp_rules_pending while b4 is still applying its DSCP rules, fake_payload_missing when the capture the strategy's fake names can no longer be loaded"
+// @Failure 409 {object} APIError "code: dscp_path_changed when the strategy was tested on another DSCP path than the set's traffic takes, dscp_rules_pending while b4 is still applying its DSCP rules, fake_payload_missing when the capture the strategy's fake names can no longer be loaded, hub_grouped when the strategy is a community set the hub offers only inside a set group"
 // @Security BearerAuth
 // @Router /discovery/replace [post]
 func (api *API) handleReplaceStrategy(w http.ResponseWriter, r *http.Request) {
@@ -548,6 +554,10 @@ func (api *API) handleReplaceStrategy(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.SetId == "" || (len(domains) == 0 && !req.KeepTargets) {
 		http.Error(w, "set_id and domains are required", http.StatusBadRequest)
+		return
+	}
+	if err := hubGroupedRefusal(&req.Set); err != nil {
+		writeAPIError(w, err)
 		return
 	}
 	if !validDSCPPath(req.DSCPPath) {
@@ -758,6 +768,20 @@ func fakePayloadRefusal(cfg *config.Config, tested *config.SetConfig) error {
 	msg := fakePayloadMissingText(file)
 	return &APIError{Status: http.StatusConflict, Code: "fake_payload_missing", Message: "Nothing written: " + msg,
 		Fields: []FieldError{{Path: "faking.payload_file", Code: "fake_payload_missing", Message: msg, Params: map[string]any{"file": file}}}}
+}
+
+func hubGroupedRefusal(tested *config.SetConfig) error {
+	cs, grouped := hubGroupedSet(tested)
+	if !grouped {
+		return nil
+	}
+	return groupedSetRefusal(cs)
+}
+
+func groupedSetRefusal(cs *hubwire.CatalogueSet) error {
+	msg := fmt.Sprintf("This strategy is community set %q, which the hub offers only inside a set group, together with the group's other sets. Apply the whole group from the Discovery results or the Community page.", cs.Title)
+	return &APIError{Status: http.StatusConflict, Code: "hub_grouped", Message: "Nothing written: " + msg,
+		Fields: []FieldError{{Path: "hub.id", Code: "hub_grouped", Message: msg, Params: map[string]any{"set": cs.Title}}}}
 }
 
 func validDSCPPath(path *config.DSCPPath) bool {

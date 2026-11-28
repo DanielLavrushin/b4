@@ -19,6 +19,7 @@ import {
 } from "@models/discovery";
 import { SetDomainMatch } from "@models/sets";
 import { setsApi } from "@api/sets";
+import { useHubSetGrouped } from "@hooks/useHub";
 import {
   SET_CURRENT_PRESET,
   appliedMarks,
@@ -108,6 +109,7 @@ export const SetVerdictCard = ({
     () => (verdict.set ? normalizeSet(verdict.set) : null),
     [verdict.set],
   );
+  const hubGrouped = useHubSetGrouped(verdict.set?.hub?.id ?? "");
   const checkUrls = useMemo(
     () => sanitizeProbeUrls(suiteCheckUrls(suite)),
     [suite],
@@ -208,6 +210,8 @@ export const SetVerdictCard = ({
     !!set &&
     !!strategy &&
     covered.length > 0 &&
+    !hubGrouped.grouped &&
+    !hubGrouped.pending &&
     !(
       verdict.status === "partial" &&
       (preset === SET_CURRENT_PRESET || plainFix)
@@ -240,9 +244,13 @@ export const SetVerdictCard = ({
       {t("discovery.verdict.stoppedCovered")}
     </Typography>
   ) : null;
-  const missingSet = !set ? (
+  const applyNote = !set ? (
     <Typography variant="caption" sx={{ ...muted, display: "block" }}>
       {t("discovery.verdict.missingSet")}
+    </Typography>
+  ) : hubGrouped.grouped ? (
+    <Typography variant="caption" sx={{ ...muted, display: "block" }}>
+      {t("discovery.results.hubGroupOnly")}
     </Typography>
   ) : null;
 
@@ -382,7 +390,7 @@ export const SetVerdictCard = ({
               })}
             </Typography>
           )}
-          {missingSet}
+          {applyNote}
           {stoppedNote}
         </Stack>
       );
@@ -487,7 +495,7 @@ export const SetVerdictCard = ({
               {t("discovery.verdict.partial.separate")}
             </Typography>
           )}
-          {missingSet}
+          {applyNote}
         </Stack>
       );
       break;

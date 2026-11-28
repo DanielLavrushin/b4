@@ -49,3 +49,11 @@ export async function copyText(text: string): Promise<boolean> {
   active?.focus?.();
   return ok;
 }
+
+export function compactJson(text: string): string {
+  try {
+    return JSON.stringify(JSON.parse(text));
+  } catch {
+    return text;
+  }
+}

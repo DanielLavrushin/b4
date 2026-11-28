@@ -21,6 +21,7 @@ type HubApplied struct {
 	Version  int    `json:"version"`
 	Vote     string `json:"vote,omitempty"`
 	VotedAt  string `json:"voted_at,omitempty"`
+	GroupID  string `json:"group_id,omitempty"`
 }
 
 type HubSet struct {
@@ -69,18 +70,21 @@ type HubGroupApplied struct {
 	Group   string   `json:"group,omitempty"`
 	Version int      `json:"version,omitempty"`
 	SetIDs  []string `json:"set_ids"`
+	Vote    string   `json:"vote,omitempty"`
+	VotedAt string   `json:"voted_at,omitempty"`
 }
 
 type HubGroup struct {
-	ID          string           `json:"id"`
-	Version     int              `json:"version"`
-	Title       string           `json:"title"`
-	Description string           `json:"description,omitempty"`
-	Author      string           `json:"author"`
-	CreatedAt   string           `json:"created_at"`
-	UpdatedAt   string           `json:"updated_at"`
-	Members     []HubGroupMember `json:"members"`
-	Applied     HubGroupApplied  `json:"applied"`
+	ID          string            `json:"id"`
+	Version     int               `json:"version"`
+	Title       string            `json:"title"`
+	Description string            `json:"description,omitempty"`
+	Author      string            `json:"author"`
+	CreatedAt   string            `json:"created_at"`
+	UpdatedAt   string            `json:"updated_at"`
+	Members     []HubGroupMember  `json:"members"`
+	Display     hubwire.Displayed `json:"display"`
+	Applied     HubGroupApplied   `json:"applied"`
 }
 
 type HubGroupsResponse struct {

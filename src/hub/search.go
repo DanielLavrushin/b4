@@ -32,6 +32,10 @@ func setActive(cs *hubwire.CatalogueSet) bool {
 	return cs.Status == "" || cs.Status == hubwire.SetStatusActive
 }
 
+func setListed(cs *hubwire.CatalogueSet) bool {
+	return setActive(cs) || cs.Status == hubwire.SetStatusGrouped
+}
+
 func stringList(v interface{}) []string {
 	items, ok := v.([]interface{})
 	if !ok {
@@ -146,6 +150,26 @@ func rankResults(results []Result) {
 }
 
 func (s *Service) Search(domain string, limit int) ([]Result, int) {
+	return s.search(domain, limit, false)
+}
+
+func (s *Service) SearchWithGrouped(domain string, limit int) ([]Result, int) {
+	return s.search(domain, limit, true)
+}
+
+func activeOrInGroup(groups []*hubwire.CatalogueGroup) func(*hubwire.CatalogueSet) bool {
+	members := map[string]bool{}
+	for _, g := range groups {
+		for _, m := range g.Members {
+			members[m.SetID] = true
+		}
+	}
+	return func(cs *hubwire.CatalogueSet) bool {
+		return setActive(cs) || cs.Status == hubwire.SetStatusGrouped && members[cs.ID]
+	}
+}
+
+func (s *Service) search(domain string, limit int, withGrouped bool) ([]Result, int) {
 	domain = sni.NormalizeDomain(domain)
 	baseName := ""
 	if domain != "" {
@@ -155,16 +179,20 @@ func (s *Service) Search(domain string, limit int) ([]Result, int) {
 	resolve := s.categoryMatcher()
 
 	s.mu.RLock()
-	cat := s.catalogue
+	cat, groups := s.catalogue, s.groups
 	s.mu.RUnlock()
 	if cat == nil {
 		return []Result{}, 0
+	}
+	keep := setActive
+	if withGrouped {
+		keep = activeOrInGroup(groups)
 	}
 
 	results := make([]Result, 0, len(cat.Sets))
 	for i := range cat.Sets {
 		cs := &cat.Sets[i]
-		if !setActive(cs) {
+		if !keep(cs) {
 			continue
 		}
 		var m *Match

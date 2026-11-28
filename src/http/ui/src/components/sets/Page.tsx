@@ -140,7 +140,6 @@ function SetEditorRoute({
       isNew={isNew}
       saving={saving}
       onSave={handleSave}
-      onRefresh={onRefresh}
       navigationBypassRef={allowNavigationRef}
     />
   );

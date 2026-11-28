@@ -1,12 +1,52 @@
 package hubwire
 
-import "github.com/daniellavrushin/b4/config"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"strings"
+
+	"github.com/daniellavrushin/b4/config"
+)
 
 const (
-	RecordGroup = "group"
+	RecordGroup     = "group"
+	RecordGroupVote = "group_vote"
 
 	MaxGroupMembers = 10
 )
+
+type GroupVoteBody struct {
+	GroupID     string            `json:"group_id"`
+	Version     int               `json:"version"`
+	Members     []GroupVoteMember `json:"members"`
+	Kind        string            `json:"kind"`
+	Domain      string            `json:"domain,omitempty"`
+	ASNHint     string            `json:"asn_hint,omitempty"`
+	CountryHint string            `json:"country_hint,omitempty"`
+	Engine      string            `json:"engine,omitempty"`
+	B4Version   string            `json:"b4_version,omitempty"`
+}
+
+type GroupVoteMember struct {
+	SetID   string `json:"set_id"`
+	Version int    `json:"version"`
+}
+
+type GroupFingerprintMember struct {
+	FP       string           `json:"fp"`
+	Escalate *GroupEscalation `json:"escalate"`
+}
+
+func GroupFingerprint(members []GroupFingerprintMember) string {
+	canon := make([]GroupFingerprintMember, len(members))
+	for i, m := range members {
+		canon[i] = GroupFingerprintMember{FP: strings.ToLower(m.FP), Escalate: m.Escalate}
+	}
+	raw, _ := json.Marshal(canon)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
 
 type GroupBody struct {
 	Title       string        `json:"title"`
@@ -57,6 +97,7 @@ type CatalogueGroup struct {
 	CreatedAt   string                 `json:"created_at"`
 	UpdatedAt   string                 `json:"updated_at"`
 	Members     []CatalogueGroupMember `json:"members"`
+	Scores      Scores                 `json:"scores"`
 }
 
 type CatalogueGroupMember struct {

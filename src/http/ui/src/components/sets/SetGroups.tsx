@@ -18,55 +18,16 @@ import { useTranslation } from "react-i18next";
 import {
   CategoryIcon,
   CloseIcon,
-  CopyIcon,
   DownloadIcon,
   DragIcon,
   EditIcon,
-  ImportExportIcon,
-  PublishIcon,
+  ShareIcon,
 } from "@b4.icons";
 import { B4Dialog, B4TextField } from "@b4.elements";
-import { useSnackbar } from "@context/SnackbarProvider";
-import { colors, fonts, radius, radiusPx } from "@design";
-import { B4SetConfig } from "@models/config";
-import {
-  MAX_SET_GROUP_CHARS,
-  normalizeSetGroup,
-  setGroupFileName,
-} from "@models/setGroups";
-import { copyText, exportSetGroupJson } from "@utils";
-
-export const GROUP_ROW_GAP = 44;
-const TRAY_TOP = -30;
-const TRAY_BOTTOM = -6;
-const TRAY_END = -8;
-const TRAY_JOIN = -12;
-const TRAY_STACK = -GROUP_ROW_GAP / 2;
-
-export const groupTraySx = (first: boolean, last: boolean) => ({
-  "&::before": {
-    content: '""',
-    position: "absolute",
-    zIndex: -1,
-    pointerEvents: "none",
-    top: { xs: first ? TRAY_TOP : TRAY_STACK, sm: TRAY_TOP },
-    bottom: { xs: last ? TRAY_BOTTOM : TRAY_STACK, sm: TRAY_BOTTOM },
-    left: { xs: TRAY_END, sm: first ? TRAY_END : TRAY_JOIN },
-    right: { xs: TRAY_END, sm: last ? TRAY_END : TRAY_JOIN },
-    bgcolor: colors.background.dark,
-    borderStyle: "solid",
-    borderColor: colors.border.default,
-    borderLeftColor: { xs: colors.secondary, sm: first ? colors.secondary : colors.border.default },
-    borderTopWidth: { xs: first ? 1 : 0, sm: 1 },
-    borderBottomWidth: { xs: last ? 1 : 0, sm: 1 },
-    borderLeftWidth: { xs: 3, sm: first ? 3 : 0 },
-    borderRightWidth: { xs: 1, sm: last ? 1 : 0 },
-    borderTopLeftRadius: first ? radius.md : 0,
-    borderTopRightRadius: { xs: first ? radius.md : 0, sm: last ? radius.md : 0 },
-    borderBottomLeftRadius: { xs: last ? radius.md : 0, sm: first ? radius.md : 0 },
-    borderBottomRightRadius: last ? radius.md : 0,
-  },
-});
+import { colors } from "@design";
+import { HubApplied, HubVoteKind } from "@models/hub";
+import { MAX_SET_GROUP_CHARS, normalizeSetGroup } from "@models/setGroups";
+import { VoteThumbs } from "./VoteThumbs";
 
 interface SetGroupHeaderProps {
   group: string;
@@ -77,7 +38,12 @@ interface SetGroupHeaderProps {
   onToggleEnabled: (enabled: boolean) => void;
   onRename: () => void;
   onExport: () => void;
-  onPublish?: () => void;
+  onShare?: () => void;
+  vote?: {
+    applied: Pick<HubApplied, "vote" | "voted_at">;
+    busy: boolean;
+    onVote: (kind: HubVoteKind) => void;
+  };
   onUngroup: () => void;
 }
 
@@ -90,7 +56,8 @@ export const SetGroupHeader = ({
   onToggleEnabled,
   onRename,
   onExport,
-  onPublish,
+  onShare,
+  vote,
   onUngroup,
 }: SetGroupHeaderProps) => {
   const { t } = useTranslation();
@@ -175,6 +142,25 @@ export const SetGroupHeader = ({
               sx={partly ? { "& .MuiSwitch-track": { opacity: 0.25 } } : null}
             />
           </Tooltip>
+          {vote && (
+            <VoteThumbs
+              applied={vote.applied}
+              busy={vote.busy}
+              onVote={vote.onVote}
+            />
+          )}
+          {onShare && !vote && (
+            <Tooltip title={t("sets.share.sectionTitle")}>
+              <IconButton
+                size="small"
+                aria-label={t("sets.share.sectionTitle")}
+                onClick={onShare}
+                sx={{ p: "2px" }}
+              >
+                <ShareIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
           <Tooltip title={t("sets.groups.actions")}>
             <IconButton
               size="small"
@@ -204,12 +190,12 @@ export const SetGroupHeader = ({
               </ListItemIcon>
               <ListItemText>{t("sets.groups.export")}</ListItemText>
             </MenuItem>
-            {onPublish && (
-              <MenuItem onClick={() => run(onPublish)}>
+            {onShare && (
+              <MenuItem onClick={() => run(onShare)}>
                 <ListItemIcon>
-                  <PublishIcon fontSize="small" />
+                  <ShareIcon fontSize="small" />
                 </ListItemIcon>
-                <ListItemText>{t("sets.groups.publish.menu")}</ListItemText>
+                <ListItemText>{t("sets.share.menu")}</ListItemText>
               </MenuItem>
             )}
             <MenuItem onClick={() => run(onUngroup)}>
@@ -307,84 +293,3 @@ export const SetGroupNameDialog = ({
   );
 };
 
-const previewSx = {
-  m: 0,
-  p: "12px 13px",
-  maxHeight: 320,
-  overflow: "auto",
-  border: `1px solid ${colors.border.light}`,
-  borderRadius: `${radiusPx.sm}px`,
-  bgcolor: colors.background.default,
-  fontFamily: fonts.mono,
-  fontSize: "0.72rem",
-  lineHeight: 1.7,
-  color: colors.text.secondary,
-};
-
-interface SetGroupExportDialogProps {
-  group: string | null;
-  sets: B4SetConfig[];
-  onClose: () => void;
-}
-
-export const SetGroupExportDialog = ({
-  group,
-  sets,
-  onClose,
-}: SetGroupExportDialogProps) => {
-  const { t } = useTranslation();
-  const { showSuccess, showError } = useSnackbar();
-  const json = group === null ? "" : exportSetGroupJson(group, sets, 2);
-
-  const copy = async () => {
-    const ok = await copyText(json);
-    if (ok) showSuccess(t("sets.importExport.copiedToClipboard"));
-    else showError(t("sets.importExport.copyFailed"));
-  };
-
-  const download = () => {
-    const url = URL.createObjectURL(
-      new Blob([json], { type: "application/json" }),
-    );
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = setGroupFileName(group ?? "");
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  return (
-    <B4Dialog
-      open={group !== null}
-      title={t("sets.groups.exportTitle")}
-      subtitle={group ?? undefined}
-      icon={<ImportExportIcon />}
-      onClose={onClose}
-      maxWidth="md"
-      fullWidth
-      actions={
-        <>
-          <Button onClick={onClose}>{t("core.cancel")}</Button>
-          <Box sx={{ flex: 1 }} />
-          <Button startIcon={<CopyIcon />} onClick={() => void copy()}>
-            {t("sets.groups.copy")}
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<DownloadIcon />}
-            onClick={download}
-          >
-            {t("sets.groups.download")}
-          </Button>
-        </>
-      }
-    >
-      <Typography sx={{ mt: 2, mb: 1.5 }}>
-        {t("sets.groups.exportIntro", { count: sets.length })}
-      </Typography>
-      <Box component="pre" sx={previewSx}>
-        {json}
-      </Box>
-    </B4Dialog>
-  );
-};

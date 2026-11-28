@@ -414,6 +414,7 @@ type DiscoverySuite struct {
 	plainSets      map[string]*config.SetConfig
 	hubPresets     []ConfigPreset
 	hubPresetsFn   func() []ConfigPreset
+	keepPreset     func(ConfigPreset) bool
 
 	setStrategy     *config.SetConfig
 	stopWhenCovered bool

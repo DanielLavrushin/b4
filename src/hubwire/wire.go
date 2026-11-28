@@ -29,6 +29,7 @@ const (
 	SetStatusActive   = "active"
 	SetStatusHidden   = "hidden"
 	SetStatusRejected = "rejected"
+	SetStatusGrouped  = "grouped"
 
 	signingDomain = "b4hub/1\n"
 
@@ -200,7 +201,7 @@ func recordDigest(r *Record) ([]byte, error) {
 
 func SignRecord(id *Identity, kind string, body interface{}, now time.Time) (*Record, error) {
 	switch kind {
-	case RecordShare, RecordVote, RecordReport, RecordMirror, RecordGroup:
+	case RecordShare, RecordVote, RecordReport, RecordMirror, RecordGroup, RecordGroupVote:
 	default:
 		return nil, ErrUnknownKind
 	}
@@ -233,7 +234,7 @@ func VerifyRecord(r *Record) (ed25519.PublicKey, error) {
 		return nil, ErrWireVersion
 	}
 	switch r.Kind {
-	case RecordShare, RecordVote, RecordReport, RecordMirror, RecordGroup:
+	case RecordShare, RecordVote, RecordReport, RecordMirror, RecordGroup, RecordGroupVote:
 	default:
 		return nil, ErrUnknownKind
 	}

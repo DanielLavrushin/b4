@@ -59,6 +59,7 @@ type StartSuiteOptions struct {
 	DSCP            *config.DSCPProbe
 	StopWhenCovered bool
 	HubPresets      func() []ConfigPreset
+	KeepPreset      func(ConfigPreset) bool
 	DNSServer       string
 	Pins            map[string][]string
 	Note            string
@@ -250,6 +251,7 @@ func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteO
 		runtimeState.FlowMark,
 	)
 	suite.hubPresetsFn = opts.HubPresets
+	suite.keepPreset = opts.KeepPreset
 	suite.Source = opts.Source
 	if suite.Source == "" {
 		suite.Source = SourceWeb

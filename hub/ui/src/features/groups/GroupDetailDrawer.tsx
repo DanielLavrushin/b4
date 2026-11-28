@@ -8,6 +8,7 @@ import { useTargetHistory } from "@/features/audit/api";
 import { HistoryList } from "@/features/audit/HistoryList";
 import type { Moderation } from "@/features/moderation/useModeration";
 import { VersionPill } from "@/features/sets/card/SetCard";
+import { ScoreSummary } from "@/features/sets/components/ScoreSummary";
 import type { GroupDetailView } from "@/models/api";
 import { KeyRef } from "@/shared/components/KeyRef";
 import { QueryView } from "@/shared/components/QueryView";
@@ -41,10 +42,13 @@ function Detail({ data, focusVersion, moderation }: Readonly<{ data: GroupDetail
   return (
     <>
       {data.author_banned && <Alert severity="error">{t("groups.authorBanned")}</Alert>}
-      <StatusDot
-        tone={data.published_version ? "success" : "neutral"}
-        label={data.published_version ? t("groups.listedBanner", { version: data.published_version }) : t("groups.notListedBanner")}
-      />
+      <Box sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
+        <StatusDot
+          tone={data.published_version ? "success" : "neutral"}
+          label={data.published_version ? t("groups.listedBanner", { version: data.published_version }) : t("groups.notListedBanner")}
+        />
+        {data.published_version ? <ScoreSummary published={data.published} live={data.live} evidence={data.evidence} group /> : null}
+      </Box>
       <Typography variant="sectionHeader">{t("detail.versions")}</Typography>
       {[...data.versions].reverse().map((v) => (
         <Box

@@ -547,6 +547,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		}
 	}))
 	wd.SetEngine(watchdog.NewEngineView(pool, &cfgPtr))
+	wd.SetPresetFilter(handler.KeepUngroupedPreset)
 	if !engineDown.Load() {
 		wd.Start()
 		handler.SetWatchdog(wd)

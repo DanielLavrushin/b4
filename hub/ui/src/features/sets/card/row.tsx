@@ -1,4 +1,5 @@
 import { Tooltip, Typography } from "@mui/material";
+import GroupIcon from "@mui/icons-material/Category";
 import InfoIcon from "@mui/icons-material/Info";
 import KeyIcon from "@mui/icons-material/Key";
 import WarningIcon from "@mui/icons-material/Warning";
@@ -6,6 +7,7 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { colors, spacing } from "@design";
 import type { AttentionCode, SetRowView, SetTabName } from "@/models/api";
+import { groupPath } from "@/features/groups/GroupDrawerHost";
 import { useKnownKey } from "@/features/keys/KnownKeys";
 import { ScoreSummary } from "@/features/sets/components/ScoreSummary";
 import { setPath } from "@/features/sets/SetDrawerHost";
@@ -39,6 +41,19 @@ const attentionBadge = (t: TFunction, codes: readonly AttentionCode[]): CardBadg
     tooltip: tipLines(sorted.map((code) => `${label(code)}: ${t(`attention.${code}.hint`, { defaultValue: "" })}`)),
   };
 };
+
+const groupBadges = (t: TFunction, row: SetRowView, openGroup: (path: string) => void): CardBadge[] =>
+  (row.groups ?? []).slice(1).map((g) => ({
+    key: `group:${g.group_id}`,
+    label: t("card.group", { title: g.title }),
+    icon: <GroupIcon />,
+    tooltip: tipLines([
+      t("card.groupTip", { title: g.title, version: g.version, status: t(`status.set.${g.status}`, { defaultValue: g.status }) }),
+      t(g.brought ? "detail.groupBrought" : "detail.groupLinked", { version: g.set_version }),
+      t("card.groupOpen"),
+    ]),
+    onClick: () => openGroup(groupPath(g.group_id, g.version)),
+  }));
 
 const reportsChip = (t: TFunction, row: SetRowView, awaiting: boolean, onOpen: () => void): CardBadge | null => {
   const counts = { open: row.open_reports, total: row.reports, independent: row.independent_reports };
@@ -105,6 +120,7 @@ export function RowCard({ row, tab, selection, panel, onPanelChange }: Readonly<
   const hiddenFrom: CardBadge | null = row.hidden_from === "pending" ? { key: "hidden-from", label: t("detail.hiddenFromPending") } : null;
   const withheldTab = tab === "withheld";
   const badges = [
+    ...groupBadges(t, row, overlay.open),
     ...flagBadges(t, row.flags),
     row.author_banned && !(withheldTab && row.withheld === "author_banned") ? bannedBadge(t) : null,
     row.withheld === "set_withdrawn" && !withheldTab ? withdrawnBadge(t) : null,

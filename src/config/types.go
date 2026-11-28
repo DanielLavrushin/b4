@@ -794,6 +794,8 @@ type HubOrigin struct {
 	VotedAt      string `json:"voted_at,omitempty"`
 	GroupID      string `json:"group_id,omitempty"`
 	GroupVersion int    `json:"group_version,omitempty"`
+	GroupVote    string `json:"group_vote,omitempty"`
+	GroupVotedAt string `json:"group_voted_at,omitempty"`
 }
 
 type EscalateConfig struct {

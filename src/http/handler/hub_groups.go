@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/hub"
 	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/sni"
 )
 
 const (
@@ -131,6 +133,9 @@ func hubGroupAppliedOf(cfg *config.Config, g *hubwire.CatalogueGroup, members []
 	modified := false
 	for _, set := range found.sets {
 		applied.SetIDs = append(applied.SetIDs, set.Id)
+		if applied.Vote == "" && set.Hub.GroupVote != "" && set.Hub.GroupVersion == applied.Version {
+			applied.Vote, applied.VotedAt = set.Hub.GroupVote, set.Hub.GroupVotedAt
+		}
 		if _, seen := byHubID[set.Hub.ID]; seen {
 			continue
 		}
@@ -144,11 +149,16 @@ func hubGroupAppliedOf(cfg *config.Config, g *hubwire.CatalogueGroup, members []
 		listed := map[string]bool{}
 		for _, m := range members {
 			listed[m.Set.ID] = true
-			switch local := byHubID[m.Set.ID]; {
-			case local == nil:
+			local := byHubID[m.Set.ID]
+			if local == nil {
 				modified = true
-			case local.Hub.Version < m.Set.Version:
-				update = true
+				continue
+			}
+			update = update || local.Hub.Version < m.Set.Version
+			if esc := m.Escalate; esc == nil {
+				modified = modified || slices.Contains(applied.SetIDs, local.Escalate.To)
+			} else if target := byHubID[members[esc.To].Set.ID]; target == nil || local.Escalate.To != target.Id || *hubwire.EscalationTo(local.Escalate, esc.To) != *esc {
+				modified = true
 			}
 		}
 		for hubID := range byHubID {
@@ -169,6 +179,7 @@ func hubGroupAppliedOf(cfg *config.Config, g *hubwire.CatalogueGroup, members []
 }
 
 func hubGroupView(svc *hub.Service, cfg *config.Config, g *hubwire.CatalogueGroup, applied map[string]*HubApplied) (HubGroup, bool) {
+	network := svc.Network()
 	view := HubGroup{
 		ID:          g.ID,
 		Version:     g.Version,
@@ -178,6 +189,7 @@ func hubGroupView(svc *hub.Service, cfg *config.Config, g *hubwire.CatalogueGrou
 		CreatedAt:   g.CreatedAt,
 		UpdatedAt:   g.UpdatedAt,
 		Members:     make([]HubGroupMember, 0, len(g.Members)),
+		Display:     hubwire.PickScore(g.Scores, network.ASN, network.CC),
 	}
 	found := hubGroupCopyOf(cfg.Sets, g.ID)
 	taken, _ := hubGroupTakenSets(cfg.Sets, g, found, len(found.sets) > 0)
@@ -263,7 +275,7 @@ func (api *API) handleHubGroups(w http.ResponseWriter, r *http.Request) {
 		groups = svc.GroupsOf(setID)
 	}
 	cfg := api.getCfg()
-	sendResponse(w, HubGroupsResponse{Groups: hubGroupViews(svc, cfg, groups, hubAppliedIndex(cfg))})
+	sendResponse(w, HubGroupsResponse{Groups: hubGroupViews(svc, cfg, groups, hubAppliedIndex(svc, cfg))})
 }
 
 // @Summary Get one hub set group
@@ -286,7 +298,7 @@ func (api *API) handleHubGroupByID(w http.ResponseWriter, r *http.Request) {
 	g, found := svc.Group(r.PathValue("id"))
 	view, resolved := HubGroup{}, false
 	if found {
-		view, resolved = hubGroupView(svc, cfg, g, hubAppliedIndex(cfg))
+		view, resolved = hubGroupView(svc, cfg, g, hubAppliedIndex(svc, cfg))
 	}
 	if !resolved {
 		writeAPIError(w, ErrNotFound("Hub group not found"))
@@ -306,12 +318,17 @@ func hubGroupShareResult(m hubwire.GroupMemberResult) string {
 	}
 }
 
+func hubRefusedKind(err error) bool {
+	var he *hub.HubError
+	return errors.As(err, &he) && he.Status == http.StatusBadRequest && he.Code == "bad_record" && he.Message == hubwire.ErrUnknownKind.Error()
+}
+
 func writeHubGroupShareError(w http.ResponseWriter, err error, members []*config.SetConfig) {
 	var he *hub.HubError
 	switch {
 	case errors.Is(err, hub.ErrRecordTooBig):
 		writeAPIError(w, &APIError{Status: http.StatusBadRequest, Code: "group_too_large", Message: "The group is too large to publish at once: publish fewer sets, or sets without custom payloads"})
-	case errors.As(err, &he) && he.Status == http.StatusBadRequest && he.Code == "bad_record" && he.Message == hubwire.ErrUnknownKind.Error():
+	case hubRefusedKind(err):
 		writeAPIError(w, &APIError{Status: http.StatusBadRequest, Code: "hub_no_groups", Message: "The hub does not accept set groups yet"})
 	case errors.As(err, &he) && he.Member != nil && *he.Member >= 0 && *he.Member < len(members):
 		set := members[*he.Member]
@@ -443,6 +460,111 @@ func (api *API) handleHubGroupShare(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
+// @Summary Vote on an applied hub set group
+// @Description Sends a signed works or broken vote for the whole hub group. The local copy must run the listed version of the group with every set and its escalation link unmodified since it was applied; the vote names the hub set and version of each member as applied on this device, in the group's order. Votes on a group are counted for the group only, never for its sets. Once sent or queued, every set of the local copy remembers the vote in hub.group_vote.
+// @Tags Hub
+// @Accept json
+// @Produce json
+// @Param id path string true "Hub group id"
+// @Param body body HubVoteRequest true "Vote"
+// @Success 202 {object} HubVoteResponse
+// @Failure 400 {object} APIError "bad_request or hub_no_group_votes"
+// @Failure 404 {object} APIError
+// @Failure 409 {object} APIError "not_applied, modified or other_version"
+// @Security BearerAuth
+// @Router /hub/groups/{id}/vote [post]
+func (api *API) handleHubGroupVote(w http.ResponseWriter, r *http.Request) {
+	if !api.hubRequest(w, r, hubSmallBodyLimit) {
+		return
+	}
+	svc, ok := api.hubService(w)
+	if !ok {
+		return
+	}
+	var req HubVoteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, ErrInvalidJSON())
+		return
+	}
+	kind := strings.ToLower(strings.TrimSpace(req.Kind))
+	if kind != hubwire.VoteWorks && kind != hubwire.VoteBroken {
+		writeAPIError(w, ErrBadRequest("kind must be works or broken"))
+		return
+	}
+	cfg := api.getCfg()
+	g, found := svc.Group(r.PathValue("id"))
+	view, resolved := HubGroup{}, false
+	if found {
+		view, resolved = hubGroupView(svc, cfg, g, hubAppliedIndex(svc, cfg))
+	}
+	if !resolved {
+		writeAPIError(w, ErrNotFound("Hub group not found"))
+		return
+	}
+	modified := &APIError{Status: http.StatusConflict, Code: "modified", Message: "A set of the local copy of the group was edited, so a vote would not describe the hub group"}
+	switch applied := view.Applied; {
+	case applied.State == HubGroupStateNone:
+		writeAPIError(w, &APIError{Status: http.StatusConflict, Code: "not_applied", Message: "No local copy of this hub group was found"})
+		return
+	case applied.State == HubGroupStateModified:
+		writeAPIError(w, modified)
+		return
+	case applied.State != HubGroupStateApplied || applied.Version != g.Version:
+		writeAPIError(w, &APIError{Status: http.StatusConflict, Code: "other_version", Message: "The local copy runs another version of the group than the listed one"})
+		return
+	}
+	copied := hubGroupCopyOf(cfg.Sets, g.ID).sets
+	network := svc.Network()
+	body := hubwire.GroupVoteBody{
+		GroupID:     g.ID,
+		Version:     g.Version,
+		Members:     make([]hubwire.GroupVoteMember, 0, len(g.Members)),
+		Kind:        kind,
+		Domain:      sni.NormalizeDomain(req.Domain),
+		ASNHint:     network.ASN,
+		CountryHint: network.CC,
+		Engine:      cfg.Queue.Mode,
+		B4Version:   Version,
+	}
+	for _, m := range g.Members {
+		k := slices.IndexFunc(copied, func(set *config.SetConfig) bool { return set.Hub.ID == m.SetID })
+		if k < 0 {
+			writeAPIError(w, modified)
+			return
+		}
+		body.Members = append(body.Members, hubwire.GroupVoteMember{SetID: m.SetID, Version: copied[k].Hub.Version})
+	}
+	rec, err := svc.Sign(hubwire.RecordGroupVote, body)
+	if err != nil {
+		writeAPIError(w, err)
+		return
+	}
+	sent, queued, _, err := svc.SendOrQueue(r.Context(), rec)
+	if err != nil {
+		if hubRefusedKind(err) {
+			writeAPIError(w, &APIError{Status: http.StatusBadRequest, Code: "hub_no_group_votes", Message: "The hub does not accept votes on set groups yet"})
+			return
+		}
+		writeHubError(w, err)
+		return
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, _, err := api.editConfig(func(next *config.Config) error {
+		for _, set := range hubGroupCopyOf(next.Sets, g.ID).sets {
+			if set.Hub.GroupVersion == g.Version && slices.Contains(body.Members, hubwire.GroupVoteMember{SetID: set.Hub.ID, Version: set.Hub.Version}) {
+				set.Hub.GroupVote, set.Hub.GroupVotedAt = kind, now
+			}
+		}
+		return nil
+	}); err != nil {
+		log.Errorf("Hub: %s vote for group %s could not be remembered: %v", kind, g.ID, err)
+	}
+	log.Infof("Hub: %s vote for group %s v%d %s", kind, g.ID, g.Version, map[bool]string{true: "sent", false: "queued"}[sent])
+	setJsonHeader(w)
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(HubVoteResponse{Queued: queued, Sent: sent})
+}
+
 type hubGroupPlacement struct {
 	label     string
 	block     []*config.SetConfig
@@ -489,8 +611,7 @@ func (api *API) placeHubGroup(next *config.Config, g *hubwire.CatalogueGroup, pr
 		}
 		for _, set := range dropped {
 			set.Group = ""
-			set.Hub.GroupID = ""
-			set.Hub.GroupVersion = 0
+			carryHubGroupOrigin(set.Hub, &config.HubOrigin{})
 			place.ungrouped = append(place.ungrouped, set.Id)
 		}
 		inCopy := func(set *config.SetConfig) bool {
@@ -518,8 +639,9 @@ func (api *API) placeHubGroup(next *config.Config, g *hubwire.CatalogueGroup, pr
 	}
 	for i, set := range place.block {
 		set.Group = place.label
-		set.Hub.GroupID = g.ID
-		set.Hub.GroupVersion = g.Version
+		if set.Hub.GroupID != g.ID || set.Hub.GroupVersion != g.Version {
+			carryHubGroupOrigin(set.Hub, &config.HubOrigin{GroupID: g.ID, GroupVersion: g.Version})
+		}
 		switch esc := g.Members[i].Escalate; {
 		case esc != nil:
 			set.Escalate = esc.Config(place.block[esc.To].Id)

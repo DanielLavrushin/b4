@@ -8,10 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/discovery"
 	"github.com/daniellavrushin/b4/hub/hubtest"
 	"github.com/daniellavrushin/b4/hubwire"
 )
@@ -650,7 +652,7 @@ func TestHubSetsFoldsTheGroupAuthorsMembers(t *testing.T) {
 		t.Errorf("the limit applies after the fold: %d sets, total %d", len(list.Sets), list.Total)
 	}
 
-	presets := env.api.communityPresets([]string{"two.example"}, false)
+	presets := env.api.communityPresets([]string{"two.example"}, false, true)
 	if len(presets) != 1 || presets[0].Config.Hub == nil || presets[0].Config.Hub.ID != "s2" {
 		t.Errorf("Discovery still tests a member the Community view folds, got %+v", presets)
 	}
@@ -671,15 +673,116 @@ func TestHubSetsFoldsTheGroupAuthorsMembers(t *testing.T) {
 	expectCode(t, getJSON(t, env.mux, "/api/hub/groups/missing"), http.StatusNotFound, "not_found")
 }
 
+func publishGroupedMember(t *testing.T, env *hubEnv) {
+	t.Helper()
+	grouped := hubCatalogueMember(t, "brought", 1, "alice", "one.example")
+	grouped.Status = hubwire.SetStatusGrouped
+	alone := hubCatalogueMemberWith(t, "alone", 1, "bob", func(set *config.SetConfig) { set.Faking.TTL = 9 }, "one.example")
+	group := hubwire.CatalogueGroup{ID: "g", Version: 1, Title: "pair", Author: "alice", Members: []hubwire.CatalogueGroupMember{{SetID: "brought"}, {SetID: "alone"}}}
+	env.publishCatalogue(t, 1, []hubwire.CatalogueSet{grouped, alone}, []hubwire.CatalogueGroup{group})
+}
+
+func TestAGroupedMemberIsTestedOnlyByInteractiveDiscovery(t *testing.T) {
+	env := newHubEnv(t)
+	publishGroupedMember(t, env)
+
+	var list HubSetsResponse
+	decodeInto(t, getJSON(t, env.mux, "/api/hub/sets"), &list)
+	if len(list.Sets) != 1 || list.Sets[0].ID != "alone" || list.Total != 1 {
+		t.Errorf("a grouped set gets no card of its own: %+v", list.Sets)
+	}
+	if len(list.Groups) != 1 || list.Groups[0].Members[0].Set.Status != hubwire.SetStatusGrouped {
+		t.Errorf("the group lists its grouped member with that status: %+v", list.Groups)
+	}
+
+	ids := func(presets []discovery.ConfigPreset) []string {
+		out := []string{}
+		for _, p := range presets {
+			out = append(out, p.Config.Hub.ID)
+		}
+		slices.Sort(out)
+		return out
+	}
+	if got := ids(env.api.communityPresets([]string{"one.example"}, false, true)); !slices.Equal(got, []string{"alone", "brought"}) {
+		t.Errorf("interactive Discovery tests the grouped member too, got %v", got)
+	}
+	if got := ids(env.api.communityPresets([]string{"one.example"}, false, false)); !slices.Equal(got, []string{"alone"}) {
+		t.Errorf("MCP Discovery cannot apply a group, so it must not test a grouped member, got %v", got)
+	}
+
+	rec := postJSON(t, env.mux, "/api/hub/groups/g/apply", map[string]interface{}{})
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("the group must still apply with its grouped member, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	applied := []string{}
+	for _, set := range env.api.getCfg().Sets {
+		if set.Hub != nil && set.Hub.GroupID == "g" {
+			applied = append(applied, set.Hub.ID)
+		}
+	}
+	if slices.Sort(applied); !slices.Equal(applied, []string{"alone", "brought"}) {
+		t.Errorf("both members must be applied with the group, got %v", applied)
+	}
+}
+
+func TestMCPDiscoveryNeverAppliesAGroupedMemberAlone(t *testing.T) {
+	env := newHubEnv(t)
+	publishGroupedMember(t, env)
+
+	cfg := probeCfg(t)
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	news := config.NewSetConfig()
+	news.Id, news.Name, news.Enabled = "news", "news", true
+	news.Targets.SNIDomains = []string{"one.example"}
+	cfg.Sets = append(cfg.Sets, &news)
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+	t.Cleanup(func() { mcpRememberSuite("") })
+
+	member := hubStrategySet("brought", "one.example")
+	member.Faking.TTL = 3
+	member.Hub = &config.HubOrigin{ID: "brought", Version: 1}
+	results := map[string]*discovery.DomainDiscoveryResult{
+		"one.example": {Domain: "one.example", BestPreset: "community-brought-v1", BestSuccess: true, Confirmed: 3, Results: map[string]*discovery.DomainPresetResult{
+			"community-brought-v1": {PresetName: "community-brought-v1", Status: discovery.CheckStatusComplete, Set: &member},
+		}},
+	}
+	groups := []discovery.StrategyGroup{{WinnerPreset: "community-brought-v1", Domains: []string{"one.example"}, Set: &member}}
+	discovery.RegisterSuite(&discovery.CheckSuite{Id: "web-run", Status: discovery.CheckStatusComplete, DomainDiscoveryResults: results, StrategyGroups: groups})
+	discovery.SaveToHistory(&discovery.CheckSuite{Id: "web-run-saved", Status: discovery.CheckStatusComplete, EndTime: time.Now(), DomainDiscoveryResults: results, StrategyGroups: groups}, cfg.ConfigPath)
+	discovery.RegisterSuite(&discovery.CheckSuite{
+		Id: "web-set-run", Status: discovery.CheckStatusComplete, SetId: "news",
+		SetVerdict: &discovery.SetVerdict{Status: discovery.SetVerdictCovered, WinnerPreset: "community-brought-v1", Covered: []string{"one.example"}, Set: &member},
+	})
+
+	before := api.getCfg().Clone()
+	for _, args := range []map[string]any{
+		{"action": "apply", "domain": "one.example", "id": "web-run"},
+		{"action": "apply", "domain": "one.example", "id": "web-run-saved"},
+		{"action": "apply", "set": "news", "id": "web-set-run"},
+	} {
+		res := callDiscovery(t, session, ctx, args)
+		if !res.IsError || !strings.Contains(mcpErrorText(res), "only inside a set group") {
+			t.Errorf("%v: a grouped member must not be applied alone, got %q", args, mcpErrorText(res))
+		}
+	}
+	after := api.getCfg()
+	if len(after.Sets) != len(before.Sets) || after.GetSetById("news").Faking.TTL != before.GetSetById("news").Faking.TTL {
+		t.Errorf("nothing may be written: %d sets from %d", len(after.Sets), len(before.Sets))
+	}
+}
+
 func TestHubSingleSetWritesKeepTheGroupStamp(t *testing.T) {
 	env := newHubEnv(t)
 	s1 := hubCatalogueMember(t, "s1", 2, "alice", "a.example")
 	env.publishCatalogue(t, 1, []hubwire.CatalogueSet{s1}, nil)
 	local := hubGroupStamp(hubGroupLocalSet("local", "Local", "video", "a.example"), "s1", 1, "g-video", 4)
+	local.Hub.GroupVote, local.Hub.GroupVotedAt = hubwire.VoteWorks, "2026-11-20T10:00:00Z"
 	env.update(func(cfg *config.Config) { cfg.Sets = []*config.SetConfig{local} })
 
 	hubApplyOK(t, env, "s1", map[string]interface{}{"replace": "local"})
-	if set := env.localSet("local"); set.Hub.Version != 2 || set.Hub.GroupID != "g-video" || set.Hub.GroupVersion != 4 || set.Group != "video" {
+	if set := env.localSet("local"); set.Hub.Version != 2 || set.Hub.GroupID != "g-video" || set.Hub.GroupVersion != 4 || set.Hub.GroupVote != hubwire.VoteWorks || set.Hub.GroupVotedAt != "2026-11-20T10:00:00Z" || set.Group != "video" {
 		t.Errorf("updating one member keeps it in its group copy, got %q %+v", set.Group, set.Hub)
 	}
 
@@ -690,7 +793,7 @@ func TestHubSingleSetWritesKeepTheGroupStamp(t *testing.T) {
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("expected 202, got %d (%s)", rec.Code, rec.Body.String())
 	}
-	if set := env.localSet("local"); set.Hub.Version != 3 || set.Hub.GroupID != "g-video" || set.Hub.GroupVersion != 4 {
+	if set := env.localSet("local"); set.Hub.Version != 3 || set.Hub.GroupID != "g-video" || set.Hub.GroupVersion != 4 || set.Hub.GroupVote != hubwire.VoteWorks {
 		t.Errorf("sharing one member as a new version of its hub set keeps its group stamp, got %+v", set.Hub)
 	}
 }
@@ -985,6 +1088,7 @@ func TestHubGroupRepublishKeepsTheVoteOfAnUnchangedMember(t *testing.T) {
 	env.update(func(cfg *config.Config) {
 		for _, set := range cfg.Sets {
 			set.Hub.Vote, set.Hub.VotedAt = hubwire.VoteWorks, "2026-11-20T10:00:00Z"
+			set.Hub.GroupVote, set.Hub.GroupVotedAt = hubwire.VoteBroken, "2026-11-21T10:00:00Z"
 		}
 		cfg.Sets[0].Faking.TTL = 3
 	})
@@ -998,5 +1102,10 @@ func TestHubGroupRepublishKeepsTheVoteOfAnUnchangedMember(t *testing.T) {
 	}
 	if set := env.localSet("a"); set.Hub.Vote != "" || set.Hub.VotedAt != "" || set.Hub.Version != 2 {
 		t.Errorf("a member published as a new version drops the vote of the old one, got %+v", set.Hub)
+	}
+	for _, id := range []string{"a", "b"} {
+		if set := env.localSet(id); set.Hub.GroupVote != "" || set.Hub.GroupVotedAt != "" {
+			t.Errorf("a group published as a new version drops the vote on the old one, got %s %+v", id, set.Hub)
+		}
 	}
 }

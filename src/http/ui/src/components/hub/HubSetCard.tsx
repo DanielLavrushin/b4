@@ -23,7 +23,12 @@ import {
   ThumbUpOutlinedIcon,
 } from "@b4.icons";
 import { colors, spacing, typography } from "@design";
-import { HubSet, HubVoteKind, projectionToSet } from "@models/hub";
+import {
+  HubApplied,
+  HubSet,
+  HubVoteKind,
+  projectionToSet,
+} from "@models/hub";
 import { formatTimeAgo } from "@utils";
 import { StrategySummary } from "@components/discovery/StrategySummary";
 import {
@@ -299,10 +304,13 @@ export const HubSetCard = ({
           <>
             <Box sx={{ flex: 1 }} />
             <HubVoteActions
-              set={set}
+              applied={applied}
               busy={busy}
-              onVote={onVote}
-              onTest={onTest}
+              blocked={modified ? t("hub.card.voteModified") : undefined}
+              onVote={
+                applied.group_id ? undefined : (kind) => onVote(set, kind)
+              }
+              onTest={() => onTest(set)}
             />
           </>
         )}
@@ -312,79 +320,71 @@ export const HubSetCard = ({
 };
 
 interface HubVoteActionsProps {
-  set: HubSet;
+  applied: Pick<HubApplied, "vote" | "voted_at"> | null | undefined;
   busy: boolean;
-  onVote: (set: HubSet, kind: HubVoteKind) => void;
-  onTest?: (set: HubSet) => void;
+  blocked?: string;
+  onVote?: (kind: HubVoteKind) => void;
+  onTest?: () => void;
 }
 
 export const HubVoteActions = ({
-  set,
+  applied,
   busy,
+  blocked,
   onVote,
   onTest,
 }: HubVoteActionsProps) => {
   const { t } = useTranslation();
-  const applied = set.applied;
-  const modified = applied?.hub_state === "modified";
   return (
     <>
-      <Tooltip
-        title={
-          modified
-            ? t("hub.card.voteModified")
-            : voteTooltip(t, applied, "works")
-        }
-      >
-        <span>
-          <Button
-            size="small"
-            startIcon={
-              applied?.vote === "works" ? (
-                <ThumbUpIcon />
-              ) : (
-                <ThumbUpOutlinedIcon />
-              )
-            }
-            disabled={busy || modified}
-            onClick={() => onVote(set, "works")}
-            sx={{ color: colors.state.success }}
-          >
-            {t("hub.card.works")}
-          </Button>
-        </span>
-      </Tooltip>
-      <Tooltip
-        title={
-          modified
-            ? t("hub.card.voteModified")
-            : voteTooltip(t, applied, "broken")
-        }
-      >
-        <span>
-          <Button
-            size="small"
-            startIcon={
-              applied?.vote === "broken" ? (
-                <ThumbDownIcon />
-              ) : (
-                <ThumbDownOutlinedIcon />
-              )
-            }
-            disabled={busy || modified}
-            onClick={() => onVote(set, "broken")}
-            sx={{ color: colors.state.error }}
-          >
-            {t("hub.card.broken")}
-          </Button>
-        </span>
-      </Tooltip>
+      {onVote && (
+        <>
+          <Tooltip title={blocked ?? voteTooltip(t, applied, "works")}>
+            <span>
+              <Button
+                size="small"
+                startIcon={
+                  applied?.vote === "works" ? (
+                    <ThumbUpIcon />
+                  ) : (
+                    <ThumbUpOutlinedIcon />
+                  )
+                }
+                disabled={busy || Boolean(blocked)}
+                onClick={() => onVote("works")}
+                sx={{ color: colors.state.success }}
+              >
+                {t("hub.card.works")}
+              </Button>
+            </span>
+          </Tooltip>
+          <Tooltip title={blocked ?? voteTooltip(t, applied, "broken")}>
+            <span>
+              <Button
+                size="small"
+                startIcon={
+                  applied?.vote === "broken" ? (
+                    <ThumbDownIcon />
+                  ) : (
+                    <ThumbDownOutlinedIcon />
+                  )
+                }
+                disabled={busy || Boolean(blocked)}
+                onClick={() => onVote("broken")}
+                sx={{ color: colors.state.error }}
+              >
+                {t("hub.card.broken")}
+              </Button>
+            </span>
+          </Tooltip>
+        </>
+      )}
       {onTest && (
         <Button
           size="small"
           startIcon={<TestIcon />}
           disabled={busy}
-          onClick={() => onTest(set)}
+          onClick={onTest}
         >
           {t("hub.card.test")}
         </Button>

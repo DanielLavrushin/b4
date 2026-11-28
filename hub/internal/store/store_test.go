@@ -55,7 +55,7 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 		t.Fatalf("reopening an existing database must not fail: %v", err)
 	}
 	defer second.Close()
-	for _, table := range []string{"meta", "keys", "records", "sets", "set_versions", "votes", "reports", "asn_names"} {
+	for _, table := range []string{"meta", "keys", "records", "sets", "set_versions", "votes", "reports", "asn_names", "groups", "group_votes"} {
 		var n int
 		if err := second.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&n); err != nil || n != 1 {
 			t.Errorf("table %s missing after migration: %d %v", table, n, err)
@@ -187,23 +187,25 @@ func TestPendingQueueAndListing(t *testing.T) {
 
 func TestTheAuthorOfAVoteIsFoundWithoutASearchPerVote(t *testing.T) {
 	st := openTestStore(t)
-	rows, err := st.db.QueryContext(context.Background(), `EXPLAIN QUERY PLAN SELECT `+voteColumns+` FROM votes v LEFT JOIN keys k ON k.key_hmac = v.key_hmac`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var id, parent, unused int
-		var detail string
-		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+	for _, query := range []string{voteColumns + ` FROM votes v`, groupVoteColumns + ` FROM group_votes v`} {
+		rows, err := st.db.QueryContext(context.Background(), `EXPLAIN QUERY PLAN SELECT `+query+` LEFT JOIN keys k ON k.key_hmac = v.key_hmac`)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(detail, "CORRELATED") {
-			t.Errorf("the cost must not grow with votes times versions: %s", detail)
+		for rows.Next() {
+			var id, parent, unused int
+			var detail string
+			if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(detail, "CORRELATED") {
+				t.Errorf("the cost must not grow with votes times versions: %s", detail)
+			}
 		}
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		rows.Close()
 	}
 }
 

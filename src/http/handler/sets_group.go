@@ -125,7 +125,7 @@ func (api *API) handleBatchSetGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary Import a group of sets
-// @Description Creates every set of the document in one write, at the top of the list and in the document's order, all in one group. A field a set leaves out takes b4's set default, as in POST /sets. A set name or group name already in use gets a number appended. Every set must have a name. Imported sets start with the watchdog and IP priority off, whatever the document says, and without a hub group stamp (hub.group_id, hub.group_version).
+// @Description Creates every set of the document in one write, at the top of the list and in the document's order, all in one group. A field a set leaves out takes b4's set default, as in POST /sets. A set name or group name already in use gets a number appended. Every set must have a name. Imported sets start with the watchdog and IP priority off, whatever the document says, and without a hub group stamp (hub.group_id, hub.group_version, hub.group_vote, hub.group_voted_at).
 // @Tags Sets
 // @Accept json
 // @Produce json

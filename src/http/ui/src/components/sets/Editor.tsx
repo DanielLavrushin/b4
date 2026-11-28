@@ -44,7 +44,6 @@ import { telegramSetId, telegramSetProblem } from "@models/telegramSet";
 import { DiscoveryTab } from "./DiscoveryTab";
 import { EscalationSettings } from "./Escalation";
 import { ImportExportSettings } from "./ImportExport";
-import { ShareEnvelope } from "./ShareEnvelope";
 import { SetStats } from "./Manager";
 import { RoutingSettings, ROUTING_SUB_TABS } from "./Routing";
 import { TargetSettings, TARGET_SUB_TABS } from "./Target";
@@ -87,7 +86,6 @@ export interface SetEditorPageProps {
   isNew: boolean;
   saving: boolean;
   onSave: (set: B4SetConfig) => Promise<B4SetConfig | undefined> | void;
-  onRefresh?: () => void;
   navigationBypassRef?: { current: boolean };
 }
 export const SetEditorPage = ({
@@ -99,7 +97,6 @@ export const SetEditorPage = ({
   otherSetsTargets,
   saving,
   onSave,
-  onRefresh,
   navigationBypassRef,
 }: SetEditorPageProps) => {
   const { t } = useTranslation();
@@ -483,16 +480,6 @@ export const SetEditorPage = ({
             deviceFilter={dscp.deviceFilter}
             onImport={handleApplyImport}
           />
-          {settings.hub?.enabled && (
-            <Box sx={{ mt: 3 }}>
-              <ShareEnvelope
-                config={editedSet}
-                isNew={isNew}
-                dirty={dirty}
-                onPublished={onRefresh}
-              />
-            </Box>
-          )}
         </B4TabPanel>
       </Box>
 

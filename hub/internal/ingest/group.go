@@ -177,6 +177,7 @@ func (s *Service) fileGroup(ctx context.Context, t *store.Tx, entry record, body
 		CountryObserved: entry.origin.Country,
 		ASNHint:         clip(h.ASN, MaxHintRunes),
 		CountryHint:     strings.ToUpper(clip(h.Country, 2)),
+		GFP:             groupFingerprintOf(versions, body.Members),
 		CreatedAt:       entry.now,
 		UpdatedAt:       entry.now,
 		Members:         make([]store.GroupMember, len(members)),
@@ -207,6 +208,10 @@ func (s *Service) fileGroup(ctx context.Context, t *store.Tx, entry record, body
 		if err := t.CreateGroup(ctx, g, gv); err != nil {
 			return Response{}, err
 		}
+	}
+	upload := uploadVote(entry, &store.Version{SetID: gv.GroupID, Version: gv.Version, FP: gv.GFP}, h)
+	if err := t.UpsertGroupVote(ctx, upload); err != nil {
+		return Response{}, err
 	}
 	if err := t.InsertRecord(ctx, store.Record{ID: entry.id, Kind: entry.rec.Kind, KeyHMAC: entry.keyHMAC, SetID: gv.GroupID, Version: gv.Version, ReceivedAt: entry.now}); err != nil {
 		return Response{}, err

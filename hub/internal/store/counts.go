@@ -37,7 +37,15 @@ func (s *Store) Badges(ctx context.Context) (Badges, error) {
 }
 
 func (s *Store) FoldedVersions(ctx context.Context) (map[string]map[int]bool, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT v.set_id, v.version FROM set_versions v WHERE v.status = 'pending' AND `+foldedVersion)
+	return s.versionSet(ctx, `SELECT v.set_id, v.version FROM set_versions v WHERE v.status = 'pending' AND `+foldedVersion)
+}
+
+func (s *Store) BroughtVersionSet(ctx context.Context) (map[string]map[int]bool, error) {
+	return s.versionSet(ctx, `SELECT v.set_id, v.version FROM set_versions v WHERE `+broughtVersion)
+}
+
+func (s *Store) versionSet(ctx context.Context, query string) (map[string]map[int]bool, error) {
+	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
