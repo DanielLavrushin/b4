@@ -3,6 +3,15 @@ import type { AsnLabels } from "../../utils/asn";
 
 export const ROW_HEIGHT = 41;
 const OVERSCAN = 5;
+export const COLUMN_WIDTHS: (number | string | undefined)[] = [
+  110,
+  "12%",
+  "12%",
+  "32%",
+  "10%",
+  undefined,
+];
+export const TABLE_MIN_WIDTH = { xs: 1420, lg: 980 };
 
 interface RowInputs {
   log: ParsedLog;

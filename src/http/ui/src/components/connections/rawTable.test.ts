@@ -2,7 +2,45 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { ParsedLog } from "../../hooks/useDomainActions";
 import type { AsnLabels } from "../../utils/asn";
-import { ROW_HEIGHT, sameRow, visibleRange } from "./rawTable";
+import {
+  COLUMN_WIDTHS,
+  ROW_HEIGHT,
+  TABLE_MIN_WIDTH,
+  sameRow,
+  visibleRange,
+} from "./rawTable";
+
+const DRAWER_AND_PADDING = 240 + 50;
+const GOOGLEVIDEO_WITH_BADGE = 335;
+const IPV4_DESTINATION_WITH_ICONS = 231;
+const DOMAIN = 3;
+const DESTINATION = 5;
+
+const columnWidths = (table: number): number[] => {
+  const set = COLUMN_WIDTHS.map((width) => {
+    if (typeof width === "number") return width;
+    if (typeof width === "string") return (parseFloat(width) / 100) * table;
+    return 0;
+  });
+  const rest = table - set.reduce((sum, width) => sum + width, 0);
+  return COLUMN_WIDTHS.map((width, i) => (width === undefined ? rest : set[i]));
+};
+
+void test("the raw feed fits beside the drawer on a 1366 px laptop", () => {
+  assert.ok(TABLE_MIN_WIDTH.lg <= 1366 - DRAWER_AND_PADDING);
+});
+
+void test("on a tablet or phone the domain column keeps room for a googlevideo name", () => {
+  assert.ok(columnWidths(TABLE_MIN_WIDTH.xs)[DOMAIN] >= GOOGLEVIDEO_WITH_BADGE);
+});
+
+void test("on a 1440 px laptop the domain column keeps room for a googlevideo name", () => {
+  assert.ok(columnWidths(1440 - DRAWER_AND_PADDING)[DOMAIN] >= GOOGLEVIDEO_WITH_BADGE);
+});
+
+void test("on a 1366 px laptop the destination column keeps room for an IPv4 address and its icons", () => {
+  assert.ok(columnWidths(1366 - DRAWER_AND_PADDING)[DESTINATION] >= IPV4_DESTINATION_WITH_ICONS);
+});
 
 const viewport = 444;
 const bottomOf = (count: number) => count * ROW_HEIGHT + 38 - viewport;

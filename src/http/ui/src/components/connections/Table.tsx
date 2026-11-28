@@ -20,7 +20,13 @@ import { B4Badge } from "@common/B4Badge";
 import { AsnLabels, stripPort } from "@utils";
 import { ParsedLog } from "@b4.connections";
 import { useTranslation } from "react-i18next";
-import { ROW_HEIGHT, sameRow, visibleRange } from "./rawTable";
+import {
+  COLUMN_WIDTHS,
+  ROW_HEIGHT,
+  TABLE_MIN_WIDTH,
+  sameRow,
+  visibleRange,
+} from "./rawTable";
 
 export type SortColumn =
   | "timestamp"
@@ -44,8 +50,6 @@ interface DomainsTableProps {
   onScrollStateChange: (isAtBottom: boolean) => void;
 }
 
-const COLUMN_WIDTHS = [110, 230, 150, undefined, 190, 400];
-const TABLE_MIN_WIDTH = 1420;
 
 const TableRowMemo = memo<{
   log: ParsedLog;
