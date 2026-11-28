@@ -829,6 +829,12 @@ func TestTheSafeCopyMasksALoginInTheProxyHost(t *testing.T) {
 		"fe80::1%br0;canaryuser;canarypass":            RedactedMarker,
 		"[fe80::1%canaryuser:canarypass]:1080":         RedactedMarker,
 		"[fe80::1%br-lan]:1080":                        "[fe80::1%br-lan]:1080",
+		"canaryuser:123456789":                         RedactedMarker,
+		"canaryuser:20260101":                          RedactedMarker,
+		"canaryuser:0000012345":                        RedactedMarker,
+		"canaryuser:65536":                             RedactedMarker,
+		"proxy.example:65535":                          "proxy.example:65535",
+		"proxy.example:01080":                          "proxy.example:01080",
 	} {
 		cfg := NewConfig()
 		set := NewSetConfig()

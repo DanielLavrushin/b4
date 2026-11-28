@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -343,10 +344,15 @@ func maskProxyHost(host string) string {
 		return host
 	}
 	name, port, _ := strings.Cut(s, ":")
-	if strings.Trim(port, "0123456789") != "" || strings.ContainsFunc(name, notInHostName) {
+	if !proxyHostPort(port) || strings.ContainsFunc(name, notInHostName) {
 		return RedactedMarker
 	}
 	return host
+}
+
+func proxyHostPort(port string) bool {
+	_, err := strconv.ParseUint(port, 10, 16)
+	return port == "" || err == nil && len(port) <= 5
 }
 
 func notInHostName(r rune) bool {
