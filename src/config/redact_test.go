@@ -768,6 +768,11 @@ func TestTheSafeCopyMasksAResolverURLInTheAddressField(t *testing.T) {
 		"https://canaryuser:canary^pass@dns.example/":                                RedactedMarker,
 		"canaryhost.example/canarypath?id=canaryquery":                               RedactedMarker,
 		"quic://canaryuser:canarypass@dns.example":                                   RedactedMarker,
+		"fe80::1%br0/canarypath?id=canaryquery":                                      RedactedMarker,
+		"fe80::1%br0:canaryuser:canarypass":                                          RedactedMarker,
+		"[fe80::1%canaryuser]:53":                                                    RedactedMarker,
+		"udp://fe80::1%br0/canarypath":                                               RedactedMarker,
+		"fe80::1":                                                                    "fe80::1",
 	} {
 		cfg := NewConfig()
 		set := NewSetConfig()

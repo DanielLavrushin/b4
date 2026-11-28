@@ -323,10 +323,10 @@ func maskDNSServer(raw string) string {
 		s = rest
 	}
 	s = strings.TrimSuffix(s, "/")
-	if _, err := netip.ParseAddrPort(s); err == nil {
+	if ap, err := netip.ParseAddrPort(s); err == nil && ap.Addr().Zone() == "" {
 		return raw
 	}
-	if _, err := netip.ParseAddr(strings.TrimSuffix(strings.TrimPrefix(s, "["), "]")); err == nil {
+	if addr, err := netip.ParseAddr(strings.TrimSuffix(strings.TrimPrefix(s, "["), "]")); err == nil && addr.Zone() == "" {
 		return raw
 	}
 	return RedactedMarker
